@@ -1,0 +1,376 @@
+/*
+ * Copyright Promwad inc(C) 2011
+ *
+ * Michail Kurachkin <stelhs@ya.ru>
+ *
+ * This program is free software; you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License as published by
+ * the Free Software Foundation; either version 2 of the License, or
+ * (at your option) any later version.
+ *
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ * GNU General Public License for more details.
+ *
+ * You should have received a copy of the GNU General Public License
+ * along with this program; if not, write to the Free Software
+ * Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA
+ */
+
+/include/ "skeleton.dtsi"
+/ {
+	model = "Module k1879x";
+	compatible = "module,k1879x";
+
+	cpus {
+		#address-cells = <1>;
+		#size-cells = <0>;
+
+		cpu@0 {
+			device_type = "cpu";
+			compatible = "arm,1176jz-s";
+			clock-frequency = <325000000>;
+			reg = <0>;
+			d-cache-line-size = <16>;
+			d-cache-size = <16384>;
+			i-cache-line-size = <16>;
+			i-cache-size = <16384>;
+		};
+	};
+
+	axi {
+		compatible = "simple-bus";
+		#address-cells = <1>;
+		#size-cells = <1>;
+		ranges = <0 0x0 0xFFFFFFFF>;
+	
+		usbehci: ehci@0x10040000 {
+			compatible = "module,ehci", "usb-ehci";
+			reg = <0x10040000 0x2000>;
+			interrupt-parent = <&vic1>;
+			interrupts = <3>; /* 35 */
+			status = "disabled";
+		};
+
+		usbohci: ohci@0x10048000 {
+			compatible = "module,ohci", "usb-ohci";
+			reg = <0x10048000 0x2000>;
+			interrupt-parent = <&vic1>;
+			interrupts = <3>; /* 35 */
+			status = "disabled";
+		};
+
+		dvb_ci0: dvb-ci@10050000 {
+			compatible = "module,xxx";
+			reg = <0x10050000 0x10000>;
+			interrupts = <37>;
+		};
+
+		xdmac0: xdmac@10070000 {
+			compatible = "module,xxx";
+			reg = <0x10070000 0x10000>;
+			interrupts = <16 17 18 19 20 21 22 23>;
+		};
+
+		vic0: interrupt-controller@20000000 {
+			reg = <0x20000000 0x10000>;
+			compatible = "arm,pl192-vic";
+			interrupt-controller;
+			#interrupt-cells = <1>;
+			irq_start = <0>;
+		};
+
+		vic1: interrupt-controller@20010000 {
+			reg = <0x20010000 0x10000>;
+			compatible = "arm,pl192-vic";
+			interrupt-controller;
+			#interrupt-cells = <1>;
+			irq_start = <32>;
+		};
+
+		crypto1: aes@20040000 {
+			compatible = "module,mcrypto_aes";
+			reg = <0x20040000 0x100>;
+			interrupt-parent = <&vic1>;
+			interrupts = <7>; /* 39 */
+		};
+
+		apb_c {
+			compatible = "arm,amba-bus", "simple-bus";
+			#address-cells = <1>;
+			#size-cells = <1>;
+			ranges = <0 0x20020000 0x10000>;
+
+			i2c1: i2c@1000 {
+				#address-cells = <1>;
+				#size-cells = <0>;
+				reg = <0x1000 0x1000>;
+				compatible = "module,k1879xgaisler";
+				interrupt-parent = <&vic0>;
+				interrupts = <28>;
+				clocks = <&clk_apb>;
+				clock-names = "apb_pclk";
+				clock-frequency = <54000000>;
+				reg-shift = <2>;
+				status = "disabled";
+			};
+
+			uart2: uart@2000 {
+				device-type = "serial";
+				reg = <0x2000 0x1000>;
+				compatible = "ns8250";
+				clocks = <&clk_apb>;
+				clock-names = "apb_pclk";
+				clock-frequency = <54000000>;
+				interrupt-parent = <&vic0>;
+				interrupts = <9>;
+				reg-shift = <2>;
+			};
+
+			ssp1: ssp@3000 {
+				compatible = "arm,pl022", "arm,primecell";
+				bus-id = <1>;
+				reg = <0x3000 0x1000>;
+				#address-cells = <1>;
+				#size-cells = <0>;
+				interrupts = <0>; /* 32 */
+				interrupt-parent = <&vic1>;
+				clocks = <&clk_apb>;
+				clock-names = "apb_pclk";
+				num-cs = <2>;
+				status = "disabled";
+			};
+
+			/*timer@4000 {
+				reg = <0x4000 0x1000>;
+				compatible = "module,k1879x-timer";
+				interrupts = <4 5>;
+			};*/
+
+			wd@5000 {
+				reg = <0x5000 0x1000>;
+				compatible = "xxx";
+				interrupts = <6>;
+			};
+
+			i2c2: i2c@6000 {
+				#address-cells = <1>;
+				#size-cells = <0>;
+				reg = <0x6000 0x1000>;
+				compatible = "module,k1879xgaisler";
+				interrupt-parent = <&vic0>;
+				interrupts = <29>;
+				clocks = <&clk_apb>;
+				clock-names = "apb_pclk";
+				clock-frequency = <54000000>;
+				reg-shift = <2>;
+				status = "disabled";
+			};
+
+			sci@7000 {
+				reg = <0x7000 0x1000>;
+				compatible = "xxx";
+				interrupts = <11>;
+			};
+
+			exirc@8000 {
+				reg = <0x8000 0x1000>;
+				compatible = "xxx";
+				interrupts = <24>;
+			};
+
+			gpio@9000 {
+				reg = <0x9000 0x1000>;
+				compatible = "xxx";
+			};
+
+			gpio@a000 {
+				reg = <0xa000 0x1000>;
+				compatible = "xxx";
+			};
+
+			uart0: uart@b000 {
+				device-type = "serial";
+				reg = <0xb000 0x1000>;
+				compatible = "ns8250";
+				clocks = <&clk_apb>;
+				clock-names = "apb_pclk";
+				clock-frequency = <54000000>;
+				interrupt-parent = <&vic0>;
+				interrupts = <7>;
+				reg-shift = <2>;
+			};
+
+			uart1: uart@c000 {
+				device-type = "serial";
+				reg = <0xc000 0x1000>;
+				compatible = "ns8250";
+				clocks = <&clk_apb>;
+				clock-names = "apb_pclk";
+				clock-frequency = <54000000>;
+				interrupt-parent = <&vic0>;
+				interrupts = <8>;
+				reg-shift = <2>;
+			};
+
+			i2c3: i2c@d000 {
+				#address-cells = <1>;
+				#size-cells = <0>;
+				reg = <0xd000 0x1000>;
+				compatible = "module,k1879xgaisler";
+				interrupts = <30>;
+				interrupt-parent = <&vic0>;
+				clocks = <&clk_apb>;
+				clock-names = "apb_pclk";
+				clock-frequency = <54000000>;
+				reg-shift = <2>;
+				status = "disabled";
+			};
+
+			gpio@f000 {
+				reg = <0xf000 0x1000>;
+				compatible = "xxx";
+				clocks = <&clk_apb>;
+				clock-names = "apb_pclk";
+			};
+		};
+
+		apb_d {
+			compatible = "simple-bus";
+			#address-cells = <1>;
+			#size-cells = <1>;
+			ranges = <0 0x20030000 0x10000>;
+
+			ethernet: greth@4000 {
+				#address-cells = <1>;
+				#size-cells = <1>;
+				compatible = "greth";
+				reg = <0x4000 0x1000>;
+				cell-index = <0>;
+				device_type = "network";
+				clocks = <&clk_axi>;
+				clock-names = "clk_axi";
+				interrupt-parent = <&vic1>;
+				interrupts = <2>; /* 34 */
+				status = "disabled";
+
+				mdio {
+					compatible = "greth-mdio";
+					#address-cells = <1>;
+					#size-cells = <0>;
+				};
+			};
+			
+			crypto0: des@d000 {
+				compatible = "module,mcrypto";
+				reg = <0xd000 0x1000>;
+				interrupt-parent = <&vic1>;
+				interrupts = <8>; /* 40 */
+			};
+
+			nand0: nand@f000 {
+				reg = <0xf000 0x1000>;
+				compatible = "module,mnand";
+				interrupt-parent = <&vic1>;
+				interrupts = <4>;
+				clocks = <&clk_prf>;
+				clock-names = "clk_prf";
+			};
+	};
+
+		au@0 {
+			compatible = "simple-bus";
+			#address-cells = <1>;
+			#size-cells = <1>;
+			ranges = <0 0x80150000 0x10000>;
+
+			i2s: i2s@0 {
+				compatible = "module,i2s";
+				reg = <0 0x40>;
+				interrupts = <18>; /* 50 */
+				interrupt-parent = <&vic1>;
+			};
+		};
+
+		au@1 {
+			compatible = "simple-bus";
+			#address-cells = <1>;
+			#size-cells = <1>;
+			ranges = <0x0 0x80160000 0x10000>;
+
+			spdif: spdif@0 {
+				compatible = "module,spdif";
+				reg = <0x0 0x40>;
+				interrupts = <19>; /* 51 */
+				interrupt-parent = <&vic1>;
+			};
+		};
+
+		apb_mult {
+			compatible = "simple-bus";
+			#address-cells = <1>;
+			#size-cells = <1>;
+			ranges = <0 0x80170000 0x10000>;
+
+			i2c0: i2c@1000 {
+				#address-cells = <1>;
+				#size-cells = <0>;
+				reg = <0x1000 0x1000>;
+				compatible = "module,k1879xgaisler";
+				interrupts = <1>; /* 33 */
+				interrupt-parent = <&vic1>;
+				clocks = <&clk_prf>;
+				clock-names = "apb_prf";
+				clock-frequency = <81000000>;
+				reg-shift = <2>;
+				status = "disabled";
+			};
+
+			dmac: dmac@0x2800 {
+				compatible = "module,dmac";
+				reg = <0x2800 0x200>;
+				interrupts = <21>; /* 53 */
+				interrupt-parent = <&vic1>;
+			};
+
+			vdu: vdu@0x3000 {
+				#address-cells = <1>;
+				#size-cells = <1>;
+				compatible = "module,vdu";
+				reg = <0x3000 0x1000>;
+				interrupts = <10>; /* 42 */
+				interrupt-parent = <&vic1>;
+				supported_modes = <0x1FFE>;
+				default_mode = <0x4>; /* MVDU_MODE_SD_576_I_25 */
+				output_flags = <0x200>; /* MVDU_OFLAG_SDTV_SEQ | MVDU_OFLAG_EXT_SYNC | MVDU_OFLAG_NO_INT_SYNC */
+				axi_osd_param = <0x0f310000>;
+				axi_mvl_param = <0x0f310000>;
+				vdubuffer = <0xc0000000 0x7800000>;
+				status = "disabled";
+			};
+		};
+
+		sound: audio@0x80175000 {
+			compatible = "module,audio";
+			reg = <0x80175000 0x40>; /* control */
+			interrupts = <21>; /* 53 */
+			interrupt-parent = <&vic1>;
+			maudio,dmac = <&dmac>;
+			maudio,i2s = <&i2s>;
+			maudio,spdif = <&spdif>;
+			status = "disabled";
+		};
+
+		video_decoder: video_decoder@80180000 {
+			compatible = "module,msvdhd";
+			reg = <0x80180000 0x20000>,
+				<0xc7800000 0x800000>,
+				<0x80100000 0x40000>;
+			reg-names = "res", "extmem", "intmem";
+			interrupts = <12>; /* 44 */
+			interrupt-parent = <&vic1>;
+			status = "disabled";
+		};
+	};
+};

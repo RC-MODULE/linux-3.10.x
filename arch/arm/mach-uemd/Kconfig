@@ -1,0 +1,125 @@
+if ARCH_UEMD
+
+comment "RC Module UEMD Platform"
+
+menu "UEMD platform type"
+
+config MACH_UEMD
+	bool "UEMD machine support"
+	select ARM_VIC
+	select OF
+	help
+	 Select this if you are using an UEMD system
+	 <http://www.module.ru/index.shtml>
+
+menu "Compatibility options and tuning"
+
+config UEMD_GENERIC_TIME
+	depends on MACH_UEMD
+	bool "Use generic clocksource/clockevents"
+	select GENERIC_TIME
+	select GENERIC_CLOCKEVENTS
+	help
+	 Use clocksource/clockevents instead of old-style timer implementation.
+	 Clocksource-based timers have greater precision.
+
+
+config UEMD_LO_FREQ
+	depends on MACH_UEMD
+	default yes
+	bool "Use low-frequency mode"
+	help
+	 Older UEMD boards had a DDR bug and were reprogrammed to work in low 
+	 frequency mode. Use this option only if you have such board.
+
+config UEMD_LO_MEM
+	depends on MACH_UEMD
+	bool "Use first 16M of memory only"
+
+endmenu
+
+menu "SDHD SoC Hardware Support"
+
+config MODULE_MVDU_CORE
+	depends on MACH_UEMD
+	depends on !UEMD_LO_MEM
+	bool "MVDU video device unit platform device"
+	help
+	 Include MVDU platform device support
+
+config MODULE_MSVDHD
+	depends on MACH_UEMD
+	select MSVDHD
+	bool "MSVDHD video decoder platform device"
+	help
+	 Include MSVDHD platform device support
+
+
+config MODULE_GRI2C_HDMI
+	depends on MACH_UEMD
+	depends on I2C_OCORES
+	depends on MODULE_MVDU_CORE
+	bool "Enable internal I2C bus used by HDMI transiever"
+	help
+	 UEMD board has one internal I2C bus with single device - HDMI 
+	 transiever. It will be accessible at index 0.
+
+config MODULE_HDMI_BI
+	depends on MODULE_GRI2C_HDMI
+	bool "Enable I2C HDMI board info and mode switcher"
+	default yes
+	help
+	 Enables HDMI code capable of handling TV-mode change requests 
+	 from video drivers like MVDU. It will change things like resolution,
+	 viewport position, etc.
+	 Disable this to use older i2cset-based scripts.
+
+config MODULE_TSP
+	depends on MACH_UEMD
+	bool "TSP Transport stream demultiplexer"
+	help
+	 Enable transport stream demultiplexor platform device. MDEMUX driver 
+	 should be able to handle it.
+
+config MODULE_USB
+	depends on MACH_UEMD
+	select USB_OHCI_HCD
+	select USB_EHCI_HCD
+	bool "Enable USB host controller"
+
+config MODULE_AUDIO
+	depends on MACH_UEMD
+	select SND_MAUDIO
+	bool "Enable MAUDIO platform device resources"
+
+config MODULE_UARTIRDA
+	depends on MACH_UEMD
+	bool "Enable UART-to-IRDA interface"
+	help
+	 Enable UART connected to IRDA sensor.
+ 
+
+config MODULE_GPIO
+	depends on MACH_UEMD
+	bool "Enable GPIO platform device"
+	help
+	 Register GPIO platform device.
+
+config MODULE_SCI
+	depends on MACH_UEMD
+	bool "Enable SCI platfrom device"
+	help
+	 Enable SCI platform resources. msci driver should handle 
+	 this device.
+
+config MACH_UEMD_NMC3
+	depends on MACH_UEMD
+	bool "Enable NMC3 platform device"
+	help
+	 Enable NMC3 platform device that could be used to communicate with
+	 NMC3 cpu core.
+
+endmenu
+endmenu
+
+endif

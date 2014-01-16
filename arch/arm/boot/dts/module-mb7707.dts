@@ -1,0 +1,181 @@
+/*
+ * Copyright Promwad inc(C) 2011
+ *
+ * Michail Kurachkin <stelhs@ya.ru>
+ *
+ * This program is free software; you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License as published by
+ * the Free Software Foundation; either version 2 of the License, or
+ * (at your option) any later version.
+ *
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ * GNU General Public License for more details.
+ *
+ * You should have received a copy of the GNU General Public License
+ * along with this program; if not, write to the Free Software
+ * Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA
+ */
+
+/dts-v1/;
+/include/ "module-k1879x.dtsi"
+/ {
+	model = "Module MB77.07";
+	compatible = "module,mb7707";
+
+	memory {
+		device_type = "memory";
+		reg = <0x40000000 0x8000000>;
+	};
+
+	chosen {
+		bootargs = "ignore_loglevel console=ttyS1,38400n8 earlyprintk=serial mtdparts=mnand:0x40000@0x0(boot),0x40000@0x40000(env),0x80000@0x80000(kernel_dtb),0x400000@0x100000(kernel),0x3FB00000@0x500000(rootfs) ubi.mtd=4,2048 root=ubi0:rootfs rootfstype=ubifs";
+	};
+
+	external_osc: oscillator {
+		compatible = "fixed-clock";
+		#clock-cells = <1>;
+		clock-frequency  = <27000000>;
+		clock-output-names = "osc";
+	};
+
+	/*clocks {
+		ref_clk: clock@1 {
+			compatible = "fixed-clock";
+			clock-outputs = "ref";
+			clock-frequency = <20000000>;
+		};
+	};*/
+
+	axi {
+		apb_d {
+			clk_core: clk@0 {
+				/* Reference 324MHz clock */
+				compatible = "fixed-clock";
+				#clock-cells = <0>;
+				clock-frequency = <324000000>;
+				clock-output-names = "clk_core";
+			};
+
+			clk_axi: clk@1 {
+				/* Reference 162MHz clock */
+				compatible = "fixed-clock";
+				#clock-cells = <0>;
+				clock-frequency = <162000000>;
+				clock-output-names = "clk_axi";
+			};
+
+			clk_prf: clk@2 {
+				/* Reference 81MHz clock */
+				compatible = "fixed-clock";
+				#clock-cells = <0>;
+				clock-frequency = <81000000>;
+				clock-output-names = "clk_prf";
+			};
+
+			clk_apb: clk@3 {
+				/* Reference 54MHz clock */
+				compatible = "fixed-clock";
+				#clock-cells = <0>;
+				clock-frequency = <54000000>;
+				clock-output-names = "clk_apb";
+			};
+
+			clk_27M: clk@4 {
+				/* Reference 27MHz clock */
+				compatible = "fixed-clock";
+				#clock-cells = <0>;
+				clock-frequency = <27000000>;
+				clock-output-names = "clk_27m";
+			};
+
+			ethernet: greth@4000 {
+				local-mac-address = [ 00 02 f7 00 27 0f ];
+				status = "okay";
+				mdio {
+					phy0: ethernet-phy@0 {
+						reg = <0x1f>;
+					};
+				};
+			};
+		};
+	};
+};
+
+&ssp1 {
+	status = "okay";
+	spidev@0 {
+		compatible = "spidev";
+		reg = <0>;
+		spi-max-frequency = <25000000>;
+		spi-cpha;
+		pl022,hierarchy = <0>;
+		pl022,interface = <0>;
+		pl022,slave-tx-disable;
+		pl022,com-mode = <0x0>; /* polling mode */
+		pl022,rx-level-trig = <0>;
+		pl022,tx-level-trig = <0>;
+		pl022,ctrl-len = <0x11>;
+		pl022,wait-state = <0>;
+		pl022,duplex = <0>;
+	};
+	spidev@1 {
+		compatible = "spidev";
+		reg = <1>;
+		spi-max-frequency = <25000000>;
+		spi-cpha;
+		pl022,hierarchy = <0>;
+		pl022,interface = <0>;
+		pl022,slave-tx-disable;
+		pl022,com-mode = <0x0>; /* polling mode */
+		pl022,rx-level-trig = <0>;
+		pl022,tx-level-trig = <0>;
+		pl022,ctrl-len = <0x11>;
+		pl022,wait-state = <0>;
+		pl022,duplex = <0>;
+	};
+};
+
+
+&i2c0 {
+	status = "okay";
+	speed = <100000>;
+
+	hdmi0: hdmi@39 {
+		compatible = "module,hdmi";
+		reg = <0x39>;
+	};
+};
+
+&i2c2 {
+	status = "okay";
+	speed = <100000>;
+
+	eds0: eds10180@6a {
+		compatible = "module,EDS10180";
+		reg = <0x6a>;
+	};
+	eds1: eds10394@61 {
+		compatible = "module,EDS10394";
+		reg = <0x61>;
+	};
+};
+
+&vdu {
+	status = "okay";
+};
+
+&sound {
+	status = "okay";
+	maudio,model = "Module MB7707";
+};
+
+&usbehci {
+	status = "okay";
+};
+
+&video_decoder {
+	status = "okay";
+};
+

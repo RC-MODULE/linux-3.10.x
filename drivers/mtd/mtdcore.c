@@ -511,7 +511,9 @@ int mtd_device_parse_register(struct mtd_info *mtd, const char * const *types,
 	if (err > 0) {
 		err = add_mtd_partitions(mtd, real_parts, err);
 		kfree(real_parts);
+#ifndef CONFIG_ARCH_UEMD
 	} else if (err == 0) {
+#endif
 		err = add_mtd_device(mtd);
 		if (err == 1)
 			err = -ENODEV;

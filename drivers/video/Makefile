@@ -168,6 +168,10 @@ obj-$(CONFIG_FB_MXS)		  += mxsfb.o
 obj-$(CONFIG_FB_SSD1307)	  += ssd1307fb.o
 obj-$(CONFIG_FB_SIMPLE)           += simplefb.o
 
+# Module VDU drivers
+obj-$(CONFIG_MODULE_VDU_CORE)     += module_vdu_core.o
+obj-$(CONFIG_MODULE_VDU_FB)       += module_vdu_fb.o
+
 # the test framebuffer is last
 obj-$(CONFIG_FB_VIRTUAL)          += vfb.o
 

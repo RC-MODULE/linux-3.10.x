@@ -2470,6 +2470,20 @@ config FB_SIMPLE
 	  through device tree, or potentially plain old platform data in the
 	  future.
 
+config MODULE_VDU_FB
+	tristate "Module VDU framebuffer support"
+	depends on FB
+	select MODULE_VDU_CORE
+	select FB_SYS_FILLRECT
+	select FB_SYS_COPYAREA
+	select FB_SYS_IMAGEBLIT
+	---help---
+	  Support for frame buffer interface to Module VDU.
+
+config MODULE_VDU_CORE
+	tristate
+	default n
+
 source "drivers/video/omap/Kconfig"
 source "drivers/video/omap2/Kconfig"
 source "drivers/video/exynos/Kconfig"

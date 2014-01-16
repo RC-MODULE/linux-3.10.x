@@ -241,6 +241,21 @@ config CRYPTO_DEV_PPC4XX
 	help
 	  This option allows you to have support for AMCC crypto acceleration.
 
+config CRYPTO_DEV_MCRYPTO
+	tristate "Driver for Module3DES crypto hardware accelerator"
+	select CRYPTO_ALGAPI
+	select CRYPTO_AUTHENC
+	select CRYPTO_BLKCIPHER
+	help
+		Driver for Module Crypto hardware accelerator
+
+config CRYPTO_DEV_MCRYPTO_AES
+	tristate "Driver for Module AES crypto hardware accelerator"
+	select CRYPTO_ALGAPI
+	select CRYPTO_AUTHENC
+	help
+		Driver for Module Crypto AES hardware accelerator
+
 config CRYPTO_DEV_OMAP_SHAM
 	tristate "Support for OMAP SHA1/MD5 hw accelerator"
 	depends on ARCH_OMAP2 || ARCH_OMAP3
