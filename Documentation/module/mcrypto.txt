@@ -1,0 +1,31 @@
+ИНТЕРФЕЙС
+=========
+Драйвер не имеет пользовательского интерфейса. Для демонстрации работы
+используется модуль tcrypt (crypto/tcrypt.c)
+
+Проверка 3DES во всех режимах:
+
+	modprobe tcrypt mode=4
+
+Проверка AES:
+
+	modprobe tcrypt mode=10
+
+ОШИБКИ
+======
+Note: memory corruption has been detected. It is caused by writing beyonf the
+borders of small DMA buffers (hardware DMA bug). Possible solution: don't use
+buffers smaller than 128 bytes.
+
+	UEMD /sys/kernel/debug/mcrypto # modprobe tcrypt mode=4
+	[    4.837735] pagealloc: memory corruption
+	[    4.849587] c7a79078: 99 4b 59 c1 94 93 96 ea .KY.....
+	[    4.871648] [<c00268d0>] (unwind_backtrace+0x0/0xe8) from [<c008c920>] (kernel_map_pages+0x1e0/0x2)
+	[    4.899420] [<c008c920>] (kernel_map_pages+0x1e0/0x210) from [<c006e3b4>] (get_page_from_freelist+)
+	[    4.929517] [<c006e3b4>] (get_page_from_freelist+0x20c/0x4e8) from [<c006e764>] (__alloc_pages_nod)
+	[    4.960915] [<c006e764>] (__alloc_pages_nodemask+0xd4/0x580) from [<c0087758>] (__vmalloc_area_nod)
+	[    4.991254] [<c0087758>] (__vmalloc_area_node+0x84/0x134) from [<c0087aa0>] (vmalloc+0x24/0x30)
+	[    5.017423] [<c0087aa0>] (vmalloc+0x24/0x30) from [<c005b510>] (load_module+0x3c/0x17c0)
+	[    5.041761] [<c005b510>] (load_module+0x3c/0x17c0) from [<c005d150>] (sys_init_module+0x68/0x1f4)
+	[    5.068448] [<c005d150>] (sys_init_module+0x68/0x1f4) from [<c00209c0>] (ret_fast_syscall+0x0/0x2c)
+

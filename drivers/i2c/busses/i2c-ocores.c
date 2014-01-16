@@ -38,6 +38,7 @@ struct ocores_i2c {
 	int nmsgs;
 	int state; /* see STATE_ */
 	int clock_khz;
+	int speed_khz;
 	void (*setreg)(struct ocores_i2c *i2c, int reg, u8 value);
 	u8 (*getreg)(struct ocores_i2c *i2c, int reg);
 };
@@ -75,6 +76,7 @@ struct ocores_i2c {
 
 #define TYPE_OCORES		0
 #define TYPE_GRLIB		1
+#define TYPE_K1879X		2
 
 static void oc_setreg_8(struct ocores_i2c *i2c, int reg, u8 value)
 {
@@ -225,7 +227,7 @@ static void ocores_init(struct ocores_i2c *i2c)
 	/* make sure the device is disabled */
 	oc_setreg(i2c, OCI2C_CONTROL, ctrl & ~(OCI2C_CTRL_EN|OCI2C_CTRL_IEN));
 
-	prescale = (i2c->clock_khz / (5*100)) - 1;
+	prescale = (i2c->clock_khz / (5 * i2c->speed_khz)) - 1;
 	oc_setreg(i2c, OCI2C_PRELOW, prescale & 0xff);
 	oc_setreg(i2c, OCI2C_PREHIGH, prescale >> 8);
 
@@ -260,6 +262,10 @@ static struct of_device_id ocores_i2c_match[] = {
 	{
 		.compatible = "aeroflexgaisler,i2cmst",
 		.data = (void *)TYPE_GRLIB,
+	},
+	{
+		.compatible = "module,k1879xgaisler",
+		.data = (void *)TYPE_K1879X,
 	},
 	{},
 };
@@ -300,6 +306,40 @@ static void oc_setreg_grlib(struct ocores_i2c *i2c, int reg, u8 value)
 	iowrite32be(wr, i2c->base + (rreg << i2c->reg_shift));
 }
 
+/* Read and write functions for the k1879x port of the controller. Registers are
+ * 32-bit le and the PRELOW and PREHIGH registers are merged into one
+ * register. The subsequent registers has their offset decreased accordingly. */
+static u8 oc_getreg_k1879x(struct ocores_i2c *i2c, int reg)
+{
+	u32 rd;
+	int rreg = reg;
+	if (reg != OCI2C_PRELOW)
+		rreg--;
+	rd = ioread32(i2c->base + (rreg << i2c->reg_shift));
+	if (reg == OCI2C_PREHIGH)
+		return (u8)(rd >> 8);
+	else
+		return (u8)rd;
+}
+
+static void oc_setreg_k1879x(struct ocores_i2c *i2c, int reg, u8 value)
+{
+	u32 curr, wr;
+	int rreg = reg;
+	if (reg != OCI2C_PRELOW)
+		rreg--;
+	if (reg == OCI2C_PRELOW || reg == OCI2C_PREHIGH) {
+		curr = ioread32(i2c->base + (rreg << i2c->reg_shift));
+		if (reg == OCI2C_PRELOW)
+			wr = (curr & 0xff00) | value;
+		else
+			wr = (((u32)value) << 8) | (curr & 0xff);
+	} else {
+		wr = value;
+	}
+	iowrite32(wr, i2c->base + (rreg << i2c->reg_shift));
+}
+
 static int ocores_i2c_of_probe(struct platform_device *pdev,
 				struct ocores_i2c *i2c)
 {
@@ -328,14 +368,28 @@ static int ocores_i2c_of_probe(struct platform_device *pdev,
 	}
 	i2c->clock_khz = val / 1000;
 
+	if (of_property_read_u32(np, "speed", &val)) {
+		dev_err(&pdev->dev,
+			"Missing required parameter 'speed'\n");
+		return -ENODEV;
+	}
+	i2c->speed_khz = val / 1000;
+
 	of_property_read_u32(pdev->dev.of_node, "reg-io-width",
 				&i2c->reg_io_width);
 
 	match = of_match_node(ocores_i2c_match, pdev->dev.of_node);
-	if (match && (long)match->data == TYPE_GRLIB) {
-		dev_dbg(&pdev->dev, "GRLIB variant of i2c-ocores\n");
-		i2c->setreg = oc_setreg_grlib;
-		i2c->getreg = oc_getreg_grlib;
+	if (match) {
+		if((long)match->data == TYPE_GRLIB) {
+			dev_dbg(&pdev->dev, "GRLIB variant of i2c-ocores\n");
+			i2c->setreg = oc_setreg_grlib;
+			i2c->getreg = oc_getreg_grlib;
+		} else 
+		if((long)match->data == TYPE_K1879X) {
+			dev_dbg(&pdev->dev, "K1879X variant of i2c-ocores\n");
+			i2c->setreg = oc_setreg_k1879x;
+			i2c->getreg = oc_getreg_k1879x;
+		};
 	}
 
 	return 0;
@@ -374,6 +428,7 @@ static int ocores_i2c_probe(struct platform_device *pdev)
 		i2c->reg_shift = pdata->reg_shift;
 		i2c->reg_io_width = pdata->reg_io_width;
 		i2c->clock_khz = pdata->clock_khz;
+		i2c->speed_khz = 100; /* 100 kHz only */
 	} else {
 		ret = ocores_i2c_of_probe(pdev, i2c);
 		if (ret)

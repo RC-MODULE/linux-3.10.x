@@ -2082,7 +2082,9 @@ pl022_platform_data_dt_get(struct device *dev)
 		return NULL;
 	}
 
-	pd->bus_id = -1;
+	tmp = -1;
+	of_property_read_u32(np, "bus-id", &tmp);
+	pd->bus_id = tmp;
 	of_property_read_u32(np, "num-cs", &tmp);
 	pd->num_chipselect = tmp;
 	of_property_read_u32(np, "pl022,autosuspend-delay",

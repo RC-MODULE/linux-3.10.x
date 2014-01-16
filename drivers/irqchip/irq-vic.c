@@ -276,12 +276,23 @@ static void __init vic_register(void __iomem *base, unsigned int irq,
 	v->irq = irq;
 	set_handle_irq(vic_handle_irq);
 	vic_id++;
-	v->domain = irq_domain_add_simple(node, fls(valid_sources), irq,
+
+	//////////// TODO: Временный говнокод
+
+	struct irq_domain *irq_domain;
+	/*simple = irq_domain_add_simple(node, fls(valid_sources), irq,
+					  &vic_irqdomain_ops, v);*/
+
+	irq_domain = irq_domain_add_legacy(node, fls(valid_sources), irq, 0,
 					  &vic_irqdomain_ops, v);
+
+	v->domain = irq_domain;
 	/* create an IRQ mapping for each valid IRQ */
-	for (i = 0; i < fls(valid_sources); i++)
+/*	for (i = 0; i < fls(valid_sources); i++)
 		if (valid_sources & (1 << i))
-			irq_create_mapping(v->domain, i);
+			irq_create_mapping(v->domain, i);*/
+
+	///////////////////////
 }
 
 static void vic_ack_irq(struct irq_data *d)
@@ -469,6 +480,7 @@ void __init vic_init(void __iomem *base, unsigned int irq_start,
 int __init vic_of_init(struct device_node *node, struct device_node *parent)
 {
 	void __iomem *regs;
+	const __be32 *irq_start;
 
 	if (WARN(parent, "non-root VICs are not supported"))
 		return -EINVAL;
@@ -477,10 +489,12 @@ int __init vic_of_init(struct device_node *node, struct device_node *parent)
 	if (WARN_ON(!regs))
 		return -EIO;
 
-	/*
-	 * Passing 0 as first IRQ makes the simple domain allocate descriptors
-	 */
-	__vic_init(regs, 0, ~0, ~0, node);
+	irq_start = of_get_property(node, "irq_start", NULL);
+	if (WARN(!irq_start, "property 'irq_start' is absent"))
+		return -EINVAL;
+
+	printk("regs = 0x%x, irq_start = %d\n", regs, be32_to_cpu(irq_start[0]));
+	__vic_init(regs, be32_to_cpu(irq_start[0]), ~0, ~0, node);
 
 	return 0;
 }

@@ -831,6 +831,20 @@ config ARCH_U300
 	help
 	  Support for ST-Ericsson U300 series mobile platforms.
 
+config ARCH_UEMD
+	bool "UEMD system by RC Module"
+	depends on MMU
+	select CPU_V6
+	select ARM_AMBA
+	select ARM_VIC
+	select GENERIC_GPIO
+	select COMMON_CLK
+	select USB_ARCH_HAS_EHCI
+	select USB_ARCH_HAS_OHCI
+	select ARCH_REQUIRE_GPIOLIB
+	help
+	  Support for RC Module's UEMD system
+
 config ARCH_DAVINCI
 	bool "TI DaVinci"
 	select ARCH_HAS_HOLES_MEMORYMODEL
@@ -1013,6 +1027,10 @@ source "arch/arm/mach-prima2/Kconfig"
 source "arch/arm/mach-tegra/Kconfig"
 
 source "arch/arm/mach-u300/Kconfig"
+
+if ARCH_UEMD
+source "arch/arm/mach-uemd/Kconfig"
+endif
 
 source "arch/arm/mach-ux500/Kconfig"
 
