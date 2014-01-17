@@ -339,7 +339,6 @@ static int of_mcrypto_aes_probe(struct platform_device *pdev)
 		goto error_kfree;
 	}
 
-//	device->io = devm_ioremap_resource(&pdev->dev, device->res_mem);
 	device->io = devm_request_and_ioremap(&pdev->dev, device->res_mem);
 	if (!device->io) {
 		dev_err(device->dev, "cant remap io memory\n");
@@ -392,6 +391,7 @@ static struct of_device_id of_platform_mcrypto_aes_table[] = {
 	{ .compatible = "module,mcrypto_aes" },
 	{ /* end of list */ },
 };
+MODULE_DEVICE_TABLE(of, of_platform_mcrypto_aes_table);
 
 static struct platform_driver of_platform_mcrypto_aes_driver = {
 	.driver = {
@@ -402,6 +402,7 @@ static struct platform_driver of_platform_mcrypto_aes_driver = {
 	.probe = of_mcrypto_aes_probe,
 	.remove = of_mcrypto_aes_remove
 };
+
 module_platform_driver(of_platform_mcrypto_aes_driver);
 
 MODULE_AUTHOR("Sergey Mironov <ierton@gmail.com>");

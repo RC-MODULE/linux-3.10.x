@@ -180,79 +180,6 @@ static void __init register_uartirda_device(void)
 static void __init register_uartirda_device(void) {}
 #endif /*CONFIG_MODULE_UARTIRDA*/
 
-#if defined(CONFIG_MODULE_CRYPTO)
-static struct resource mcrypto_resources[] = {
-	[0] = {
-		.name		= "registers",
-		.start		= MDEVICE_BASE(CRYPTO),
-		.end		= MDEVICE_BASE(CRYPTO) + PAGE_SIZE - 1,
-		.flags		= IORESOURCE_MEM,
-	},
-	[1] = {
-		.name		= "irq",
-		.start		= MDEVICE_IRQ(CRYPTO),
-		.end		= MDEVICE_IRQ(CRYPTO),
-		.flags		= IORESOURCE_IRQ,
-	},
-};
-
-struct platform_device mcrypto_dev = {
-	.name = "module_crypto",
-	.id	= -1,
-	.num_resources = ARRAY_SIZE(mcrypto_resources),
-	.resource = mcrypto_resources,
-	.dev		= {
-		.coherent_dma_mask	= ~0,
-	},
-};
-
-static void __init mcrypto_device_register(void)
-{
-	int ret;
-	printk(KERN_INFO "mcrypto_3des: registering ModuleCrypto device\n");
-	ret = platform_device_register(&mcrypto_dev);
-	if (ret)
-		printk(KERN_WARNING "mcrypto_3des: unable to register Module 3des device\n");
-}
-#else
-static inline void mcrypto_device_register(void){}
-#endif /* CONFIG_MODULE_CRYPTO */
-
-#if defined(CONFIG_MODULE_CRYPTOAES)
-static struct resource mcrypto_aes_resources[] = {
-	[0] = {
-		.name		= "registers",
-		.start		= MDEVICE_BASE(CRYPTOAES),
-		.end		= MDEVICE_BASE(CRYPTOAES) + 0x80 - 1,
-		.flags		= IORESOURCE_MEM,
-	},
-	[1] = {
-		.name		= "irq",
-		.start		= MDEVICE_IRQ(CRYPTOAES),
-		.end		= MDEVICE_IRQ(CRYPTOAES),
-		.flags		= IORESOURCE_IRQ,
-	},
-};
-
-struct platform_device mcrypto_aes_dev = {
-	.name = "module_crypto_aes",
-	.id	= -1,
-	.num_resources = ARRAY_SIZE(mcrypto_aes_resources),
-	.resource = mcrypto_aes_resources,
-};
-
-static void __init mcryptoaes_device_register(void)
-{
-	int ret;
-	printk(KERN_INFO "mcrypto_aes: registering ModuleCrypto device\n");
-	ret = platform_device_register(&mcrypto_aes_dev);
-	if (ret)
-		printk(KERN_WARNING "mcrypto_aes: unable to register Module aes device\n");
-}
-#else
-static inline void mcryptoaes_device_register(void){}
-#endif /* CONFIG_MODULE_CRYPTOAES */
-
 #if defined(CONFIG_MODULE_GPIO)
 static struct resource gpio_arm_a_resources[] = {
 	[0] = {
@@ -342,8 +269,6 @@ void mdevice_platform_register(void)
 	mdemux_device_register();
 	mdvbci_device_register();
 	register_uartirda_device();
-	mcrypto_device_register();
-	mcryptoaes_device_register();
 	gpio_a_device_register();
 	msci_device_register();
 }
