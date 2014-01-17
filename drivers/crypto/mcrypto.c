@@ -878,7 +878,7 @@ static int of_mcrypto_probe(struct platform_device *pdev)
 		return -EINVAL;
 	}
 
-	device->io = devm_ioremap_resource(&pdev->dev, device->res_mem);
+	device->io = devm_request_and_ioremap(&pdev->dev, device->res_mem);
 	if (!device->io) {
 		dev_err(device->dev, "cant remap io memory\n");
 		return -ENOMEM;
@@ -962,6 +962,7 @@ static struct of_device_id of_platform_mcrypto_table[] = {
 	{ .compatible = "module,mcrypto" },
 	{ /* end of list */ },
 };
+MODULE_DEVICE_TABLE(of, of_platform_mcrypto_table);
 
 static struct platform_driver of_platform_mcrypto_driver = {
 	.driver = {
