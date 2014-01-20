@@ -180,55 +180,6 @@ static void __init register_uartirda_device(void)
 static void __init register_uartirda_device(void) {}
 #endif /*CONFIG_MODULE_UARTIRDA*/
 
-#if defined(CONFIG_MODULE_GPIO)
-static struct resource gpio_arm_a_resources[] = {
-	[0] = {
-		.name   = "registers",
-		.start  = MDEVICE_CONST(GPIOA_PHYS_BASE),
-		.end    = MDEVICE_CONST(GPIOA_PHYS_BASE)+0xFFF,
-		.flags  = IORESOURCE_MEM
-	}, 
-	[1] = {
-		.name = "irq",
-		.start  = MDEVICE_CONST(GPIOA_IRQ),
-		.end    = MDEVICE_CONST(GPIOA_IRQ),
-		.flags  = IORESOURCE_IRQ
-	},
-	[2] = {
-		.name = "swirq", 
-		.start  = MDEVICE_CONST(GPIOA_SWIRQ_BASE),
-		.end    = MDEVICE_CONST(GPIOA_SWIRQ_BASE)+8-1,
-		.flags  = IORESOURCE_IRQ
-	},
-};
-
-static struct pl061_platform_data gpio_a_pldata = {
-	.gpio_base = 0,
-	.irq_base = MDEVICE_CONST(GPIOA_SWIRQ_BASE),
-};
-
-static struct platform_device gpio_a_dev={
-	.name		= "pl061_pldev",
-	.resource	= gpio_arm_a_resources,
-	.dev		= {
-		.platform_data = &gpio_a_pldata
-	},
-	.num_resources = ARRAY_SIZE(gpio_arm_a_resources)
-};
-
-static void __init gpio_a_device_register(void)
-{
-	int ret;
-	printk(KERN_INFO "gpio_a: registering GPIOA device\n");
-	ret = platform_device_register(&gpio_a_dev);
-	if (ret)
-		printk(KERN_WARNING "gpio_a: unable to register\n");
-}
-
-#else
-static inline void gpio_a_device_register(void) { }
-#endif /* CONFIG_MODULE_GPIO */
-
 #if defined(CONFIG_MODULE_SCI)
 static struct resource msci_resources[] = {
 	[0] = {
@@ -269,6 +220,5 @@ void mdevice_platform_register(void)
 	mdemux_device_register();
 	mdvbci_device_register();
 	register_uartirda_device();
-	gpio_a_device_register();
 	msci_device_register();
 }
