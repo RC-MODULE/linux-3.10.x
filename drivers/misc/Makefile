@@ -54,3 +54,6 @@ obj-$(CONFIG_VMWARE_VMCI)	+= vmw_vmci/
 obj-$(CONFIG_LATTICE_ECP3_CONFIG)	+= lattice-ecp3-config.o
 obj-$(CONFIG_SRAM)		+= sram.o
 obj-$(CONFIG_MSVDHD)		+= msvdhd.o
+obj-$(CONFIG_RCMOD_SOC_NMC3)	+= rcmod_soc_nmc3.o
+obj-$(CONFIG_SOC_NMC3_TEST)	+= rcmod_soc_nmc3_test.o
+obj-$(CONFIG_NMCADEC)	+= nmcadec.o

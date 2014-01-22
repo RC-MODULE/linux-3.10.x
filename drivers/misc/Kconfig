@@ -530,6 +530,43 @@ config SRAM
 config MSVDHD
 	tristate "MSVD-HD"
 
+config RCMOD_SOC_NMC3
+	tristate "RC Module SoCs ARM-NMC3 interface"
+	depends on ARCH_UEMD
+	---help---
+	This is driver for ARM-NMC3 interface of RC Module UEMD system.
+
+	This driver can also be built as a module. If so, the module
+	will be called rcmod_soc_nmc3.ko
+
+config NMC3_DESCRIPTORS_LIMIT
+	int "RCMOD_SOC_NMC3 descriptors limit"
+	depends on RCMOD_SOC_NMC3
+	default "8"
+	help
+	   Max possible number of threads working with NMC3.
+
+config SOC_NMC3_TEST
+	tristate "RC Module SoCs ARM-NMC3 interface driver testing"
+	depends on RCMOD_SOC_NMC3
+	---help---
+	Helper for 'RC Module SoCs ARM-NMC3 interface driver' testing.
+	Developed as character device driver.
+
+	This driver can also be built as a module. If so, the module
+	will be called rcmod_soc_nmc3_test.ko
+
+config NMCADEC
+	tristate "Audio (AC3) decoder using NMC3"
+	depends on RCMOD_SOC_NMC3
+	help
+	  This is a kernel-user interface for audio (AC3) decoder that
+	  runs on NMC3 core.
+
+	  NMC3 code is not included, instead it is loaded from userspace
+	  via request_firmware() interface.
+
+
 source "drivers/misc/c2port/Kconfig"
 source "drivers/misc/eeprom/Kconfig"
 source "drivers/misc/cb710/Kconfig"
