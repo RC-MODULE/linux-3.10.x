@@ -32,11 +32,6 @@
 #include <linux/gshark.h>
 #include <linux/msvdhd.h>
 
-#include <linux/mtd/mtd.h>
-#include <linux/mtd/partitions.h>
-
-#include <linux/amba/pl061.h>
-
 #include <linux/mdemux.h>
 
 #include "uemd.h"
