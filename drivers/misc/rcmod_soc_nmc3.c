@@ -29,6 +29,7 @@
 #include <linux/interrupt.h>
 #include <linux/sched.h>
 #include <linux/dma-mapping.h>
+#include <linux/of.h>
 
 #include <asm/pgtable.h>
 #include <asm/io.h>
@@ -913,46 +914,53 @@ static int __init nmc3_probe (struct platform_device *pdev)
 	struct resource *nmrst_res, *nmnmi_res, *nmHPintrCLR_res, *nmLPintrCLR_res;
 	struct resource *nmHPintrSET_res, *nmLPintrSET_res;
 	struct resource *rc;
-	int i;
+	int i, rcount = 0;
 	int ret = 0;
 
 	dbg ("%s",__func__);
 	/******************* platform IO resources (control registers) *****************/
-	vic_LPintrs_ena = platform_get_resource_byname (pdev,
-		IORESOURCE_IO, "vic_LPintrs_ena");
-	if (!vic_LPintrs_ena) {
+	rcount = pdev->num_resources;
+
+	if (!(vic_LPintrs_ena = platform_get_resource_byname (pdev,
+			IORESOURCE_MEM, "vic_LPintrs_ena"))) {
 		printk (KERN_INFO "%s#%d: VIC resource getting ERROR\n", __FILE__,__LINE__);
 		ret = -ENODEV;
 		goto nmc3_probe_out;
 	}
 	if (!(nmnmi_res = platform_get_resource_byname (pdev,
-			IORESOURCE_IO, "nmc3_nmi_reg"))) {
+			IORESOURCE_MEM, "nmc3_nmi_reg"))) {
 		printk (KERN_INFO "%s#%d: resource getting ERROR\n", __FILE__,__LINE__);
 		ret = -ENODEV;
 		goto nmc3_probe_out;
 	}
-	nmrst_res = platform_get_resource_byname (pdev,
-		IORESOURCE_IO, "nmc3_reset_reg");
+
+	if (!(nmrst_res = platform_get_resource_byname (pdev,
+			IORESOURCE_MEM, "nmc3_reset_reg"))) {
+		printk (KERN_INFO "%s#%d: resource getting ERROR\n", __FILE__,__LINE__);
+		ret = -ENODEV;
+		goto nmc3_probe_out;
+	}
+
 	if (!(nmHPintrCLR_res = platform_get_resource_byname (pdev,
-			IORESOURCE_IO, "nmc3_HPintrCLR_reg"))) {
+			IORESOURCE_MEM, "nmc3_HPintrCLR_reg"))) {
 		printk (KERN_INFO "%s#%d: resource getting ERROR\n", __FILE__,__LINE__);
 		ret = -ENODEV;
 		goto nmc3_probe_out;
 	}
 	if (!(nmLPintrCLR_res = platform_get_resource_byname (pdev,
-			IORESOURCE_IO, "nmc3_LPintrCLR_reg"))) {
+			IORESOURCE_MEM, "nmc3_LPintrCLR_reg"))) {
 		printk (KERN_INFO "%s#%d: resource getting ERROR\n", __FILE__,__LINE__);
 		ret = -ENODEV;
 		goto nmc3_probe_out;
 	}
 	if (!(nmHPintrSET_res = platform_get_resource_byname (pdev,
-			IORESOURCE_IO, "nmc3_HPintrSET_reg"))) {
+			IORESOURCE_MEM, "nmc3_HPintrSET_reg"))) {
 		printk (KERN_INFO "%s#%d: resource getting ERROR\n", __FILE__,__LINE__);
 		ret = -ENODEV;
 		goto nmc3_probe_out;
 	}
 	if (!(nmLPintrSET_res = platform_get_resource_byname (pdev,
-			IORESOURCE_IO, "nmc3_LPintrSET_reg"))) {
+			IORESOURCE_MEM, "nmc3_LPintrSET_reg"))) {
 		printk (KERN_INFO "%s#%d: resource getting ERROR\n", __FILE__,__LINE__);
 		ret = -ENODEV;
 		goto nmc3_probe_out;
@@ -978,10 +986,8 @@ static int __init nmc3_probe (struct platform_device *pdev)
 					is sign of working NMC3 application */
 		dscr->NMC3_thread_dscr[i].dscr = dscr;
 	}
-	dscr->vic_LPintrs_ena = ioremap(vic_LPintrs_ena->start,
-		vic_LPintrs_ena->end - vic_LPintrs_ena->start + 1); /* this resource
-					contains virtual address of the register */
-	if (!(dscr->vic_LPintrs_ena)) {
+	if (!(dscr->vic_LPintrs_ena = ioremap(vic_LPintrs_ena->start,
+		vic_LPintrs_ena->end - vic_LPintrs_ena->start + 1))) {
 		printk(KERN_INFO "%s#%d, ioremap ERROR\n", __FILE__,__LINE__);
 		ret = -ENOMEM;
 		goto nmc3_probe_thr_free;
@@ -992,8 +998,12 @@ static int __init nmc3_probe (struct platform_device *pdev)
 		ret = -ENOMEM;
 		goto nmc3_probe_vic_unmap;
 	}
-	dscr->nmreset = ioremap(nmrst_res->start,
-		nmrst_res->end - nmrst_res->start + 1);
+	if (!(dscr->nmreset = ioremap(nmrst_res->start,
+		nmrst_res->end - nmrst_res->start + 1))) {
+		printk(KERN_INFO "%s#%d, ioremap ERROR\n", __FILE__,__LINE__);
+		ret = -ENOMEM;
+		goto nmc3_probe_nmrst_unmap;
+	}
 	if (!(dscr->nmLPintr_clr = ioremap(nmLPintrCLR_res->start,
 			nmHPintrCLR_res->end - nmHPintrCLR_res->start + 1))) {
 		printk(KERN_INFO "%s#%d, ioremap ERROR\n", __FILE__,__LINE__);
@@ -1018,10 +1028,21 @@ static int __init nmc3_probe (struct platform_device *pdev)
 		ret = -ENOMEM;
 		goto nmc3_probe_nmlpiset_unmap;
 	}
-	/********** NMC3 memory banks ***********/
 
-	i=0;
-	while ((rc = platform_get_resource(pdev, IORESOURCE_MEM, i))) {
+	/********** NMC3 memory banks ***********/
+	if (of_property_read_u32(pdev->dev.of_node, "bank-count", &dscr->nmc3_bank_count) < 0) {
+		dev_err(&pdev->dev, "Missing required parameter 'bank-count'\n");
+		return -ENODEV;
+	}
+	if (!dscr->nmc3_bank_count) {
+		printk(KERN_INFO "%s#%d, ERROR no NMC3 mem banks are described\n", __FILE__,__LINE__);
+		ret = -ENODEV;
+		goto nmc3_probe_nmhpiset_unmap;
+	}
+	dbg ("bank_count=%d",dscr->nmc3_bank_count);
+
+	for (i=0; i<dscr->nmc3_bank_count; i++) {
+		rc = platform_get_resource(pdev, IORESOURCE_MEM, i + 7);
 		dscr->nmc3_bank_ln[i] = rc->end - rc->start + 1;
 		dscr->nmc3_bank_base_phys[i] = rc->start;
 		if (!(dscr->nmc3_bank_base_virt[i] = ioremap_nocache (rc->start,
@@ -1031,19 +1052,11 @@ static int __init nmc3_probe (struct platform_device *pdev)
 			dscr->nmc3_bank_count = i;
 			goto nmc3_probe_nmhpiset_unmap;
 		}
-		i++;
+		dbg ("bank%i: start 0x%x ln 0x%x", i, (unsigned int)dscr->nmc3_bank_base_phys[i],
+			(unsigned int)dscr->nmc3_bank_ln[i]);
 	}
-	if (i)
-		dscr->nmc3_bank_count = i;
-	else {
-		printk(KERN_INFO "%s#%d, ERROR no NMC3 mem banks are described\n", __FILE__,__LINE__);
-		ret = -ENODEV;
-		goto nmc3_probe_nmhpiset_unmap;
-	}
-	
-	dbg ("bank_count=%d",dscr->nmc3_bank_count);
 	for (i=0; i<dscr->nmc3_bank_count; i++) {
-		if (!(rc = platform_get_resource(pdev, IORESOURCE_DMA, i))) {
+		if (!(rc = platform_get_resource(pdev, IORESOURCE_MEM, i + 7 + dscr->nmc3_bank_count))) {
 			printk (KERN_INFO "%s#%d: resource isn't found ERROR %d\n",
 				__FILE__,__LINE__,i);
 			ret = -ENODEV;
@@ -1062,30 +1075,33 @@ static int __init nmc3_probe (struct platform_device *pdev)
 	dbg ("bank0 phys=0x%x/0x%x, bank2 phys = 0x%x/0x%x)",
 		dscr->nmc3_bank_base_phys[0],dscr->nmc3_bank_base_phys_internal[0],
 		dscr->nmc3_bank_base_phys[2], dscr->nmc3_bank_base_phys_internal[2]);
-	if (!(rc = platform_get_resource(pdev, IORESOURCE_IRQ, 0))) {
-		printk (KERN_INFO "%s#%d: irq0 resource gettint ERROR\n",  __FILE__,__LINE__);
-		ret = -ENODEV;
-		goto nmc3_probe_nmhpiset_unmap;
-	}
-	dscr->HPirq = rc->start;
-	if (!(rc = platform_get_resource(pdev, IORESOURCE_IRQ, 1))) {
-		printk (KERN_INFO "%s#%d: irq1 resource gettint ERROR\n",  __FILE__,__LINE__);
-		ret = -ENODEV;
-		goto nmc3_probe_nmhpiset_unmap;
-	}
-	dscr->LPirq = rc->start;
 
-	if ((ret = request_irq (dscr->HPirq, HPisr, 0, NMC3_PROCNAME, dscr)) < 0) {
+	/********** NMC3 IRQs ***********/
+	dscr->HPirq = platform_get_irq(pdev, 0);
+	if (!dscr->HPirq) {
+		printk(KERN_INFO "%s#%d: failed to find device HP irq\n", __FILE__,__LINE__);
+		goto nmc3_probe_nmhpiset_unmap;
+	}
+	dscr->LPirq = platform_get_irq(pdev, 1);
+	if (!dscr->LPirq) {
+		printk(KERN_INFO "%s#%d: failed to find device LP irq\n", __FILE__,__LINE__);
+		goto nmc3_probe_nmhpiset_unmap;
+	}
+
+	if ((ret = devm_request_irq (&pdev->dev, dscr->HPirq, HPisr, 0, NMC3_PROCNAME, dscr)) < 0) {
 		printk (KERN_INFO "%s#%d: request_irq ERROR %d", __FILE__,__LINE__, ret);
 		goto nmc3_probe_nmhpiset_unmap;
 	} 
-	if ((ret = request_irq (dscr->LPirq, LPisr, 0, NMC3_PROCNAME, dscr)) < 0) {
+	if ((ret = devm_request_irq (&pdev->dev, dscr->LPirq, LPisr, 0, NMC3_PROCNAME, dscr)) < 0) {
 		printk (KERN_INFO "%s#%d: request_irq ERROR %d", __FILE__,__LINE__, ret);
 		goto nmc3_probe_hpirqfree;
 	}
 
 	INIT_LIST_HEAD(&dscr->list);
-	dscr->num = pdev->id;
+	if (of_property_read_u32(pdev->dev.of_node, "device-id", &pdev->id) < 0) {
+		dev_err(&pdev->dev, "Missing required parameter 'device-id'\n");
+		return -ENODEV;
+	}
 	sprintf (dscr->Name, "%s_%d", NMC3_PROCNAME, pdev->id);
 	dbg ("nmc3_desc:next=%p,prev=%p",nmc3_dscr.next,nmc3_dscr.prev);
 	list_add_tail(&dscr->list, &nmc3_dscr);
@@ -1167,31 +1183,24 @@ static int nmc3_remove (struct platform_device *pdev)
 	return ret;
 }
 
-static struct platform_driver nmc3_driver = {
-	.remove = nmc3_remove,
-	.probe = nmc3_probe,
-	.driver = {
-		.name = "rcmod_soc_nmc3",
-	}
+static const struct of_device_id module_nmc3_of_match_table[] = {
+	{ .compatible = "module,nmc3", },
+	{ /* end of list */ }
 };
+MODULE_DEVICE_TABLE(of, module_nmc3_of_match_table);
 
-static int __init rcmod_soc_nmc3_init (void)
-{
-	int ret;
-	ret = platform_driver_register(&nmc3_driver);
-	dbg ("ret = %d", ret);
-	printk(KERN_INFO "RCMOD SOC, ARM-NMC3 interface driver for Linux, version %s\n",
-		NMC3_DRIVER_VERSION);
-	return ret;
-}
+static struct platform_driver module_nmc3 = {
+	.probe		= nmc3_probe,
+	.remove		= nmc3_remove,
+	.driver		= {
+		.owner	= THIS_MODULE,
+		.name	= "rcmod_soc_nmc3",
+		.of_match_table = of_match_ptr(module_nmc3_of_match_table),
+	},
+};
+MODULE_ALIAS("platform:rcmod_soc_nmc3");
 
-static void __exit rcmod_soc_nmc3_exit (void)
-{
-	platform_driver_unregister(&nmc3_driver);
-}
-
-module_init(rcmod_soc_nmc3_init);
-module_exit(rcmod_soc_nmc3_exit);
+module_platform_driver(module_nmc3);
 
 /* Module parameters */
 MODULE_AUTHOR ("Gennadiy Kurtsman <gkurtsman@module.ru>");

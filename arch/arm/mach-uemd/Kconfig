@@ -98,26 +98,12 @@ config MODULE_UARTIRDA
 	help
 	 Enable UART connected to IRDA sensor.
  
-
-config MODULE_GPIO
-	depends on MACH_UEMD
-	bool "Enable GPIO platform device"
-	help
-	 Register GPIO platform device.
-
 config MODULE_SCI
 	depends on MACH_UEMD
 	bool "Enable SCI platfrom device"
 	help
 	 Enable SCI platform resources. msci driver should handle 
 	 this device.
-
-config MACH_UEMD_NMC3
-	depends on MACH_UEMD
-	bool "Enable NMC3 platform device"
-	help
-	 Enable NMC3 platform device that could be used to communicate with
-	 NMC3 cpu core.
 
 endmenu
 endmenu
