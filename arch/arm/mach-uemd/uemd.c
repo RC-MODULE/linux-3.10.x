@@ -89,6 +89,13 @@ static void uemd_level_irq_i2c3_fixup(unsigned int irq, struct irq_desc *desc)
 	handle_level_irq(irq, desc);
 }
 
+int is_chip_virgin()
+{
+	void __iomem *address = (void*)(UEMD_AREA0_VIRT_BASE + SMCONFIG_REG_H- UEMD_AREA0_PHYS_BASE);
+	return ~(ioread32(address) & SMCONFIG_CONF_LOCK);
+}
+EXPORT_SYMBOL(is_chip_virgin);
+
 static struct map_desc uemd_io_desc[] __initdata = {
 	{
 		.virtual	= UEMD_AREA0_VIRT_BASE,
@@ -178,6 +185,9 @@ static void __init uemd_init(void)
 	if(g_uemd_mif == NULL) {
 		panic("UEMD: Unable to map MIF registers");
 	}
+
+	/* Check OTP ROM state */
+	pr_info("OTP ROM is %s flashed\n", is_chip_virgin() ? "not" : "");
 
 	/* i2c interrupts bug fix */
 	irq_set_handler(33, uemd_level_irq_i2c0_fixup);

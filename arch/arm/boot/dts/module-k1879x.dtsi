@@ -89,6 +89,13 @@
 			irq_start = <32>;
 		};
 
+		pinmux: sysconfigh@0x20033084 {
+			compatible = "module,pinmux";
+			reg = <0x20033084 0x4>;
+			reg-names = "controlH";
+			settings = <0 0 0 1>; // DVB, TS1, TS2, NAND; 0 = GPIO, 1 = peripheral
+		};
+
 		crypto1: aes@20040000 {
 			compatible = "module,mcrypto_aes";
 			reg = <0x20040000 0x80>;
