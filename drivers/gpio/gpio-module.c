@@ -14,8 +14,9 @@
 #include <linux/platform_device.h>
 #include <linux/device.h>
 #include <linux/of_platform.h>
+#include <linux/io.h>
 
-#include <asm/io.h>
+#include <mach/platform.h>
 
 #define DRIVER_NAME "module,pinmux"
 
@@ -31,8 +32,6 @@ static char *modules[] = {
 	"NAND",
 };
 
-int is_chip_virgin(void);
-
 static int of_pinmux_probe(struct platform_device *pdev)
 {
 	int i, ret = 0;
@@ -46,47 +45,59 @@ static int of_pinmux_probe(struct platform_device *pdev)
 		goto out;
 	}
 
-	if (!(device = devm_kzalloc(&pdev->dev, sizeof (struct pmux_device), GFP_KERNEL))) {
+	device = devm_kzalloc(&pdev->dev, sizeof(struct pmux_device),
+				GFP_KERNEL);
+	if (!device) {
 		dev_err(&pdev->dev, "failed to allocate memory for device structure\n");
 		ret = -ENOMEM;
 		goto out;
 	}
 
 	/* Parsing fields in DTS */
-	if (!(device->reg = platform_get_resource_byname(pdev, IORESOURCE_MEM, "controlH"))) {
+	device->reg = platform_get_resource_byname(pdev, IORESOURCE_MEM,
+					"controlH");
+	if (!device->reg) {
 		dev_err(&pdev->dev, "failed to find controlH register\n");
 		ret = -ENOENT;
 		goto out;
 	}
 
-	if (!(prop = of_find_property(pdev->dev.of_node, "settings", NULL))) {
+	prop = of_find_property(pdev->dev.of_node, "settings", NULL);
+	if (!prop) {
 		dev_err(&pdev->dev, "failed to find property 'settings' in DTS\n");
 		ret = -ENOENT;
 		goto out;
 	}
 
-	if ((nmodes = prop->length / sizeof (unsigned long)) != ARRAY_SIZE(modules)) {
-		dev_err(&pdev->dev, "invalid modules count. Initialization will be skipped\n");
+	nmodes = prop->length / sizeof(unsigned long);
+	if (nmodes != ARRAY_SIZE(modules)) {
+		dev_err(&pdev->dev,
+				"invalid modules count. Initialization will be skipped\n");
 		ret = -EINVAL;
 		goto out;
 	}
 
-	if (!(mode_list = devm_kzalloc(&pdev->dev, nmodes * sizeof (*mode_list), GFP_KERNEL))) {
+	mode_list = devm_kzalloc(&pdev->dev, nmodes * sizeof(*mode_list),
+					GFP_KERNEL);
+	if (!mode_list) {
 		dev_err(&pdev->dev, "failed to allocate memory for mode list\n");
 		ret = -ENOMEM;
 		goto out;
 	}
 
-	of_property_read_u32_array(pdev->dev.of_node, "settings", mode_list, nmodes);
+	of_property_read_u32_array(pdev->dev.of_node, "settings", mode_list,
+		nmodes);
 
 	/* Setting modes according to module configuration */
 	for (i = 0; i < ARRAY_SIZE(modules); i++) {
-		dev_info(&pdev->dev, "%s mode is %s (%d)\n", modules[i], mode_list[i] ? "peripheral" : "GPIO", mode_list[i]);
+		dev_info(&pdev->dev, "%s mode is %s (%d)\n", modules[i],
+			mode_list[i] ? "peripheral" : "GPIO", mode_list[i]);
 		mask |= ((mode_list[i] ? 1 : 0) << (i + 3));
 	}
 
 	/* Obtaining a pointer to io memory */
-	if (!(device->io = devm_request_and_ioremap(&pdev->dev, device->reg))) {
+	device->io = devm_request_and_ioremap(&pdev->dev, device->reg);
+	if (!device->io) {
 		dev_err(&pdev->dev, "cant remap io memory\n");
 		ret = -ENOMEM;
 		goto out;
