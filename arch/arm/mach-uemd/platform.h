@@ -142,5 +142,9 @@
 #define UEMD_USB_PHYS_BASE        UEMD_PHYS(AREA2, 0)
 #define UEMD_USB_IRQ              UEMD_IRQ(35)
 
+/* User OTP ROM reg addresses */
+#define SMCONFIG_REG_H            0x20033084
+#define SMCONFIG_CONF_LOCK        (1 << 24)
+
 #endif
 

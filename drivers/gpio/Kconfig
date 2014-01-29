@@ -529,6 +529,13 @@ config GPIO_ADNP
 	  enough to represent all pins, but the driver will assume a
 	  register layout for 64 pins (8 registers).
 
+config GPIO_MODULE
+	bool "Module pinmux control"
+	depends on MACH_UEMD
+	help
+		Enable support for pin multiplexing on booting stage
+		Supported modules are DVB, TS1, TS2, NAND
+
 comment "PCI GPIO expanders:"
 
 config GPIO_CS5535
