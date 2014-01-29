@@ -36,7 +36,7 @@
 #include <asm/ioctl.h>
 
 #define DEBUG
-//#undef DEBUG
+#undef DEBUG
 
 #include <linux/rcmod_soc_nmc3.h>
 
