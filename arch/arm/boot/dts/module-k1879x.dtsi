@@ -123,6 +123,18 @@
 				status = "disabled";
 			};
 
+			uart0: uart@b000 {
+				device-type = "serial";
+				reg = <0xb000 0x1000>;
+				compatible = "ns8250";
+				clocks = <&clk_apb>;
+				clock-names = "apb_pclk";
+				clock-frequency = <54000000>;
+				interrupt-parent = <&vic0>;
+				interrupts = <7>;
+				reg-shift = <2>;
+			};
+
 			uart2: uart@2000 {
 				device-type = "serial";
 				reg = <0x2000 0x1000>;
@@ -203,17 +215,6 @@
 				clock-names = "apb_pclk";
 			};
 
-			uart0: uart@b000 {
-				device-type = "serial";
-				reg = <0xb000 0x1000>;
-				compatible = "ns8250";
-				clocks = <&clk_apb>;
-				clock-names = "apb_pclk";
-				clock-frequency = <54000000>;
-				interrupt-parent = <&vic0>;
-				interrupts = <7>;
-				reg-shift = <2>;
-			};
 
 			uart1: uart@c000 {
 				device-type = "serial";
