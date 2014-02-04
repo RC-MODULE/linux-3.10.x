@@ -241,9 +241,13 @@
 				status = "disabled";
 			};
 
-			gpio@f000 {
+			gpio_3: gpio@f000 {
+				#gpio-cells = <2>;
+				compatible = "arm,pl061", "arm,primecell";
+				gpio-controller;
 				reg = <0xf000 0x1000>;
-				compatible = "xxx";
+				interrupt-parent = <&vic1>;
+				interrupts = <25>; /* 57 */
 				clocks = <&clk_apb>;
 				clock-names = "apb_pclk";
 			};
@@ -274,7 +278,29 @@
 					#size-cells = <0>;
 				};
 			};
-			
+
+			gpio_4: gpio@5000 {
+				#gpio-cells = <2>;
+				compatible = "arm,pl061", "arm,primecell";
+				gpio-controller;
+				reg = <0x5000 0x1000>;
+				interrupt-parent = <&vic1>;
+				interrupts = <26>; /* 58 */
+				clocks = <&clk_apb>;
+				clock-names = "apb_pclk";
+			};
+
+			gpio_5: gpio@6000 {
+				#gpio-cells = <2>;
+				compatible = "arm,pl061", "arm,primecell";
+				gpio-controller;
+				reg = <0x6000 0x1000>;
+				interrupt-parent = <&vic0>;
+				interrupts = <27>; /* 27 */
+				clocks = <&clk_apb>;
+				clock-names = "apb_pclk";
+			};
+
 			crypto0: des@d000 {
 				compatible = "module,mcrypto";
 				reg = <0xd000 0x1000>;
