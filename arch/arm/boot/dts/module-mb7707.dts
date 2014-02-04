@@ -30,7 +30,7 @@
 	};
 
 	chosen {
-		bootargs = "ignore_loglevel console=ttyS1,38400n8 earlyprintk=serial mtdparts=mnand:0x40000@0x0(boot),0x40000@0x40000(env),0x80000@0x80000(kernel_dtb),0x400000@0x100000(kernel),0x3FB00000@0x500000(rootfs) ubi.mtd=4,2048 root=ubi0:rootfs rootfstype=ubifs";
+		bootargs = "ignore_loglevel console=ttyS0,38400n8 earlyprintk=serial mtdparts=mnand:0x40000@0x0(boot),0x40000@0x40000(env),0x80000@0x80000(kernel_dtb),0x400000@0x100000(kernel),0x3FB00000@0x500000(rootfs) ubi.mtd=4,2048 root=ubi0:rootfs rootfstype=ubifs";
 	};
 
 	external_osc: oscillator {
