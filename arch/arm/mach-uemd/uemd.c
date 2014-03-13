@@ -232,6 +232,9 @@ static void __init uemd_init(void)
 
 	iowrite32(0x2ac1, (void __iomem*)0xf803c000);
 
+	/* set axi2spi to APB mode; 0xf802e100 - AXI_SPI_MODE reg */
+	iowrite32(0x1, (void __iomem*)0xf802e100);
+
 #if defined (CONFIG_MODULE_TSP)
 	// Enable TSP external interface
 	r = ioread32((void __iomem*)0xf8033084);

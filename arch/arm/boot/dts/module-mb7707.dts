@@ -113,7 +113,7 @@
 		pl022,hierarchy = <0>;
 		pl022,interface = <0>;
 		pl022,slave-tx-disable;
-		pl022,com-mode = <0x0>; /* polling mode */
+		pl022,com-mode = <0x1>; /* polling mode */
 		pl022,rx-level-trig = <0>;
 		pl022,tx-level-trig = <0>;
 		pl022,ctrl-len = <0x11>;
@@ -128,7 +128,7 @@
 		pl022,hierarchy = <0>;
 		pl022,interface = <0>;
 		pl022,slave-tx-disable;
-		pl022,com-mode = <0x0>; /* polling mode */
+		pl022,com-mode = <0x1>; /* polling mode */
 		pl022,rx-level-trig = <0>;
 		pl022,tx-level-trig = <0>;
 		pl022,ctrl-len = <0x11>;

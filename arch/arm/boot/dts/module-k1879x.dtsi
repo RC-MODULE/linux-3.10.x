@@ -147,10 +147,10 @@
 				reg-shift = <2>;
 			};
 
-			ssp1: ssp@3000 {
+			ssp1: ssp@e000 {
 				compatible = "arm,pl022", "arm,primecell";
 				bus-id = <1>;
-				reg = <0x3000 0x1000>;
+				reg = <0xe000 0x1000>;
 				#address-cells = <1>;
 				#size-cells = <0>;
 				interrupts = <0>; /* 32 */
@@ -159,6 +159,8 @@
 				clock-names = "apb_pclk";
 				num-cs = <2>;
 				status = "disabled";
+				/* FIXME: no periphid at 0xe000 reg */
+				arm,primecell-periphid = <0x41022>;
 			};
 
 			/*timer@4000 {
