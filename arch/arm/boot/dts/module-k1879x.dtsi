@@ -149,7 +149,7 @@
 
 			ssp1: ssp@e000 {
 				compatible = "arm,pl022", "arm,primecell";
-				bus-id = <1>;
+				bus-id = <0>;
 				reg = <0xe000 0x1000>;
 				#address-cells = <1>;
 				#size-cells = <0>;
