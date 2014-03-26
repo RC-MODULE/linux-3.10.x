@@ -531,11 +531,14 @@ config MSVDHD
 	tristate "MSVD-HD"
 
 config RCMOD_SOC_NMC3
-	tristate "RC Module SoCs ARM-NMC3 interface"
-	depends on ARCH_UEMD
+	tristate "RC Module Legacy ARM-NMC3 interface"
+	depends on ARCH_UEMD 
 	---help---
 	This is driver for ARM-NMC3 interface of RC Module UEMD system.
-
+	This driver is considered legacy and will be removed in future
+	versions. Newer (libload-friendly) driver is now a char device
+	and can be found under "Character Devices" section.
+	
 	This driver can also be built as a module. If so, the module
 	will be called rcmod_soc_nmc3.ko
 
