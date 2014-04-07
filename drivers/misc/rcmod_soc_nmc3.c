@@ -1184,7 +1184,7 @@ static int nmc3_remove (struct platform_device *pdev)
 }
 
 static const struct of_device_id module_nmc3_of_match_table[] = {
-	{ .compatible = "module,nmc3", },
+	{ .compatible = "module,nmc3legacy", },
 	{ /* end of list */ }
 };
 MODULE_DEVICE_TABLE(of, module_nmc3_of_match_table);
@@ -1204,7 +1204,7 @@ module_platform_driver(module_nmc3);
 
 /* Module parameters */
 MODULE_AUTHOR ("Gennadiy Kurtsman <gkurtsman@module.ru>");
-MODULE_DESCRIPTION ("RC MODULE SOC: Driver of ARM-NMC3 interface");
+MODULE_DESCRIPTION ("RC MODULE SOC: Legacy driver of ARM-NMC3 interface");
 MODULE_LICENSE("GPL");
 MODULE_VERSION(NMC3_DRIVER_VERSION);
 

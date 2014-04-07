@@ -388,7 +388,7 @@
 				output_flags = <0x200>; /* MVDU_OFLAG_SDTV_SEQ | MVDU_OFLAG_EXT_SYNC | MVDU_OFLAG_NO_INT_SYNC */
 				axi_osd_param = <0x0f310000>;
 				axi_mvl_param = <0x0f310000>;
-				vdubuffer = <0xc0000000 0x7800000>;
+				vdubuffer = <0xc0000000 0x2000000>; /* 32MB  EM1 !*/
 				status = "disabled";
 			};
 		};
@@ -407,7 +407,7 @@
 		video_decoder: video_decoder@80180000 {
 			compatible = "module,msvdhd";
 			reg = <0x80180000 0x20000>,
-				<0xc7800000 0x800000>,
+				<0xc2000000 0x800000>, /* EM1! */
 				<0x80100000 0x40000>;
 			reg-names = "res", "extmem", "intmem";
 			interrupts = <12>; /* 44 */
@@ -415,12 +415,34 @@
 			status = "disabled";
 		};
 
+
 		nmc3 {
 			compatible = "module,nmc3";
 			device-id = <0>;
+			reg =   
+				/* Internal memory banks list */
+				<0x00100000 0x00040000>, /* im0 */
+				<0x00140000 0x00040000>, /* im1 */
+ 				<0x00180000 0x00040000>, /* im3 */
+				<0xc2800000 0x5800000>; /* EM1 BUFFER ! */
+			bank-count = <4>;
+			reg-names = 
+				    "im0",
+				    "im1",
+				    "im3",
+				    "em1";
 
-				  /* Control registers list */
-			reg =   <0x20000f00 0x4>, /* VIC0 address space */
+			interrupt-parent = <&vic0>;
+			interrupts = <14 15>; /* HP LP */
+			status = "okay";
+		};
+
+		nmc3legacy {
+			compatible = "module,nmc3legacy";
+			device-id = <0>;
+
+			/* Control registers list */
+			reg = <0x20000f00 0x4>, /* VIC0 address space */
 				<0x2003c010 0x4>, /* SCTL address space */
 				<0x2003c004 0x4>,
 				<0x2003c034 0x4>,
@@ -428,14 +450,14 @@
 				<0x2003c038 0x4>,
 				<0x2003c03c 0x4>,
 
-				/* Internal memory banks list */
+                                /* Internal memory banks list */
 				<0x00140000 0x00020000>, // nmc3_bank_0
 				<0x00160000 0x00020000>, // nmc3_bank_1
 				<0x00180000 0x00020000>, // nmc3_bank_2
 				<0x001a0000 0x00020000>, // nmc3_bank_3
 				<0x00100000 0x00040000>, // im0
 
-				/* DMA ranges */
+                                /* DMA ranges */
 				<0x00000000 0x00008000>,
 				<0x00008000 0x00008000>,
 				<0x00010000 0x00008000>,
@@ -443,14 +465,15 @@
 				<0x00040000 0x00010000>;
 			bank-count = <5>;
 			reg-names = "vic_LPintrs_ena",
-			            "nmc3_reset_reg",
-			            "nmc3_nmi_reg",
-			            "nmc3_HPintrCLR_reg",
-			            "nmc3_LPintrCLR_reg",
-			            "nmc3_HPintrSET_reg",
-			            "nmc3_LPintrSET_reg";
+				"nmc3_reset_reg",
+				"nmc3_nmi_reg",
+				"nmc3_HPintrCLR_reg",
+				"nmc3_LPintrCLR_reg",
+				"nmc3_HPintrSET_reg",
+				"nmc3_LPintrSET_reg";
 			interrupt-parent = <&vic0>;
 			interrupts = <14 15>; /* HP LP */
+			status="disabled";
 		};
 	};
-};
+ };
