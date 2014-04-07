@@ -605,5 +605,13 @@ config TILE_SROM
 	  device appear much like a simple EEPROM, and knows
 	  how to partition a single ROM for multiple purposes.
 
+config RCMOD_SOC_NMC3_LIBLOAD
+    tristate "RC Module NMC3 interface driver"
+    depends on ARCH_UEMD
+    default y
+    help
+       Newer libload-friendly NMC3 interface driver.
+
+
 endmenu
 

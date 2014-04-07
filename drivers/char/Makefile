@@ -62,3 +62,6 @@ obj-$(CONFIG_JS_RTC)		+= js-rtc.o
 js-rtc-y = rtc.o
 
 obj-$(CONFIG_TILE_SROM)		+= tile-srom.o
+
+obj-$(CONFIG_RCMOD_SOC_NMC3_LIBLOAD)    += rcmod_nmc3.o
+
