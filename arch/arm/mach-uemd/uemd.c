@@ -89,12 +89,12 @@ static void uemd_level_irq_i2c3_fixup(unsigned int irq, struct irq_desc *desc)
 	handle_level_irq(irq, desc);
 }
 
-int is_chip_virgin()
+int uemd_is_virgin()
 {
 	void __iomem *address = (void*)(UEMD_AREA0_VIRT_BASE + SMCONFIG_REG_H- UEMD_AREA0_PHYS_BASE);
 	return ~(ioread32(address) & SMCONFIG_CONF_LOCK);
 }
-EXPORT_SYMBOL(is_chip_virgin);
+EXPORT_SYMBOL(uemd_is_virgin);
 
 static struct map_desc uemd_io_desc[] __initdata = {
 	{
@@ -174,12 +174,21 @@ static inline void msvdhd_preinit(void)
 static inline void msvdhd_preinit(void) {}
 #endif /* MSVDHD */
 
+void uemd_pm_restart(char mode, const char *cmd)
+{
+	pr_info("platform: Requested system restart\n");
+	void __iomem *regs;
+	regs = ioremap_nocache(0x20025000, 0xfff);
+	iowrite32(1, (regs + 0xf00));
+	iowrite32(1, (regs + 0xf04));
+	/* Goodbye! */
+}
+
 static void __init uemd_init(void)
 {
 	void __iomem *address;
 
 	of_platform_populate(NULL, of_default_bus_match_table, NULL, NULL);
-
 
 	g_uemd_mif = ioremap_nocache(UEMD_MIF_PHYS_BASE, UEMD_MIF_SIZE);
 	if(g_uemd_mif == NULL) {
@@ -187,7 +196,7 @@ static void __init uemd_init(void)
 	}
 
 	/* Check OTP ROM state */
-	pr_info("OTP ROM is %s flashed\n", is_chip_virgin() ? "not" : "");
+	pr_info("OTP ROM is %s flashed\n", uemd_is_virgin() ? "not" : "");
 
 	/* i2c interrupts bug fix */
 	irq_set_handler(33, uemd_level_irq_i2c0_fixup);
@@ -345,7 +354,8 @@ DT_MACHINE_START(UEMD, "Module MB77.07")
 	.nr_irqs		= NR_IRQS_LEGACY,
 	.init_irq		= irqchip_init,
 	.init_time		= uemd_dt_timer_init,
-	.init_machine	= uemd_init,
+	.init_machine	        = uemd_init,
 	.dt_compat		= module_dt_match,
 	.reserve		= uemd_reserve,
+	.restart                = uemd_pm_restart
 MACHINE_END
