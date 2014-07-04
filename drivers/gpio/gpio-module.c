@@ -40,7 +40,7 @@ static int of_pinmux_probe(struct platform_device *pdev)
 	struct property *prop;
 	struct pmux_device *device;
 
-	if (!is_chip_virgin()) {
+	if (!uemd_is_virgin()) {
 		dev_err(&pdev->dev, "can't set muxers for pins: OTP ROM was flashed\n");
 		goto out;
 	}
