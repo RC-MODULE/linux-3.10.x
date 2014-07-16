@@ -1,0 +1,56 @@
+Abstract
+--------
+EasyNMC driver is a very simple framework, that allows you to easily utilize 
+NeuroMatrix DSP from linux userspace. It is loosely inspired by spufs, yet is
+a big deal simpler in design.
+
+Assumptions
+-----------
+The driver assumes that a DSP core: 
+Has 3 interrupts from Host to NMC: 
+NMI, HP, LP
+Has 2 interrupts from NMC to Host:
+HP, LP
+Each core has a dedicated bunch of SRAM memory to run (at least startup code) 
+from.
+
+From userspace point of view
+----------------------------
+For each nmc core you get a /dev/nmcNio and /dev/nmcNmem, where N=0,1,2,...
+and a set nmc-utils that allow you to deal with these devices. 
+/dev/nmcNio is a stdio device. Think of it as of a oversimplified serial port.
+You can read and write stdio data to your app, use select/epoll and friends, 
+optionally reformatting string data for NMC. Before you can use /dev/nmcXio you 
+should 'attach' circular buffers to this interface via ioctl. 
+nmc-utils code does that automagically if it finds the corresponding sections in
+your nmc app.
+
+
+/dev/nmcNmem is a device that allows you to read, write and mmap NMC memory to
+a userspace application. 
+For the rest - a small set of ioctl's does the job and a small set of utils can 
+use them from userspace. 
+You can use select/poll to monitor incoming interrupts. POLLIN will report an LP, 
+and POLLPRI will report an HP interrupt. This stuff is all EDGE-triggered. 
+LP is reserved for stdio, so if you have stdio attached - you will NOT receive any
+LP notifications via select/poll. 
+
+But stdin/stdout and argc/argv is a thing of the past!
+------------------------------------------------------
+It is. Normally, for a high performance app you would avoid copying the data
+over and over via the circular buffer and implement some kind of messagebox. 
+The easynmc driver supports stdio as a very convenient for debugging and 
+testing. It is absolutely optional.
+If you want something better - grab libeasynmc and make your own data exchange
+mechanism.
+
+From kernel space
+-----------------
+No kernel-level API is provided at this time, apart from 
+easynmc_register_core/easynmc_deregister_core. Not really needed at this time.
+
+Utilities
+---------
+nmctl  - Control your NMC cores
+nmrun  - Wrapper to run nmc application as if it was a userspace app
+nmlog  - redirect stdin/stdout to a logfile/syslog/whatever, can be run as a daemon
