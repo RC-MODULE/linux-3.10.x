@@ -57,3 +57,8 @@ obj-$(CONFIG_MSVDHD)		+= msvdhd.o
 obj-$(CONFIG_RCMOD_SOC_NMC3)	+= rcmod_soc_nmc3.o
 obj-$(CONFIG_SOC_NMC3_TEST)	+= rcmod_soc_nmc3_test.o
 obj-$(CONFIG_NMCADEC)	+= nmcadec.o
+
+obj-$(CONFIG_EASYNMC) += easynmc.o
+obj-$(CONFIG_EASYNMC_CORE_TEST) += easynmc-core-test.o
+obj-$(CONFIG_EASYNMC_CORE_NMC3) += easynmc-core-nmc3.o
+

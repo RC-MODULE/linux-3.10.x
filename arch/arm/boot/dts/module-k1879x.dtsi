@@ -203,7 +203,7 @@
 
 			gpio@9000 {
 				reg = <0x9000 0x1000>;
-				compatible = "xxx";
+				compatible = "rcm,fgpio";
 			};
 
 			gpio_a: gpio@a000 {
@@ -215,8 +215,8 @@
 				interrupts = <31>; /* 63 */
 				clocks = <&clk_apb>;
 				clock-names = "apb_pclk";
+				gpio-base = <0>; 
 			};
-
 
 			uart1: uart@c000 {
 				device-type = "serial";
@@ -415,65 +415,33 @@
 			status = "disabled";
 		};
 
-
-		nmc3 {
-			compatible = "module,nmc3";
+		nmcore0 {
+			compatible = "rcm,easynmc";
+			core-name = "K1879-nmc";
+			core-type = "nmc3";
 			device-id = <0>;
 			reg =   
-				/* Internal memory banks list */
-				<0x00100000 0x00040000>, /* im0 */
-				<0x00140000 0x00040000>, /* im1 */
- 				<0x00180000 0x00040000>, /* im3 */
-				<0xc2800000 0x5800000>; /* EM1 BUFFER ! */
-			bank-count = <4>;
-			reg-names = 
-				    "im0",
-				    "im1",
-				    "im3",
-				    "em1";
-
-			interrupt-parent = <&vic0>;
-			interrupts = <14 15>; /* HP LP */
-			status = "okay";
-		};
-
-		nmc3legacy {
-			compatible = "module,nmc3legacy";
-			device-id = <0>;
-
-			/* Control registers list */
-			reg = <0x20000f00 0x4>, /* VIC0 address space */
-				<0x2003c010 0x4>, /* SCTL address space */
+				<0x00140000 0x00080000>, /* nmc imem, im1 and im3 */
+ 				<0x2003c010 0x4>,
 				<0x2003c004 0x4>,
 				<0x2003c034 0x4>,
 				<0x2003c030 0x4>,
 				<0x2003c038 0x4>,
-				<0x2003c03c 0x4>,
-
-                                /* Internal memory banks list */
-				<0x00140000 0x00020000>, // nmc3_bank_0
-				<0x00160000 0x00020000>, // nmc3_bank_1
-				<0x00180000 0x00020000>, // nmc3_bank_2
-				<0x001a0000 0x00020000>, // nmc3_bank_3
-				<0x00100000 0x00040000>, // im0
-
-                                /* DMA ranges */
-				<0x00000000 0x00008000>,
-				<0x00008000 0x00008000>,
-				<0x00010000 0x00008000>,
-				<0x00018000 0x00008000>,
-				<0x00040000 0x00010000>;
-			bank-count = <5>;
-			reg-names = "vic_LPintrs_ena",
-				"nmc3_reset_reg",
-				"nmc3_nmi_reg",
-				"nmc3_HPintrCLR_reg",
-				"nmc3_LPintrCLR_reg",
-				"nmc3_HPintrSET_reg",
-				"nmc3_LPintrSET_reg";
+				<0x2003c03c 0x4>;
+			bank-count = <2>;
+			reg-names = 
+			        "imem",
+			    	"reset_reg",
+				"nmi_reg",
+				"hp_clr_reg",
+				"lp_clr_reg",
+				"hp_set_reg",
+				"lp_set_reg";
 			interrupt-parent = <&vic0>;
-			interrupts = <14 15>; /* HP LP */
-			status="disabled";
+			interrupts = <14 15>;
+			interrupt-names = "HP", "LP";		
+			status = "okay";
 		};
+
 	};
  };

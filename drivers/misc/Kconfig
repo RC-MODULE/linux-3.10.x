@@ -569,6 +569,25 @@ config NMCADEC
 	  NMC3 code is not included, instead it is loaded from userspace
 	  via request_firmware() interface.
 
+config EASYNMC
+       tristate "EasyNMC DSP Framework"
+       help
+         Provides a generic lowlevel interface for NeuroMatrix DSP cores
+	 as found in RC Module's SoCs.
+
+config EASYNMC_CORE_TEST
+       tristate "EasyNMC Dummy Test Core"
+       depends on EASYNMC
+       help
+	A dummy virtual test core.
+
+config EASYNMC_CORE_NMC3
+       tristate "EasyNMC NMC3 Core"
+       depends on EASYNMC
+       help
+	NMC3 core defined by DeviceTree
+
+
 
 source "drivers/misc/c2port/Kconfig"
 source "drivers/misc/eeprom/Kconfig"
