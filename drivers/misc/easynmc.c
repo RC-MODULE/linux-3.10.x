@@ -8,8 +8,6 @@
  *
  * easynmc_register_core() from respective platform drivers. 
  * 
- * A  
- *
  * 
  * License terms: GNU General Public License (GPL) version 2
  * Author: Andrew Andrianov <andrew@ncrmnt.org>
@@ -30,10 +28,12 @@
 #include <linux/sched.h>
 #include <linux/poll.h>
 #include <linux/workqueue.h>
+#include <linux/wait.h>
 #include <generated/utsrelease.h>
 #include <linux/miscdevice.h>
 #include <linux/spinlock.h>
 #include <linux/easynmc.h>
+#include <linux/semaphore.h>
 
 #define DRVNAME "easynmc"
 
@@ -60,7 +60,8 @@ DECLARE_PARAM(debug, 1);
 static irqreturn_t easynmc_handle_lp(int irq, void *dev_id)
 {
 	struct nmc_core *core = (struct nmc_core *) dev_id;	
-	core->stats.irqs_recv[HOST_IRQ_LP]++;
+	core->stats.irqs_recv[NMC_IRQ_LP]++;
+	core->clear_interrupt(core, NMC_IRQ_LP);
 	wake_up(&core->qh);
 	return IRQ_HANDLED;
 }
@@ -68,15 +69,32 @@ static irqreturn_t easynmc_handle_lp(int irq, void *dev_id)
 static irqreturn_t easynmc_handle_hp(int irq, void *dev_id)
 {
 	struct nmc_core *core = (struct nmc_core *) dev_id;	
-	core->stats.irqs_recv[HOST_IRQ_HP]++;
+	core->stats.irqs_recv[NMC_IRQ_HP]++;
+	core->clear_interrupt(core, NMC_IRQ_HP);
 	wake_up(&core->qh);
 	return IRQ_HANDLED;
+}
+
+/* Returns event number if available and increment counters
+ * Return -1 if no events avail on the supplied stats struc
+ */
+static int next_event(struct nmc_core *core, uint32_t mask, struct nmc_core_stats *stats)
+{
+	int i;
+	dbg("next_evt mask %x \n", mask);
+	for (i=0; i<NMC_NUM_IRQS; i++)
+		if ((mask & (1<<i)) && stats->irqs_recv[i] != core->stats.irqs_recv[i]) {
+			stats->irqs_recv[i]++;
+			return 1<<i;
+		}			
+	return -1; /* No events avail */
 }
 
 /* These ioctls are the same for both io and mem devices */
 static long easynmc_ioctl(struct file *filp, unsigned int ioctl_num, unsigned long ioctl_param)
 {
 	struct nmc_core *core = EASYNMC_MISC2CORE(filp->private_data);
+	dbg("ioctl %d, param %lx\n", ioctl_num, ioctl_param);
 	switch (ioctl_num) {
 	case IOCTL_NMC3_RESET:
 		if (core->started)
@@ -87,6 +105,7 @@ static long easynmc_ioctl(struct file *filp, unsigned int ioctl_num, unsigned lo
 		 * This driver assumes that nmc core is untouched upon system boot
 		 */  
 
+		dbg("resetting core %s (%d)\n", core->name, core->id);
 		core->started++;
 		core->reset(core);
 		break;
@@ -98,8 +117,20 @@ static long easynmc_ioctl(struct file *filp, unsigned int ioctl_num, unsigned lo
 			return ret;
 		if (i >= NMC_NUM_IRQS)
 			return -EIO;
-		core->interrupt(core, i);
+		core->send_interrupt(core, i);
 		core->stats.irqs_sent[i]++; 
+
+
+		/* Some special handling for NMI: 
+		 * - Increment counter in recv.
+		 * - wake the qh
+		 * - Mark core as 'started'
+		 */
+		if (i == NMC_IRQ_NMI) {
+			core->stats.irqs_recv[i]++; 
+			wake_up(&core->qh);
+			core->stats.started = 1; 
+		}
 		break;
 	}
 	case IOCTL_NMC3_GET_NAME:
@@ -114,6 +145,13 @@ static long easynmc_ioctl(struct file *filp, unsigned int ioctl_num, unsigned lo
 		int ret = copy_to_user((uint32_t __user *) ioctl_param, core->type, strlen(core->type)+1);
 		if (ret)
 			return -EFAULT;
+		break;
+	}
+	case IOCTL_NMC3_GET_IMEMSZ:
+	{
+		int ret = put_user(core->imem_size, (uint32_t __user *) ioctl_param);
+		if (ret)
+			return ret;
 		break;
 	}
 	case IOCTL_NMC3_GET_STATS:
@@ -137,61 +175,160 @@ static long easynmc_ioctl(struct file *filp, unsigned int ioctl_num, unsigned lo
 		spin_lock_irqsave(&lock, flags);
 		for (i=0; i<NMC_NUM_IRQS; i++)
 			core->stats.irqs_sent[i]=0;
-		for (i=0; i<HOST_NUM_IRQS; i++)
+		for (i=0; i<NMC_NUM_IRQS; i++)
 			core->stats.irqs_recv[i]=0;
 		spin_unlock_irqrestore(&lock, flags);
 		break;
 	}
-	case IOCTL_NMC3_WAIT_IRQ:
+	case IOCTL_NMC3_POLLMARK:
 	{
-		uint32_t params[3];
-		enum host_irq i;
-		uint32_t timeout, tocount;
-		int ret = copy_from_user(
-			params, 
-			(uint32_t __user *) ioctl_param, 
-			sizeof(uint32_t) * 3
-			);
-		if (ret)
-			return -EFAULT;
-		i = params[0];
-		timeout = params[1];
-		tocount = params[2];
-		if (i >= HOST_NUM_IRQS)
-			return -EIO;
-		ret = wait_event_interruptible_timeout(
-			core->qh, 
-			(tocount >= core->stats.irqs_recv[i]), 
-			timeout);
-		if (ret < 0)
-			return ret;
-		if (ret == 0) 
-			return -ETIMEDOUT;
+		/*   Store our event counters, we'll be using them 
+		 *   to generate events. 
+		 */
+		DEFINE_SPINLOCK(lock);
+		unsigned long flags; 
+		spin_lock_irqsave(&lock, flags);
+		core->pollstats = core->stats;
+		spin_unlock_irqrestore(&lock, flags);
 		break;
 	}
-	case IOCTL_NMC3_ATTACH_STDIO:
+	case IOCTL_NMC3_RESET_TOKEN:
 	{
-		uint32_t params[2];
-		uint32_t type, addr;
+		DEFINE_SPINLOCK(lock);
+		unsigned long flags; 
+		struct nmc_irq_token itoken;
+
 		int ret = copy_from_user(
-			params, 
+			&itoken, 
 			(uint32_t __user *) ioctl_param, 
-			sizeof(uint32_t) * 2
+			sizeof(struct nmc_irq_token)
 			);
+
+		if (ret) 
+			return -EFAULT;
+
+		spin_lock_irqsave(&lock, flags);
+		itoken.stats = core->stats;
+		spin_unlock_irqrestore(&lock, flags);
+		itoken.id = ++core->token_id;
+
+		ret = copy_to_user(
+			(uint32_t __user *) ioctl_param, 
+			&itoken, 
+			sizeof(struct nmc_irq_token)
+			);
+
+		if (ret) 
+			return -EFAULT;
+
+		break;
+	}
+	case IOCTL_NMC3_CANCEL_BY_TOKEN:
+	{
+		struct nmc_irq_token itoken;
+		int ret = copy_from_user(
+			&itoken, 
+			(uint32_t __user *) ioctl_param, 
+			sizeof(struct nmc_irq_token)
+			);
+
+		if (ret) 
+			return -EFAULT;
+
+		/* TODO: 
+		   The current implementation is very naive and
+		   assumes that there IS a token with the ID requested.
+		   If there's none - we'll just wait here the timeout time.
+		   Users are adviced to use poll over synchronos wait where
+		   possible for now. 
+		 */
+
+		ret = down_interruptible(&core->cancel_sem);
+		if (ret) 
+			return ret;
+
+		core->cancel_id = itoken.id;
+
+		wake_up(&core->qh);
+
+		ret = wait_event_interruptible_timeout(
+			core->qh, 
+			(core->cancel_id == 0), 
+			itoken.timeout * HZ / 1000);
+		
+		up(&core->cancel_sem);
+
+		if (ret < 0)
+			return ret;
+		
+		if (ret == 0) 
+			return -ETIMEDOUT;
+		
+		break;
+	}
+	case IOCTL_NMC3_WAIT_ON_TOKEN:
+	{
+		struct nmc_irq_token itoken;
+		int ret = copy_from_user(
+			&itoken, 
+			(uint32_t __user *) ioctl_param, 
+			sizeof(struct nmc_irq_token)
+			);
+
 		if (ret)
 			return -EFAULT;
-		type = params[0]; 
-		addr = params[1];
-		ret = 0;
-		if (0 == type) {/* stdout */
-			core->stdout = addr;
-		} else if (1 == type) { /* stdout */
-			core->stdin = addr;
-		} else 
-			ret = -EFAULT;
-		wake_up(&core->qh);
-		return ret;
+		itoken.event = EASYNMC_EVT_CANCELLED;
+		/* Wait for a valid event */
+		ret = wait_event_interruptible_timeout(
+			core->qh, 
+			(core->cancel_id == itoken.id) ||
+			(-1 != (itoken.event = 
+				next_event(core, 
+					   itoken.events_enabled, 
+					   &itoken.stats))), 
+			itoken.timeout * HZ / 1000);
+
+		if (ret < 0)
+			return ret;
+
+		if (ret == 0) { 	
+			dbg("timeout %d\n", itoken.timeout);
+			itoken.event = EASYNMC_EVT_TIMEOUT;
+		}
+		/* Handle cancellation */
+		if (itoken.event == EASYNMC_EVT_CANCELLED) {
+			core->cancel_id = 0;
+			wake_up(&core->qh);
+		}
+
+		ret = copy_to_user(
+			(uint32_t __user *) ioctl_param, 
+			&itoken, 
+			sizeof(struct nmc_irq_token)
+			);
+		
+		if (ret)
+			return -EFAULT;
+		break;
 	}
+	case IOCTL_NMC3_ATTACH_STDIN:
+	case IOCTL_NMC3_ATTACH_STDOUT:
+	{
+		uint32_t addr;
+		int ret = get_user(addr,  (uint32_t __user *) ioctl_param);
+		if (ret || (addr > core->imem_size) ||
+		    (addr + sizeof(struct nmc_stdio_channel) > core->imem_size))
+			return -EFAULT;
+		/* FixMe: Proper stdio buffer addressing */
+		/* BUG HERE HERE HERE HERE */
+		if (ioctl_num == IOCTL_NMC3_ATTACH_STDIN)
+			core->stdin = addr;
+		else
+			core->stdout = addr; 
+		wake_up(&core->qh);
+		break;
+	}
+	
 	}
 	return 0;
 }
@@ -250,9 +387,10 @@ static const struct vm_operations_struct mmap_mem_ops = {
 
 static int imem_mmap(struct file * filp, struct vm_area_struct * vma)
 {
-	size_t size = vma->vm_end - vma->vm_start;
-	unsigned long phys_start = vma->vm_pgoff << PAGE_SHIFT; 
 	struct nmc_core *core = EASYNMC_MISC2CORE(filp->private_data);
+	size_t size = vma->vm_end - vma->vm_start;
+	unsigned long phys_start = (vma->vm_pgoff << PAGE_SHIFT) + core->imem_phys; 
+	vma->vm_pgoff = phys_start >> PAGE_SHIFT;
 	
 	if (!core->imem_phys) { 
 		printk("easynmc: This core doesn't support imem mmapping (test core? )\n");
@@ -266,13 +404,13 @@ static int imem_mmap(struct file * filp, struct vm_area_struct * vma)
 	/* Dumb bounds check */
 
 	if ((phys_start <  (core->imem_phys)) || 
-	    (phys_start >= (core->imem_phys + core->imem_size))) { 
+	    (phys_start >  (core->imem_phys + core->imem_size))) { 
 		printk("easynmc: Requested mmap outsize imem range, fix your app!\n");
 		return -EAGAIN;
 	}
 
 	if (((phys_start + core->imem_size) <  (core->imem_phys)) || 
-	    ((phys_start + core->imem_size) >= (core->imem_phys + core->imem_size))) { 
+	    ((phys_start + core->imem_size) >  (core->imem_phys + core->imem_size))) { 
 		printk("easynmc: Requested mmap outsize imem range, fix your app!\n");
 		return -EAGAIN;
 	}
@@ -291,29 +429,31 @@ static int imem_mmap(struct file * filp, struct vm_area_struct * vma)
 	return 0;
 }
 
+static int pollflags[NMC_NUM_IRQS] = {
+	POLLHUP,
+	POLLPRI | POLLRDBAND,
+	POLLIN  | POLLRDNORM
+};
+
 unsigned int imem_poll(struct file *filp, poll_table *wait)
 {
 	DEFINE_SPINLOCK(lock);
 	struct nmc_core *core = EASYNMC_MISC2CORE(filp->private_data);
 	unsigned long flags;
+	int i; 
 	unsigned int mask = 0;
-	uint32_t irqs_stat[HOST_NUM_IRQS];
-
-	spin_lock_irqsave(&lock, flags);
-	memcpy(irqs_stat, core->stats.irqs_sent, (sizeof(uint32_t) * HOST_NUM_IRQS));
-	spin_unlock_irqrestore(&lock, flags);
-
 	poll_wait(filp, &core->qh, wait);
-
-	/* If stdin is attached, we do NOT report LP here */
-	if ((!core->stdin) && (!core->stdout) &&irqs_stat[HOST_IRQ_LP])
-		mask |= POLLIN | POLLRDNORM;    /* readable */
-
-	if (irqs_stat[HOST_IRQ_HP])
-		mask |= POLLPRI | POLLRDBAND;    /* readable */
-	
+	spin_lock_irqsave(&lock, flags);	
+	for (i=0; i<NMC_NUM_IRQS; i++) {
+		if (core->stats.irqs_recv[i] != core->pollstats.irqs_recv[i]) {
+			mask |= pollflags[i];
+			core->pollstats.irqs_recv[i]++;
+		}
+	}
+	spin_unlock_irqrestore(&lock, flags);
 	return mask;
 }
+
 
 /* stdio ops */ 
 
@@ -410,8 +550,16 @@ int easynmc_register_core(struct nmc_core *core)
 	core->mdev_mem.mdev.name	= core->devname_mem;
 	core->mdev_mem.mdev.fops	= &imem_ops;
 
-	core->stdout = NULL;
-	core->stdin  = NULL;
+	core->stdout  = NULL;
+	core->stdin   = NULL;
+
+	core->token_id  = 0;
+	core->cancel_id = 0;
+
+	memset(&core->stats, 0x0, sizeof(core->stats));
+	memset(&core->pollstats, 0x0, sizeof(core->pollstats));
+
+	sema_init(&core->cancel_sem, 1);
 
 	err = misc_register(&core->mdev_io.mdev);
 	if (err)
@@ -422,28 +570,30 @@ int easynmc_register_core(struct nmc_core *core)
 		goto free_io;
 
 
-	if (!core->irqs[HOST_IRQ_HP]) {
-		printk(KERN_ERR "easynmc: Missing HP Interrupt !\n");
-		goto free_mem;
+	if (!core->irqs[NMC_IRQ_HP]) {
+		printk(KERN_ERR "easynmc: Warning, missing HP Interrupt on core %s!\n", core->name);
 	}
 
-	if (!core->irqs[HOST_IRQ_LP]) {
-		printk(KERN_ERR "easynmc: Missing LP Interrupt !\n");
-		goto free_mem;
+	if (!core->irqs[NMC_IRQ_LP]) {
+		printk(KERN_ERR "easynmc: Warning, missing LP Interrupt on core %s!\n", core->name);
 	}
 
-	err = request_irq(core->irqs[HOST_IRQ_HP], easynmc_handle_hp, 0x0, DRVNAME, core);
-	if (err)
-	{
-		printk(KERN_ERR "easynmc: HP IRQ request failed!\n");
-		goto free_mem;
+	if (core->irqs[NMC_IRQ_HP]) { 
+		err = request_irq(core->irqs[NMC_IRQ_HP], easynmc_handle_hp, 0x0, DRVNAME, core);
+		if (err)
+		{
+			printk(KERN_ERR "easynmc: HP IRQ request failed!\n");
+			goto free_mem;
+		}
 	}
-	
-	err = request_irq(core->irqs[HOST_IRQ_LP], easynmc_handle_lp, 0x0, DRVNAME, core);
-	if (err)
-	{
-		printk(KERN_ERR "easynmc: LP IRQ request failed!\n");
-		goto free_hp_irq;
+
+	if (core->irqs[NMC_IRQ_LP]) {
+		err = request_irq(core->irqs[NMC_IRQ_LP], easynmc_handle_lp, 0x0, DRVNAME, core);
+		if (err)
+		{
+			printk(KERN_ERR "easynmc: LP IRQ request failed!\n");
+			goto free_hp_irq;
+		}
 	}
 
 	init_waitqueue_head(&core->qh);
@@ -452,7 +602,7 @@ int easynmc_register_core(struct nmc_core *core)
 	return 0;	
 
 free_hp_irq:
-	free_irq(core->irqs[HOST_IRQ_HP], core);
+	free_irq(core->irqs[NMC_IRQ_HP], core);
 
 free_mem:
 	misc_deregister(&core->mdev_mem.mdev);
@@ -475,8 +625,8 @@ int easynmc_deregister_core(struct nmc_core *core)
 	spin_lock(&rlock);
 	misc_deregister(&core->mdev_io.mdev);
 	misc_deregister(&core->mdev_mem.mdev);
-	free_irq(core->irqs[HOST_IRQ_LP], core);
-	free_irq(core->irqs[HOST_IRQ_HP], core);
+	free_irq(core->irqs[NMC_IRQ_LP], core);
+	free_irq(core->irqs[NMC_IRQ_HP], core);
 	spin_unlock(&rlock);
 	num_cores_registered--;
 	return 0;

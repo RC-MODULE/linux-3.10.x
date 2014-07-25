@@ -44,11 +44,12 @@ void dummy_interrupt(struct nmc_core *self, enum nmc_irq n) {
 }
 
 static struct nmc_core core = { 
-	.name        = "DummyCore",
-	.type        = "noop",
-	.reset       = dummy_reset,
-	.imem_virt   = imem,
-	.imem_size   = DUMMYMEMSIZE,
+	.name           = "DummyCore",
+	.type           = "noop",
+	.reset          = dummy_reset,
+	.send_interrupt = dummy_interrupt,
+	.imem_virt      = imem,
+	.imem_size      = DUMMYMEMSIZE,
 };
 
 
