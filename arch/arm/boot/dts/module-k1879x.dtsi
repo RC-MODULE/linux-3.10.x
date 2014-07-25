@@ -438,7 +438,7 @@
 				"hp_set_reg",
 				"lp_set_reg";
 			interrupt-parent = <&vic0>;
-			interrupts = <14 15>;
+			interrupts = <14>, <15>;
 			interrupt-names = "HP", "LP";		
 			status = "okay";
 		};

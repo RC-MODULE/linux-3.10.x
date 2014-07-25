@@ -52,13 +52,13 @@ void nmc3_reset(struct nmc_core *self)
 	iowrite32(0xff, core->reset_reg);
 }
 
-void nmc3_interrupt(struct nmc_core *self, enum nmc_irq n) 
+void nmc3_send_interrupt(struct nmc_core *self, enum nmc_irq n) 
 {
 	struct nmc3_core *core = (struct nmc3_core *) self;
 	switch (n) {
 	case NMC_IRQ_NMI:
-		iowrite32(0x0, core->nmi_reg);
 		iowrite32(0x1, core->nmi_reg);
+		iowrite32(0x0, core->nmi_reg);
 		break;
 	case NMC_IRQ_HP:
 		iowrite32(0x1, core->hp_set_reg);
@@ -69,8 +69,23 @@ void nmc3_interrupt(struct nmc_core *self, enum nmc_irq n)
 	default:
 		printk(DRVNAME ": Warning - invalid IRQ request - %d\n", n);
 	}
-
 }
+
+void nmc3_clear_interrupt(struct nmc_core *self, enum nmc_irq n) 
+{
+	struct nmc3_core *core = (struct nmc3_core *) self;
+	switch (n) {
+	case NMC_IRQ_HP:
+		iowrite32(0x1, core->hp_clr_reg);
+		break;
+	case NMC_IRQ_LP:
+		iowrite32(0x1, core->lp_clr_reg);
+		break;		
+	default:
+		printk(DRVNAME ": Warning - invalid IRQ clear request - %d\n", n);
+	}
+}
+
 
 static int __init easynmc_probe (struct platform_device *pdev)
 {
@@ -94,7 +109,7 @@ static int __init easynmc_probe (struct platform_device *pdev)
 	}								\
 
 #define GRAB_IRQ_RESOURCE(name, to)					\
- 	res = platform_get_resource_byname(pdev, IORESOURCE_MEM, #name); \
+ 	res = platform_get_resource_byname(pdev, IORESOURCE_IRQ, #name); \
 	if (!res) {							\
 		printk(DRVNAME ": failed to get irq resource " #name " \n"); \
 		goto errfreemem;					\
@@ -110,16 +125,17 @@ static int __init easynmc_probe (struct platform_device *pdev)
 	GRAB_MEM_RESOURCE(lp_clr_reg);
 	GRAB_MEM_RESOURCE(lp_set_reg);
 
-	GRAB_IRQ_RESOURCE("HP", core->c.irqs[HOST_IRQ_HP]);
-	GRAB_IRQ_RESOURCE("LP", core->c.irqs[HOST_IRQ_LP]);
+	GRAB_IRQ_RESOURCE(HP, core->c.irqs[NMC_IRQ_HP]);
+	GRAB_IRQ_RESOURCE(LP, core->c.irqs[NMC_IRQ_LP]);
 	
 	res = platform_get_resource_byname(pdev, IORESOURCE_MEM, "imem");	
 	core->c.imem_size = res->end - res->start + 1;
 	core->c.imem_phys = res->start;
 	core->c.imem_virt = devm_request_and_ioremap(&pdev->dev, res);
 
-	core->c.reset       = nmc3_reset; 
-	core->c.interrupt   = nmc3_interrupt; 
+	core->c.reset             = nmc3_reset; 
+	core->c.send_interrupt    = nmc3_send_interrupt; 
+	core->c.clear_interrupt   = nmc3_clear_interrupt; 
 	
 	
 	if (!core->c.imem_virt) {
@@ -143,8 +159,8 @@ static int __init easynmc_probe (struct platform_device *pdev)
 	       (unsigned long) core->c.imem_virt,
 	       (unsigned long) core->c.imem_size);
 	printk(DRVNAME ": HP IRQ %d LP IRQ %d\n", 
-	       core->c.irqs[HOST_IRQ_HP],
-	       core->c.irqs[HOST_IRQ_LP]
+	       core->c.irqs[NMC_IRQ_HP],
+	       core->c.irqs[NMC_IRQ_LP]
 		);	
 
 	core->c.dev = &pdev->dev;

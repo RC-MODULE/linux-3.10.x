@@ -48,6 +48,7 @@ From kernel space
 -----------------
 No kernel-level API is provided at this time, apart from 
 easynmc_register_core/easynmc_deregister_core. Not really needed at this time.
+You are adviced to do everything from userspace
 
 Utilities
 ---------
