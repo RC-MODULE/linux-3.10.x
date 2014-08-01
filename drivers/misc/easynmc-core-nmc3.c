@@ -102,8 +102,9 @@ static int __init easynmc_probe (struct platform_device *pdev)
 		goto errfreemem;					\
 									\
 	}								\
+	res->flags &= ~(IORESOURCE_CACHEABLE);				\
 	core->name = devm_request_and_ioremap(&pdev->dev, res);		\
-	if (!core->name) {						\
+	if (IS_ERR(core->name)) {					\
 		printk(DRVNAME ": request/remap failed for " #name " \n"); \
 		goto errfreemem;					\
 	}								\
