@@ -46,6 +46,8 @@ struct nmc_core {
 	struct nmc_core_stats    pollstats;
 	struct nmc_stdio_channel  *stdout;
 	struct nmc_stdio_channel  *stdin;
+	int               reformat_stdout;
+	int               reformat_stdin;
 };
 
 

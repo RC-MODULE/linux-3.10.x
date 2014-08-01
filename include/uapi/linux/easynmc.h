@@ -53,6 +53,7 @@ struct nmc_irq_token {
 };
 
 struct nmc_stdio_channel {
+	uint32_t isr_on_io;
 	uint32_t size;
 	uint32_t head;
 	uint32_t tail;
@@ -80,5 +81,7 @@ struct nmc_stdio_channel {
 #define IOCTL_NMC3_ATTACH_STDOUT   _IOW(NMC3_IOCTL_MAGIC, 11,  uint32_t)
 #define IOCTL_NMC3_ATTACH_STDIN    _IOW(NMC3_IOCTL_MAGIC, 12,  uint32_t)
 
+#define IOCTL_NMC3_REFORMAT_STDOUT   _IOW(NMC3_IOCTL_MAGIC, 13,  uint32_t)
+#define IOCTL_NMC3_REFORMAT_STDIN    _IOW(NMC3_IOCTL_MAGIC, 14,  uint32_t)
 
 #endif

@@ -34,6 +34,7 @@
 #include <linux/spinlock.h>
 #include <linux/easynmc.h>
 #include <linux/semaphore.h>
+#include <linux/circ_buf.h>
 
 #define DRVNAME "easynmc"
 
@@ -289,12 +290,14 @@ static long easynmc_ioctl(struct file *filp, unsigned int ioctl_num, unsigned lo
 			itoken.timeout * HZ / 1000);
 
 		if (ret < 0)
-			return ret;
+			itoken.event = EASYNMC_EVT_CANCELLED;
+
 
 		if (ret == 0) { 	
 			dbg("timeout %d\n", itoken.timeout);
 			itoken.event = EASYNMC_EVT_TIMEOUT;
 		}
+
 		/* Handle cancellation */
 		if (itoken.event == EASYNMC_EVT_CANCELLED) {
 			core->cancel_id = 0;
@@ -315,17 +318,46 @@ static long easynmc_ioctl(struct file *filp, unsigned int ioctl_num, unsigned lo
 	case IOCTL_NMC3_ATTACH_STDOUT:
 	{
 		uint32_t addr;
+		struct nmc_stdio_channel * chan;
 		int ret = get_user(addr,  (uint32_t __user *) ioctl_param);
+		
 		if (ret || (addr > core->imem_size) ||
 		    (addr + sizeof(struct nmc_stdio_channel) > core->imem_size))
 			return -EFAULT;
-		/* FixMe: Proper stdio buffer addressing */
-		/* BUG HERE HERE HERE HERE */
+
+		chan = (struct nmc_stdio_channel *) &core->imem_virt[addr];
+
+		if ((chan->size & (chan->size - 1)) != 0) {
+			printk("easynmc: IO buffer size not power of 2, not attaching\n");
+			return -EIO;
+		}
+
 		if (ioctl_num == IOCTL_NMC3_ATTACH_STDIN)
-			core->stdin = addr;
+			core->stdin  = chan;
 		else
-			core->stdout = addr; 
+			core->stdout  = chan;
+		
+		dbg("Attached %s length %d words", 
+		    (ioctl_num == IOCTL_NMC3_ATTACH_STDIN) ? "stdin" : "stdout",
+		     chan->size);
+		chan->isr_on_io = 1; /* Enable interrupt transport */
+
+		/* Wake up. We may have data in there already! */
 		wake_up(&core->qh);
+		break;
+	}
+	case IOCTL_NMC3_REFORMAT_STDIN:
+	case IOCTL_NMC3_REFORMAT_STDOUT:
+	{
+		uint32_t r;
+		int ret = get_user(r,  (uint32_t __user *) ioctl_param);
+		if (ret)
+			return -EFAULT;
+		
+		if (ioctl_num == IOCTL_NMC3_REFORMAT_STDIN)
+			core->reformat_stdin  = r;
+		else
+			core->reformat_stdout  = r;
 		break;
 	}
 	
@@ -471,30 +503,185 @@ static int stdio_release(struct inode *inode, struct file *filp)
 	return 0;
 }
 
+static size_t copy_from_nmc_to_user(unsigned char __user* to, const uint32_t* from, size_t len, int reformat)
+{
+	int i;
+	size_t ret=0;
+	if (!reformat)
+		return (copy_to_user(to, from, len * sizeof(uint32_t)) >> 2);
+	
+	for (i = 0; i < len; i++) {
+		unsigned char data = (unsigned char) (from[i] & 0xFF);
+		if (0 > put_user(data, to++))
+			ret++;
+	}
+	
+	return ret;
+}
+
+static size_t copy_from_user_to_nmc(uint32_t* to, const unsigned char __user* from, size_t len, int reformat)
+{
+	int i;
+	size_t ret=0;
+	if (!reformat)
+		return (copy_from_user(to, from, len * sizeof(uint32_t)) >> 2);
+	
+	for (i = 0; i < len; i++) {
+		unsigned char data;
+		if (0 > get_user(data, from++))
+			ret++;
+		else
+			to[i] = (uint32_t) data;		
+	}
+
+	return ret;
+}
+
+
 static ssize_t stdio_read(struct file *filp, char __user *buff, size_t count, loff_t *offp)
 {
-	loff_t notcopied, tocopy;
+	size_t notcopied, tocopy, copied;
 	struct nmc_core *core = EASYNMC_MISC2CORE(filp->private_data);
 
 	if (!core->stdout) /* read nothing if no stdio configured */
 		return 0;
-	/* TODO */
-	return 0;
+
+	copied = 0;
+	notcopied = 0;
+	while (count && (notcopied==0)) { 
+		size_t processed; 
+		size_t occupied = CIRC_CNT_TO_END(core->stdout->head, 
+						  core->stdout->tail, 
+						  core->stdout->size);
+		if (!core->reformat_stdout) 
+			occupied = occupied << 2; /* If no reformatting 4x more data! */
+		
+		tocopy = min_t(size_t, occupied, count);
+
+		if (0 == tocopy) { 
+			if (copied || (filp->f_flags & O_NONBLOCK)) {
+				/* Return what we've read so far */
+				break;
+			} else {
+				int ret; 
+				/* If nothing read, block until something's avail */
+				ret = wait_event_interruptible(
+					core->qh, 
+					CIRC_CNT(core->stdout->head, 
+						 core->stdout->tail,
+						 core->stdout->size)
+
+					);
+				if (ret < 0) 
+					break;
+			};	
+		};
+
+		notcopied = copy_from_nmc_to_user(
+			&buff[copied],
+			&core->stdout->data[core->stdout->tail],
+			tocopy,
+			core->reformat_stdout
+			);
+
+		/* FixMe: Looks way too many maths, have a fresh look here sometime later. */
+		processed = tocopy - notcopied;
+		count  -= processed; 
+		copied += processed;
+		core->stdout->tail += processed;
+		core->stdout->tail &= (core->stdout->size - 1);
+	}
+	
+	*offp += copied;
+
+	if (!copied && (filp->f_flags & O_NONBLOCK))
+		return -EAGAIN;
+
+	return copied;
 }
 
 static ssize_t stdio_write(struct file *filp, const char __user *buff, size_t count, loff_t *offp)
 {
-	loff_t notcopied, tocopy;
+	size_t notcopied, tocopy, copied;
 	struct nmc_core *core = EASYNMC_MISC2CORE(filp->private_data);
-	if (!core->stdin) /* write nothing if no stdio configured */
+
+	if (!core->stdin) /* read nothing if no stdio configured */
 		return 0;
-	/* TODO */
-	return 0;
+
+	copied = 0;
+	notcopied = 0;
+	while (count && (notcopied==0)) { 
+		size_t processed; 
+		size_t numfree = CIRC_SPACE_TO_END(core->stdin->head, 
+						  core->stdin->tail, 
+						  core->stdin->size);
+		if (!core->reformat_stdin) 
+			numfree = numfree << 2; /* If no reformatting 4x more data! */
+		
+		tocopy = min_t(size_t, numfree, count);
+
+		if (0 == tocopy) { 
+			if (copied || (filp->f_flags & O_NONBLOCK)) {
+				/* Return what we've written so far */
+				break;
+			} else {
+				int ret; 
+				/* If nothing can be written, block until we write more */
+				ret = wait_event_interruptible(
+					core->qh, 
+					CIRC_SPACE(core->stdin->head, 
+						   core->stdin->tail,
+						   core->stdin->size)
+					);
+				if (ret < 0) 
+					break;
+				continue;
+			};	
+		};
+
+		notcopied = copy_from_user_to_nmc(
+			&core->stdin->data[core->stdin->head],
+			&buff[copied],
+			tocopy,
+			core->reformat_stdin
+			);
+
+		/* FixMe: Looks way too many maths, have a fresh look here sometime later. */
+		processed = tocopy - notcopied;
+		count  -= processed; 
+		copied += processed;
+		core->stdin->head += processed;
+		core->stdin->head &= (core->stdin->size - 1);
+	}
+	
+	*offp += copied;
+
+	if (!copied && (filp->f_flags & O_NONBLOCK))
+		return -EAGAIN;
+
+	return copied;
 }
 
 unsigned int stdio_poll(struct file *filp, poll_table *wait)
 {
-	return 0;
+	struct nmc_core *core = EASYNMC_MISC2CORE(filp->private_data);
+	unsigned int mask = 0;	
+
+	poll_wait(filp, &core->qh, wait);
+
+	if (core->stdout &&
+	    CIRC_CNT(core->stdout->head, 
+		     core->stdout->tail, 
+		     core->stdout->size))
+		mask|= (POLLIN | POLLRDNORM);
+
+	if (core->stdin &&
+	    CIRC_SPACE(core->stdin->head, 
+		     core->stdin->tail, 
+		     core->stdin->size))
+		mask|= (POLLOUT | POLLWRNORM);
+
+	return mask;
 }
 
 
@@ -536,6 +723,11 @@ int easynmc_register_core(struct nmc_core *core)
 	printk("easynmc: registering core %s (%s) with id %d\n", core->name, core->type, freecoreid);
 	core->id = freecoreid++;
 		
+	/* TODO: 
+	 *  Dynamically allocate and register devices whenever stdio and the rest
+	 *  are attached.
+	 */
+	   
 	snprintf(core->devname_io,  EASYNMC_DEVNAME_LEN, "nmc%dio",  core->id);
 	snprintf(core->devname_mem, EASYNMC_DEVNAME_LEN, "nmc%dmem", core->id);
 
