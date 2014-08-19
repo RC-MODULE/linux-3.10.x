@@ -40,6 +40,7 @@
 		clock-output-names = "osc";
 	};
 
+
 	/*clocks {
 		ref_clk: clock@1 {
 			compatible = "fixed-clock";
@@ -47,6 +48,20 @@
 			clock-frequency = <20000000>;
 		};
 	};*/
+
+	 leds {
+	     compatible = "gpio-leds";
+	     one {
+	     	  label = "mb7707::led1";
+		  gpios = <&gpiofj 31 0>; /* LED1 */
+		  linux,default-trigger = "heartbeat";
+	     };
+	     two {
+		  label = "mb7707::led2";
+		  gpios = <&gpiofj 30 0>; /* LED2 */
+		  default-state = "off";
+	     };
+        };
 
 	axi {
 		apb_d {
@@ -99,7 +114,7 @@
 					};
 				};
 			};
-		};
+		};		
 	};
 };
 
