@@ -201,9 +201,13 @@
 				interrupts = <24>;
 			};
 
-			gpio@9000 {
+			gpiofj: gpio@9000 {
+				#gpio-cells = <2>;
 				reg = <0x9000 0x1000>;
+				reg-names = "regs";
+				gpio-controller;
 				compatible = "rcm,fgpio";
+				gpio-base = <64>; 
 			};
 
 			gpio_a: gpio@a000 {
@@ -215,7 +219,6 @@
 				interrupts = <31>; /* 63 */
 				clocks = <&clk_apb>;
 				clock-names = "apb_pclk";
-				gpio-base = <0>; 
 			};
 
 			uart1: uart@c000 {

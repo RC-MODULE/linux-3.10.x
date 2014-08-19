@@ -18,7 +18,7 @@ config ARCH_WANT_OPTIONAL_GPIOLIB
 	  user decide whether to actually build it or not.
 	  Select this instead of ARCH_REQUIRE_GPIOLIB, if your architecture does
 	  not depend on GPIOs being available, but rather let the user
-	  decide whether he needs it or not.
+	  decide whetherhe needs it or not.
 
 config ARCH_REQUIRE_GPIOLIB
 	bool
@@ -134,6 +134,11 @@ config GPIO_EP93XX
 	def_bool y
 	depends on ARCH_EP93XX
 	select GPIO_GENERIC
+
+config GPIO_FJ
+	tristate "Fujitsu GPIO IP support"
+	default y
+	depends on GPIOLIB
 
 config GPIO_MM_LANTIQ
 	bool "Lantiq Memory mapped GPIOs"
