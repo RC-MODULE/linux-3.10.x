@@ -81,7 +81,7 @@ int g_debug = 0;
 module_param_named(debug, g_debug, int, 0);
 MODULE_PARM_DESC(debug, "Enables lots of debug messages");
 
-int g_ignore_timeout = 0;
+int g_ignore_timeout = 1;
 module_param_named(ignore_timeout, g_ignore_timeout, int, 0);
 MODULE_PARM_DESC(ignore_timeout, "Ignores crypt timeout (will not trigger BUG())");
 
