@@ -138,9 +138,9 @@ static int fj_gpio_probe(struct platform_device *pdev)
 	ret =  of_property_read_u32(pdev->dev.of_node, "gpio-base",
 				       &base);
 	if (ret!=0) 
-		goto errfree; 
-
-	fj_gpio->gpio_chip.base = base;
+		fj_gpio->gpio_chip.base = -1; /* dynamic */
+	else
+		fj_gpio->gpio_chip.base = base;
 
 	ret = gpiochip_add(&fj_gpio->gpio_chip);
 	if (ret < 0) {

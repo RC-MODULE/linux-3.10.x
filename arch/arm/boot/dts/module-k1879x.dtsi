@@ -207,7 +207,6 @@
 				reg-names = "regs";
 				gpio-controller;
 				compatible = "rcm,fgpio";
-				gpio-base = <64>; 
 			};
 
 			gpio_a: gpio@a000 {

@@ -842,6 +842,7 @@ config ARCH_UEMD
 	select USB_ARCH_HAS_EHCI
 	select USB_ARCH_HAS_OHCI
 	select ARCH_REQUIRE_GPIOLIB
+	select NEED_MACH_GPIO_H
 	help
 	  Support for RC Module's UEMD system
 
