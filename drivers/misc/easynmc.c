@@ -48,7 +48,7 @@ static DEFINE_SPINLOCK(rlock);
 	static int g_##name = def;			\
 	module_param_named(name, g_##name, int, 0644);
 
-DECLARE_PARAM(debug, 1);
+DECLARE_PARAM(debug, 0);
 
 #define dbg(format, args... )						\
 	do {								\
