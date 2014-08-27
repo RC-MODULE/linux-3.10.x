@@ -30,7 +30,7 @@
 		cpu@0 {
 			device_type = "cpu";
 			compatible = "arm,1176jz-s";
-			clock-frequency = <325000000>;
+			clock-frequency = <324000000>;
 			reg = <0>;
 			d-cache-line-size = <16>;
 			d-cache-size = <16384>;
