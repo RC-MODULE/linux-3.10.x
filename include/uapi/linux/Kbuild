@@ -423,3 +423,4 @@ header-y += xfrm.h
 header-y += hw_breakpoint.h
 header-y += module_vdu.h
 header-y += msvdhd.h
+header-y += easynmc.h
