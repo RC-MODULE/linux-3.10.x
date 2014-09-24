@@ -159,7 +159,7 @@
 				clock-names = "apb_pclk";
 				num-cs = <2>;
 				status = "disabled";
-				/* FIXME: no periphid at 0xe000 reg */
+				/* Silicon BUG: no periphid at 0xe000 reg */
 				arm,primecell-periphid = <0x41022>;
 			};
 
@@ -171,8 +171,10 @@
 
 			wd@5000 {
 				reg = <0x5000 0x1000>;
-				compatible = "xxx";
+				compatible = "arm,sp805", "arm,primecell";
 				interrupts = <6>;
+				clocks = <&clk_apb>;
+				clock-names = "apb_pclk";
 			};
 
 			i2c2: i2c@6000 {
