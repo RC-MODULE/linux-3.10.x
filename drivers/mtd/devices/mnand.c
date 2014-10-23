@@ -343,7 +343,7 @@ static int mnand_core_reset(void)
         g_chip.state = MNAND_RESET;
 
         mnand_set(0x08, 0x2C);
-        wait_for_completion(&g_completion);
+        wait_for_completion_io(&g_completion);
 
         BUG_ON(!mnand_ready());
 
@@ -368,7 +368,7 @@ static int mnand_core_erase(loff_t off)
         mnand_set(0x8, 0x2b);
         mnand_set(0xc, (off >> g_chip.mtd.erasesize_shift) << (ffs(g_chip.mtd.erasesize)));
 
-        wait_for_completion(&g_completion);
+        wait_for_completion_io(&g_completion);
 
         BUG_ON(!mnand_ready());
 
@@ -393,7 +393,7 @@ static void mnand_core_read_id(size_t bytes)
         mnand_set(0x08, 0x25);
         mnand_set(0x0C, bytes << 8);
 
-        wait_for_completion(&g_completion);
+        wait_for_completion_io(&g_completion);
 
         BUG_ON(!mnand_ready());
         g_chip.state = MNAND_IDLE;
@@ -837,7 +837,7 @@ static int mnand_core_read(loff_t off)
                 mnand_set(0x08, 0x20);
                 mnand_set(0x0C, (off >> g_chip.mtd.writesize_shift) << 12);
 
-                wait_for_completion(&g_completion);
+                wait_for_completion_io(&g_completion);
 
                 BUG_ON(!mnand_ready());
                 g_chip.state = MNAND_IDLE;
@@ -920,7 +920,7 @@ static int mnand_core_write(loff_t off)
         mnand_set(0x0C, (u32)((off >> g_chip.mtd.writesize_shift) << 12));
         BUG_ON(mnand_get(0x0C) != (u32)((off >> g_chip.mtd.writesize_shift) << 12));
 
-        wait_for_completion(&g_completion);
+        wait_for_completion_io(&g_completion);
 
         BUG_ON(!mnand_ready());
         g_chip.state = MNAND_IDLE;
