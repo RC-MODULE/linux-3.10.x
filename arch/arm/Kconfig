@@ -660,6 +660,22 @@ config ARCH_SHMOBILE_LEGACY
 	  kernel. This includes the SH-Mobile, R-Mobile, EMMA-Mobile, R-Car
 	  and RZ families.
 
+config ARCH_RCM_K1879
+       bool "RC Module K1879XB1YA"
+	depends on MMU
+	select CPU_V6
+	select ARM_AMBA
+	select ARM_VIC
+	select GENERIC_GPIO
+	select COMMON_CLK
+	select USB_ARCH_HAS_EHCI
+	select USB_ARCH_HAS_OHCI
+	select ARCH_REQUIRE_GPIOLIB
+	select NEED_MACH_GPIO_H
+	select GENERIC_CLOCKEVENTS
+	help
+	  Support for RC Module's UEMD system
+
 config ARCH_RPC
 	bool "RiscPC"
 	select ARCH_ACORN
@@ -924,6 +940,8 @@ source "arch/arm/plat-pxa/Kconfig"
 source "arch/arm/mach-mmp/Kconfig"
 
 source "arch/arm/mach-qcom/Kconfig"
+
+source "arch/arm/mach-rcm-k1879/Kconfig"
 
 source "arch/arm/mach-realview/Kconfig"
 
