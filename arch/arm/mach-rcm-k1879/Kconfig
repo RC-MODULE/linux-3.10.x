@@ -1,0 +1,2 @@
+config RCM_DUMMY
+bool "Woot!"

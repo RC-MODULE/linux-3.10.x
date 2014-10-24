@@ -1,0 +1,150 @@
+/*
+ *  arch/arm/mach-uemd/platform.h
+ *
+ *  Copyright (C) 2011
+ *
+ *  Sergey Mironov <ierton@gmail.com>
+ *
+ * This program is free software; you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License as published by
+ * the Free Software Foundation; either version 2 of the License, or
+ * (at your option) any later version.
+ *
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ * GNU General Public License for more details.
+ *
+ * You should have received a copy of the GNU General Public License
+ * along with this program; if not, write to the Free Software
+ * Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA
+ */
+#ifndef __ASM_ARCH_PLATFORM_H
+#define __ASM_ARCH_PLATFORM_H
+
+#include <asm/sizes.h>
+#include <asm/mach-types.h>
+#include <mach/irqs.h>
+#include <mach/hardware.h>
+
+/* Declare Area 0 memory region. This is statically-mapped area. 
+ * UART0 and VICs are defined in <mach/hardware.h> */
+#define RCM_K1879_GRI2C1_OFF           0x00021000
+#define RCM_K1879_GRI2C1_PHYS_BASE     RCM_K1879_PHYS(AREA0, RCM_K1879_GRI2C1_OFF)
+#define RCM_K1879_GRI2C1_VIRT_BASE     RCM_K1879_VIRT(AREA0, RCM_K1879_GRI2C1_OFF)
+#define RCM_K1879_GRI2C1_IRQ           RCM_K1879_IRQ(28)
+
+#define RCM_K1879_UARTIRDA_OFF         0x00022000
+#define RCM_K1879_UARTIRDA_PHYS_BASE   RCM_K1879_PHYS(AREA0, RCM_K1879_UARTIRDA_OFF)
+#define RCM_K1879_UARTIRDA_VIRT_BASE   RCM_K1879_VIRT(AREA0, RCM_K1879_UARTIRDA_OFF)
+#define RCM_K1879_UARTIRDA_IRQ         RCM_K1879_IRQ(9)
+#define RCM_K1879_UARTIRDA_CLK         RCM_K1879_FREQ_HZ
+
+#define RCM_K1879_TIMER0_OFF           0x00024000 
+#define RCM_K1879_TIMER0_PHYS_BASE     RCM_K1879_PHYS(AREA0, RCM_K1879_TIMER0_OFF)
+#define RCM_K1879_TIMER0_VIRT_BASE     RCM_K1879_VIRT(AREA0, RCM_K1879_TIMER0_OFF)
+#define RCM_K1879_TIMER0_IRQ           RCM_K1879_IRQ(4)
+
+#define RCM_K1879_GRI2C2_OFF           0x00026000
+#define RCM_K1879_GRI2C2_PHYS_BASE     RCM_K1879_PHYS(AREA0, RCM_K1879_GRI2C2_OFF)
+#define RCM_K1879_GRI2C2_VIRT_BASE     RCM_K1879_VIRT(AREA0, RCM_K1879_GRI2C2_OFF)
+#define RCM_K1879_GRI2C2_IRQ           RCM_K1879_IRQ(29)
+
+#define RCM_K1879_UART1_OFF            0x0002c000
+#define RCM_K1879_UART1_PHYS_BASE      RCM_K1879_PHYS(AREA0, RCM_K1879_UART1_OFF)
+#define RCM_K1879_UART1_VIRT_BASE      RCM_K1879_VIRT(AREA0, RCM_K1879_UART1_OFF)
+#define RCM_K1879_UART1_IRQ            RCM_K1879_IRQ(8)
+#define RCM_K1879_UART1_CLK            RCM_K1879_FREQ_HZ
+
+#define RCM_K1879_TSP_OFF              0x00030000
+#define RCM_K1879_TSP_PHYS_BASE        RCM_K1879_PHYS(AREA0, RCM_K1879_TSP_OFF)
+#define RCM_K1879_TSP_VIRT_BASE        RCM_K1879_VIRT(AREA0, RCM_K1879_TSP_OFF)
+#define RCM_K1879_TSP_IRQ              RCM_K1879_IRQ(38)
+
+#define RCM_K1879_DMC1_OFF		  0x00031000
+#define RCM_K1879_DMC1_PHYS_BASE       RCM_K1879_PHYS(AREA0, RCM_K1879_DMC1_OFF)
+#define RCM_K1879_DMC1_VIRT_BASE       RCM_K1879_VIRT(AREA0, RCM_K1879_DMC1_OFF)
+
+#define RCM_K1879_GRI2C3_OFF           0x0002d000
+#define RCM_K1879_GRI2C3_PHYS_BASE     RCM_K1879_PHYS(AREA0, RCM_K1879_GRI2C3_OFF)
+#define RCM_K1879_GRI2C3_VIRT_BASE     RCM_K1879_VIRT(AREA0, RCM_K1879_GRI2C3_OFF)
+#define RCM_K1879_GRI2C3_IRQ           RCM_K1879_IRQ(30)
+
+#define RCM_K1879_GRETH_OFF            0x00034000
+#define RCM_K1879_GRETH_PHYS_BASE      RCM_K1879_PHYS(AREA0, RCM_K1879_GRETH_OFF)
+#define RCM_K1879_GRETH_VIRT_BASE      RCM_K1879_VIRT(AREA0, RCM_K1879_GRETH_OFF)
+#define RCM_K1879_GRETH_IRQ            RCM_K1879_IRQ(34)
+
+#define RCM_K1879_SCTL_OFF             0x0003c000
+#define RCM_K1879_SCTL_PHYS_BASE       RCM_K1879_PHYS(AREA0, RCM_K1879_SCTL_OFF)
+#define RCM_K1879_SCTL_VIRT_BASE       RCM_K1879_VIRT(AREA0, RCM_K1879_SCTL_OFF)
+#define RCM_K1879_SCTL_SIZE            0x1000
+
+#define RCM_K1879_CRYPTO_OFF           0x0003d000
+#define RCM_K1879_CRYPTO_PHYS_BASE     RCM_K1879_PHYS(AREA0, RCM_K1879_CRYPTO_OFF)
+#define RCM_K1879_CRYPTO_VIRT_BASE     RCM_K1879_VIRT(AREA0, RCM_K1879_CRYPTO_OFF)
+#define RCM_K1879_CRYPTO_IRQ           RCM_K1879_IRQ(40)
+
+#define RCM_K1879_NAND_OFF             0x0003f000
+#define RCM_K1879_NAND_PHYS_BASE       RCM_K1879_PHYS(AREA0, RCM_K1879_NAND_OFF)
+#define RCM_K1879_NAND_VIRT_BASE       RCM_K1879_VIRT(AREA0, RCM_K1879_NAND_OFF)
+#define RCM_K1879_NAND_SIZE            0x1000
+#define RCM_K1879_NAND_IRQ             RCM_K1879_IRQ(36) 
+
+#define RCM_K1879_CRYPTOAES_OFF           0x00040000
+#define RCM_K1879_CRYPTOAES_PHYS_BASE     RCM_K1879_PHYS(AREA0, RCM_K1879_CRYPTOAES_OFF)
+#define RCM_K1879_CRYPTOAES_VIRT_BASE     RCM_K1879_VIRT(AREA0, RCM_K1879_CRYPTOAES_OFF)
+#define RCM_K1879_CRYPTOAES_IRQ           RCM_K1879_IRQ(39)
+
+#define RCM_K1879_GPIOA_OFF            0x0002a000
+#define RCM_K1879_GPIOA_PHYS_BASE      RCM_K1879_PHYS(AREA0, RCM_K1879_GPIOA_OFF)
+#define RCM_K1879_GPIOA_VIRT_BASE      RCM_K1879_VIRT(AREA0, RCM_K1879_GPIOA_OFF)
+/* Inly combined irq is used by the driver */
+#define RCM_K1879_GPIOA_IRQ            RCM_K1879_IRQ(63)
+#define RCM_K1879_GPIOA_SWIRQ_BASE     RCM_K1879_IRQ(RCM_K1879_SW_IRQS_BASE + 0)
+
+#define RCM_K1879_SCI_OFF              0x00027000
+#define RCM_K1879_SCI_PHYS_BASE        RCM_K1879_PHYS(AREA0, RCM_K1879_SCI_OFF)
+#define RCM_K1879_SCI_VIRT_BASE        RCM_K1879_VIRT(AREA0, RCM_K1879_SCI_OFF)
+#define RCM_K1879_SCI_IRQ              RCM_K1879_IRQ(11)
+
+/* Decalre Area 1 memory region. Those should be mapped dynamically. */
+/* This I2C controller manages internal I2C bus used by HDMI */
+#define RCM_K1879_GRI2C0_OFF           0x00171000
+#define RCM_K1879_GRI2C0_PHYS_BASE     RCM_K1879_PHYS(AREA1, RCM_K1879_GRI2C0_OFF)
+#define RCM_K1879_GRI2C0_IRQ           RCM_K1879_IRQ(33)
+
+#define RCM_K1879_MIF_OFF              0x00172000
+#define RCM_K1879_MIF_PHYS_BASE        RCM_K1879_PHYS(AREA1, RCM_K1879_MIF_OFF)
+#define RCM_K1879_MIF_SIZE             0x100
+
+#define RCM_K1879_MVDU_OFF             0x00173000
+#define RCM_K1879_MVDU_PHYS_BASE       RCM_K1879_PHYS(AREA1, RCM_K1879_MVDU_OFF)
+#define RCM_K1879_MVDU_IRQ             RCM_K1879_IRQ(42)
+#define RCM_K1879_MVDU_SIZE            0x1000
+
+#define RCM_K1879_MAUDIO_I2S_OFF             0x00150000
+#define RCM_K1879_MAUDIO_I2S_PHYS_BASE       RCM_K1879_PHYS(AREA1, RCM_K1879_MAUDIO_I2S_OFF)
+
+#define RCM_K1879_MAUDIO_SPDIF_OFF           0x00160000
+#define RCM_K1879_MAUDIO_SPDIF_PHYS_BASE     RCM_K1879_PHYS(AREA1, RCM_K1879_MAUDIO_SPDIF_OFF)
+
+#define RCM_K1879_MAUDIO_DMA_OFF             0x00172800
+#define RCM_K1879_MAUDIO_DMA_PHYS_BASE       RCM_K1879_PHYS(AREA1, RCM_K1879_MAUDIO_DMA_OFF)
+#define RCM_K1879_MAUDIO_DMA_IRQ             RCM_K1879_IRQ(53)
+
+#define RCM_K1879_MSVDHD_OFF           0x00180000
+#define RCM_K1879_MSVDHD_PHYS_BASE     RCM_K1879_PHYS(AREA1, RCM_K1879_MSVDHD_OFF)
+#define RCM_K1879_MSVDHD_IRQ           RCM_K1879_IRQ(44)
+#define RCM_K1879_MSVDHD_SIZE          0x20000
+
+/* Declare Area 2 memory region */
+#define RCM_K1879_USB_PHYS_BASE        RCM_K1879_PHYS(AREA2, 0)
+#define RCM_K1879_USB_IRQ              RCM_K1879_IRQ(35)
+
+/* User OTP ROM reg addresses */
+#define RCM_K1879_SMCONFIG_REG_H            0x20033084
+#define RCM_K1879_SMCONFIG_CONF_LOCK        (1 << 24)
+
+#endif
+
