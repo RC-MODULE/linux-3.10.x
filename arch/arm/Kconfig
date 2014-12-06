@@ -673,6 +673,7 @@ config ARCH_RCM_K1879
 	select ARCH_REQUIRE_GPIOLIB
 	select NEED_MACH_GPIO_H
 	select GENERIC_CLOCKEVENTS
+	select CLKSRC_ARM_DIT
 	help
 	  Support for RC Module's UEMD system
 

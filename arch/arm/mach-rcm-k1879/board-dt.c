@@ -68,15 +68,6 @@ static void __init k1879_map_io(void)
 	iotable_init(k1879_io_desc, ARRAY_SIZE(k1879_io_desc));
 }
 
-void __init k1879_timer_init(void);
-
-static void __init k1879_dt_timer_init(void)
-{
-        of_clk_init(NULL);
-	clocksource_of_init();
-        k1879_timer_init();
-}
-
 static void __init k1879_dt_mach_init(void)
 {
 	printk("K1879: Initializing machine\n");
@@ -116,9 +107,8 @@ static const char *module_dt_match[] = {
 DT_MACHINE_START(UEMD, "Module MB77.07")
           .map_io                 = k1879_map_io,
           .init_irq               = k1879_init_irq,
-          .init_time              = k1879_dt_timer_init,
-          .init_machine           = k1879_dt_mach_init,
+          .init_time              = clocksource_of_init,
+//          .init_machine           = k1879_dt_mach_init,
           .dt_compat              = module_dt_match,
-//        .reserve                = uemd_reserve,
-//        .restart                = uemd_pm_restart
+//          .restart                = k1879_wdt_restart
 MACHINE_END
