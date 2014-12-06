@@ -53,6 +53,11 @@ config VT8500_TIMER
 config CADENCE_TTC_TIMER
 	bool
 
+config CLKSRC_ARM_DIT
+       bool
+       select CLKSRC_OF
+       select CLKSRC_MMIO
+
 config CLKSRC_NOMADIK_MTU
 	bool
 	depends on (ARCH_NOMADIK || ARCH_U8500)

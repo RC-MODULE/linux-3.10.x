@@ -9,8 +9,8 @@
 
 #define NR_IRQS             (64+64)
 
-#define RCM_K1879_IRQ(x)          (32 + (x))
-#define RCM_K1879_VIC0_IRQ(x)     (32 + (x))
-#define RCM_K1879_VIC1_IRQ(x)     (64 + (x))
+#define RCM_K1879_IRQ(x)          (0 + (x))
+#define RCM_K1879_VIC0_IRQ(x)     (0 + (x))
+#define RCM_K1879_VIC1_IRQ(x)     (32 + (x))
 #endif
 

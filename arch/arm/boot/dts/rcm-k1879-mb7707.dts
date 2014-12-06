@@ -33,22 +33,6 @@
 		bootargs = "ignore_loglevel console=ttyS0,38400n8 earlyprintk=serial mtdparts=mnand:0x40000@0x0(boot),0x40000@0x40000(env),0x80000@0x80000(kernel_dtb),0x400000@0x100000(kernel),0x3FB00000@0x500000(rootfs) ubi.mtd=4,2048 root=ubi0:rootfs rootfstype=ubifs";
 	};
 
-	external_osc: oscillator {
-		compatible = "fixed-clock";
-		#clock-cells = <1>;
-		clock-frequency  = <27000000>;
-		clock-output-names = "osc";
-	};
-
-
-	/*clocks {
-		ref_clk: clock@1 {
-			compatible = "fixed-clock";
-			clock-outputs = "ref";
-			clock-frequency = <20000000>;
-		};
-	};*/
-
 	 leds {
 	     compatible = "gpio-leds";
 	     one {
@@ -65,45 +49,6 @@
 
 	axi {
 		apb_d {
-			clk_core: clk@0 {
-				/* Reference 324MHz clock */
-				compatible = "fixed-clock";
-				#clock-cells = <0>;
-				clock-frequency = <324000000>;
-				clock-output-names = "clk_core";
-			};
-
-			clk_axi: clk@1 {
-				/* Reference 162MHz clock */
-				compatible = "fixed-clock";
-				#clock-cells = <0>;
-				clock-frequency = <162000000>;
-				clock-output-names = "clk_axi";
-			};
-
-			clk_prf: clk@2 {
-				/* Reference 81MHz clock */
-				compatible = "fixed-clock";
-				#clock-cells = <0>;
-				clock-frequency = <81000000>;
-				clock-output-names = "clk_prf";
-			};
-
-			clk_apb: clk@3 {
-				/* Reference 54MHz clock */
-				compatible = "fixed-clock";
-				#clock-cells = <0>;
-				clock-frequency = <54000000>;
-				clock-output-names = "clk_apb";
-			};
-
-			clk_27M: clk@4 {
-				/* Reference 27MHz clock */
-				compatible = "fixed-clock";
-				#clock-cells = <0>;
-				clock-frequency = <27000000>;
-				clock-output-names = "clk_27m";
-			};
 
 			ethernet: greth@4000 {
 				local-mac-address = [ 00 02 f7 00 27 0f ];
