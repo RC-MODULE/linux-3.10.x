@@ -138,12 +138,10 @@ static int __init easynmc_probe (struct platform_device *pdev)
 	core->c.send_interrupt    = nmc3_send_interrupt; 
 	core->c.clear_interrupt   = nmc3_clear_interrupt; 
 	
-	
 	if (!core->c.imem_virt) {
 		printk(DRVNAME ": ioremap of internal nmc memory failed");
 		goto errfreemem;
 	}
-	
 	
 	ret =  of_property_read_string(pdev->dev.of_node, "core-name",
 				       &core->c.name);
@@ -203,4 +201,3 @@ module_platform_driver(easynmc_nmc3_driver);
 MODULE_AUTHOR("Andrew Andrianov <andrew@ncrmnt.org>");
 MODULE_DESCRIPTION("EasyNMC NMC3 Core Driver");
 MODULE_LICENSE("GPL v2");
-

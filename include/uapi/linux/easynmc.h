@@ -60,19 +60,23 @@ struct nmc_stdio_channel {
 	uint32_t data[];
 };
 
+struct nmc_ioctl_buffer { 
+	void  *data;
+	size_t len; 
+};
+
 #define NMC3_IOCTL_MAGIC 'N'
 
 #define IOCTL_NMC3_RESET           _IO(NMC3_IOCTL_MAGIC, 0)
 #define IOCTL_NMC3_RESET_STATS     _IO(NMC3_IOCTL_MAGIC, 1)
 #define IOCTL_NMC3_POLLMARK        _IO(NMC3_IOCTL_MAGIC, 2)
 
-#define IOCTL_NMC3_SEND_IRQ        _IOW(NMC3_IOCTL_MAGIC, 3,   uint32_t         )
+#define IOCTL_NMC3_SEND_IRQ        _IOW(NMC3_IOCTL_MAGIC, 3,   uint32_t             )
 
 #define IOCTL_NMC3_GET_NAME        _IOR(NMC3_IOCTL_MAGIC, 4,   char *               )
 #define IOCTL_NMC3_GET_TYPE        _IOR(NMC3_IOCTL_MAGIC, 5,   char *               )
 #define IOCTL_NMC3_GET_IMEMSZ      _IOR(NMC3_IOCTL_MAGIC, 6,   size_t               )
 #define IOCTL_NMC3_GET_STATS       _IOR(NMC3_IOCTL_MAGIC, 7,   struct nmc_core_stats)
-
 
 #define IOCTL_NMC3_CANCEL_BY_TOKEN _IOWR(NMC3_IOCTL_MAGIC, 8,  struct nmc_irq_token)
 #define IOCTL_NMC3_WAIT_ON_TOKEN   _IOWR(NMC3_IOCTL_MAGIC, 9,  struct nmc_irq_token)
@@ -81,7 +85,14 @@ struct nmc_stdio_channel {
 #define IOCTL_NMC3_ATTACH_STDOUT   _IOW(NMC3_IOCTL_MAGIC, 11,  uint32_t)
 #define IOCTL_NMC3_ATTACH_STDIN    _IOW(NMC3_IOCTL_MAGIC, 12,  uint32_t)
 
-#define IOCTL_NMC3_REFORMAT_STDOUT   _IOW(NMC3_IOCTL_MAGIC, 13,  uint32_t)
-#define IOCTL_NMC3_REFORMAT_STDIN    _IOW(NMC3_IOCTL_MAGIC, 14,  uint32_t)
+#define IOCTL_NMC3_REFORMAT_STDOUT _IOW(NMC3_IOCTL_MAGIC, 13,  uint32_t)
+#define IOCTL_NMC3_REFORMAT_STDIN  _IOW(NMC3_IOCTL_MAGIC, 14,  uint32_t)
+
+#define IOCTL_NMC3_GET_APPDATA     _IOWR(NMC3_IOCTL_MAGIC, 15,  struct nmc_ioctl_buffer)
+#define IOCTL_NMC3_SET_APPDATA     _IOWR(NMC3_IOCTL_MAGIC, 16,  struct nmc_ioctl_buffer)
+
+#define IOCTL_NMC3_NUM_CORES       _IOR(NMC3_IOCTL_MAGIC,  17,  uint32_t)
+#define IOCTL_NMC3_LIST_CORES      _IOWR(NMC3_IOCTL_MAGIC, 18,  struct nmc_ioctl_buffer)
+#define IOCTL_NMC3_NMI_ON_CLOSE    _IOW(NMC3_IOCTL_MAGIC,  19,  int)
 
 #endif

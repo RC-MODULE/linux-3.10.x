@@ -48,6 +48,12 @@ struct nmc_core {
 	struct nmc_stdio_channel  *stdin;
 	int               reformat_stdout;
 	int               reformat_stdin;
+	int               nmi_on_close;
+	/* Arbitary per-application data. Cleaned up after application is terminated. */
+	void              *appdata;
+	size_t            appdata_len;
+	/* Internal linked list of cores registered */
+	struct list_head  linkage; 
 };
 
 
