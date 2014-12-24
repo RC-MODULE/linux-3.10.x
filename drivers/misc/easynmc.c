@@ -12,6 +12,7 @@
  * License terms: GNU General Public License (GPL) version 2
  * Author: Andrew Andrianov <andrew@ncrmnt.org>
  */
+
 #include <linux/mm.h>
 #include <linux/vmalloc.h>
 #include <linux/mman.h>
@@ -35,20 +36,27 @@
 #include <linux/easynmc.h>
 #include <linux/semaphore.h>
 #include <linux/circ_buf.h>
+#include <linux/proc_fs.h>
+#include <linux/list.h>
 
 #define DRVNAME "easynmc"
 
 /* TODO: Make nmc cores appear under a proper device class and fix numbering  */
 static unsigned int freecoreid;
 static unsigned int num_cores_registered;
- 
+
+/* A list of struct easynmc_core */
+static LIST_HEAD(core_list);
+
 static DEFINE_SPINLOCK(rlock);
+
 
 #define DECLARE_PARAM(name, def)			\
 	static int g_##name = def;			\
 	module_param_named(name, g_##name, int, 0644);
 
 DECLARE_PARAM(debug, 0);
+DECLARE_PARAM(max_appdata_len, 4096);
 
 #define dbg(format, args... )						\
 	do {								\
@@ -76,6 +84,32 @@ static irqreturn_t easynmc_handle_hp(int irq, void *dev_id)
 	return IRQ_HANDLED;
 }
 
+static void appdata_drop(struct nmc_core *core)
+{
+	if (core->appdata) { 
+		kfree(core->appdata);
+		core->appdata = NULL;
+		core->appdata_len = 0;
+	}
+	dbg("Dropping current appdata\n");
+}
+
+static int appdata_set(struct nmc_core *core, void __user *buf, size_t len)
+{
+	int ret = 0;
+	appdata_drop(core);
+	if (len) { 
+		core->appdata = kmalloc(len, GFP_KERNEL);
+		if (!core->appdata) 
+			return -ENOMEM;
+		core->appdata_len = len;
+		ret = copy_from_user(core->appdata, buf, len);
+		if (ret)
+			core->appdata_len = 0;
+	}
+	return ret; 
+}
+
 /* Returns event number if available and increment counters
  * Return -1 if no events avail on the supplied stats struc
  */
@@ -89,6 +123,24 @@ static int next_event(struct nmc_core *core, uint32_t mask, struct nmc_core_stat
 			return 1<<i;
 		}			
 	return -1; /* No events avail */
+}
+
+static void easynmc_send_irq(struct nmc_core *core, enum nmc_irq i)
+{
+	core->send_interrupt(core, i);
+	core->stats.irqs_sent[i]++; 
+
+
+	/* Some special handling for NMI: 
+	 * - Increment counter in recv.
+	 * - wake the qh
+	 * - Mark core as 'started'
+	 */
+	if (i == NMC_IRQ_NMI) {
+		core->stats.irqs_recv[i]++; 
+		wake_up(&core->qh);
+		core->stats.started = 1; 
+	}	
 }
 
 /* These ioctls are the same for both io and mem devices */
@@ -110,28 +162,27 @@ static long easynmc_ioctl(struct file *filp, unsigned int ioctl_num, unsigned lo
 		core->started++;
 		core->reset(core);
 		break;
+
+	case IOCTL_NMC3_NMI_ON_CLOSE:
+	{
+		int i;
+		int ret = get_user(i,  (uint32_t __user *) ioctl_param);
+		if (ret)
+			return ret;		
+		core->nmi_on_close = i;
+	}
+
 	case IOCTL_NMC3_SEND_IRQ:
 	{
 		enum nmc_irq i;
-		int ret = get_user(i,  (uint32_t __user *) ioctl_param);
+		int ret = get_user(i,  (int __user *) ioctl_param);
 		if (ret)
 			return ret;
 		if (i >= NMC_NUM_IRQS)
 			return -EIO;
-		core->send_interrupt(core, i);
-		core->stats.irqs_sent[i]++; 
+		
+		easynmc_send_irq(core, i);
 
-
-		/* Some special handling for NMI: 
-		 * - Increment counter in recv.
-		 * - wake the qh
-		 * - Mark core as 'started'
-		 */
-		if (i == NMC_IRQ_NMI) {
-			core->stats.irqs_recv[i]++; 
-			wake_up(&core->qh);
-			core->stats.started = 1; 
-		}
 		break;
 	}
 	case IOCTL_NMC3_GET_NAME:
@@ -360,7 +411,65 @@ static long easynmc_ioctl(struct file *filp, unsigned int ioctl_num, unsigned lo
 			core->reformat_stdout  = r;
 		break;
 	}
-	
+
+	case IOCTL_NMC3_GET_APPDATA:
+	{		
+		struct nmc_ioctl_buffer ibuf;
+		size_t len;
+		int ret = copy_from_user(
+			&ibuf, 
+			(void __user *) ioctl_param, 
+			sizeof(struct nmc_ioctl_buffer)
+			);
+
+		if (ret)
+			return -EFAULT;
+		
+		len = min_t(size_t, core->appdata_len, ibuf.len);
+		if (len) 
+			ret = copy_to_user((void __user *) ibuf.data, core->appdata, len);
+
+		if (ret)
+			return -EFAULT;
+
+		/* Set actual length in buffer */
+		ibuf.len = len;
+		
+		ret = copy_to_user(
+			(void __user *) ioctl_param,
+			&ibuf,
+			sizeof(struct nmc_ioctl_buffer)
+			);
+		
+		if (ret)
+			return -EFAULT;
+		
+		break;
+	}
+
+	case IOCTL_NMC3_SET_APPDATA:
+	{
+		struct nmc_ioctl_buffer ibuf;
+		int ret = copy_from_user(
+			&ibuf, 
+			(void __user *) ioctl_param, 
+			sizeof(struct nmc_irq_token)
+			);
+		if (ret)
+			return -EFAULT;
+
+		if (ibuf.len >= g_max_appdata_len) { 
+			printk(KERN_INFO "easynmc: Requested appdata too big. Increase max_appdata_len\n");
+			return -ENOMEM;
+		}
+		
+		return appdata_set(core, 
+				   (void __user *) ibuf.data, ibuf.len);
+		
+		break;
+	}
+
+
 	}
 	return 0;
 }
@@ -375,6 +484,7 @@ static int imem_open(struct inode *inode, struct file *filp)
 {
 	struct nmc_core *core = EASYNMC_MISC2CORE(filp->private_data);
 	dbg("open core %d (imem io)\n", core->id);
+	core->nmi_on_close = 1; /* Send NMI on close, default */
 	return 0;
 }
 
@@ -382,6 +492,8 @@ static int imem_release(struct inode *inode, struct file *filp)
 {
 	struct nmc_core *core = EASYNMC_MISC2CORE(filp->private_data);
 	dbg("release core %d (imem io)\n", core->id);
+	if (core->nmi_on_close)
+		easynmc_send_irq(core, NMC_IRQ_NMI);
 	return 0;
 }
 
@@ -722,18 +834,23 @@ int easynmc_register_core(struct nmc_core *core)
 
 	printk("easynmc: registering core %s (%s) with id %d\n", core->name, core->type, freecoreid);
 	core->id = freecoreid++;
-		
+	list_add_tail(&core->linkage, &core_list);
+
 	/* TODO: 
 	 *  Dynamically allocate and register devices whenever stdio and the rest
 	 *  are attached.
 	 */
 	   
 	snprintf(core->devname_io,  EASYNMC_DEVNAME_LEN, "nmc%dio",  core->id);
-	snprintf(core->devname_mem, EASYNMC_DEVNAME_LEN, "nmc%dmem", core->id);
+	snprintf(core->devname_mem, EASYNMC_DEVNAME_LEN, "nmc%d",    core->id);
 
 	core->mdev_io.core  = core; 
 	core->mdev_mem.core = core;
 
+	/* Initialize app data with zero values */ 
+	core->appdata     = NULL;
+	core->appdata_len = 0;
+		
 	core->mdev_io.mdev.minor	= MISC_DYNAMIC_MINOR;
 	core->mdev_io.mdev.name	        = core->devname_io;
 	core->mdev_io.mdev.fops	        = &io_ops;
@@ -806,8 +923,8 @@ error:
 	freecoreid--;
 	spin_unlock(&rlock);
 	return err;
-
 }
+
 EXPORT_SYMBOL(easynmc_register_core);
 
 int easynmc_deregister_core(struct nmc_core *core) 
@@ -815,20 +932,71 @@ int easynmc_deregister_core(struct nmc_core *core)
 	printk("easynmc: deregistering core %d\n", core->id);
 	/* TODO: Actual cleanup */
 	spin_lock(&rlock);
+	list_del_init(&core->linkage);
 	misc_deregister(&core->mdev_io.mdev);
 	misc_deregister(&core->mdev_mem.mdev);
 	free_irq(core->irqs[NMC_IRQ_LP], core);
 	free_irq(core->irqs[NMC_IRQ_HP], core);
-	spin_unlock(&rlock);
 	num_cores_registered--;
+	spin_unlock(&rlock);
 	return 0;
 }
 EXPORT_SYMBOL(easynmc_deregister_core);
 
 
+
+/* ProcFS stuff */
+
+static ssize_t proc_read(struct file *filp, char __user *buffer, size_t buffer_length, loff_t *offset)
+{
+	struct list_head *iter; 
+	int copied=0; 
+	struct nmc_core *core;
+
+	/* 
+	 * We give all of our information in one go, so if the
+	 * user asks us if we have more information the
+	 * answer should always be no.
+	 *
+	 * This is important because the standard read
+	 * function from the library would continue to issue
+	 * the read system call until the kernel replies
+	 * that it has no more information, or until its
+	 * buffer is filled.
+	 */
+
+	if (*offset > 0)
+		return 0;
+	
+	/* Lock us against any core removal that might happen */
+	spin_lock(&rlock);
+	list_for_each(iter, &core_list) {
+		core = list_entry(iter, struct nmc_core, linkage);
+		copied += snprintf(&buffer[copied], buffer_length, "/dev/nmc%d\n", core->id); 
+		buffer_length -= copied; 
+		*offset += copied;
+	}	
+	spin_unlock(&rlock);
+
+	return copied; /* Do not return NULL byte */
+}
+
+static struct proc_dir_entry *nmc_proc_entry;
+static const struct file_operations proc_fops = {
+	.read = proc_read,
+	.owner = THIS_MODULE
+};
+
 static int __init easynmc_init(void)
 {
 	printk("EasyNMC Unified DSP Framework. (c) RC Module 2014\n");
+	nmc_proc_entry = proc_create("nmc", 0644, NULL, &proc_fops);
+	if (nmc_proc_entry == NULL) { 
+//		remove_proc_entry("nmc", &proc_root);
+		printk(KERN_ALERT "Error: Could not initialize /proc/nmc\n");
+		return -ENOMEM;
+	}
+
 	return 0;
 }
 
@@ -836,6 +1004,7 @@ static void __exit easynmc_exit(void)
 {
 	printk("easynmc: Bye!\n");
 	BUG_ON(num_cores_registered); /* Being paranoid is sometimes good */		
+//	remove_proc_entry("nmc", &proc_root);
 }
 
 module_init(easynmc_init);
