@@ -166,12 +166,13 @@ static long easynmc_ioctl(struct file *filp, unsigned int ioctl_num, unsigned lo
 	case IOCTL_NMC3_NMI_ON_CLOSE:
 	{
 		int i;
-		int ret = get_user(i,  (uint32_t __user *) ioctl_param);
+		int ret = get_user(i,  (int __user *) ioctl_param);
 		if (ret)
 			return ret;		
 		core->nmi_on_close = i;
+		dbg("core->nmi_on_close == %d\n", i);
+		break;
 	}
-
 	case IOCTL_NMC3_SEND_IRQ:
 	{
 		enum nmc_irq i;
@@ -484,16 +485,16 @@ static int imem_open(struct inode *inode, struct file *filp)
 {
 	struct nmc_core *core = EASYNMC_MISC2CORE(filp->private_data);
 	dbg("open core %d (imem io)\n", core->id);
-	core->nmi_on_close = 1; /* Send NMI on close, default */
 	return 0;
 }
 
 static int imem_release(struct inode *inode, struct file *filp)
 {
 	struct nmc_core *core = EASYNMC_MISC2CORE(filp->private_data);
-	dbg("release core %d (imem io)\n", core->id);
-	if (core->nmi_on_close)
+	dbg("release core %d (imem io) %d \n", core->id, core->nmi_on_close);
+	if (core->stats.started && core->nmi_on_close) { 
 		easynmc_send_irq(core, NMC_IRQ_NMI);
+	}
 	return 0;
 }
 
@@ -864,6 +865,8 @@ int easynmc_register_core(struct nmc_core *core)
 
 	core->token_id  = 0;
 	core->cancel_id = 0;
+	/* Default to nmi-on-close */
+	core->nmi_on_close = 1;
 
 	memset(&core->stats, 0x0, sizeof(core->stats));
 	memset(&core->pollstats, 0x0, sizeof(core->pollstats));
