@@ -3755,7 +3755,7 @@ static int mvdu_get_fb_params(struct platform_device *pdev, struct mvdu_device *
 	};
 
 	vdu->fb_buffer_cpu = ioremap(fb_base, fb_size);
-	vdu->fb_buffer_dma = (dma_addr_t) __pa(vdu->fb_buffer_cpu);
+	vdu->fb_buffer_dma = (dma_addr_t) fb_base;
 	vdu->fb_buffer_size = fb_size;
 
 	return 0;
