@@ -713,6 +713,11 @@ static int module_vdu_fb_probe(struct mvdu_device *dev)
 	mode_to_var(dev, dev->current_mode, &info->var);
 	color_mode_to_var(MVDU_FB_DEFAULT_COLOR_MODE, &info->var);	/* read default from _core */
 	info->var.xoffset = info->var.yoffset = 0;
+
+	/* TODO: Move it to kernel params */
+
+	info->var.xres = 1280; 
+	info->var.yres = 720; 
 	dev->fb_fullscreen = !no_osd_areas;
 
 	ret = module_vdu_fb_set_par(info);
