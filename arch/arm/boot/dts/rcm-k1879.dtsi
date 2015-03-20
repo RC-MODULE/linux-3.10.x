@@ -40,44 +40,44 @@
 	};
 
 	clocks {
-			clk_core: clk@0 {
-				/* Reference 324MHz clock */
-				compatible = "fixed-clock";
+			clk_core: clk_core@324M {
+				/* Core 324MHz clock. */
+				compatible = "fixed-factor-clock";
 				#clock-cells = <0>;
-				clock-frequency = <324000000>;
+				clocks = <&oscillator_27m>;
+				clock-div = <1>;
+				clock-mult = <12>;
 				clock-output-names = "clk_core";
 			};
 
-			clk_axi: clk@1 {
-				/* Reference 162MHz clock */
-				compatible = "fixed-clock";
+			clk_axi: clk_axi@162M {
+				/* 162MHz clock */
+				compatible = "fixed-factor-clock";
 				#clock-cells = <0>;
-				clock-frequency = <162000000>;
+				clocks = <&oscillator_27m>;
+				clock-div = <1>;
+				clock-mult = <6>;
 				clock-output-names = "clk_axi";
 			};
 
-			clk_prf: clk@2 {
-				/* Reference 81MHz clock */
-				compatible = "fixed-clock";
+			clk_prf: clk_prf@81M {
+				/* 81MHz clock */
+				compatible = "fixed-factor-clock";
 				#clock-cells = <0>;
-				clock-frequency = <81000000>;
+				clocks = <&oscillator_27m>;
+				clock-div = <1>;
+				clock-mult = <3>;
 				clock-output-names = "clk_prf";
 			};
 
-			clk_apb: clk@3 {
+			pclk: pclk@54M {
 				/* Reference 54MHz clock */
-				compatible = "fixed-clock";
+				compatible = "fixed-factor-clock";
 				#clock-cells = <0>;
-				clock-frequency = <54000000>;
-				clock-output-names = "clk_apb";
-			};
-
-			clk_27M: clk@4 {
-				/* Reference 27MHz clock */
-				compatible = "fixed-clock";
-				#clock-cells = <0>;
-				clock-frequency = <27000000>;
-				clock-output-names = "clk_27m";
+				clocks = <&oscillator_27m>;
+				clock-div = <1>;
+				clock-mult = <2>;
+				clock-output-names = "apb_pclk";
 			};
 
 	};
@@ -140,7 +140,7 @@
 			compatible = "rcm,pinmux";
 			reg = <0x20033084 0x4>;
 			reg-names = "controlH";
-			settings = <0 0 0 1>; // DVB, TS1, TS2, NAND; 0 = GPIO, 1 = peripheral
+//			settings = <0 0 0 1>; // DVB, TS1, TS2, NAND; 0 = GPIO, 1 = peripheral
 		};
 
 		crypto1: aes@20040000 {
@@ -163,7 +163,7 @@
 				compatible = "rcm,k1879xgaisler";
 				interrupt-parent = <&vic0>;
 				interrupts = <28>;
-				clocks = <&clk_apb>;
+				clocks = <&pclk>;
 				clock-names = "apb_pclk";
 				reg-shift = <2>;
 				status = "disabled";
@@ -173,7 +173,7 @@
 				device-type = "serial";
 				reg = <0xb000 0x1000>;
 				compatible = "ns8250";
-				clocks = <&clk_apb>;
+				clocks = <&pclk>;
 				clock-names = "apb_pclk";
 				interrupt-parent = <&vic0>;
 				interrupts = <7>;
@@ -184,7 +184,7 @@
 				device-type = "serial";
 				reg = <0x2000 0x1000>;
 				compatible = "ns8250";
-				clocks = <&clk_apb>;
+				clocks = <&pclk>;
 				clock-names = "apb_pclk";
 				interrupt-parent = <&vic0>;
 				interrupts = <9>;
@@ -199,7 +199,7 @@
 				#size-cells = <0>;
 				interrupts = <0>; /* 32 */
 				interrupt-parent = <&vic1>;
-				clocks = <&clk_apb>;
+				clocks = <&pclk>;
 				clock-names = "apb_pclk";
 				num-cs = <2>;
 				status = "disabled";
@@ -220,7 +220,7 @@
 				reg = <0x5000 0x1000>;
 				compatible = "arm,sp805", "arm,primecell";
 				interrupts = <6>;
-				clocks = <&clk_apb>;
+				clocks = <&pclk>;
 				clock-names = "apb_pclk";
 				arm,primecell-periphid = <0x41022>;			
 				};
@@ -232,7 +232,7 @@
 				compatible = "module,k1879xgaisler";
 				interrupt-parent = <&vic0>;
 				interrupts = <29>;
-				clocks = <&clk_apb>;
+				clocks = <&pclk>;
 				clock-names = "apb_pclk";
 				reg-shift = <2>;
 				status = "disabled";
@@ -265,7 +265,7 @@
 				reg = <0xa000 0x1000>;
 				interrupt-parent = <&vic1>;
 				interrupts = <31>; /* 63 */
-				clocks = <&clk_apb>;
+				clocks = <&pclk>;
 				clock-names = "apb_pclk";
 			};
 
@@ -273,7 +273,7 @@
 				device-type = "serial";
 				reg = <0xc000 0x1000>;
 				compatible = "ns8250";
-				clocks = <&clk_apb>;
+				clocks = <&pclk>;
 				clock-names = "apb_pclk";
 				interrupt-parent = <&vic0>;
 				interrupts = <8>;
@@ -287,7 +287,7 @@
 				compatible = "rcm,k1879xgaisler";
 				interrupts = <30>;
 				interrupt-parent = <&vic0>;
-				clocks = <&clk_apb>;
+				clocks = <&pclk>;
 				clock-names = "apb_pclk";
 				reg-shift = <2>;
 				status = "disabled";
@@ -300,7 +300,7 @@
 				reg = <0xf000 0x1000>;
 				interrupt-parent = <&vic1>;
 				interrupts = <25>; /* 57 */
-				clocks = <&clk_apb>;
+				clocks = <&pclk>;
 				clock-names = "apb_pclk";
 			};
 		};
@@ -338,7 +338,7 @@
 				reg = <0x5000 0x1000>;
 				interrupt-parent = <&vic1>;
 				interrupts = <26>; /* 58 */
-				clocks = <&clk_apb>;
+				clocks = <&pclk>;
 				clock-names = "apb_pclk";
 			};
 
@@ -349,7 +349,7 @@
 				reg = <0x6000 0x1000>;
 				interrupt-parent = <&vic0>;
 				interrupts = <27>; /* 27 */
-				clocks = <&clk_apb>;
+				clocks = <&pclk>;
 				clock-names = "apb_pclk";
 			};
 
@@ -411,8 +411,8 @@
 				compatible = "module,k1879xgaisler";
 				interrupts = <1>; /* 33 */
 				interrupt-parent = <&vic1>;
-				clocks = <&prf_clk>;
-				clock-names = "prf_clk";
+				clocks = <&clk_prf>;
+				clock-names = "clk_prf";
 				reg-shift = <2>;
 				status = "disabled";
 			};
