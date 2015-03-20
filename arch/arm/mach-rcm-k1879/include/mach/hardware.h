@@ -12,8 +12,8 @@
 #define RCM_K1879_FREQ_I2C0_KHZ        81000
 #endif
 
-#define RCM_K1879_PHYS(bus,off)        ((void __iomem*) (RCM_K1879_##bus##_PHYS_BASE + (off)))
-#define RCM_K1879_VIRT(bus,off)        ((void __iomem*) (RCM_K1879_##bus##_VIRT_BASE + (off)))
+#define RCM_K1879_PHYS(bus,off)        (RCM_K1879_##bus##_PHYS_BASE + (off))
+#define RCM_K1879_VIRT(bus,off)        (RCM_K1879_##bus##_VIRT_BASE + (off))
 
 /* Areas of system memory space */
 #define RCM_K1879_AREA0_PHYS_BASE      0x20000000
