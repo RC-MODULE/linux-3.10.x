@@ -674,6 +674,8 @@ config ARCH_RCM_K1879
 	select NEED_MACH_GPIO_H
 	select GENERIC_CLOCKEVENTS
 	select CLKSRC_ARM_DIT
+	select PINCTRL
+	select PINCTRL_RCM
 	help
 	  Support for RC Module's UEMD system
 

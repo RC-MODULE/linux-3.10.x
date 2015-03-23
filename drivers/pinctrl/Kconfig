@@ -104,6 +104,9 @@ config PINCTRL_MESON
 	select OF_GPIO
 	select REGMAP_MMIO
 
+config PINCTRL_RCM
+       bool
+
 config PINCTRL_ROCKCHIP
 	bool
 	select PINMUX
