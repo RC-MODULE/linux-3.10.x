@@ -96,6 +96,9 @@ config PINCTRL_FALCON
 	depends on SOC_FALCON
 	depends on PINCTRL_LANTIQ
 
+config PINCTRL_RCM
+       bool
+
 config PINCTRL_ROCKCHIP
 	bool
 	select PINMUX
