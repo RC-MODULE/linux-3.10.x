@@ -233,4 +233,8 @@ config BCH_CONST_T
 	default 4
 endif
 
+config MTD_MNAND
+       tristate "RC Module MNAND Controller support"
+       default y
+
 endmenu
