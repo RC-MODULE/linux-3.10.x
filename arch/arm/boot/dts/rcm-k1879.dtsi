@@ -1,5 +1,6 @@
 /*
  * Copyright Promwad inc(C) 2011
+ * Copyright RC Module 2010-2015
  *
  * Michail Kurachkin <stelhs@ya.ru>
  *
@@ -140,7 +141,7 @@
 			compatible = "rcm,pinmux";
 			reg = <0x20033084 0x4>;
 			reg-names = "controlH";
-//			settings = <0 0 0 1>; // DVB, TS1, TS2, NAND; 0 = GPIO, 1 = peripheral
+			settings = <0 0 0 1>; // DVB, TS1, TS2, NAND; 0 = GPIO, 1 = peripheral
 		};
 
 		crypto1: aes@20040000 {
