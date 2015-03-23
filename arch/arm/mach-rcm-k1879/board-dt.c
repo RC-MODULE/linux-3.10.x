@@ -68,13 +68,6 @@ static void __init k1879_map_io(void)
 	iotable_init(k1879_io_desc, ARRAY_SIZE(k1879_io_desc));
 }
 
-
-static void __init k1879_dt_time_init(void)
-{
-	of_clk_init(NULL);
-	clocksource_of_init();
-	
-}
 static void __init k1879_dt_mach_init(void)
 {
 	of_platform_populate(NULL, of_default_bus_match_table, NULL, NULL);
@@ -85,23 +78,6 @@ static const struct of_device_id vic_of_match[] __initconst = {
 	{ .compatible = "arm,pl192-vic", },
 	{}
 };
-
-static void __init k1879_init_irq(void)
-{
-	struct device_node *np;
-	printk("K1879: Starting IRQ subsystem\n");
-	np = of_find_matching_node_by_address(NULL, vic_of_match,
-					      RCM_K1879_VIC0_PHYS_BASE);
-	BUG_ON(!np);
-
-	__vic_init((void __iomem*) RCM_K1879_VIC0_VIRT_BASE, 0, 32,  ~0, 0, np);
-
-	np = of_find_matching_node_by_address(NULL, vic_of_match,
-					      RCM_K1879_VIC1_PHYS_BASE);
-
-	BUG_ON(!np);
-	__vic_init((void __iomem*) RCM_K1879_VIC0_VIRT_BASE, 0, 64,  ~0, 0, np);
-}
 
 void k1879_restart(enum reboot_mode mode, const char *cmd)
 {
@@ -125,8 +101,6 @@ static const char *module_dt_match[] = {
 
 DT_MACHINE_START(UEMD, "Module MB77.07")
           .map_io                 = k1879_map_io,
-          .init_irq               = k1879_init_irq,
-          .init_time              = k1879_dt_time_init,
           .init_machine           = k1879_dt_mach_init,
           .dt_compat              = module_dt_match,
           .restart                = k1879_restart
