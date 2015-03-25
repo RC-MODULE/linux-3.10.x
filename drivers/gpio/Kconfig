@@ -197,6 +197,11 @@ config GPIO_F7188X
 	  To compile this driver as a module, choose M here: the module will
 	  be called f7188x-gpio.
 
+config GPIO_FJ
+        tristate "Fujitsu GPIO IP support"
+        default y
+        depends on GPIOLIB
+
 config GPIO_MB86S7X
 	bool "GPIO support for Fujitsu MB86S7x Platforms"
 	depends on ARCH_MB86S7X
