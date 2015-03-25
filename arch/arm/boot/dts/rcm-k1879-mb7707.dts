@@ -127,7 +127,7 @@
 &i2c0 {
 	status = "okay";
 	speed = <100000>;
-
+	clock-frequency = <54000000>;
 	hdmi0: hdmi@39 {
 		compatible = "module,hdmi";
 		reg = <0x39>;
@@ -137,15 +137,7 @@
 &i2c2 {
 	status = "okay";
 	speed = <100000>;
-
-	eds0: eds10180@6a {
-		compatible = "module,EDS10180";
-		reg = <0x6a>;
-	};
-	eds1: eds10394@61 {
-		compatible = "module,EDS10394";
-		reg = <0x61>;
-	};
+	clock-frequency = <54000000>;
 };
 
 &vdu {

@@ -161,7 +161,7 @@
 				#address-cells = <1>;
 				#size-cells = <0>;
 				reg = <0x1000 0x1000>;
-				compatible = "rcm,k1879xgaisler";
+				compatible = "aeroflexgaisler,i2cmst";
 				interrupt-parent = <&vic0>;
 				interrupts = <28>;
 				clocks = <&pclk>;
@@ -230,7 +230,7 @@
 				#address-cells = <1>;
 				#size-cells = <0>;
 				reg = <0x6000 0x1000>;
-				compatible = "module,k1879xgaisler";
+				compatible = "aeroflexgaisler,i2cmst";
 				interrupt-parent = <&vic0>;
 				interrupts = <29>;
 				clocks = <&pclk>;
@@ -256,7 +256,7 @@
 				reg = <0x9000 0x1000>;
 				reg-names = "regs";
 				gpio-controller;
-				compatible = "rcm,fgpio";
+				compatible = "fujitsu,gpio";
 			};
 
 			gpio_a: gpio@a000 {
@@ -285,7 +285,7 @@
 				#address-cells = <1>;
 				#size-cells = <0>;
 				reg = <0xd000 0x1000>;
-				compatible = "rcm,k1879xgaisler";
+				compatible = "aeroflexgaisler,i2cmst";
 				interrupts = <30>;
 				interrupt-parent = <&vic0>;
 				clocks = <&pclk>;
@@ -409,7 +409,7 @@
 				#address-cells = <1>;
 				#size-cells = <0>;
 				reg = <0x1000 0x1000>;
-				compatible = "module,k1879xgaisler";
+				compatible = "aeroflexgaisler,i2cmst";
 				interrupts = <1>; /* 33 */
 				interrupt-parent = <&vic1>;
 				clocks = <&clk_prf>;
@@ -452,6 +452,23 @@
 			maudio,spdif = <&spdif>;
 			status = "disabled";
 		};
+
+		ion_em1: ion@c0000000 { 
+		     compatible = "ion,physmem";
+		     reg = <0xc0000000 0x10000000>;
+		     ion-heap-id = <1>;
+		     ion-heap-align = <0x1000>;
+		     ion-heap-name = "em1";
+		};
+
+		ion_im2: ion@80100000 { 
+		     compatible = "ion,physmem";
+		     reg = <0x80100000 0x40000>;
+		     ion-heap-id = <1>;
+		     ion-heap-align = <0x1000>;		     
+		     ion-heap-name = "em1";
+		};
+
 
 		video_decoder: video_decoder@80180000 {
 			compatible = "module,msvdhd";
