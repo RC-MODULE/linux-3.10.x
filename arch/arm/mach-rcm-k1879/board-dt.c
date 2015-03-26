@@ -27,6 +27,7 @@
 #include <linux/of_platform.h>
 #include <linux/irqdomain.h>
 #include <linux/of_address.h>
+#include <linux/of_irq.h>
 #include <linux/of_platform.h>
 
 #include <asm/mach/arch.h>
@@ -46,6 +47,12 @@
 #include <linux/serial_8250.h>
 #include <mach/platform.h>
 
+#define RCM_K1879_MIF_I2C_INT_TYPE_ENA  0x94
+#define RCM_K1879_MIF_I2C_INT_TYPE      0x98
+#define RCM_K1879_MIF_I2C_INT_ENA       0x9C
+#define RCM_K1879_MIF_I2C_INT_STAT      0xA0
+#define RCM_K1879_SCTL_INT_P_OUT        0x08
+
 static struct map_desc k1879_io_desc[] __initdata = {
 	{
 		.virtual	= RCM_K1879_AREA0_VIRT_BASE,
@@ -53,8 +60,6 @@ static struct map_desc k1879_io_desc[] __initdata = {
 		.length		= RCM_K1879_AREA0_SIZE,
 		.type		= MT_DEVICE,
 	},
-	// FIXME: This static mapping is actually redundant. We are using it for
-	// direct access to multimedia registers.
 	{
 		.virtual	= 0xF9000000,
 		.pfn		= __phys_to_pfn(RCM_K1879_AREA1_PHYS_BASE),
@@ -63,25 +68,88 @@ static struct map_desc k1879_io_desc[] __initdata = {
 	}
 };
 
+static void __iomem *g_k1879_mif = 0;
+
+static void __iomem *k1879_mif_base(void)
+{
+	BUG_ON(g_k1879_mif == 0);
+	return g_k1879_mif;
+}
+
+static void __iomem *k1879_sctl_base(void)
+{
+	return (void __iomem *) RCM_K1879_SCTL_VIRT_BASE;
+}
+
+static void k1879_level_irq_i2c0_fixup(unsigned int irq, struct irq_desc *desc)
+{
+	writel(1, k1879_mif_base() + RCM_K1879_MIF_I2C_INT_STAT);
+	handle_level_irq(irq, desc);
+}
+
+static void k1879_level_irq_i2c1_fixup(unsigned int irq, struct irq_desc *desc)
+{
+	writel(1<<0, k1879_sctl_base() + RCM_K1879_SCTL_INT_P_OUT);
+	handle_level_irq(irq, desc);
+}
+
+static void k1879_level_irq_i2c2_fixup(unsigned int irq, struct irq_desc *desc)
+{
+	writel(1<<1, k1879_sctl_base() + RCM_K1879_SCTL_INT_P_OUT);
+	handle_level_irq(irq, desc);
+}
+
+static void k1879_level_irq_i2c3_fixup(unsigned int irq, struct irq_desc *desc)
+{
+	writel(1<<2, k1879_sctl_base() + RCM_K1879_SCTL_INT_P_OUT);
+	handle_level_irq(irq, desc);
+}
+
 static void __init k1879_map_io(void)
 {
 	iotable_init(k1879_io_desc, ARRAY_SIZE(k1879_io_desc));
 }
 
-static void __init k1879_dt_mach_init(void)
-{
-	of_platform_populate(NULL, of_default_bus_match_table, NULL, NULL);
-}
-
-/* Lookup table for finding a DT node that represents the vic instance */
-static const struct of_device_id vic_of_match[] __initconst = {
-	{ .compatible = "arm,pl192-vic", },
+static const struct of_device_id i2c_of_match[] __initconst = {
+	{ .compatible = "aeroflexgaisler,i2cmst", },
 	{}
 };
 
+static void __init setup_i2c_fixup(u64 base, void (*fixup_handler)(unsigned int irq, struct irq_desc *desc))
+{
+	struct device_node *np;
+	int irq;
+	np = of_find_matching_node_by_address(NULL, i2c_of_match, base);
+	BUG_ON(NULL == np);
+	irq = of_irq_get(np, 0);
+	irq_set_handler(irq, fixup_handler);
+}
+
+static void __init k1879_dt_mach_init(void)
+{
+	of_platform_populate(NULL, of_default_bus_match_table, NULL, NULL);
+
+	g_k1879_mif = ioremap_nocache(RCM_K1879_MIF_PHYS_BASE, RCM_K1879_MIF_SIZE);
+	BUG_ON(g_k1879_mif == NULL);
+
+	/* Setup i2c interrupt fixups */
+	setup_i2c_fixup(RCM_K1879_GRI2C0_PHYS_BASE, k1879_level_irq_i2c0_fixup);
+	setup_i2c_fixup(RCM_K1879_GRI2C1_PHYS_BASE, k1879_level_irq_i2c1_fixup);
+	setup_i2c_fixup(RCM_K1879_GRI2C2_PHYS_BASE, k1879_level_irq_i2c2_fixup);
+	setup_i2c_fixup(RCM_K1879_GRI2C3_PHYS_BASE, k1879_level_irq_i2c3_fixup);
+	/* I2C0 (Internal, HDMI) needs some extra love */
+	do {
+		void __iomem *mif;
+		mif = k1879_mif_base();
+		writel(1, mif + RCM_K1879_MIF_I2C_INT_TYPE_ENA);
+		writel(1, mif + RCM_K1879_MIF_I2C_INT_TYPE);
+		writel(1, mif + RCM_K1879_MIF_I2C_INT_ENA);
+	} while(0);
+}
+
 void k1879_restart(enum reboot_mode mode, const char *cmd)
 {
-	/* The only and recommended way to do a soft-reboot on this platform
+	/* The recommended way to do a soft-reboot on this platform
 	   is write directly to watchdog registers and cause an immediate system 
 	   reboot
 	*/
@@ -92,7 +160,6 @@ void k1879_restart(enum reboot_mode mode, const char *cmd)
 	iowrite32(1, (regs + 0xf04));
 	/* Goodbye! */
 }
-
 
 static const char *module_dt_match[] = {
         "module,mb7707",
