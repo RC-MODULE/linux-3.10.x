@@ -192,7 +192,7 @@
 				reg-shift = <2>;
 			};
 
-			ssp1: ssp@e000 {
+			ssp0: ssp@e000 {
 				compatible = "arm,pl022", "arm,primecell";
 				bus-id = <0>;
 				reg = <0xe000 0x1000>;
@@ -204,7 +204,6 @@
 				clock-names = "apb_pclk";
 				num-cs = <2>;
 				status = "disabled";
-				/* Silicon bug: no periphid at 0xe000 reg */
 				arm,primecell-periphid = <0x41022>;
 			};
 
@@ -223,7 +222,7 @@
 				interrupts = <6>;
 				clocks = <&pclk>;
 				clock-names = "apb_pclk";
-				arm,primecell-periphid = <0x41022>;			
+				arm,primecell-periphid = <0x141805>;			
 				};
 
 			i2c2: i2c@6000 {
@@ -315,7 +314,7 @@
 			ethernet: greth@4000 {
 				#address-cells = <1>;
 				#size-cells = <1>;
-				compatible = "greth";
+				compatible = "aeroflexgaisler,greth";
 				reg = <0x4000 0x1000>;
 				cell-index = <0>;
 				device_type = "network";

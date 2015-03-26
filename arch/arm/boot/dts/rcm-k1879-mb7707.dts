@@ -30,7 +30,7 @@
 	};
 
 	chosen {
-		bootargs = "console=ttyS0,38400n8 earlyprintk=serial root=/dev/sdc rootwait";
+		bootargs = "console=ttyS0,38400n8 earlyprintk=serial console=ttyS0,38400n8 ip=192.168.0.7:192.168.0.1:192.168.0.1:255.255.255.0:rachael:eth0:off root=/dev/nfs nfsroot=192.168.0.1:/srv/rootfs/armhf-shadow";
 	};
 
 	leds {
@@ -92,7 +92,7 @@
 		apb_d {
 
 			ethernet: greth@4000 {
-				local-mac-address = [ 00 02 f7 00 27 0f ];
+				local-mac-address = [ EC 17 66 77 07 00 ];
 				status = "okay";
 				mdio {
 					phy0: ethernet-phy@0 {
@@ -104,7 +104,7 @@
 	};
 };
 
-&ssp1 {
+&ssp0 {
 	status = "okay";
 	spidev@0 {
 		compatible = "spidev";
