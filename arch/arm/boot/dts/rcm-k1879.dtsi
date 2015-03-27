@@ -377,7 +377,7 @@
 			ranges = <0 0x80150000 0x10000>;
 
 			i2s: i2s@0 {
-				compatible = "module,i2s";
+				compatible = "rcm,i2s";
 				reg = <0 0x40>;
 				interrupts = <18>; /* 50 */
 				interrupt-parent = <&vic1>;
@@ -391,7 +391,7 @@
 			ranges = <0x0 0x80160000 0x10000>;
 
 			spdif: spdif@0 {
-				compatible = "module,spdif";
+				compatible = "rcm,spdif";
 				reg = <0x0 0x40>;
 				interrupts = <19>; /* 51 */
 				interrupt-parent = <&vic1>;
@@ -418,7 +418,7 @@
 			};
 
 			dmac: dmac@0x2800 {
-				compatible = "module,dmac";
+				compatible = "rcm,dmac";
 				reg = <0x2800 0x200>;
 				interrupts = <21>; /* 53 */
 				interrupt-parent = <&vic1>;
@@ -427,7 +427,7 @@
 			vdu: vdu@0x3000 {
 				#address-cells = <1>;
 				#size-cells = <1>;
-				compatible = "module,vdu";
+				compatible = "rcm,vdu";
 				reg = <0x3000 0x1000>;
 				interrupts = <10>; /* 42 */
 				interrupt-parent = <&vic1>;
@@ -442,7 +442,7 @@
 		};
 
 		sound: audio@0x80175000 {
-			compatible = "module,audio";
+			compatible = "rcm,audio";
 			reg = <0x80175000 0x40>; /* control */
 			interrupts = <21>; /* 53 */
 			interrupt-parent = <&vic1>;
@@ -473,7 +473,7 @@
 		};
 
 		video_decoder: video_decoder@80180000 {
-			compatible = "module,msvdhd";
+			compatible = "rcm,msvdhd";
 			reg = <0x80180000 0x20000>,
 				<0xc2000000 0x800000>, /* EM1! */
 				<0x80100000 0x40000>;

@@ -1243,25 +1243,25 @@ static int maudio_hardware_init(struct platform_device *pdev,
 			"maudio,dmac", 0);
 	if (!chip->dmac_of_node) {
 		dev_err(&pdev->dev,
-			"Property 'module,dmac' missing or invalid\n");
+			"Property 'rcm,dmac' missing or invalid\n");
 		ret = -EINVAL;
 		goto error_acquire_resource;
 	};
 
 	chip->i2s_of_node = of_parse_phandle(np,
-			"maudio,i2s", 0);
+			"rcm,i2s", 0);
 	if (!chip->i2s_of_node) {
 		dev_err(&pdev->dev,
-			"Property 'module,i2s' missing or invalid\n");
+			"Property 'rcm,i2s' missing or invalid\n");
 		ret = -EINVAL;
 		goto error_acquire_resource;
 	};
 
 	chip->spdif_of_node = of_parse_phandle(np,
-			"maudio,spdif", 0);
+			"rcm,spdif", 0);
 	if (!chip->spdif_of_node) {
 		dev_err(&pdev->dev,
-			"Property 'module,spdif' missing or invalid\n");
+			"Property 'rcm,spdif' missing or invalid\n");
 		ret = -EINVAL;
 		goto error_acquire_resource;
 	};
@@ -1551,7 +1551,7 @@ static int maudio_driver_remove(struct platform_device *pdev)
 }
 
 static const struct of_device_id maudio_of_match[] = {
-	{ .compatible = "module,audio", },
+	{ .compatible = "rcm,maudio", },
 	{},
 };
 
