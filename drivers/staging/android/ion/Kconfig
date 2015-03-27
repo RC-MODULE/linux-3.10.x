@@ -33,3 +33,10 @@ config ION_TEGRA
 	help
 	  Choose this option if you wish to use ion on an nVidia Tegra.
 
+config ION_PHYSMEM
+	bool "Generic PhysMem ION driver"
+	depends on ION
+	help
+	  Provides a generic ION driver that registers the
+	  /dev/ion device with heaps from devicetree entries. 
+	  This heaps are made of chunks of physical memory 

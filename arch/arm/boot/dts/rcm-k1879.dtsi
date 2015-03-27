@@ -454,20 +454,23 @@
 
 		ion_em1: ion@c0000000 { 
 		     compatible = "ion,physmem";
-		     reg = <0xc0000000 0x10000000>;
-		     ion-heap-id = <1>;
+		     reg = <0xc0000000 0x8000000>;
+		     reg-names = "memory";
+		     ion-heap-id   = <1>;
+		     ion-heap-type = <3>;
 		     ion-heap-align = <0x1000>;
-		     ion-heap-name = "em1";
+		     ion-heap-name = "EM1";
 		};
 
-		ion_im2: ion@80100000 { 
+		ion_im0: ion@80100000 { 
 		     compatible = "ion,physmem";
-		     reg = <0x80100000 0x40000>;
-		     ion-heap-id = <1>;
+		     reg = <0x00100000 0x40000>;
+		     reg-names = "memory";
+		     ion-heap-id   = <1>;
+		     ion-heap-type = <3>;
 		     ion-heap-align = <0x1000>;		     
-		     ion-heap-name = "em1";
+		     ion-heap-name = "IM0";
 		};
-
 
 		video_decoder: video_decoder@80180000 {
 			compatible = "module,msvdhd";
