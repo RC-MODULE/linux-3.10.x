@@ -159,6 +159,23 @@ config CRYPTO_GHASH_S390
 
 	  It is available as of z196.
 
+config CRYPTO_DEV_MCRYPTO_DES
+        tristate "RC Module DES/3DES hardware accelerator"
+	depends on ARCH_RCM_K1879
+        select CRYPTO_ALGAPI
+        select CRYPTO_AUTHENC
+        select CRYPTO_BLKCIPHER
+        help
+                Driver for Module Crypto 3DES hardware accelerator
+
+config CRYPTO_DEV_MCRYPTO_AES
+        tristate "RC Module DES/3DES hardware accelerator"
+	depends on ARCH_RCM_K1879
+        select CRYPTO_ALGAPI
+        select CRYPTO_AUTHENC
+        help
+                Driver for Module Crypto AES hardware accelerator
+
 config CRYPTO_DEV_MV_CESA
 	tristate "Marvell's Cryptographic Engine"
 	depends on PLAT_ORION

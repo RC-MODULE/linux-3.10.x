@@ -144,11 +144,11 @@
 			settings = <0 0 0 1>; // DVB, TS1, TS2, NAND; 0 = GPIO, 1 = peripheral
 		};
 
-		crypto1: aes@20040000 {
+		crypto_aes: aes@20040000 {
 			compatible = "rcm,mcrypto_aes";
 			reg = <0x20040000 0x80>;
 			interrupt-parent = <&vic1>;
-			interrupts = <7>; /* 39 */
+			interrupts = <7>;
 		};
 
 		apb_c {
@@ -353,11 +353,11 @@
 				clock-names = "apb_pclk";
 			};
 
-			crypto0: des@d000 {
-				compatible = "rcm,mcrypto";
+			crypto_des: des@d000 {
+				compatible = "rcm,mcrypto_des";
 				reg = <0xd000 0x1000>;
 				interrupt-parent = <&vic1>;
-				interrupts = <8>; /* 40 */
+				interrupts = <8>;
 			};
 
 			nand0: nand@f000 {
