@@ -95,7 +95,8 @@ static void fj_gpio_set(struct gpio_chip *gc, unsigned offset,
 static int fj_gpio_remove(struct platform_device *pdev)
 {
 	struct fj_gpio *fj_gpio = platform_get_drvdata(pdev);
-	return gpiochip_remove(&fj_gpio->gpio_chip);
+	gpiochip_remove(&fj_gpio->gpio_chip);
+	return 0;
 }
 
 static int fj_gpio_probe(struct platform_device *pdev)
@@ -162,7 +163,6 @@ static const struct of_device_id of_match_table[] = {
 };
 
 MODULE_DEVICE_TABLE(of, of_match_table);
-
 
 static struct platform_driver fjgpio_platform_driver = {
 	.probe		= fj_gpio_probe,
