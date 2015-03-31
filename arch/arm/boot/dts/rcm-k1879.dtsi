@@ -19,7 +19,9 @@
  * Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA
  */
 
-/include/ "skeleton.dtsi"
+#include "skeleton.dtsi"
+#include <dt-bindings/ion,physmem.h>
+
 / {
 	model = "RC Module K1879XB1YA";
 	compatible = "rcm,k1879x";
@@ -106,17 +108,18 @@
 		};
 
 		dvb_ci0: dvb-ci@10050000 {
+			/* Missing driver */
 			compatible = "rcm,mdvbci";
 			reg = <0x10050000 0x10000>;
 			interrupts = <37>;
 		};
 
 		xdmac0: xdmac@10070000 {
+			/* Missing driver */
 			compatible = "rcm,xdmac";
 			reg = <0x10070000 0x10000>;
 			interrupts = <16 17 18 19 20 21 22 23>;
 		};
-
 		
 		vic0: interrupt-controller@20000000 {
 			reg = <0x20000000 0x10000>;
@@ -136,7 +139,6 @@
 			valid-wakeup-mask = <0x00000000>;
 		};
 		
-
 		pinmux: sysconfigh@0x20033084 {
 			compatible = "rcm,pinmux";
 			reg = <0x20033084 0x4>;
@@ -418,6 +420,7 @@
 			};
 
 			dmac: dmac@0x2800 {
+				/* Missing driver */
 				compatible = "rcm,dmac";
 				reg = <0x2800 0x200>;
 				interrupts = <21>; /* 53 */
@@ -452,24 +455,35 @@
 			status = "disabled";
 		};
 
+
+		ion_im0: ion@0x00100000 { 
+		     compatible = "ion,physmem";
+		     reg = <0x00100000 0x40000>;
+		     reg-names = "memory";
+		     ion-heap-id   = <2>;
+		     ion-heap-type = <ION_HEAP_TYPE_DMA>;
+		     ion-heap-align = <0x10>;		     
+		     ion-heap-name = "IM0";
+		};
+
+		ion_im2: ion@80100000 { 
+		     compatible = "ion,physmem";
+		     reg = <0x80100000 0x40000>;
+		     reg-names = "memory";
+		     ion-heap-id   = <1>;
+		     ion-heap-type = <ION_HEAP_TYPE_DMA>;
+		     ion-heap-align = <0x10>;		     
+		     ion-heap-name = "IM2";
+		};
+
 		ion_em1: ion@c0000000 { 
 		     compatible = "ion,physmem";
 		     reg = <0xc0000000 0x8000000>;
 		     reg-names = "memory";
-		     ion-heap-id   = <1>;
-		     ion-heap-type = <3>;
-		     ion-heap-align = <0x1000>;
+		     ion-heap-id   = <0>;
+		     ion-heap-type = <ION_HEAP_TYPE_DMA>;
+		     ion-heap-align = <0x10>;
 		     ion-heap-name = "EM1";
-		};
-
-		ion_im0: ion@80100000 { 
-		     compatible = "ion,physmem";
-		     reg = <0x00100000 0x40000>;
-		     reg-names = "memory";
-		     ion-heap-id   = <1>;
-		     ion-heap-type = <3>;
-		     ion-heap-align = <0x1000>;		     
-		     ion-heap-name = "IM0";
 		};
 
 		video_decoder: video_decoder@80180000 {
