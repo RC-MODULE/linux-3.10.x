@@ -1,5 +1,5 @@
 /*
- *  arch/arm/mach-uemd/include/mach/uncompress.h
+ *  arch/arm/mach-rcm-k1879/include/mach/uncompress.h
  *
  *  Copyright (C) 2011 RC Module
  *
@@ -20,8 +20,8 @@
  * Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA
  */
 
-#ifndef __ASM_ARM_ARCH_IO_H
-#define __ASM_ARM_ARCH_IO_H
+#ifndef ASM_ARM_ARCH_IO_H
+#define ASM_ARM_ARCH_IO_H
 
 #include <mach/hardware.h>
 

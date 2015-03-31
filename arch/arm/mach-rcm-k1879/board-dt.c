@@ -1,9 +1,10 @@
 /*
- *  arch/arm/mach-uemd/uemd.c
+ *  arch/arm/mach-rcm-k1879/board-dt.c
  *
- *  Copyright (C) 2011
+ *  Copyright (C) 2011-2015 RC Module
  *
  *  Sergey Mironov <ierton@gmail.com>
+ *  Andrew Andrianov <andrew@ncrmnt.org>
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -19,6 +20,7 @@
  * along with this program; if not, write to the Free Software
  * Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA
  */
+
 #include <linux/io.h>
 #include <linux/delay.h>
 
@@ -45,13 +47,7 @@
 #include <linux/memblock.h>
 
 #include <linux/serial_8250.h>
-#include <mach/platform.h>
-
-#define RCM_K1879_MIF_I2C_INT_TYPE_ENA  0x94
-#define RCM_K1879_MIF_I2C_INT_TYPE      0x98
-#define RCM_K1879_MIF_I2C_INT_ENA       0x9C
-#define RCM_K1879_MIF_I2C_INT_STAT      0xA0
-#define RCM_K1879_SCTL_INT_P_OUT        0x08
+#include <mach/hardware.h>
 
 static struct map_desc k1879_io_desc[] __initdata = {
 	{
@@ -68,7 +64,7 @@ static struct map_desc k1879_io_desc[] __initdata = {
 	}
 };
 
-static void __iomem *g_k1879_mif = 0;
+static void __iomem *g_k1879_mif;
 
 static void __iomem *k1879_mif_base(void)
 {
@@ -115,10 +111,13 @@ static const struct of_device_id i2c_of_match[] __initconst = {
 	{}
 };
 
-static void __init setup_i2c_fixup(u64 base, void (*fixup_handler)(unsigned int irq, struct irq_desc *desc))
+static void __init setup_i2c_fixup(u64 base,
+				   void (*fixup_handler)(unsigned int irq,
+							 struct irq_desc *desc))
 {
 	struct device_node *np;
 	int irq;
+
 	np = of_find_matching_node_by_address(NULL, i2c_of_match, base);
 	BUG_ON(NULL == np);
 	irq = of_irq_get(np, 0);
@@ -128,8 +127,8 @@ static void __init setup_i2c_fixup(u64 base, void (*fixup_handler)(unsigned int 
 static void __init k1879_dt_mach_init(void)
 {
 	of_platform_populate(NULL, of_default_bus_match_table, NULL, NULL);
-
-	g_k1879_mif = ioremap_nocache(RCM_K1879_MIF_PHYS_BASE, RCM_K1879_MIF_SIZE);
+	g_k1879_mif = ioremap_nocache(RCM_K1879_MIF_PHYS_BASE,
+				      RCM_K1879_MIF_SIZE);
 	BUG_ON(g_k1879_mif == NULL);
 
 	/* Setup i2c interrupt fixups */
@@ -140,20 +139,22 @@ static void __init k1879_dt_mach_init(void)
 	/* I2C0 (Internal, HDMI) needs some extra love */
 	do {
 		void __iomem *mif;
+
 		mif = k1879_mif_base();
 		writel(1, mif + RCM_K1879_MIF_I2C_INT_TYPE_ENA);
 		writel(1, mif + RCM_K1879_MIF_I2C_INT_TYPE);
 		writel(1, mif + RCM_K1879_MIF_I2C_INT_ENA);
-	} while(0);
+	} while (0);
 }
 
 void k1879_restart(enum reboot_mode mode, const char *cmd)
 {
 	/* The recommended way to do a soft-reboot on this platform
-	   is write directly to watchdog registers and cause an immediate system 
-	   reboot
+	   is write directly to watchdog registers and cause an immediate
+	   system reboot
 	*/
 	void __iomem *regs;
+
 	pr_info("k1879: Requested system restart\n");
 	regs = ioremap_nocache(0x20025000, 0xfff);
 	iowrite32(1, (regs + 0xf00));
@@ -161,14 +162,15 @@ void k1879_restart(enum reboot_mode mode, const char *cmd)
 	/* Goodbye! */
 }
 
-static const char *module_dt_match[] = {
-        "module,mb7707",
-        NULL
+static const char * const module_dt_match[] = {
+	"rcm,mb7707",
+	"rcm,k1879x",
+	NULL
 };
 
-DT_MACHINE_START(UEMD, "Module MB77.07")
-          .map_io                 = k1879_map_io,
-          .init_machine           = k1879_dt_mach_init,
-          .dt_compat              = module_dt_match,
-          .restart                = k1879_restart
+DT_MACHINE_START(K1879, "RC Module K1879XB1YA")
+	.map_io                 = k1879_map_io,
+	.init_machine           = k1879_dt_mach_init,
+	.dt_compat              = module_dt_match,
+	.restart                = k1879_restart
 MACHINE_END
