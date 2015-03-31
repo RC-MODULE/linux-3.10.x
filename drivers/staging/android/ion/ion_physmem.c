@@ -72,7 +72,7 @@ static int ion_physmem_probe(struct platform_device *pdev)
 		return ret;
 
 	ret =  of_property_read_u32(pdev->dev.of_node, "ion-heap-type",
-				    &ion_heap_id);
+				    &ion_heap_type);
 	if (ret != 0)
 		return ret;
 
