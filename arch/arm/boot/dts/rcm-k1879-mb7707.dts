@@ -19,7 +19,8 @@
  */
 
 /dts-v1/;
-/include/ "rcm-k1879.dtsi"
+#include "rcm-k1879.dtsi"
+
 / {
 	model = "Module MB77.07";
 	compatible = "module,mb7707";
@@ -30,7 +31,7 @@
 	};
 
 	chosen {
-		bootargs = "console=ttyS0,38400n8 earlyprintk=serial console=ttyS0,38400n8 ip=192.168.0.7:192.168.0.1:192.168.0.1:255.255.255.0:rachael:eth0:off root=/dev/nfs nfsroot=192.168.0.1:/srv/rootfs/armhf-shadow";
+		bootargs = "console=ttyS0,38400n8 earlyprintk=serial root=/dev/ram";
 	};
 
 	leds {
@@ -156,4 +157,3 @@
 &video_decoder {
 	status = "okay";
 };
-
