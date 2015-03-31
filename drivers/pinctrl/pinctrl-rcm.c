@@ -16,8 +16,6 @@
 #include <linux/of_platform.h>
 #include <linux/io.h>
 
-#include <mach/platform.h>
-
 #define DRIVER_NAME "rcm-pinmux"
 
 struct pmux_device {
@@ -127,6 +125,6 @@ static struct platform_driver of_platform_pinmux_driver = {
 module_platform_driver(of_platform_pinmux_driver);
 
 MODULE_AUTHOR("Vladimir Trubiloff <vtrubiloff@gmail.com>");
-MODULE_DESCRIPTION("Module pinmux control driver");
+MODULE_DESCRIPTION("RCM pinmux control driver");
 MODULE_LICENSE("GPL");
 

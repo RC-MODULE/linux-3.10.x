@@ -1,16 +1,28 @@
+/*
+ *  arch/arm/mach-rcm-k1879/include/mach/irqs.h
+ *
+ *  Copyright (C) 2011 RC Module
+ *
+ *  Sergey Mironov <ierton@gmail.com>
+ *
+ * This program is free software; you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License as published by
+ * the Free Software Foundation; either version 2 of the License, or
+ * (at your option) any later version.
+ *
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ * GNU General Public License for more details.
+ *
+ * You should have received a copy of the GNU General Public License
+ * along with this program; if not, write to the Free Software
+ * Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA
+ */
+
 #ifndef __ASM_ARCH_IRQS_H
 #define __ASM_ARCH_IRQS_H
 
-//#define IRQ_LOCALTIMER      29
-//#define IRQ_LOCALWDOG       30
+#define NR_IRQS                   128
 
-//#define RCM_K1879_HW_IRQS_BASE   0
-//#define RCM_K1879_SW_IRQS_BASE   64
-
-#define NR_IRQS             (64+64)
-
-#define RCM_K1879_IRQ(x)          (0 + (x))
-#define RCM_K1879_VIC0_IRQ(x)     (0 + (x))
-#define RCM_K1879_VIC1_IRQ(x)     (32 + (x))
 #endif
-

@@ -1,7 +1,9 @@
 /*
  * Copyright Promwad inc(C) 2011
+ * Copyright RC Module      2015
  *
  * Michail Kurachkin <stelhs@ya.ru>
+ * Andrew Andrianov  <andrew@ncrmnt.org>
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -23,7 +25,7 @@
 
 / {
 	model = "Module MB77.07";
-	compatible = "module,mb7707";
+	compatible = "rcm,mb7707";
 
 	memory {
 		device_type = "memory";
@@ -31,77 +33,78 @@
 	};
 
 	chosen {
-		bootargs = "console=ttyS0,38400n8 earlyprintk=serial root=/dev/ram";
+		bootargs = "console=ttyS0,38400n8 earlyprintk=serial";
 	};
 
 	leds {
-	     compatible = "gpio-leds";
-	     one {
-	     	  label = "mb7707::led1";
-		  gpios = <&gpiofj 31 0>; /* LED1 */
-		  linux,default-trigger = "heartbeat";
-	     };
-	     two {
-		  label = "mb7707::led2";
-		  gpios = <&gpiofj 30 0>; /* LED2 */
-		  default-state = "off";
-	     };
-        };
+		compatible = "gpio-leds";
+		one {
+			label = "mb7707::led1";
+			gpios = <&gpiofj 31 0>; /* LED1 */
+			linux,default-trigger = "heartbeat";
+		};
+		two {
+			label = "mb7707::led2";
+			gpios = <&gpiofj 30 0>; /* LED2 */
+		default-state = "off";
+		};
+	};
 
 	clocks {
 
-			oscillator_27m: oscillator@27M {
-				/* On-board crystal, 27MHz clock */
-				compatible = "fixed-clock";
-				#clock-cells = <0>;
-				clock-frequency = <27000000>;
-				clock-accuracy = <0>;
-				clock-output-names = "clk_27m";
-			};
-
-			oscillator_48m: oscillator@48M {
-				/* On-board crystal, 48MHz clock */
-				compatible = "fixed-clock";
-				#clock-cells = <0>;
-				clock-frequency = <48000000>;
-				clock-output-names = "clk_48m";
-			};
-
-			oscillator_74_25m: oscillator@74M {
-				/* On-board crystal, 74.25MHz clock */
-				compatible = "fixed-clock";
-				#clock-cells = <0>;
-				clock-frequency = <74250000>;
-				clock-output-names = "clk_74m";
-			};
-
-			oscillator_12_288m: oscillator@12M {
-				/* On-board crystal, 12.288MHz clock */
-				compatible = "fixed-clock";
-				#clock-cells = <0>;
-				clock-frequency = <12288000>;
-				clock-output-names = "clk_12m";
-			};
+	oscillator_27m: oscillator@27M {
+			/* On-board crystal, 27MHz clock */
+			compatible = "fixed-clock";
+			#clock-cells = <0>;
+			clock-frequency = <27000000>;
+			clock-accuracy = <0>;
+			clock-output-names = "clk_27m";
 		};
+
+	oscillator_48m: oscillator@48M {
+			/* On-board crystal, 48MHz clock */
+			compatible = "fixed-clock";
+			#clock-cells = <0>;
+			clock-frequency = <48000000>;
+			clock-output-names = "clk_48m";
+		};
+
+	oscillator_74_25m: oscillator@74M {
+			/* On-board crystal, 74.25MHz clock */
+			compatible = "fixed-clock";
+			#clock-cells = <0>;
+			clock-frequency = <74250000>;
+			clock-output-names = "clk_74m";
+		};
+
+	oscillator_12_288m: oscillator@12M {
+			/* On-board crystal, 12.288MHz clock */
+			compatible = "fixed-clock";
+			#clock-cells = <0>;
+			clock-frequency = <12288000>;
+			clock-output-names = "clk_12m";
+		};
+	};
 
 	axi {
 
-		pinmux: sysconfigh@0x20033084 {
-			settings = <0 0 0 1>; // DVB, TS1, TS2, NAND; 0 = GPIO, 1 = peripheral
+	pinmux: sysconfigh@0x20033084 {
+			/* DVB, TS1, TS2, NAND; 0 = GPIO, 1 = peripheral */
+			settings = <0 0 0 1>;
 		};
 
 		apb_d {
 
-			ethernet: greth@4000 {
+		ethernet: greth@4000 {
 				local-mac-address = [ EC 17 66 77 07 00 ];
 				status = "okay";
 				mdio {
-					phy0: ethernet-phy@0 {
+				phy0: ethernet-phy@0 {
 						reg = <0x1f>;
 					};
 				};
 			};
-		};		
+		};
 	};
 };
 
@@ -126,11 +129,11 @@
 
 
 &i2c0 {
-	status = "okay";
 	speed = <100000>;
 	clock-frequency = <54000000>;
+	status = "okay";
 	hdmi0: hdmi@39 {
-		compatible = "module,hdmi";
+		compatible = "rcm,hdmi";
 		reg = <0x39>;
 	};
 };
