@@ -347,7 +347,6 @@ static void amba_device_release(struct device *dev)
  */
 int amba_device_add(struct amba_device *dev, struct resource *parent)
 {
-	printk("ADDDD \n");
 	u32 size;
 	void __iomem *tmp;
 	int i, ret;
@@ -356,15 +355,13 @@ int amba_device_add(struct amba_device *dev, struct resource *parent)
 	WARN_ON(dev->irq[1] == (unsigned int)-1);
 
 	ret = request_resource(parent, &dev->res);
-	if (ret) {
-		printk("rq res failed \n");
+	if (ret)
 		goto err_out;
-	}
+
 	/* Hard-coded primecell ID instead of plug-n-play */
-	if (dev->periphid != 0) {
-		printk("hardcode \n");
+	if (dev->periphid != 0)
 		goto skip_probe;
-	}
+
 	/*
 	 * Dynamically calculate the size of the resource
 	 * and use this for iomap
@@ -372,7 +369,6 @@ int amba_device_add(struct amba_device *dev, struct resource *parent)
 	size = resource_size(&dev->res);
 	tmp = ioremap(dev->res.start, size);
 	if (!tmp) {
-		printk("enomem failed \n");
 		ret = -ENOMEM;
 		goto err_release;
 	}
@@ -397,14 +393,10 @@ int amba_device_add(struct amba_device *dev, struct resource *parent)
 		if (cid == AMBA_CID || cid == CORESIGHT_CID)
 			dev->periphid = pid;
 
-		if (!dev->periphid) {
-			printk("preid failed \n");
+		if (!dev->periphid)
 			ret = -ENODEV;
-		}
-	} else {
-		printk("no clk \n");
 	}
-	
+
 	iounmap(tmp);
 
 	if (ret)
