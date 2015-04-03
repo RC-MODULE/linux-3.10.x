@@ -1523,11 +1523,8 @@ config DEBUG_UART_VIRT
 	default 0xfefb9800 if DEBUG_OMAP1UART3 || DEBUG_OMAP7XXUART3
 	default 0xfefff700 if ARCH_IOP33X
 	default 0xff003000 if DEBUG_U300_UART
-<<<<<<< HEAD
 	default 0xffd01000 if DEBUG_HIP01_UART
-=======
 	default 0xf802b000 if ARCH_RCM_K1879
->>>>>>> debca45... K1879: Initial commit of K1879 refactor
 	default DEBUG_UART_PHYS if !MMU
 	depends on DEBUG_LL_UART_8250 || DEBUG_LL_UART_PL01X || \
 		DEBUG_UART_8250 || DEBUG_UART_PL01X || DEBUG_MESON_UARTAO || \
