@@ -28,14 +28,14 @@
 
 /* Areas of system memory space */
 #define RCM_K1879_AREA0_PHYS_BASE      0x20000000
+#define RCM_K1879_AREA0_SIZE           SZ_512K
 #define RCM_K1879_AREA0_VIRT_BASE      0xf8000000
-#define RCM_K1879_AREA0_SIZE           SZ_1M
 
 #define RCM_K1879_AREA1_PHYS_BASE      0x80000000
-#define RCM_K1879_AREA1_SIZE           SZ_1M
+#define RCM_K1879_AREA1_SIZE           SZ_2M
+#define RCM_K1879_AREA1_VIRT_BASE      0xf8100000
 
-#define RCM_K1879_AREA2_PHYS_BASE      0x10040000
-#define RCM_K1879_AREA2_SIZE           (0x10050000-0x1004000)
+
 
 /*
  * Bare minimum required to bring up the board.

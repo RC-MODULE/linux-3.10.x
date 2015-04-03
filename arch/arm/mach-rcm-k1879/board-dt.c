@@ -57,11 +57,11 @@ static struct map_desc k1879_io_desc[] __initdata = {
 		.type		= MT_DEVICE,
 	},
 	{
-		.virtual	= 0xF9000000,
+		.virtual	= RCM_K1879_AREA1_VIRT_BASE,
 		.pfn		= __phys_to_pfn(RCM_K1879_AREA1_PHYS_BASE),
-		.length		= 2*RCM_K1879_AREA1_SIZE,
+		.length		= RCM_K1879_AREA1_SIZE,
 		.type		= MT_DEVICE,
-	}
+	},
 };
 
 static void __iomem *g_k1879_mif;
