@@ -18,7 +18,7 @@
 #include <linux/of_platform.h>
 #include <linux/of_address.h>
 #include <linux/dma-mapping.h>
-#include <asm/io.h>
+#include <linux/io.h>
 #include "ion.h"
 #include "ion_priv.h"
 
@@ -32,6 +32,10 @@ static const struct of_device_id of_match_table[] = {
 };
 MODULE_DEVICE_TABLE(of, of_match_table);
 
+/*
+#define PHYSMAP_ION_DEBUG y
+*/
+
 struct physmem_ion_dev {
 	struct ion_platform_heap  data;
 	struct ion_heap          *heap;
@@ -39,26 +43,30 @@ struct physmem_ion_dev {
 	void                     *freepage_ptr;
 };
 
-static long ion_physmem_custom_ioctl(struct ion_client *client, unsigned int cmd, unsigned long arg)
+static long ion_physmem_custom_ioctl(struct ion_client *client,
+				     unsigned int cmd,
+				     unsigned long arg)
 {
 /* Just an ugly debugging hack. */
-#if CONFIG_ION_PHYSMEM_DEBUG
-        if ((cmd == 0xff)) {
-                ion_phys_addr_t addr;
-                size_t len;
+#ifdef PHYSMAP_ION_DEBUG
+	if ((cmd == 0xff)) {
+		ion_phys_addr_t addr;
+		size_t len;
 		struct ion_handle *hndl;
-                printk(KERN_INFO "=== ION PHYSMEM DEBUG PRINTOUT ===\n");
+
+		printk(KERN_INFO "=== ION PHYSMEM DEBUG PRINTOUT ===\n");
 		printk(KERN_INFO "N.B. DO disable CONFIG_ION_PHYSMEM_DEBUG in production\n");
-                printk(KERN_INFO "Shared fd is %d\n", (int) arg);
-                hndl = ion_import_dma_buf(client, arg);
-                if (!hndl) {
+		printk(KERN_INFO "Shared fd is %d\n", (int) arg);
+		hndl = ion_import_dma_buf(client, arg);
+		if (!hndl) {
 			printk(KERN_INFO "Failed to import shared descriptor.\n");
-                        return 0;
+			return 0;
 		}
-                ion_phys(client, hndl, &addr, &len);
-                printk(KERN_INFO "shared buffer: phys 0x%lx len %ul\n", addr, len);
-                printk(KERN_INFO "=== ION PHYSMEM DEBUG PRINTOUT ===\n");
-        }
+		ion_phys(client, hndl, &addr, &len);
+		printk(KERN_INFO "shared buffer: phys 0x%lx len %ul\n",
+		       addr, len);
+		printk(KERN_INFO "=== ION PHYSMEM DEBUG PRINTOUT ===\n");
+	}
 #endif
 	return 0;
 }
@@ -73,18 +81,18 @@ static int ion_physmem_probe(struct platform_device *pdev)
 	struct resource *res;
 	struct physmem_ion_dev *ipdev;
 
-	/* 
-	   Looks like we can only have one ION device in our system. 
-	   Therefore we call ion_device_create on first probe and only 
+	/*
+	   Looks like we can only have one ION device in our system.
+	   Therefore we call ion_device_create on first probe and only
 	   add heaps to it on subsequent probe calls.
 	   FixMe: Do we need to hold a spinlock here once device probing
 	   becomes async?
 	*/
-	
-	if (!idev) { 
+
+	if (!idev) {
 		idev = ion_device_create(ion_physmem_custom_ioctl);
-		printk("ion-physmem: ION PhysMem Driver. (c) RC Module 2015\n");
-		if (!idev) 
+		dev_info(&pdev->dev, "ion-physmem: ION PhysMem Driver. (c) RC Module 2015\n");
+		if (!idev)
 			return -ENOMEM;
 	}
 
@@ -114,29 +122,33 @@ static int ion_physmem_probe(struct platform_device *pdev)
 	if (ret != 0)
 		goto errfreeipdev;
 
- 	res = platform_get_resource_byname(pdev, IORESOURCE_MEM, "memory");
-        /* Not always needed, will be checked for sanity later */
-        if (res) {
+	res = platform_get_resource_byname(pdev, IORESOURCE_MEM, "memory");
+	/* Not always needed, throw no error if missing */
+	if (res) {
 		/* Fill in some defaults */
-		addr = res->start; 
+		addr = res->start;
 		size = resource_size(res);
 	}
 
-        switch (ion_heap_type) 
-        {
-        case ION_HEAP_TYPE_DMA: 
-		if (res) { 
-			ret = dma_declare_coherent_memory(&pdev->dev, 
-							  res->start, res->start,
+	switch (ion_heap_type) {
+	case ION_HEAP_TYPE_DMA:
+		if (res) {
+			ret = dma_declare_coherent_memory(&pdev->dev,
+							  res->start,
+							  res->start,
 							  resource_size(res),
-							  DMA_MEMORY_MAP | DMA_MEMORY_EXCLUSIVE);
+							  DMA_MEMORY_MAP |
+							  DMA_MEMORY_EXCLUSIVE);
 			if (ret == 0) {
 				ret = -ENODEV;
 				goto errfreeipdev;
 			}
 		}
-		/* If no mem region declared in dt - assume want plain dma_alloc_coherent */
-                break;
+		/*
+		 *  If no memory region declared in dt we assume that
+		 *  the user is okay with plain dma_alloc_coherent.
+		 */
+		break;
 	case ION_HEAP_TYPE_CARVEOUT:
 	case ION_HEAP_TYPE_CHUNK:
 	{
@@ -153,9 +165,9 @@ static int ion_physmem_probe(struct platform_device *pdev)
 		}
 		break;
 	}
-        }
-        
-	ipdev->data.id    = ion_heap_id; 
+	}
+
+	ipdev->data.id    = ion_heap_id;
 	ipdev->data.type  = ion_heap_type;
 	ipdev->data.name  = ion_heap_name;
 	ipdev->data.align = ion_heap_align;
@@ -164,19 +176,19 @@ static int ion_physmem_probe(struct platform_device *pdev)
 	/* This one make dma_declare_coherent_memory actually work */
 	ipdev->data.priv  = &pdev->dev;
 
-	
+
 	ipdev->heap = ion_heap_create(&ipdev->data);
-	if (!ipdev->heap) 
+	if (!ipdev->heap)
 		goto errfreeipdev;
 
 	if (!try_module_get(THIS_MODULE))
 		goto errfreeheap;
-	
-	ion_device_add_heap(idev, ipdev->heap);	
 
-	dev_info(&pdev->dev, "ion-physmem: heap %s id %d type %d align 0x%x at phys 0x%lx len %lu KiB\n", 
-	       ion_heap_name, ion_heap_id, ion_heap_type, ion_heap_align, 
-	       (long unsigned int) addr, ((long unsigned int) size / 1024));
+	ion_device_add_heap(idev, ipdev->heap);
+
+	dev_info(&pdev->dev, "ion-physmem: heap %s id %d type %d align 0x%x at phys 0x%lx len %lu KiB\n",
+	       ion_heap_name, ion_heap_id, ion_heap_type, ion_heap_align,
+	       (unsigned long int) addr, ((unsigned long int) size / 1024));
 
 	return 0;
 
@@ -190,10 +202,11 @@ errfreeipdev:
 static int ion_physmem_remove(struct platform_device *pdev)
 {
 	struct physmem_ion_dev *ipdev = platform_get_drvdata(pdev);
+
 	ion_heap_destroy(ipdev->heap);
-	if (ipdev->need_free_coherent) 
+	if (ipdev->need_free_coherent)
 		dma_release_declared_memory(&pdev->dev);
-	if (ipdev->freepage_ptr) 
+	if (ipdev->freepage_ptr)
 		free_pages_exact(ipdev->freepage_ptr, ipdev->data.size);
 	kfree(ipdev->heap);
 	kfree(ipdev);
@@ -204,7 +217,7 @@ static int ion_physmem_remove(struct platform_device *pdev)
 static void __exit ion_physmem_exit(void)
 {
 	if (idev)
-		ion_device_destroy(idev);	
+		ion_device_destroy(idev);
 }
 __exitcall(ion_physmem_exit);
 
