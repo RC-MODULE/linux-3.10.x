@@ -456,7 +456,6 @@
 			status = "disabled";
 		};
 
-
 		ion_im0: ion@0x00100000 {
 		     compatible = "ion,physmem";
 		     reg = <0x00100000 0x40000>;
@@ -485,6 +484,16 @@
 		     ion-heap-type = <ION_HEAP_TYPE_DMA>;
 		     ion-heap-align = <0x10>;
 		     ion-heap-name = "EM1";
+		};
+
+		ion_crv: ion@deadbeef {
+		     compatible = "ion,physmem";
+		     reg = <0x00000000 0x100000>;
+		     reg-names = "memory";
+		     ion-heap-id   = <3>;
+		     ion-heap-type = <ION_HEAP_TYPE_CARVEOUT>;
+		     ion-heap-align = <0x10>;
+		     ion-heap-name = "carveout";
 		};
 
 		video_decoder: video_decoder@80180000 {
