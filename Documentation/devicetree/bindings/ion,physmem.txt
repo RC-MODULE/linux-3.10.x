@@ -1,13 +1,19 @@
-* ION PhysMem Driver
-
-ION PhysMem is a simple and dumb driver that allows you to define ION Memory Manager heaps using 
-device tree. This is mostly useful if your SoC has several 'special' regions (e.g. SRAM, 
-dedicated memory banks, etc) are present in the physical memory map and require no extra care.
-
-Example: 
-
+ION PhysMem Driver
 #include <dt-bindings/ion,physmem.h>
-...
+
+
+ION PhysMem is a generic driver for ION Memory Manager that allows you to 
+define ION Memory Manager heaps using device tree. This is mostly useful if 
+your SoC has several 'special' regions (e.g. SRAM, dedicated memory banks, 
+etc) that are present in the physical memory map and you want to add them to 
+ION as heaps of memory. 
+
+
+Examples: 
+
+1. 256KiB On-chip SRAM used as ION DMA heap. reg range is treated as a physical
+   address range
+
 	ion_im0: ion@0x00100000 { 
 	     compatible = "ion,physmem";
 	     reg = <0x00100000 0x40000>;
@@ -16,4 +22,59 @@ Example:
 	     ion-heap-type = <ION_HEAP_TYPE_DMA>;
 	     ion-heap-align = <0x10>;		     
 	     ion-heap-name = "IM0";
+	};
+
+2. The same, but using system DMA memory. 
+
+	ion_dma: ion@0xdeadbeef { 
+	     compatible = "ion,physmem";
+	     ion-heap-id   = <2>;
+	     ion-heap-type = <ION_HEAP_TYPE_DMA>;
+	     ion-heap-align = <0x10>;		     
+	     ion-heap-name = "SYSDMA";
+	};
+
+2. Carveout heap, 1MiB size, ion-physmem will alloc pages for it using 
+   alloc_pages_exact(). reg range is used for specifying size only.
+
+		ion_crv: ion@deadbeef {
+		     compatible = "ion,physmem";
+		     reg = <0x00000000 0x100000>;
+		     reg-names = "memory";
+		     ion-heap-id   = <3>;
+		     ion-heap-type = <ION_HEAP_TYPE_CARVEOUT>;
+		     ion-heap-align = <0x10>;
+		     ion-heap-name = "carveout";
+		};
+
+3. Chunk heap. 1MiB size, ion-physmem will alloc pages for it using 
+   alloc_pages_exact(). reg range is used for specifying size only.
+
+	ion_chunk: ion@0xdeadbeef { 
+	     compatible = "ion,physmem";
+	     ion-heap-id   = <2>;
+	     ion-heap-type = <ION_HEAP_TYPE_CHUNK>;
+	     ion-heap-align = <0x10>;		     
+	     ion-heap-name = "chunky";
+	};
+
+
+4. vmalloc();
+
+	ion_chunk: ion@0xdeadbeef { 
+	     compatible = "ion,physmem";
+	     ion-heap-id   = <2>;
+	     ion-heap-type = <ION_HEAP_TYPE_SYSTEM>;
+	     ion-heap-align = <0x10>;		     
+	     ion-heap-name = "sys";
+	};
+
+5. kmalloc();
+
+	ion_chunk: ion@0xdeadbeef { 
+	     compatible = "ion,physmem";
+	     ion-heap-id   = <2>;
+	     ion-heap-type = <ION_HEAP_TYPE_SYSTEM_CONTIG>;
+	     ion-heap-align = <0x10>;		     
+	     ion-heap-name = "syscont";
 	};
