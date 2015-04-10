@@ -1206,6 +1206,7 @@ config FB_INTEL_I2C
 	help
 	  Say Y here if you want DDC/I2C support for your on-board Intel graphics.
 
+
 config FB_MATROX
 	tristate "Matrox acceleration"
 	depends on FB && PCI
@@ -1324,6 +1325,18 @@ config FB_MATROX_MAVEN
 	  too.  You can use only some font widths, as the driver uses generic
 	  painting procedures (the secondary head does not use acceleration
 	  engine).
+
+config  FB_RCM_VDU_CORE
+	tristate
+	default n
+
+config FB_RCM_VDU
+        tristate "RC Module VDU framebuffer support"
+	depends on FB && ARCH_RCM_K1879
+	select FB_RCM_VDU_CORE
+	select FB_SYS_FILLRECT
+	select FB_SYS_COPYAREA
+	select FB_SYS_IMAGEBLIT
 
 config FB_RADEON
 	tristate "ATI Radeon display support"
