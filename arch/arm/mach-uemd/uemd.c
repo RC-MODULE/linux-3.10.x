@@ -187,6 +187,7 @@ void uemd_pm_restart(char mode, const char *cmd)
 static void __init uemd_init(void)
 {
 	void __iomem *address;
+	uint32_t t;
 
 	of_platform_populate(NULL, of_default_bus_match_table, NULL, NULL);
 
