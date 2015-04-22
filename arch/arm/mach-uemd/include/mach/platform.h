@@ -3,7 +3,7 @@
 
 extern phys_addr_t uemd_get_fb_base(void);
 extern int uemd_setup_vmode(struct mvdu_device *dev);
-extern int is_chip_virgin(void);
+extern int uemd_is_virgin(void);
 
 #endif
 
