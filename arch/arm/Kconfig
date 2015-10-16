@@ -838,7 +838,9 @@ config ARCH_UEMD
 	select ARM_AMBA
 	select ARM_VIC
 	select GENERIC_GPIO
+	select ARM_TIMER_SP804
 	select COMMON_CLK
+	select GENERIC_CLOCKEVENTS
 	select USB_ARCH_HAS_EHCI
 	select USB_ARCH_HAS_OHCI
 	select ARCH_REQUIRE_GPIOLIB

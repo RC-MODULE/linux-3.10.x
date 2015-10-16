@@ -342,8 +342,6 @@ static void __init uemd_dt_timer_init(void)
 {
 	of_clk_init(NULL);
 	clocksource_of_init();
-
-	uemd_timer_init();
 }
 
 static const char *module_dt_match[] = {

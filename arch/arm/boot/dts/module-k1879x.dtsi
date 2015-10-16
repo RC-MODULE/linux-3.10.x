@@ -163,11 +163,15 @@
 				arm,primecell-periphid = <0x41022>;
 			};
 
-			/*timer@4000 {
+			timer@4000 {
+				compatible = "arm,sp804", "arm,primecell";
 				reg = <0x4000 0x1000>;
-				compatible = "module,k1879x-timer";
 				interrupts = <4 5>;
-			};*/
+				interrupt-parent = <&vic0>;
+				interrupt-names = "timer0", "timer1";
+				clocks = <&clk_apb>;
+				clock-names = "apb_pclk";
+			};
 
 			wd@5000 {
 				reg = <0x5000 0x1000>;
