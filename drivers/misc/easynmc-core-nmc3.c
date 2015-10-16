@@ -87,11 +87,11 @@ void nmc3_clear_interrupt(struct nmc_core *self, enum nmc_irq n)
 }
 
 
-static int __init easynmc_probe (struct platform_device *pdev)
+static int easynmc_probe (struct platform_device *pdev)
 {
 	int ret=-EIO;
 	struct resource *res; 
-	struct nmc3_core *core = kmalloc(sizeof(struct nmc3_core), GFP_KERNEL);
+	struct nmc3_core *core = kzalloc(sizeof(struct nmc3_core), GFP_KERNEL);
 	if (!core) 
 		return -ENOMEM;
 

@@ -99,7 +99,7 @@ static int appdata_set(struct nmc_core *core, void __user *buf, size_t len)
 	int ret = 0;
 	appdata_drop(core);
 	if (len) { 
-		core->appdata = kmalloc(len, GFP_KERNEL);
+		core->appdata = kzalloc(len, GFP_KERNEL);
 		if (!core->appdata) 
 			return -ENOMEM;
 		core->appdata_len = len;
@@ -855,10 +855,12 @@ int easynmc_register_core(struct nmc_core *core)
 	core->mdev_io.mdev.minor	= MISC_DYNAMIC_MINOR;
 	core->mdev_io.mdev.name	        = core->devname_io;
 	core->mdev_io.mdev.fops	        = &io_ops;
+	core->mdev_io.mdev.parent       = core->dev;
 
 	core->mdev_mem.mdev.minor	= MISC_DYNAMIC_MINOR;
 	core->mdev_mem.mdev.name	= core->devname_mem;
 	core->mdev_mem.mdev.fops	= &imem_ops;
+	core->mdev_mem.mdev.parent      = core->dev;
 
 	core->stdout  = NULL;
 	core->stdin   = NULL;
