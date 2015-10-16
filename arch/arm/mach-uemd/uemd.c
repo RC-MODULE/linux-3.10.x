@@ -308,31 +308,32 @@ static void __init uemd_reserve(void)
 }
 
 #if defined(CONFIG_MODULE_MVDU_CORE)
-int uemd_setup_vmode(struct mvdu_device *dev)
+int uemd_setup_vmode(unsigned int hz, int hd)
 {
 	u32 __iomem *mif_regs = uemd_mif_base();
 
 	iowrite32(1, &mif_regs[0]);
 
-	if (dev->current_mode == MVDU_MODE_SD_486_I_30 ||
-	    dev->current_mode == MVDU_MODE_SD_576_I_25) {
+
+	if (hz >= 74250000) { 
+		iowrite32(1, &mif_regs[1]);
+	} else { 
 		iowrite32(0, &mif_regs[1]);
+	}
 
 #if defined(CONFIG_MODULE_GRI2C_HDMI)
+	if (hd)
+		module_hdmi_video_setup_hd();
+	else
 		module_hdmi_video_setup_sd();
 #endif
-	} else {
-		iowrite32(1, &mif_regs[1]);
 
-#if defined(CONFIG_MODULE_GRI2C_HDMI)
-		module_hdmi_video_setup_hd();
-#endif
-	};
+	printk("vmode change: pixclock %u mode %s", hz, hd ? "HD" : "SD");
 
 	return 0;
 }
 #else
-int uemd_setup_vmode(struct mvdu_device *dev) {return 0;};
+int uemd_setup_vmode(unsigned int hz, int hd) {return 0;};
 #endif /* end CONFIG_MODULE_MVDU_CORE */
 EXPORT_SYMBOL(uemd_setup_vmode);
 

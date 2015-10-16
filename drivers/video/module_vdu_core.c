@@ -797,6 +797,7 @@ static void mvdu_update_vdu_state(struct mvdu_device *dev)
 	if (dev->vdu_state == VDU_STATE_OFF) {
 
 		if (vdu_ready(dev)) {
+			struct mvdu_mode *tmp;
 
 			/* Always write mode before start - it is either not
 			 * yet written, or broken by reset at previous stop */
@@ -841,7 +842,8 @@ static void mvdu_update_vdu_state(struct mvdu_device *dev)
 			mvdu_set_vdu_state(dev, VDU_STATE_ON);
 
 			/* Notify low-level */
-			(void) uemd_setup_vmode(dev);
+			tmp = &mvdu_modes[dev->current_mode];
+			(void) uemd_setup_vmode(tmp->pixclock, (tmp->mode & 0x10));
 		}
 
 	} else if (dev->vdu_state == VDU_STATE_ON) {
