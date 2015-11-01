@@ -54,4 +54,8 @@ obj-y				+= mic/
 obj-$(CONFIG_GENWQE)		+= genwqe/
 obj-$(CONFIG_ECHO)		+= echo/
 obj-$(CONFIG_VEXPRESS_SYSCFG)	+= vexpress-syscfg.o
+obj-$(CONFIG_RCM_EASYNMC)	+= easynmc.o 
+obj-$(CONFIG_RCM_EASYNMC_NMC3)	+= easynmc-core-nmc3.o 
+obj-$(CONFIG_RCM_EASYNMC_TEST)	+= easynmc-core-test.o 
+
 obj-$(CONFIG_CXL_BASE)		+= cxl/

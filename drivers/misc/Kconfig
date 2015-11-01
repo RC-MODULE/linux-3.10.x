@@ -515,6 +515,22 @@ config VEXPRESS_SYSCFG
 	  bus. System Configuration interface is one of the possible means
 	  of generating transactions on this bus.
 
+menuconfig RCM_EASYNMC
+       bool "EasyNMC DSP Framework"
+       default y if ARCH_RCM_K1879XB1
+
+if RCM_EASYNMC
+
+   config RCM_EASYNMC_NMC3
+   default y
+   bool "Support NMC3 SoC DSP Cores"
+
+   config RCM_EASYNMC_TEST
+   default n
+   bool "Dummy test core (Tests only)"
+   
+endif
+       
 source "drivers/misc/c2port/Kconfig"
 source "drivers/misc/eeprom/Kconfig"
 source "drivers/misc/cb710/Kconfig"
