@@ -1436,6 +1436,13 @@ static int of_mnand_probe(struct platform_device* ofdev)
                 printk(KERN_ERR "Failed add mtd device (code: %d)\n", err);
                 goto error_dma;
         }
+
+	//FixMe: hack
+	struct mtd_info *mtd = &g_chip.mtd;
+	mtd->erasesize_shift = ffs(mtd->erasesize) - 1;
+	mtd->writesize_shift = ffs(mtd->writesize) - 1;
+	mtd->erasesize_mask = (1 << mtd->erasesize_shift) - 1;
+	mtd->writesize_mask = (1 << mtd->writesize_shift) - 1;	
         return 0;
 
 error_dma:
