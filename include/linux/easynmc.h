@@ -18,6 +18,9 @@ struct nmc_miscdev {
 	((container_of(m, struct nmc_miscdev, mdev))->core)
 
 
+//FixMe: Hack
+#include "../../drivers/staging/android/ion/ion.h"
+
 /* This struct represents the generic NMC core */
 struct nmc_core { 
 	const char*        name; 
@@ -54,6 +57,8 @@ struct nmc_core {
 	size_t            appdata_len;
 	/* Internal linked list of cores registered */
 	struct list_head  linkage; 
+	int num_opened;
+	struct ion_client *iclient;
 };
 
 

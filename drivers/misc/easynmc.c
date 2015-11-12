@@ -469,8 +469,27 @@ static long easynmc_ioctl(struct file *filp, unsigned int ioctl_num, unsigned lo
 		
 		break;
 	}
-
-
+	case IOCTL_NMC3_ION2NMC:
+	{
+		uint32_t fd; 
+		ion_phys_addr_t nmaddr; 
+		struct ion_handle *hndl;
+		size_t len; 
+		int ret = get_user(fd,  (uint32_t __user *) ioctl_param);
+		if (ret)
+			return -EFAULT;
+		
+		hndl = ion_import_dma_buf(core->iclient, (int) fd);
+		if (IS_ERR(hndl))
+			return -EIO;
+		ret = ion_phys(core->iclient, hndl, &nmaddr, &len);
+		printk(KERN_INFO "easynmc: imported buf %p len 0x%x, nmc addr is %p\n", 
+		       (void *) nmaddr, len, (void *) (nmaddr >> 2));
+		fd = (uint32_t) nmaddr >> 2;
+		ret = put_user(fd, (uint32_t __user *) ioctl_param);
+		if (ret)
+			return -EFAULT;
+	}
 	}
 	return 0;
 }
@@ -481,9 +500,17 @@ static long easynmc_ioctl(struct file *filp, unsigned int ioctl_num, unsigned lo
    Userspace will work with this to do abs uploads
  */ 
 
+struct ion_device *ion_physmem_get_device(void);
 static int imem_open(struct inode *inode, struct file *filp)
 {
 	struct nmc_core *core = EASYNMC_MISC2CORE(filp->private_data);
+	struct ion_device *dev = ion_physmem_get_device();
+
+	if (!core->num_opened) { 
+		core->iclient = ion_client_create(dev, "easynmc");
+	}
+
+	core->num_opened++;
 	dbg("open core %d (imem io)\n", core->id);
 	return 0;
 }
@@ -491,10 +518,17 @@ static int imem_open(struct inode *inode, struct file *filp)
 static int imem_release(struct inode *inode, struct file *filp)
 {
 	struct nmc_core *core = EASYNMC_MISC2CORE(filp->private_data);
+	struct ion_device *dev = ion_physmem_get_device();
+
 	dbg("release core %d (imem io) %d \n", core->id, core->nmi_on_close);
-	if (core->stats.started && core->nmi_on_close) { 
+	core->num_opened--;
+	if (core->stats.started && core->nmi_on_close && (!core->num_opened)) { 
 		easynmc_send_irq(core, NMC_IRQ_NMI);
 	}
+
+	if (!core->num_opened) 
+		ion_client_destroy(core->iclient);
+	
 	return 0;
 }
 

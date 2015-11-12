@@ -41,6 +41,14 @@ struct physmem_ion_dev {
 	uint32_t                  heap_id;
 };
 
+
+
+struct ion_device *ion_physmem_get_device(void)
+{
+	return idev;
+}
+EXPORT_SYMBOL(ion_physmem_get_device);
+
 static int ion_physmem_probe(struct platform_device *pdev)
 {
 	int ret;
