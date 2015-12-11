@@ -46,7 +46,7 @@
 		ranges = <0 0x0 0xFFFFFFFF>;
 	
 		usbehci: ehci@0x10040000 {
-			compatible = "module,ehci", "usb-ehci";
+			compatible = "rcm,usb-ehci", "usb-ehci";
 			reg = <0x10040000 0x2000>;
 			interrupt-parent = <&vic1>;
 			interrupts = <3>; /* 35 */
@@ -54,7 +54,7 @@
 		};
 
 		usbohci: ohci@0x10048000 {
-			compatible = "module,ohci", "usb-ohci";
+			compatible = "rcm,usb-ohci", "usb-ohci";
 			reg = <0x10048000 0x2000>;
 			interrupt-parent = <&vic1>;
 			interrupts = <3>; /* 35 */
