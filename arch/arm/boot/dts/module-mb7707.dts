@@ -109,9 +109,14 @@
 				local-mac-address = [ 00 02 f7 00 27 0f ];
 				status = "okay";
 				mdio {
-					phy0: ethernet-phy@0 {
+					phy0: ethernet-phy@1f {
 						reg = <0x1f>;
 					};
+
+					phy1: ethernet-phy@1 {
+						reg = <0x1>;
+					};
+
 				};
 			};
 		};		
@@ -148,18 +153,20 @@
 	};
 };
 
+&i2c1 {
+	status = "okay";
+	speed = <100000>;
+};
+
 &i2c2 {
 	status = "okay";
 	speed = <100000>;
+};
 
-	eds0: eds10180@6a {
-		compatible = "module,EDS10180";
-		reg = <0x6a>;
-	};
-	eds1: eds10394@61 {
-		compatible = "module,EDS10394";
-		reg = <0x61>;
-	};
+/* This is the I2C bus present on X9 connector */
+&i2c3 {
+	status = "okay";
+	speed = <100000>;
 };
 
 &vdu {
