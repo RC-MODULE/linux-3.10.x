@@ -128,10 +128,6 @@
 	clock-frequency = <54000000>;
 };
 
-&vdu {
-	status = "okay";
-};
-
 &sound {
 	status = "okay";
 	maudio,model = "RC Module MB77.07";
