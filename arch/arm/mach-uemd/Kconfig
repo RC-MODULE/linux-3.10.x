@@ -29,7 +29,7 @@ config UEMD_LO_FREQ
 	default yes
 	bool "Use low-frequency mode"
 	help
-	 Older UEMD boards had a DDR bug and were reprogrammed to work in low 
+	 Older UEMD boards had a DDR bug and were reprogrammed to work in low
 	 frequency mode. Use this option only if you have such board.
 
 config UEMD_LO_MEM
@@ -47,13 +47,9 @@ config MODULE_MVDU_CORE
 	help
 	 Include MVDU platform device support
 
-config MODULE_MSVDHD
+config MODULE_MSVDHD_QUIRKS
 	depends on MACH_UEMD
-	select MSVDHD
-	bool "MSVDHD video decoder platform device"
-	help
-	 Include MSVDHD platform device support
-
+	bool "Enable MSVDHD video decoder DDR Quirks"
 
 config MODULE_GRI2C_HDMI
 	depends on MACH_UEMD
@@ -61,7 +57,7 @@ config MODULE_GRI2C_HDMI
 	depends on MODULE_MVDU_CORE
 	bool "Enable internal I2C bus used by HDMI transiever"
 	help
-	 UEMD board has one internal I2C bus with single device - HDMI 
+	 UEMD board has one internal I2C bus with single device - HDMI
 	 transiever. It will be accessible at index 0.
 
 config MODULE_HDMI_BI
@@ -69,7 +65,7 @@ config MODULE_HDMI_BI
 	bool "Enable I2C HDMI board info and mode switcher"
 	default yes
 	help
-	 Enables HDMI code capable of handling TV-mode change requests 
+	 Enables HDMI code capable of handling TV-mode change requests
 	 from video drivers like MVDU. It will change things like resolution,
 	 viewport position, etc.
 	 Disable this to use older i2cset-based scripts.
@@ -78,7 +74,7 @@ config MODULE_TSP
 	depends on MACH_UEMD
 	bool "TSP Transport stream demultiplexer"
 	help
-	 Enable transport stream demultiplexor platform device. MDEMUX driver 
+	 Enable transport stream demultiplexor platform device. MDEMUX driver
 	 should be able to handle it.
 
 config MODULE_USB
@@ -97,12 +93,12 @@ config MODULE_UARTIRDA
 	bool "Enable UART-to-IRDA interface"
 	help
 	 Enable UART connected to IRDA sensor.
- 
+
 config MODULE_SCI
 	depends on MACH_UEMD
 	bool "Enable SCI platfrom device"
 	help
-	 Enable SCI platform resources. msci driver should handle 
+	 Enable SCI platform resources. msci driver should handle
 	 this device.
 
 endmenu

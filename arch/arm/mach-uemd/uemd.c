@@ -127,7 +127,7 @@ void uemd_fixup(struct machine_desc *mdesc, struct tag *tags, char **from,
 	meminfo->nr_banks = 1;
 }
 
-#if defined(CONFIG_MODULE_MSVDHD)
+#if defined(CONFIG_MODULE_MSVDHD_QUIRKS)
 static inline void msvdhd_preinit(void)
 {
 	/* Before registering msvdhd device, setup memory controller
@@ -226,12 +226,12 @@ static void __init uemd_init(void)
 	iowrite32(0x00000003, (void __iomem*)0xf803112c);
 
 	iowrite32(0, (void __iomem*)0xf8031004);
-	
-	//some more media qos	
+
+	//some more media qos
 	address = ioremap_nocache(0x80174400, 4*1024);
 	iowrite32(0xC, address);
 	iowrite32(0x400, address + 4);
-	
+
 	// Some audio dma-related stuff
 	iowrite32(0x0, (void __iomem*)0xf803c000);
 	iowrite32(0x1, (void __iomem*)0xf803c000);
@@ -315,9 +315,9 @@ int uemd_setup_vmode(unsigned int hz, int hd)
 	iowrite32(1, &mif_regs[0]);
 
 
-	if (hz >= 74250000) { 
+	if (hz >= 74250000) {
 		iowrite32(1, &mif_regs[1]);
-	} else { 
+	} else {
 		iowrite32(0, &mif_regs[1]);
 	}
 
