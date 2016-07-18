@@ -44,7 +44,7 @@
 		#address-cells = <1>;
 		#size-cells = <1>;
 		ranges = <0 0x0 0xFFFFFFFF>;
-	
+
 		usbehci: ehci@0x10040000 {
 			compatible = "rcm,usb-ehci", "usb-ehci";
 			reg = <0x10040000 0x2000>;
@@ -415,10 +415,11 @@
 		video_decoder: video_decoder@80180000 {
 			compatible = "module,msvdhd";
 			reg = <0x80180000 0x20000>,
-				<0xc2000000 0x800000>, /* EM1! */
+				<0xc6800000 0x1800000>, /* EM1! */
 				<0x80100000 0x40000>;
-			reg-names = "res", "extmem", "intmem";
+			reg-names = "registers", "extmem", "intmem";
 			interrupts = <12>; /* 44 */
+			interrupt-names = "irq";
 			interrupt-parent = <&vic1>;
 			status = "disabled";
 		};
@@ -428,7 +429,7 @@
 			core-name = "K1879-nmc";
 			core-type = "nmc3";
 			device-id = <0>;
-			reg =   
+			reg =
 				<0x00140000 0x00080000>, /* nmc imem, im1 and im3 */
  				<0x2003c010 0x4>,
 				<0x2003c004 0x4>,
@@ -437,7 +438,7 @@
 				<0x2003c038 0x4>,
 				<0x2003c03c 0x4>;
 			bank-count = <2>;
-			reg-names = 
+			reg-names =
 			        "imem",
 			    	"reset_reg",
 				"nmi_reg",
@@ -447,7 +448,7 @@
 				"lp_set_reg";
 			interrupt-parent = <&vic0>;
 			interrupts = <14>, <15>;
-			interrupt-names = "HP", "LP";		
+			interrupt-names = "HP", "LP";
 			status = "okay";
 		};
 
