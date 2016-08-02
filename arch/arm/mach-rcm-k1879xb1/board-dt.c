@@ -139,7 +139,29 @@ static const char * const k1879_dt_match[] = {
 	NULL
 };
 
+static struct map_desc k1879_io_desc[] __initdata = {
+	{
+		.virtual	= RCM_K1879_AREA0_VIRT_BASE,
+		.pfn	= __phys_to_pfn(RCM_K1879_AREA0_PHYS_BASE),
+		.length	= RCM_K1879_AREA0_SIZE,
+		.type	= MT_DEVICE,
+	},
+	// FIXME: This static mapping is actually redundant. We are using it for
+	// direct access to multimedia registers.
+	{
+		.virtual	= 0xF9000000,
+		.pfn	= __phys_to_pfn(RCM_K1879_AREA1_PHYS_BASE),
+		.length	= 2*RCM_K1879_AREA1_SIZE,
+		.type	= MT_DEVICE,
+	}
+};
+
+static void __init k1879_map_io(void) {
+    iotable_init(k1879_io_desc, ARRAY_SIZE(k1879_io_desc));
+}
+
 DT_MACHINE_START(K1879, "RC Module K1879XB1YA (Device Tree)")
+	.map_io			= k1879_map_io,
 	.init_machine           = k1879_dt_mach_init,
 	.dt_compat              = k1879_dt_match,
 	.restart                = k1879_restart

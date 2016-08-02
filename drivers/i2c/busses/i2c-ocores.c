@@ -16,6 +16,7 @@
 #include <linux/err.h>
 #include <linux/kernel.h>
 #include <linux/module.h>
+#include <linux/init.h>
 #include <linux/errno.h>
 #include <linux/platform_device.h>
 #include <linux/i2c.h>
@@ -76,6 +77,7 @@ struct ocores_i2c {
 
 #define TYPE_OCORES		0
 #define TYPE_GRLIB		1
+#define TYPE_K1879X		2
 
 static void oc_setreg_8(struct ocores_i2c *i2c, int reg, u8 value)
 {
@@ -231,12 +233,13 @@ static int ocores_init(struct device *dev, struct ocores_i2c *i2c)
 	prescale = clamp(prescale, 0, 0xffff);
 
 	diff = i2c->ip_clock_khz / (5 * (prescale + 1)) - i2c->bus_clock_khz;
-	if (abs(diff) > i2c->bus_clock_khz / 10) {
+//TODO clarify this check
+/*	if (abs(diff) > i2c->bus_clock_khz / 10) {
 		dev_err(dev,
 			"Unsupported clock settings: core: %d KHz, bus: %d KHz\n",
 			i2c->ip_clock_khz, i2c->bus_clock_khz);
 		return -EINVAL;
-	}
+	}*/
 
 	oc_setreg(i2c, OCI2C_PRELOW, prescale & 0xff);
 	oc_setreg(i2c, OCI2C_PREHIGH, prescale >> 8);
@@ -262,7 +265,7 @@ static const struct i2c_algorithm ocores_algorithm = {
 static struct i2c_adapter ocores_adapter = {
 	.owner = THIS_MODULE,
 	.name = "i2c-ocores",
-	.class = I2C_CLASS_DEPRECATED,
+	.class = I2C_CLASS_HWMON | I2C_CLASS_SPD,
 	.algo = &ocores_algorithm,
 };
 
@@ -274,6 +277,10 @@ static const struct of_device_id ocores_i2c_match[] = {
 	{
 		.compatible = "aeroflexgaisler,i2cmst",
 		.data = (void *)TYPE_GRLIB,
+	},
+	{
+		.compatible = "rcm,i2c-ocores",
+		.data = (void *)TYPE_K1879X,
 	},
 	{},
 };
@@ -314,6 +321,40 @@ static void oc_setreg_grlib(struct ocores_i2c *i2c, int reg, u8 value)
 	iowrite32be(wr, i2c->base + (rreg << i2c->reg_shift));
 }
 
+/* Read and write functions for the k1879x port of the controller. Registers are
+ * 32-bit le and the PRELOW and PREHIGH registers are merged into one
+ * register. The subsequent registers has their offset decreased accordingly. */
+static u8 oc_getreg_k1879x(struct ocores_i2c *i2c, int reg)
+{
+	u32 rd;
+	int rreg = reg;
+	if (reg != OCI2C_PRELOW)
+		rreg--;
+	rd = ioread32(i2c->base + (rreg << i2c->reg_shift));
+	if (reg == OCI2C_PREHIGH)
+		return (u8)(rd >> 8);
+	else
+		return (u8)rd;
+}
+
+static void oc_setreg_k1879x(struct ocores_i2c *i2c, int reg, u8 value)
+{
+	u32 curr, wr;
+	int rreg = reg;
+	if (reg != OCI2C_PRELOW)
+		rreg--;
+	if (reg == OCI2C_PRELOW || reg == OCI2C_PREHIGH) {
+		curr = ioread32(i2c->base + (rreg << i2c->reg_shift));
+		if (reg == OCI2C_PRELOW)
+			wr = (curr & 0xff00) | value;
+		else
+			wr = (((u32)value) << 8) | (curr & 0xff);
+	} else {
+		wr = value;
+	}
+	iowrite32(wr, i2c->base + (rreg << i2c->reg_shift));
+}
+
 static int ocores_i2c_of_probe(struct platform_device *pdev,
 				struct ocores_i2c *i2c)
 {
@@ -352,8 +393,15 @@ static int ocores_i2c_of_probe(struct platform_device *pdev,
 			return ret;
 		}
 		i2c->ip_clock_khz = clk_get_rate(i2c->clk) / 1000;
-		if (clock_frequency_present)
-			i2c->bus_clock_khz = clock_frequency / 1000;
+
+		if (clock_frequency_present) {
+			if(!of_property_read_u32(np, "speed", &i2c->bus_clock_khz)) {
+			    i2c->bus_clock_khz /= 1000;
+			} else {
+			    i2c->bus_clock_khz = clock_frequency / 1000;
+			}
+		}
+		
 	}
 
 	if (i2c->ip_clock_khz == 0) {
@@ -378,11 +426,17 @@ static int ocores_i2c_of_probe(struct platform_device *pdev,
 				&i2c->reg_io_width);
 
 	match = of_match_node(ocores_i2c_match, pdev->dev.of_node);
-	if (match && (long)match->data == TYPE_GRLIB) {
-		dev_dbg(&pdev->dev, "GRLIB variant of i2c-ocores\n");
-		i2c->setreg = oc_setreg_grlib;
-		i2c->getreg = oc_getreg_grlib;
-	}
+        if (match) {
+	    if((long)match->data == TYPE_GRLIB) {
+	        dev_dbg(&pdev->dev, "GRLIB variant of i2c-ocores\n");
+	        i2c->setreg = oc_setreg_grlib;
+	        i2c->getreg = oc_getreg_grlib;
+	    } else if((long)match->data == TYPE_K1879X) {
+	        dev_dbg(&pdev->dev, "K1879X variant of i2c-ocores\n");
+	        i2c->setreg = oc_setreg_k1879x;
+	        i2c->getreg = oc_getreg_k1879x;
+	    }
+        }
 
 	return 0;
 }
@@ -547,6 +601,7 @@ static struct platform_driver ocores_i2c_driver = {
 	.probe   = ocores_i2c_probe,
 	.remove  = ocores_i2c_remove,
 	.driver  = {
+		.owner = THIS_MODULE,
 		.name = "ocores-i2c",
 		.of_match_table = ocores_i2c_match,
 		.pm = OCORES_I2C_PM,
@@ -559,3 +614,4 @@ MODULE_AUTHOR("Peter Korsgaard <jacmet@sunsite.dk>");
 MODULE_DESCRIPTION("OpenCores I2C bus driver");
 MODULE_LICENSE("GPL");
 MODULE_ALIAS("platform:ocores-i2c");
+
