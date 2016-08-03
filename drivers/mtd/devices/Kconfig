@@ -5,6 +5,7 @@ menu "Self-contained MTD device drivers"
 config MTD_MNAND
 	tristate "RC Module MNAND Flash Controller"
 	select MTD_NAND_IDS
+	select MTD_NAND_ECC
 
 config MTD_PMC551
 	tristate "Ramix PMC551 PCI Mezzanine RAM card support"

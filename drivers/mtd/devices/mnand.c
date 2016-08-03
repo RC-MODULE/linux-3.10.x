@@ -15,6 +15,7 @@
 #include <linux/interrupt.h>
 #include <linux/mtd/mtd.h>
 #include <linux/mtd/nand.h>
+#include <linux/mtd/nand_ecc.h>
 #include <linux/mtd/partitions.h>
 #include <linux/semaphore.h>
 #include <linux/completion.h>
@@ -90,6 +91,8 @@ struct mnand_chip {
 
 } static g_chip;
 
+static struct nand_chip priv_nand_chip;
+
 struct write_info {
         uint32_t address;
         uint32_t value;
@@ -153,21 +156,19 @@ uint32_t mnand_get(uint32_t addr)
         return r;
 }
 
-static inline char* mnand_get_read_ecc(size_t i)
+static inline u_char* mnand_get_spare_ecc(size_t i)
 {
         return g_chip.dma_area + g_chip.mtd.writesize + g_ecclayout.eccpos[MNAND_ECC_BYTESPERBLOCK * i];
 }
 
-static inline char* mnand_get_calculated_ecc(size_t i)
+static inline void mnand_get_hardware_ecc(size_t i, u_char *ecc)
 {
-        static int data;
-        char* cdata = (char*)&data;
-        char c;
+        int data;
+        u_char* cdata = (u_char*) &data;
         data = mnand_get(0xD8+i*sizeof(uint32_t));
-        c = cdata[0];
-        cdata[0] = cdata[2];
-        cdata[2] = c;
-        return cdata;
+        ecc[0] = cdata[2];
+        ecc[1] = cdata[1];
+        ecc[2] = cdata[0];
 }
 
 void mnand_cs(int cs) 
@@ -399,422 +400,20 @@ static void mnand_core_read_id(size_t bytes)
         g_chip.state = MNAND_IDLE;
 }
 
-/*
- * invparity is a 256 byte table that contains the odd parity
- * for each byte. So if the number of bits in a byte is even,
- * the array element is 1, and when the number of bits is odd
- * the array eleemnt is 0.
- */
-static const char invparity[256] = {
-        1, 0, 0, 1, 0, 1, 1, 0, 0, 1, 1, 0, 1, 0, 0, 1,
-        0, 1, 1, 0, 1, 0, 0, 1, 1, 0, 0, 1, 0, 1, 1, 0,
-        0, 1, 1, 0, 1, 0, 0, 1, 1, 0, 0, 1, 0, 1, 1, 0,
-        1, 0, 0, 1, 0, 1, 1, 0, 0, 1, 1, 0, 1, 0, 0, 1,
-        0, 1, 1, 0, 1, 0, 0, 1, 1, 0, 0, 1, 0, 1, 1, 0,
-        1, 0, 0, 1, 0, 1, 1, 0, 0, 1, 1, 0, 1, 0, 0, 1,
-        1, 0, 0, 1, 0, 1, 1, 0, 0, 1, 1, 0, 1, 0, 0, 1,
-        0, 1, 1, 0, 1, 0, 0, 1, 1, 0, 0, 1, 0, 1, 1, 0,
-        0, 1, 1, 0, 1, 0, 0, 1, 1, 0, 0, 1, 0, 1, 1, 0,
-        1, 0, 0, 1, 0, 1, 1, 0, 0, 1, 1, 0, 1, 0, 0, 1,
-        1, 0, 0, 1, 0, 1, 1, 0, 0, 1, 1, 0, 1, 0, 0, 1,
-        0, 1, 1, 0, 1, 0, 0, 1, 1, 0, 0, 1, 0, 1, 1, 0,
-        1, 0, 0, 1, 0, 1, 1, 0, 0, 1, 1, 0, 1, 0, 0, 1,
-        0, 1, 1, 0, 1, 0, 0, 1, 1, 0, 0, 1, 0, 1, 1, 0,
-        0, 1, 1, 0, 1, 0, 0, 1, 1, 0, 0, 1, 0, 1, 1, 0,
-        1, 0, 0, 1, 0, 1, 1, 0, 0, 1, 1, 0, 1, 0, 0, 1
-};
-
-
-
-static const char addressbits[256] = {
-        0x00, 0x00, 0x01, 0x01, 0x00, 0x00, 0x01, 0x01,
-        0x02, 0x02, 0x03, 0x03, 0x02, 0x02, 0x03, 0x03,
-        0x00, 0x00, 0x01, 0x01, 0x00, 0x00, 0x01, 0x01,
-        0x02, 0x02, 0x03, 0x03, 0x02, 0x02, 0x03, 0x03,
-        0x04, 0x04, 0x05, 0x05, 0x04, 0x04, 0x05, 0x05,
-        0x06, 0x06, 0x07, 0x07, 0x06, 0x06, 0x07, 0x07,
-        0x04, 0x04, 0x05, 0x05, 0x04, 0x04, 0x05, 0x05,
-        0x06, 0x06, 0x07, 0x07, 0x06, 0x06, 0x07, 0x07,
-        0x00, 0x00, 0x01, 0x01, 0x00, 0x00, 0x01, 0x01,
-        0x02, 0x02, 0x03, 0x03, 0x02, 0x02, 0x03, 0x03,
-        0x00, 0x00, 0x01, 0x01, 0x00, 0x00, 0x01, 0x01,
-        0x02, 0x02, 0x03, 0x03, 0x02, 0x02, 0x03, 0x03,
-        0x04, 0x04, 0x05, 0x05, 0x04, 0x04, 0x05, 0x05,
-        0x06, 0x06, 0x07, 0x07, 0x06, 0x06, 0x07, 0x07,
-        0x04, 0x04, 0x05, 0x05, 0x04, 0x04, 0x05, 0x05,
-        0x06, 0x06, 0x07, 0x07, 0x06, 0x06, 0x07, 0x07,
-        0x08, 0x08, 0x09, 0x09, 0x08, 0x08, 0x09, 0x09,
-        0x0a, 0x0a, 0x0b, 0x0b, 0x0a, 0x0a, 0x0b, 0x0b,
-        0x08, 0x08, 0x09, 0x09, 0x08, 0x08, 0x09, 0x09,
-        0x0a, 0x0a, 0x0b, 0x0b, 0x0a, 0x0a, 0x0b, 0x0b,
-        0x0c, 0x0c, 0x0d, 0x0d, 0x0c, 0x0c, 0x0d, 0x0d,
-        0x0e, 0x0e, 0x0f, 0x0f, 0x0e, 0x0e, 0x0f, 0x0f,
-        0x0c, 0x0c, 0x0d, 0x0d, 0x0c, 0x0c, 0x0d, 0x0d,
-        0x0e, 0x0e, 0x0f, 0x0f, 0x0e, 0x0e, 0x0f, 0x0f,
-        0x08, 0x08, 0x09, 0x09, 0x08, 0x08, 0x09, 0x09,
-        0x0a, 0x0a, 0x0b, 0x0b, 0x0a, 0x0a, 0x0b, 0x0b,
-        0x08, 0x08, 0x09, 0x09, 0x08, 0x08, 0x09, 0x09,
-        0x0a, 0x0a, 0x0b, 0x0b, 0x0a, 0x0a, 0x0b, 0x0b,
-        0x0c, 0x0c, 0x0d, 0x0d, 0x0c, 0x0c, 0x0d, 0x0d,
-        0x0e, 0x0e, 0x0f, 0x0f, 0x0e, 0x0e, 0x0f, 0x0f,
-        0x0c, 0x0c, 0x0d, 0x0d, 0x0c, 0x0c, 0x0d, 0x0d,
-        0x0e, 0x0e, 0x0f, 0x0f, 0x0e, 0x0e, 0x0f, 0x0f
-};
-
-static const char bitsperbyte[256] = {
-        0, 1, 1, 2, 1, 2, 2, 3, 1, 2, 2, 3, 2, 3, 3, 4,
-        1, 2, 2, 3, 2, 3, 3, 4, 2, 3, 3, 4, 3, 4, 4, 5,
-        1, 2, 2, 3, 2, 3, 3, 4, 2, 3, 3, 4, 3, 4, 4, 5,
-        2, 3, 3, 4, 3, 4, 4, 5, 3, 4, 4, 5, 4, 5, 5, 6,
-        1, 2, 2, 3, 2, 3, 3, 4, 2, 3, 3, 4, 3, 4, 4, 5,
-        2, 3, 3, 4, 3, 4, 4, 5, 3, 4, 4, 5, 4, 5, 5, 6,
-        2, 3, 3, 4, 3, 4, 4, 5, 3, 4, 4, 5, 4, 5, 5, 6,
-        3, 4, 4, 5, 4, 5, 5, 6, 4, 5, 5, 6, 5, 6, 6, 7,
-        1, 2, 2, 3, 2, 3, 3, 4, 2, 3, 3, 4, 3, 4, 4, 5,
-        2, 3, 3, 4, 3, 4, 4, 5, 3, 4, 4, 5, 4, 5, 5, 6,
-        2, 3, 3, 4, 3, 4, 4, 5, 3, 4, 4, 5, 4, 5, 5, 6,
-        3, 4, 4, 5, 4, 5, 5, 6, 4, 5, 5, 6, 5, 6, 6, 7,
-        2, 3, 3, 4, 3, 4, 4, 5, 3, 4, 4, 5, 4, 5, 5, 6,
-        3, 4, 4, 5, 4, 5, 5, 6, 4, 5, 5, 6, 5, 6, 6, 7,
-        3, 4, 4, 5, 4, 5, 5, 6, 4, 5, 5, 6, 5, 6, 6, 7,
-        4, 5, 5, 6, 5, 6, 6, 7, 5, 6, 6, 7, 6, 7, 7, 8,
-};
-
-
-static int mnand_correct_data(struct mtd_info *mtd, unsigned char *buf,
-                              unsigned char *read_ecc, unsigned char *calc_ecc)
-{
-        unsigned char b0, b1, b2;
-        unsigned char byte_addr, bit_addr;
-        /* 256 or 512 bytes/ecc  */
-        const uint32_t eccsize_mult = 1;
-
-        /*
-         * b0 to b2 indicate which bit is faulty (if any)
-         * we might need the xor result  more than once,
-         * so keep them in a local var
-         */
-#ifdef CONFIG_MTD_NAND_ECC_SMC
-        b0 = read_ecc[0] ^ calc_ecc[0];
-        b1 = read_ecc[1] ^ calc_ecc[1];
-#else
-        b0 = read_ecc[1] ^ calc_ecc[1];
-        b1 = read_ecc[0] ^ calc_ecc[0];
-#endif
-        b2 = read_ecc[2] ^ calc_ecc[2];
-
-        /* check if there are any bitfaults */
-
-        /* repeated if statements are slightly more efficient than switch ... */
-        /* ordered in order of likelihood */
-
-        if ((b0 | b1 | b2) == 0)
-                return 0;	/* no error */
-
-        if ((((b0 ^ (b0 >> 1)) & 0x55) == 0x55) &&
-            (((b1 ^ (b1 >> 1)) & 0x55) == 0x55) &&
-            ((eccsize_mult == 1 && ((b2 ^ (b2 >> 1)) & 0x54) == 0x54) ||
-             (eccsize_mult == 2 && ((b2 ^ (b2 >> 1)) & 0x55) == 0x55))) {
-                /* single bit error */
-                /*
-                 * rp17/rp15/13/11/9/7/5/3/1 indicate which byte is the faulty
-                 * byte, cp 5/3/1 indicate the faulty bit.
-                 * A lookup table (called addressbits) is used to filter
-                 * the bits from the byte they are in.
-                 * A marginal optimisation is possible by having three
-                 * different lookup tables.
-                 * One as we have now (for b0), one for b2
-                 * (that would avoid the >> 1), and one for b1 (with all values
-                 * << 4). However it was felt that introducing two more tables
-                 * hardly justify the gain.
-                 *
-                 * The b2 shift is there to get rid of the lowest two bits.
-                 * We could also do addressbits[b2] >> 1 but for the
-                 * performace it does not make any difference
-                 */
-                if (eccsize_mult == 1)
-                        byte_addr = (addressbits[b1] << 4) + addressbits[b0];
-                else
-                        byte_addr = (addressbits[b2 & 0x3] << 8) +
-                                    (addressbits[b1] << 4) + addressbits[b0];
-                bit_addr = addressbits[b2 >> 2];
-                /* flip the bit */
-                buf[byte_addr] ^= (1 << bit_addr);
-                return 1;
-
+static inline int ecc_is_empty(u_char ecc[MNAND_ECC_BYTESPERBLOCK]) {
+        int j;
+        for (j = 0; j < MNAND_ECC_BYTESPERBLOCK; j++) {
+                if (ecc[j] != 0xFF) return 0;
         }
-        /* count nr of bits; use table lookup, faster than calculating it */
-        if ((bitsperbyte[b0] + bitsperbyte[b1] + bitsperbyte[b2]) == 1)
-                return 1;	/* error in ecc data; no action needed */
-
-        printk(KERN_ERR "uncorrectable error : \n");
-        return -1;
-}
-
-int mnand_calculate_ecc(struct mtd_info *mtd, const unsigned char *buf,
-                        unsigned char *code)
-{
-        int i;
-        const uint32_t *bp = (uint32_t *)buf;
-        /* 256 or 512 bytes/ecc  */
-        const uint32_t eccsize_mult = 1;
-
-        uint32_t cur;		/* current value in buffer */
-        /* rp0..rp15..rp17 are the various accumulated parities (per byte) */
-        uint32_t rp0, rp1, rp2, rp3, rp4, rp5, rp6, rp7;
-        uint32_t rp8, rp9, rp10, rp11, rp12, rp13, rp14, rp15, rp16;
-        uint32_t uninitialized_var(rp17);	/* to make compiler happy */
-        uint32_t par;		/* the cumulative parity for all data */
-        uint32_t tmppar;	/* the cumulative parity for this iteration;
-						   for rp12, rp14 and rp16 at the end of the
-						   loop */
-
-        par = 0;
-        rp4 = 0;
-        rp6 = 0;
-        rp8 = 0;
-        rp10 = 0;
-        rp12 = 0;
-        rp14 = 0;
-        rp16 = 0;
-
-        /*
-         * The loop is unrolled a number of times;
-         * This avoids if statements to decide on which rp value to update
-         * Also we process the data by longwords.
-         * Note: passing unaligned data might give a performance penalty.
-         * It is assumed that the buffers are aligned.
-         * tmppar is the cumulative sum of this iteration.
-         * needed for calculating rp12, rp14, rp16 and par
-         * also used as a performance improvement for rp6, rp8 and rp10
-         */
-        for (i = 0; i < eccsize_mult << 2; i++) {
-                cur = *bp++;
-                tmppar = cur;
-                rp4 ^= cur;
-                cur = *bp++;
-                tmppar ^= cur;
-                rp6 ^= tmppar;
-                cur = *bp++;
-                tmppar ^= cur;
-                rp4 ^= cur;
-                cur = *bp++;
-                tmppar ^= cur;
-                rp8 ^= tmppar;
-
-                cur = *bp++;
-                tmppar ^= cur;
-                rp4 ^= cur;
-                rp6 ^= cur;
-                cur = *bp++;
-                tmppar ^= cur;
-                rp6 ^= cur;
-                cur = *bp++;
-                tmppar ^= cur;
-                rp4 ^= cur;
-                cur = *bp++;
-                tmppar ^= cur;
-                rp10 ^= tmppar;
-
-                cur = *bp++;
-                tmppar ^= cur;
-                rp4 ^= cur;
-                rp6 ^= cur;
-                rp8 ^= cur;
-                cur = *bp++;
-                tmppar ^= cur;
-                rp6 ^= cur;
-                rp8 ^= cur;
-                cur = *bp++;
-                tmppar ^= cur;
-                rp4 ^= cur;
-                rp8 ^= cur;
-                cur = *bp++;
-                tmppar ^= cur;
-                rp8 ^= cur;
-
-                cur = *bp++;
-                tmppar ^= cur;
-                rp4 ^= cur;
-                rp6 ^= cur;
-                cur = *bp++;
-                tmppar ^= cur;
-                rp6 ^= cur;
-                cur = *bp++;
-                tmppar ^= cur;
-                rp4 ^= cur;
-                cur = *bp++;
-                tmppar ^= cur;
-
-                par ^= tmppar;
-                if ((i & 0x1) == 0)
-                        rp12 ^= tmppar;
-                if ((i & 0x2) == 0)
-                        rp14 ^= tmppar;
-                if (eccsize_mult == 2 && (i & 0x4) == 0)
-                        rp16 ^= tmppar;
-        }
-
-        /*
-         * handle the fact that we use longword operations
-         * we'll bring rp4..rp14..rp16 back to single byte entities by
-         * shifting and xoring first fold the upper and lower 16 bits,
-         * then the upper and lower 8 bits.
-         */
-        rp4 ^= (rp4 >> 16);
-        rp4 ^= (rp4 >> 8);
-        rp4 &= 0xff;
-        rp6 ^= (rp6 >> 16);
-        rp6 ^= (rp6 >> 8);
-        rp6 &= 0xff;
-        rp8 ^= (rp8 >> 16);
-        rp8 ^= (rp8 >> 8);
-        rp8 &= 0xff;
-        rp10 ^= (rp10 >> 16);
-        rp10 ^= (rp10 >> 8);
-        rp10 &= 0xff;
-        rp12 ^= (rp12 >> 16);
-        rp12 ^= (rp12 >> 8);
-        rp12 &= 0xff;
-        rp14 ^= (rp14 >> 16);
-        rp14 ^= (rp14 >> 8);
-        rp14 &= 0xff;
-        if (eccsize_mult == 2) {
-                rp16 ^= (rp16 >> 16);
-                rp16 ^= (rp16 >> 8);
-                rp16 &= 0xff;
-        }
-
-        /*
-         * we also need to calculate the row parity for rp0..rp3
-         * This is present in par, because par is now
-         * rp3 rp3 rp2 rp2 in little endian and
-         * rp2 rp2 rp3 rp3 in big endian
-         * as well as
-         * rp1 rp0 rp1 rp0 in little endian and
-         * rp0 rp1 rp0 rp1 in big endian
-         * First calculate rp2 and rp3
-         */
-#ifdef __BIG_ENDIAN
-        rp2 = (par >> 16);
-        rp2 ^= (rp2 >> 8);
-        rp2 &= 0xff;
-        rp3 = par & 0xffff;
-        rp3 ^= (rp3 >> 8);
-        rp3 &= 0xff;
-#else
-        rp3 = (par >> 16);
-        rp3 ^= (rp3 >> 8);
-        rp3 &= 0xff;
-        rp2 = par & 0xffff;
-        rp2 ^= (rp2 >> 8);
-        rp2 &= 0xff;
-#endif
-
-        /* reduce par to 16 bits then calculate rp1 and rp0 */
-        par ^= (par >> 16);
-#ifdef __BIG_ENDIAN
-        rp0 = (par >> 8) & 0xff;
-        rp1 = (par & 0xff);
-#else
-        rp1 = (par >> 8) & 0xff;
-        rp0 = (par & 0xff);
-#endif
-
-        /* finally reduce par to 8 bits */
-        par ^= (par >> 8);
-        par &= 0xff;
-
-        /*
-         * and calculate rp5..rp15..rp17
-         * note that par = rp4 ^ rp5 and due to the commutative property
-         * of the ^ operator we can say:
-         * rp5 = (par ^ rp4);
-         * The & 0xff seems superfluous, but benchmarking learned that
-         * leaving it out gives slightly worse results. No idea why, probably
-         * it has to do with the way the pipeline in pentium is organized.
-         */
-        rp5 = (par ^ rp4) & 0xff;
-        rp7 = (par ^ rp6) & 0xff;
-        rp9 = (par ^ rp8) & 0xff;
-        rp11 = (par ^ rp10) & 0xff;
-        rp13 = (par ^ rp12) & 0xff;
-        rp15 = (par ^ rp14) & 0xff;
-        if (eccsize_mult == 2)
-                rp17 = (par ^ rp16) & 0xff;
-
-        /*
-         * Finally calculate the ecc bits.
-         * Again here it might seem that there are performance optimisations
-         * possible, but benchmarks showed that on the system this is developed
-         * the code below is the fastest
-         */
-#ifdef CONFIG_MTD_NAND_ECC_SMC
-        code[0] =
-                (invparity[rp7] << 7) |
-                (invparity[rp6] << 6) |
-                (invparity[rp5] << 5) |
-                (invparity[rp4] << 4) |
-                (invparity[rp3] << 3) |
-                (invparity[rp2] << 2) |
-                (invparity[rp1] << 1) |
-                (invparity[rp0]);
-        code[1] =
-                (invparity[rp15] << 7) |
-                (invparity[rp14] << 6) |
-                (invparity[rp13] << 5) |
-                (invparity[rp12] << 4) |
-                (invparity[rp11] << 3) |
-                (invparity[rp10] << 2) |
-                (invparity[rp9] << 1)  |
-                (invparity[rp8]);
-#else
-        code[1] =
-                (invparity[rp7] << 7) |
-                (invparity[rp6] << 6) |
-                (invparity[rp5] << 5) |
-                (invparity[rp4] << 4) |
-                (invparity[rp3] << 3) |
-                (invparity[rp2] << 2) |
-                (invparity[rp1] << 1) |
-                (invparity[rp0]);
-        code[0] =
-                (invparity[rp15] << 7) |
-                (invparity[rp14] << 6) |
-                (invparity[rp13] << 5) |
-                (invparity[rp12] << 4) |
-                (invparity[rp11] << 3) |
-                (invparity[rp10] << 2) |
-                (invparity[rp9] << 1)  |
-                (invparity[rp8]);
-#endif
-        if (eccsize_mult == 1)
-                code[2] =
-                        (invparity[par & 0xf0] << 7) |
-                        (invparity[par & 0x0f] << 6) |
-                        (invparity[par & 0xcc] << 5) |
-                        (invparity[par & 0x33] << 4) |
-                        (invparity[par & 0xaa] << 3) |
-                        (invparity[par & 0x55] << 2) |
-                        3;
-        else
-                code[2] =
-                        (invparity[par & 0xf0] << 7) |
-                        (invparity[par & 0x0f] << 6) |
-                        (invparity[par & 0xcc] << 5) |
-                        (invparity[par & 0x33] << 4) |
-                        (invparity[par & 0xaa] << 3) |
-                        (invparity[par & 0x55] << 2) |
-                        (invparity[rp17] << 1) |
-                        (invparity[rp16] << 0);
-        return 0;
+        return 1;
 }
 
 static int mnand_core_read(loff_t off)
 {
-        loff_t page;  
+        loff_t page;
         size_t corrected = 0;
         size_t failed = 0;
+        size_t i = 0;
 
         off = mnand_chip_offset(off);
         page = off & (~(g_chip.mtd.writesize-1));
@@ -850,32 +449,38 @@ static int mnand_core_read(loff_t off)
                 if(g_read_page_pos == sizeof(g_read_page_log) / sizeof(g_read_page_log[0]))
                         g_read_page_pos = 0;
 
-                if(/*mnand_get(0) & MNAND_STATUS_ECC_ERROR*/1) {
-                        size_t i;
-                        /*Check if we had a bad block*/
-                        if(*((char*)(g_chip.dma_area + g_chip.mtd.writesize)) == 0xFF) {
-                                for(i = 0; i < g_chip.mtd.writesize/MNAND_ECC_BLOCKSIZE; ++i) {
-                                        char ecc[3];
-                                        mnand_calculate_ecc(&g_chip.mtd, g_chip.dma_area + i * MNAND_ECC_BLOCKSIZE, ecc);
-                                        if(memcmp(mnand_get_calculated_ecc(i),ecc,3)!=0) {
-                                                printk("\n\necc mismatch %02X %02X %02X - %02x %02X %02X \n\n",
-                                                       ecc[0], ecc[1], ecc[2],
-                                                       mnand_get_calculated_ecc(i)[0],
-                                                       mnand_get_calculated_ecc(i)[1],
-                                                       mnand_get_calculated_ecc(i)[2]);
+                /*Check if we had a bad block*/
+                if (*((char*) (g_chip.dma_area + g_chip.mtd.writesize)) == 0xFF) {
+                        for (i = 0; i < g_chip.mtd.writesize / MNAND_ECC_BLOCKSIZE; ++i) {
 
-                                                BUG_ON(1);
-                                        }
-                                        if(memcmp(mnand_get_read_ecc(i), mnand_get_calculated_ecc(i), MNAND_ECC_BYTESPERBLOCK)) {
-                                                int stat = mnand_correct_data(&g_chip.mtd,
-                                                                              g_chip.dma_area + i * MNAND_ECC_BLOCKSIZE,
-                                                                              mnand_get_read_ecc(i),
-                                                                              mnand_get_calculated_ecc(i));
-                                                if( stat < 0 ) {
-                                                        ++failed;
-                                                } else {
-                                                        ++corrected;
-                                                }
+                                u_char soft_ecc[MNAND_ECC_BYTESPERBLOCK];
+                                u_char hard_ecc[MNAND_ECC_BYTESPERBLOCK];
+                                u_char *ecc_from_spare;
+                                u_char *ecc_block = g_chip.dma_area + i * MNAND_ECC_BLOCKSIZE;
+
+                                nand_calculate_ecc(&g_chip.mtd, ecc_block, soft_ecc);
+
+                                mnand_get_hardware_ecc(i, hard_ecc);
+
+                                if (memcmp(hard_ecc, soft_ecc, MNAND_ECC_BYTESPERBLOCK) != 0) {
+                                        printk("\n\necc mismatch %02X %02X %02X - %02x %02X %02X \n\n",
+                                               soft_ecc[0], soft_ecc[1], soft_ecc[2],
+                                               hard_ecc[0], hard_ecc[1], hard_ecc[2]);
+                                }
+                                ecc_from_spare = mnand_get_spare_ecc(i);
+                                if (ecc_is_empty(ecc_from_spare)) {
+                                        /* printk("\nSpare ECC block %d is empty\n", i); */
+                                        continue;
+                                }
+                                if (memcmp(ecc_from_spare, hard_ecc, MNAND_ECC_BYTESPERBLOCK)) {
+                                        if (nand_correct_data(&g_chip.mtd, ecc_block, ecc_from_spare, hard_ecc) < 0) {
+                                                printk("\nData loss detected: off 0x%08llX ecc_block %d ecc_spare %02X%02X%02X ecc_hw %02X%02X%02X\n",
+                                                       off, i, ecc_from_spare[0], ecc_from_spare[1], ecc_from_spare[2],
+                                                       hard_ecc[0], hard_ecc[1], hard_ecc[2]);
+                                                ++failed;
+                                        } else {
+                                                printk("\necc has been corrected\n");
+                                                ++corrected;
                                         }
                                 }
                         }
@@ -895,7 +500,7 @@ static int mnand_core_write(loff_t off)
 {
         BUG_ON(!mnand_ready());
         BUG_ON(g_chip.state != MNAND_IDLE);
-	
+
         off = mnand_chip_offset(off);
 
         mnand_reset_grabber();
@@ -1346,7 +951,6 @@ static int mnand_read(struct mtd_info* mtd, loff_t off, size_t len, size_t* retl
                 .len = len,
         };
         int err;
-        int i;
 
         TRACE(KERN_DEBUG, "off=0x%08llX, len=%d\n", off, len);
 
@@ -1429,6 +1033,10 @@ static int of_mnand_probe(struct platform_device* ofdev)
         g_chip.mtd.ecclayout = &g_ecclayout;
 
         g_chip.mtd.dev.parent = &ofdev->dev;
+
+        memset(&priv_nand_chip, 0, sizeof (priv_nand_chip));
+        priv_nand_chip.ecc.size = 1 << 8;
+        g_chip.mtd.priv = &priv_nand_chip;
 
         printk("mnand: Detected %llu bytes of NAND\n", g_chip.mtd.size);
 
