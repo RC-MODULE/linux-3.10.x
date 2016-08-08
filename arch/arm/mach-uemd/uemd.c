@@ -179,6 +179,7 @@ void uemd_pm_restart(char mode, const char *cmd)
 	void __iomem *regs;
 	pr_info("platform: Requested system restart\n");
 	regs = ioremap_nocache(0x20025000, 0xfff);
+	iowrite32(0x1ACCE551, (regs + 0xc00));
 	iowrite32(1, (regs + 0xf00));
 	iowrite32(1, (regs + 0xf04));
 	/* Goodbye! */
