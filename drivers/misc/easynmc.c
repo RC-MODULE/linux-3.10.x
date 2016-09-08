@@ -632,18 +632,17 @@ static int imem_mmap(struct file * filp, struct vm_area_struct * vma)
 
 static int pollflags[NMC_NUM_IRQS] = {
 	POLLHUP,
-	POLLPRI | POLLRDBAND,
+	POLLOUT | POLLWRNORM,
 	POLLIN  | POLLRDNORM
 };
 
-unsigned int imem_poll(struct file *filp, poll_table *wait)
+static unsigned int easynmc_get_pollmask(struct nmc_core *core)
 {
-	DEFINE_SPINLOCK(lock);
-	struct nmc_core *core = EASYNMC_MISC2CORE(filp->private_data);
+	int mask = 0;
 	unsigned long flags;
 	int i;
-	unsigned int mask = 0;
-	poll_wait(filp, &core->qh, wait);
+
+	DEFINE_SPINLOCK(lock);
 	spin_lock_irqsave(&lock, flags);
 	for (i=0; i<NMC_NUM_IRQS; i++) {
 		if (core->stats.irqs_recv[i] != core->pollstats.irqs_recv[i]) {
@@ -652,6 +651,14 @@ unsigned int imem_poll(struct file *filp, poll_table *wait)
 		}
 	}
 	spin_unlock_irqrestore(&lock, flags);
+	return mask;
+}
+static unsigned int imem_poll(struct file *filp, poll_table *wait)
+{
+	struct nmc_core *core = EASYNMC_MISC2CORE(filp->private_data);
+	int mask = 0;
+	poll_wait(filp, &core->qh, wait);
+	mask = easynmc_get_pollmask(core);
 	return mask;
 }
 
@@ -1063,7 +1070,6 @@ static int __init easynmc_init(void)
 	printk("EasyNMC Unified DSP Framework. (c) RC Module 2014\n");
 	nmc_proc_entry = proc_create("nmc", 0644, NULL, &proc_fops);
 	if (nmc_proc_entry == NULL) {
-//		remove_proc_entry("nmc", &proc_root);
 		printk(KERN_ALERT "Error: Could not initialize /proc/nmc\n");
 		return -ENOMEM;
 	}
@@ -1075,7 +1081,6 @@ static void __exit easynmc_exit(void)
 {
 	printk("easynmc: Bye!\n");
 	BUG_ON(num_cores_registered); /* Being paranoid is sometimes good */
-//	remove_proc_entry("nmc", &proc_root);
 }
 
 module_init(easynmc_init);
