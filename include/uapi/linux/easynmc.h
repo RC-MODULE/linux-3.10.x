@@ -9,7 +9,7 @@
 
 #define EASYNMC_DEVNAME_LEN 16
 
-enum nmc_irq { 
+enum nmc_irq {
 	NMC_IRQ_NMI=0, /* Host doesn't receive this one, only nmc */
 	NMC_IRQ_HP,
 	NMC_IRQ_LP,
@@ -17,7 +17,7 @@ enum nmc_irq {
 };
 
 struct nmc_core_stats {
-	int      started; 
+	int      started;
 	uint32_t irqs_sent[NMC_NUM_IRQS];
 	uint32_t irqs_recv[NMC_NUM_IRQS];
 };
@@ -25,11 +25,11 @@ struct nmc_core_stats {
 
 
 #define POLLNMI  POLLHUP
-#define POLLHP   POLLPRI
+#define POLLHP   POLLOUT
 #define POLLLP   POLLIN
 
 #define EPOLLNMI EPOLLHUP
-#define EPOLLHP  EPOLLPRI
+#define EPOLLHP  EPOLLOUT
 #define EPOLLLP  EPOLLIN
 
 
@@ -44,8 +44,8 @@ struct nmc_core_stats {
 #define EASYNMC_EVT_LP        EASTNMC_EVT(NMC_IRQ_LP)
 #define EASYNMC_EVT_ALL       (EASYNMC_EVT_LP | EASYNMC_EVT_HP | EASYNMC_EVT_NMI)
 
-struct nmc_irq_token { 
-	enum nmc_irq  event; 
+struct nmc_irq_token {
+	enum nmc_irq  event;
 	uint32_t      events_enabled;
 	struct nmc_core_stats stats;
 	uint32_t      timeout;
@@ -60,9 +60,9 @@ struct nmc_stdio_channel {
 	uint32_t data[];
 };
 
-struct nmc_ioctl_buffer { 
+struct nmc_ioctl_buffer {
 	void  *data;
-	size_t len; 
+	size_t len;
 };
 
 #define NMC3_IOCTL_MAGIC 'N'
