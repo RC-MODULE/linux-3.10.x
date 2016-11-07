@@ -1,0 +1,10 @@
+menuconfig ARCH_RCM_K1879XB1
+	bool "RC Module K1879XB1YA"
+	depends on MMU
+	depends on ARCH_MULTI_V6
+	select CPU_V6
+	select ARM_TIMER_SP804
+	select ARM_VIC
+	select ARM_AMBA
+	help
+	  Support for RC Module's K1879X SoCs
