@@ -1,0 +1,146 @@
+/*
+ * Copyright Promwad inc(C) 2011
+ * Copyright RC Module      2015
+ *
+ * Michail Kurachkin <stelhs@ya.ru>
+ * Andrew Andrianov  <andrew@ncrmnt.org>
+ *
+ * This program is free software; you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License as published by
+ * the Free Software Foundation; either version 2 of the License, or
+ * (at your option) any later version.
+ *
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ * GNU General Public License for more details.
+ *
+ */
+
+/dts-v1/;
+#include "rcm-k1879xb1.dtsi"
+
+/ {
+	model = "RC Module MB77.07";
+	compatible = "rcm,mb7707";
+
+	memory {
+		device_type = "memory";
+		reg = <0x40000000 0x8000000>;
+	};
+
+	chosen {
+		bootargs = "console=ttyS0,38400n8 earlyprintk=serial";
+	};
+
+	leds {
+		compatible = "gpio-leds";
+		one {
+			label = "mb7707::led1";
+			gpios = <&gpiofj 31 0>; /* LED1 */
+			linux,default-trigger = "heartbeat";
+		};
+		two {
+			label = "mb7707::led2";
+			gpios = <&gpiofj 30 0>; /* LED2 */
+			default-state = "off";
+		};
+	};
+
+	clocks {
+		oscillator_27m: oscillator@27M {
+			/* On-board crystal, 27MHz clock */
+			compatible = "fixed-clock";
+			#clock-cells = <0>;
+			clock-frequency = <27000000>;
+			clock-accuracy = <0>;
+			clock-output-names = "clk_27m";
+		};
+
+		oscillator_48m: oscillator@48M {
+			/* On-board crystal, 48MHz clock */
+			compatible = "fixed-clock";
+			#clock-cells = <0>;
+			clock-frequency = <48000000>;
+			clock-output-names = "clk_48m";
+		};
+
+		oscillator_74_25m: oscillator@74M {
+			/* On-board crystal, 74.25MHz clock */
+			compatible = "fixed-clock";
+			#clock-cells = <0>;
+			clock-frequency = <74250000>;
+			clock-output-names = "clk_74m";
+		};
+
+		oscillator_12_288m: oscillator@12M {
+			/* On-board crystal, 12.288MHz clock */
+			compatible = "fixed-clock";
+			#clock-cells = <0>;
+			clock-frequency = <12288000>;
+			clock-output-names = "clk_12m";
+		};
+	};
+};
+
+&ethernet {
+	local-mac-address = [ EC 17 66 77 07 00 ];
+	status = "okay";
+	mdio {
+	phy0: ethernet-phy@0 {
+			reg = <0x1f>;
+		};
+	};
+};
+
+&ssp0 {
+	status = "okay";
+	spidev@0 {
+		compatible = "rohm,dh2228fv";
+		reg = <0>;
+		spi-max-frequency = <25000000>;
+		spi-cpha;
+		pl022,hierarchy = <0>;
+		pl022,interface = <0>;
+		pl022,slave-tx-disable;
+		pl022,com-mode = <0x1>; /* polling mode */
+		pl022,rx-level-trig = <0>;
+		pl022,tx-level-trig = <0>;
+		pl022,ctrl-len = <0x11>;
+		pl022,wait-state = <0>;
+		pl022,duplex = <0>;
+	};
+};
+
+&i2c0 {
+	speed = <100000>;
+	clock-frequency = <54000000>;
+	status = "okay";
+	hdmi0: hdmi@39 {
+		compatible = "rcm,hdmi";
+		reg = <0x39>;
+	};
+};
+
+&i2c2 {
+	status = "okay";
+	speed = <100000>;
+	clock-frequency = <54000000>;
+};
+
+&vdu {
+	status = "okay";
+};
+
+&sound {
+	status = "okay";
+	maudio,model = "RC Module MB77.07";
+};
+
+&usbehci {
+	status = "okay";
+};
+
+&video_decoder {
+	status = "okay";
+};
