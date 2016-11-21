@@ -249,6 +249,11 @@ config GPIO_LPC18XX
 	  Select this option to enable GPIO driver for
 	  NXP LPC18XX/43XX devices.
 
+config GPIO_FJ
+        tristate "Fujitsu GPIO IP support"
+        default y
+        depends on GPIOLIB
+
 config GPIO_LYNXPOINT
 	tristate "Intel Lynxpoint GPIO support"
 	depends on ACPI && X86
