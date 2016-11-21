@@ -30,6 +30,10 @@
 #include <linux/etherdevice.h>
 #include <linux/ethtool.h>
 #include <linux/skbuff.h>
+#include <linux/of.h>
+#include <linux/of_irq.h>
+#include <linux/of_mdio.h>
+#include <linux/of_address.h>
 #include <linux/io.h>
 #include <linux/crc32.h>
 #include <linux/mii.h>
@@ -81,8 +85,13 @@ static int greth_close(struct net_device *dev);
 static int greth_set_mac_add(struct net_device *dev, void *p);
 static void greth_set_multicast_list(struct net_device *dev);
 
+#ifdef CONFIG_SPARC
 #define GRETH_REGLOAD(a)	    (be32_to_cpu(__raw_readl(&(a))))
 #define GRETH_REGSAVE(a, v)         (__raw_writel(cpu_to_be32(v), &(a)))
+#else
+#define GRETH_REGLOAD(a)		(__raw_readl(&(a)))
+#define GRETH_REGSAVE(a, v)		(__raw_writel((v), &(a)))
+#endif
 #define GRETH_REGORIN(a, v)         (GRETH_REGSAVE(a, (GRETH_REGLOAD(a) | (v))))
 #define GRETH_REGANDIN(a, v)        (GRETH_REGSAVE(a, (GRETH_REGLOAD(a) & (v))))
 
@@ -611,6 +620,24 @@ static irqreturn_t greth_interrupt(int irq, void *dev_id)
 		greth_disable_irqs(greth);
 		napi_schedule(&greth->napi);
 	}
+
+#ifdef CONFIG_ARM
+		/*
+		 * Clean status bits. On ARM GRETH IP needs these bits cleared
+		 * in interrupt context. PL192 VIC has this interrupt wired
+		 * as level-triggered, while on SPARC it is edge triggered.
+		 * Masking GRETH_RXI/GRETH_TXI does NOT clear pending status.
+		 * If we don't clear these bits here - the interrupt will
+		 * arrive again the next moment we return from this
+		 * handler. Since GRETH_RXI and GRETH_TXI bits will now
+		 * be 0 we'll hit unhandled interrupt error.
+		 */
+	if (retval != IRQ_HANDLED) {
+		GRETH_REGSAVE(greth->regs->status,
+			(status & (GRETH_INT_RE | GRETH_INT_RX |
+					 GRETH_INT_TE | GRETH_INT_TX)));
+	}
+#endif
 
 	mmiowb();
 	spin_unlock(&greth->devlock);
@@ -1299,7 +1326,7 @@ static inline int phy_aneg_done(struct phy_device *phydev)
 	return (retval < 0) ? retval : (retval & BMSR_ANEGCOMPLETE);
 }
 
-static int greth_mdio_init(struct greth_private *greth)
+static int greth_mdio_init(struct greth_private *greth, struct device_node *np)
 {
 	int ret;
 	unsigned long timeout;
@@ -1316,7 +1343,12 @@ static int greth_mdio_init(struct greth_private *greth)
 	greth->mdio->write = greth_mdio_write;
 	greth->mdio->priv = greth;
 
-	ret = mdiobus_register(greth->mdio);
+	if(NULL == np) {
+		ret = mdiobus_register(greth->mdio);
+	} else {
+		ret = of_mdiobus_register(greth->mdio, np);
+	};
+
 	if (ret) {
 		goto error;
 	}
@@ -1378,10 +1410,13 @@ static int greth_of_probe(struct platform_device *ofdev)
 
 	spin_lock_init(&greth->devlock);
 
+#ifdef CONFIG_SPARC
 	greth->regs = of_ioremap(&ofdev->resource[0], 0,
 				 resource_size(&ofdev->resource[0]),
 				 "grlib-greth regs");
-
+#else
+	greth->regs = of_iomap(ofdev->dev.of_node, 0);
+#endif
 	if (greth->regs == NULL) {
 		if (netif_msg_probe(greth))
 			dev_err(greth->dev, "ioremap failure.\n");
@@ -1390,7 +1425,12 @@ static int greth_of_probe(struct platform_device *ofdev)
 	}
 
 	regs = greth->regs;
-	greth->irq = ofdev->archdata.irqs[0];
+
+#ifdef CONFIG_SPARC
+        greth->irq = ofdev->archdata.irqs[0];
+#else
+        greth->irq = irq_of_parse_and_map(ofdev->dev.of_node, 0);
+#endif
 
 	dev_set_drvdata(greth->dev, dev);
 	SET_NETDEV_DEV(dev, greth->dev);
@@ -1432,7 +1472,7 @@ static int greth_of_probe(struct platform_device *ofdev)
 	/* Check if MAC can handle MDIO interrupts */
 	greth->mdio_int_en = (tmp >> 26) & 1;
 
-	err = greth_mdio_init(greth);
+	err = greth_mdio_init(greth, of_get_child_by_name(ofdev->dev.of_node, "mdio"));
 	if (err) {
 		if (netif_msg_probe(greth))
 			dev_err(greth->dev, "failed to register MDIO bus\n");
@@ -1533,7 +1573,11 @@ error4:
 error3:
 	mdiobus_unregister(greth->mdio);
 error2:
+#ifdef CONFIG_SPARC
 	of_iounmap(&ofdev->resource[0], greth->regs, resource_size(&ofdev->resource[0]));
+#else
+	iounmap(greth->regs);
+#endif
 error1:
 	free_netdev(dev);
 	return err;
@@ -1555,8 +1599,11 @@ static int greth_of_remove(struct platform_device *of_dev)
 
 	unregister_netdev(ndev);
 	free_netdev(ndev);
-
+#ifdef CONFIG_SPARC
 	of_iounmap(&of_dev->resource[0], greth->regs, resource_size(&of_dev->resource[0]));
+#else
+	iounmap(greth->regs);
+#endif
 
 	return 0;
 }
@@ -1567,6 +1614,9 @@ static const struct of_device_id greth_of_match[] = {
 	 },
 	{
 	 .name = "01_01d",
+	 },
+	{
+	 .compatible = "aeroflexgaisler,greth",
 	 },
 	{},
 };
