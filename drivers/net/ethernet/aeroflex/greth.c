@@ -1,3 +1,4 @@
+
 // SPDX-License-Identifier: GPL-2.0-or-later
 /*
  * Aeroflex Gaisler GRETH 10/100/1G Ethernet MAC.
@@ -26,6 +27,10 @@
 #include <linux/etherdevice.h>
 #include <linux/ethtool.h>
 #include <linux/skbuff.h>
+#include <linux/of.h>
+#include <linux/of_irq.h>
+#include <linux/of_mdio.h>
+#include <linux/of_address.h>
 #include <linux/io.h>
 #include <linux/crc32.h>
 #include <linux/mii.h>
@@ -627,6 +632,28 @@ static irqreturn_t greth_interrupt(int irq, void *dev_id)
 		napi_schedule(&greth->napi);
 	}
 
+<<<<<<< HEAD
+=======
+#ifdef CONFIG_ARM
+		/*
+		 * Clean status bits. On ARM GRETH IP needs these bits cleared
+		 * in interrupt context. PL192 VIC has this interrupt wired
+		 * as level-triggered, while on SPARC it is edge triggered.
+		 * Masking GRETH_RXI/GRETH_TXI does NOT clear pending status.
+		 * If we don't clear these bits here - the interrupt will
+		 * arrive again the next moment we return from this
+		 * handler. Since GRETH_RXI and GRETH_TXI bits will now
+		 * be 0 we'll hit unhandled interrupt error.
+		 */
+	if (retval != IRQ_HANDLED) {
+		GRETH_REGSAVE(greth->regs->status,
+			(status & (GRETH_INT_RE | GRETH_INT_RX |
+					 GRETH_INT_TE | GRETH_INT_TX)));
+	}
+#endif
+
+	mmiowb();
+>>>>>>> greth: Support for building on ARM platforms
 	spin_unlock(&greth->devlock);
 
 	return retval;
@@ -1306,7 +1333,7 @@ static int greth_mdio_probe(struct net_device *dev)
 	return 0;
 }
 
-static int greth_mdio_init(struct greth_private *greth)
+static int greth_mdio_init(struct greth_private *greth, struct device_node *np)
 {
 	int ret;
 	unsigned long timeout;
@@ -1326,7 +1353,12 @@ static int greth_mdio_init(struct greth_private *greth)
 	greth->mdio->write = greth_mdio_write;
 	greth->mdio->priv = greth;
 
-	ret = mdiobus_register(greth->mdio);
+	if(NULL == np) {
+		ret = mdiobus_register(greth->mdio);
+	} else {
+		ret = of_mdiobus_register(greth->mdio, np);
+	};
+
 	if (ret) {
 		goto error;
 	}
@@ -1388,6 +1420,7 @@ static int greth_of_probe(struct platform_device *ofdev)
 
 	spin_lock_init(&greth->devlock);
 
+<<<<<<< HEAD
 #if defined(CONFIG_PPC) || defined(CONFIG_ARM)
 	greth->regs = devm_ioremap_resource(greth->dev, ofdev->resource);
 #else
@@ -1397,6 +1430,16 @@ static int greth_of_probe(struct platform_device *ofdev)
 #endif
 
 	if (IS_ERR(greth->regs)) {
+=======
+#ifdef CONFIG_SPARC
+	greth->regs = of_ioremap(&ofdev->resource[0], 0,
+				 resource_size(&ofdev->resource[0]),
+				 "grlib-greth regs");
+#else
+	greth->regs = of_iomap(ofdev->dev.of_node, 0);
+#endif
+	if (greth->regs == NULL) {
+>>>>>>> greth: Support for building on ARM platforms
 		if (netif_msg_probe(greth))
 			dev_err(greth->dev, "ioremap failure.\n");
 		err = -EIO;
@@ -1404,10 +1447,18 @@ static int greth_of_probe(struct platform_device *ofdev)
 	}
 
 	regs = greth->regs;
+<<<<<<< HEAD
 #if defined(CONFIG_PPC) || defined(CONFIG_ARM)
 	greth->irq = platform_get_irq(ofdev, 0);
 #else	
 	greth->irq = ofdev->archdata.irqs[0];
+=======
+
+#ifdef CONFIG_SPARC
+        greth->irq = ofdev->archdata.irqs[0];
+#else
+        greth->irq = irq_of_parse_and_map(ofdev->dev.of_node, 0);
+>>>>>>> greth: Support for building on ARM platforms
 #endif
 
 	dev_set_drvdata(greth->dev, dev);
@@ -1460,7 +1511,7 @@ static int greth_of_probe(struct platform_device *ofdev)
 	/* Check if MAC can handle MDIO interrupts */
 	greth->mdio_int_en = (tmp >> 26) & 1;
 
-	err = greth_mdio_init(greth);
+	err = greth_mdio_init(greth, of_get_child_by_name(ofdev->dev.of_node, "mdio"));
 	if (err) {
 		if (netif_msg_probe(greth))
 			dev_err(greth->dev, "failed to register MDIO bus\n");
@@ -1563,10 +1614,17 @@ error4:
 error3:
 	mdiobus_unregister(greth->mdio);
 error2:
+<<<<<<< HEAD
 #if defined(CONFIG_PPC) || defined(CONFIG_ARM)
 	devm_iounmap(greth->dev, greth->regs);
 #else
 	of_iounmap(&ofdev->resource[0], greth->regs, resource_size(&ofdev->resource[0]));
+=======
+#ifdef CONFIG_SPARC
+	of_iounmap(&ofdev->resource[0], greth->regs, resource_size(&ofdev->resource[0]));
+#else
+	iounmap(greth->regs);
+>>>>>>> greth: Support for building on ARM platforms
 #endif
 error1:
 	free_netdev(dev);
@@ -1589,11 +1647,18 @@ static int greth_of_remove(struct platform_device *of_dev)
 
 	unregister_netdev(ndev);
 	free_netdev(ndev);
+<<<<<<< HEAD
 
 #if defined(CONFIG_PPC) || defined(CONFIG_ARM)
 	devm_iounmap(greth->dev, greth->regs);
 #else
 	of_iounmap(&of_dev->resource[0], greth->regs, resource_size(&of_dev->resource[0]));
+=======
+#ifdef CONFIG_SPARC
+	of_iounmap(&of_dev->resource[0], greth->regs, resource_size(&of_dev->resource[0]));
+#else
+	iounmap(greth->regs);
+>>>>>>> greth: Support for building on ARM platforms
 #endif
 
 	return 0;
@@ -1607,8 +1672,13 @@ static const struct of_device_id greth_of_match[] = {
 	 .name = "01_01d",
 	 },
 	{
+<<<<<<< HEAD
 		.compatible	= "rcm,greth",
 	},	 
+=======
+	 .compatible = "aeroflexgaisler,greth",
+	 },
+>>>>>>> greth: Support for building on ARM platforms
 	{},
 };
 
