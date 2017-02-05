@@ -68,6 +68,10 @@ config MTD_DATAFLASH_WRITE_VERIFY
 	  device thinks the write was successful, a bit could have been
 	  flipped accidentally due to device wear or something else.
 
+config MTD_MNAND
+       tristate "RC Module MNAND Flash Controller"
+       select MTD_NAND_IDS
+
 config MTD_DATAFLASH_OTP
 	bool "DataFlash OTP support (Security Register)"
 	depends on MTD_DATAFLASH
