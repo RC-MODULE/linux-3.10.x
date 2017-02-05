@@ -53,6 +53,9 @@ obj-$(CONFIG_ECHO)		+= echo/
 obj-$(CONFIG_VEXPRESS_SYSCFG)	+= vexpress-syscfg.o
 obj-$(CONFIG_CXL_BASE)		+= cxl/
 obj-$(CONFIG_PANEL)             += panel.o
+obj-$(CONFIG_RCM_EASYNMC)      += easynmc.o 
+obj-$(CONFIG_RCM_EASYNMC_NMC3) += easynmc-core-nmc3.o 
+obj-$(CONFIG_RCM_EASYNMC_TEST) += easynmc-core-test.o
 
 lkdtm-$(CONFIG_LKDTM)		+= lkdtm_core.o
 lkdtm-$(CONFIG_LKDTM)		+= lkdtm_bugs.o
