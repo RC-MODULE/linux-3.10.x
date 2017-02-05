@@ -325,6 +325,21 @@ config CRYPTO_DEV_OMAP_AES
 	  OMAP processors have AES module accelerator. Select this if you
 	  want to use the OMAP module for AES algorithms.
 
+config CRYPTO_DEV_MCRYPTO
+       tristate "Driver for Module3DES crypto hardware accelerator"
+       select CRYPTO_ALGAPI
+       select CRYPTO_AUTHENC
+       select CRYPTO_BLKCIPHER
+       help
+               Driver for Module Crypto hardware accelerator
+
+config CRYPTO_DEV_MCRYPTO_AES
+       tristate "Driver for Module AES crypto hardware accelerator"
+       select CRYPTO_ALGAPI
+       select CRYPTO_AUTHENC
+       help
+               Driver for Module Crypto AES hardware accelerator
+
 config CRYPTO_DEV_OMAP_DES
 	tristate "Support for OMAP DES/3DES hw engine"
 	depends on ARCH_OMAP2PLUS
