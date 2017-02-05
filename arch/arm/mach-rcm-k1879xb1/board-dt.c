@@ -32,31 +32,52 @@ static void __iomem *k1879_sctl_base(void)
 	return (void __iomem *)RCM_K1879_SCTL_VIRT_BASE;
 }
 
-static void k1879_level_irq_i2c0_fixup(unsigned int irq, struct irq_desc *desc)
+static void k1879_level_irq_i2c0_fixup(struct irq_desc *desc)
 {
 	writel(1, k1879_mif_base() + RCM_K1879_MIF_I2C_INT_STAT);
 	handle_level_irq(desc);
 }
 
-static void k1879_level_irq_i2c1_fixup(unsigned int irq, struct irq_desc *desc)
+static struct map_desc k1879_io_desc[] __initdata = {
+       {
+               .virtual        = RCM_K1879_AREA0_VIRT_BASE,
+               .pfn    = __phys_to_pfn(RCM_K1879_AREA0_PHYS_BASE),
+               .length = RCM_K1879_AREA0_SIZE,
+               .type   = MT_DEVICE,
+       },
+       // FIXME: This static mapping is actually redundant. We are using it for
+       // direct access to multimedia registers.
+       {
+               .virtual        = 0xF9000000,
+		.pfn    = __phys_to_pfn(RCM_K1879_AREA1_PHYS_BASE),
+               .length = 2*RCM_K1879_AREA1_SIZE,
+               .type   = MT_DEVICE,
+       }
+};
+
+static void __init k1879_map_io(void) {
+    iotable_init(k1879_io_desc, ARRAY_SIZE(k1879_io_desc));
+}
+
+static void k1879_level_irq_i2c1_fixup(struct irq_desc *desc)
 {
 	writel(1 << 0, k1879_sctl_base() + RCM_K1879_SCTL_INT_P_OUT);
 	handle_level_irq(desc);
 }
 
-static void k1879_level_irq_i2c2_fixup(unsigned int irq, struct irq_desc *desc)
+static void k1879_level_irq_i2c2_fixup(struct irq_desc *desc)
 {
 	writel(1 << 1, k1879_sctl_base() + RCM_K1879_SCTL_INT_P_OUT);
 	handle_level_irq(desc);
 }
 
-static void k1879_level_irq_i2c3_fixup(unsigned int irq, struct irq_desc *desc)
+static void k1879_level_irq_i2c3_fixup(struct irq_desc *desc)
 {
 	writel(1 << 2, k1879_sctl_base() + RCM_K1879_SCTL_INT_P_OUT);
 	handle_level_irq(desc);
 }
 
-static void (*k1879_i2c_fixups[])(unsigned int irq, struct irq_desc *desc) = {
+static void (*k1879_i2c_fixups[])(struct irq_desc *desc) = {
 	k1879_level_irq_i2c0_fixup,
 	k1879_level_irq_i2c1_fixup,
 	k1879_level_irq_i2c2_fixup,
@@ -139,6 +160,7 @@ static const char * const k1879_dt_match[] = {
 };
 
 DT_MACHINE_START(K1879, "RC Module K1879XB1YA (Device Tree)")
+	.map_io                 = k1879_map_io,
 	.init_machine           = k1879_dt_mach_init,
 	.dt_compat              = k1879_dt_match,
 	.restart                = k1879_restart
