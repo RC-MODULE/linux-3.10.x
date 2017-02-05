@@ -126,6 +126,22 @@
 	status = "okay";
 	speed = <100000>;
 	clock-frequency = <54000000>;
+	at24: at24@50 {
+                compatible = "at24,24c64";
+                reg = <0x50>;
+        };
+};
+
+&i2c1 {
+       status = "okay";
+       speed = <100000>;
+       clock-frequency = <54000000>;
+};
+
+&i2c3 {
+        status = "okay";
+        speed = <100000>;
+        clock-frequency = <54000000>;
 };
 
 &vdu {
