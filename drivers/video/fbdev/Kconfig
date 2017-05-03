@@ -1333,6 +1333,18 @@ config FB_MATROX_MAVEN
 	  painting procedures (the secondary head does not use acceleration
 	  engine).
 
+config  FB_RCM_VDU_CORE
+	tristate
+	default n
+
+config FB_RCM_VDU
+        tristate "RC Module VDU framebuffer support"
+	depends on FB && ARCH_RCM_K1879XB1
+	select FB_RCM_VDU_CORE
+	select FB_SYS_FILLRECT
+	select FB_SYS_COPYAREA
+	select FB_SYS_IMAGEBLIT
+
 config FB_RADEON
 	tristate "ATI Radeon display support"
 	depends on FB && PCI
