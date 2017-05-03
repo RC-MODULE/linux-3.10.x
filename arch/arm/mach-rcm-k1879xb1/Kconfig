@@ -8,3 +8,96 @@ menuconfig ARCH_RCM_K1879XB1
 	select ARM_AMBA
 	help
 	  Support for RC Module's K1879X SoCs
+if ARCH_RCM_K1879XB1
+
+menu "K1879XB1 platform type"
+config MACH_K1879XB1
+	bool "K1879XB1 machine support"
+	select ARM_VIC
+	select GPIO_FJ
+	select GPIO_PL061
+	select OF
+	help
+	 Select this if you are using an K1879XB1 system
+	 <http://www.module.ru/index.shtml>
+	 
+menu "Compatibility options and tuning"
+config RCM_GENERIC_TIME
+	depends on MACH_K1879XB1
+	bool "Use generic clocksource/clockevents"
+	select GENERIC_TIME
+	select GENERIC_CLOCKEVENTS
+	help
+	 Use clocksource/clockevents instead of old-style timer implementation.
+	 Clocksource-based timers have greater precision.
+
+endmenu
+
+menu "SDHD SoC Hardware Support"
+
+config RCM_MVDU_CORE
+	depends on MACH_K1879XB1
+	depends on !UEMD_LO_MEM
+	bool "MVDU video device unit platform device"
+	help
+	 Include MVDU platform device support
+
+config RCM_MSVDHD_QUIRKS
+	depends on MACH_K1879XB1
+	bool "Enable MSVDHD video decoder DDR Quirks"
+
+config RCM_GRI2C_HDMI
+	depends on MACH_K1879XB1
+	depends on I2C_OCORES
+	depends on RCM_MVDU_CORE
+	bool "Enable internal I2C bus used by HDMI transiever"
+	help
+	 UEMD board has one internal I2C bus with single device - HDMI
+	 transiever. It will be accessible at index 0.
+
+config RCM_HDMI_BI
+	depends on RCM_GRI2C_HDMI
+	bool "Enable I2C HDMI board info and mode switcher"
+	default yes
+	help
+	 Enables HDMI code capable of handling TV-mode change requests
+	 from video drivers like MVDU. It will change things like resolution,
+	 viewport position, etc.
+	 Disable this to use older i2cset-based scripts.
+
+config RCM_TSP
+	depends on MACH_K1879XB1
+	bool "TSP Transport stream demultiplexer"
+	help
+	 Enable transport stream demultiplexor platform device. MDEMUX driver
+	 should be able to handle it.
+
+config RCM_USB
+	depends on MACH_K1879XB1
+	select USB_OHCI_HCD
+	select USB_EHCI_HCD
+	select OF
+	bool "Enable USB host controller"
+
+config RCM_AUDIO
+	depends on MACH_K1879XB1
+	select SND_MAUDIO
+	bool "Enable MAUDIO platform device resources"
+
+config RCM_UARTIRDA
+	depends on MACH_K1879XB1
+	bool "Enable UART-to-IRDA interface"
+	help
+	 Enable UART connected to IRDA sensor.
+
+config RCM_SCI
+	depends on MACH_K1879XB1
+	bool "Enable SCI platfrom device"
+	help
+	 Enable SCI platform resources. msci driver should handle
+	 this device.
+
+endmenu
+endmenu
+
+endif

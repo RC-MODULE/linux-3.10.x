@@ -424,8 +424,8 @@
 				reg = <0x3000 0x1000>;
 				interrupts = <10>;
 				interrupt-parent = <&vic1>;
-				supported_modes = <0x1FFE>;
-				default_mode = <0x4>;
+				supported_modes = <0x7FFE>;
+				default_mode = <0xd>;
 				output_flags = <0x200>;
 				axi_osd_param = <0x0f310000>;
 				axi_mvl_param = <0x0f310000>;
@@ -464,7 +464,7 @@
 		     ion-heap-align = <0x10>;
 		     ion-heap-name = "IM2";
 		};
-
+		
 		ion_em1: ion@c0000000 {
 		     compatible = "ion,physmem";
 		     reg = <0xc0000000 0x8000000>;

@@ -24,11 +24,21 @@
 	model = "RC Module MB77.07";
 	compatible = "rcm,mb7707";
 
-	memory {
-		device_type = "memory";
-		reg = <0x40000000 0x8000000>;
+    memory {
+        device_type = "memory";
+        reg = <0x40000000 0x8000000>;
+    };
+	
+	reserved-memory {
+	    #address-cells = <1>;
+	    #size-cells = <1>;
+	    ranges;
+	
+	    fb_reserved: framebuffer@45C00000 {
+		reg = <0x45C00000 0x2400000>;
+	    };
 	};
-
+	
 	chosen {
 		bootargs = "console=ttyS0,38400n8 earlyprintk=serial";
 	};
@@ -145,6 +155,7 @@
 };
 
 &vdu {
+	memory-region = <&fb_reserved>;
 	status = "okay";
 };
 
