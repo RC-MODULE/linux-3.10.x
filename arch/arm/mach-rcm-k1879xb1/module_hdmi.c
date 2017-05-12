@@ -14,11 +14,6 @@
 #define DRIVER_NAME "module_hdmi"
 #define DEVICE_NAME "module_hdmi"
 
-static bool force_dvi = 0;
-module_param(force_dvi, bool, 0444);
-MODULE_PARM_DESC(force_dci, "Force HDMI controller to operate in DVI mode");
-
-
 #define STATE_INIT	(1 << 0)
 #define STATE_SD	(1 << 1)
 
@@ -31,6 +26,7 @@ struct module_hdmi_data {
 
 	wait_queue_head_t wq;
 	struct task_struct *thread;
+	bool force_dvi;
 };
 
 static struct module_hdmi_data *g_point = NULL;
@@ -134,7 +130,7 @@ static void module_hdmi_do_init(struct module_hdmi_data *data)
 
 	module_hdmi_write_u8(adap, data->addr_0, 0x08, 0x37);
 
-	if(force_dvi) {
+	if(data->force_dvi) {
 		//DVI
 		module_hdmi_write_u8(adap, data->addr_1, 0x2f, 0x20);
 	} else {
@@ -212,6 +208,9 @@ static int module_hdmi_probe(struct i2c_client *client,
 {
 	struct i2c_adapter *adapter = to_i2c_adapter(client->dev.parent);
 	struct module_hdmi_data *data;
+
+	bool* force_dvi_ptr;
+
 	u16 did;
 	int ret;
 	pr_info("probing RCM HDMI\n");
@@ -237,16 +236,16 @@ static int module_hdmi_probe(struct i2c_client *client,
 	data->adapter = adapter;
 	data->addr_0 = client->addr;
 	data->addr_1 = client->addr | 0x4;
-pr_info("module_hdmi: before i2c set client data\n");
+
 	i2c_set_clientdata(client, data);
-pr_info("module_hdmi: after i2c set client data\n");
+
 	init_waitqueue_head(&data->wq);
-pr_info("module_hdmi: after init wait queue\n");
 	data->wanted_state |= STATE_INIT;
+    data->force_dvi = of_property_read_bool(client->dev.of_node, "force-dvi");
 
 	data->thread = kthread_run(thread_change_state, (void *) data,
 			"module_hdmi");
-pr_info("module_hdmi: after kthread_run\n");
+
 	if (IS_ERR(data->thread)) {
 		pr_err("module_hdmi: failed to create communication thread\n");
 		ret = PTR_ERR(data->thread);
