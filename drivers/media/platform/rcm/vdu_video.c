@@ -451,7 +451,9 @@ static int querycap(struct file *file, void *fh, struct v4l2_capability *cap)
 	snprintf(cap->bus_info, sizeof(cap->bus_info), "MMIO %08x",
 		 (unsigned int)mvd->core_device->regs_phys);
 	cap->version = KERNEL_VERSION(0, 0, 1);
-	cap->capabilities = V4L2_CAP_STREAMING | V4L2_CAP_VIDEO_OUTPUT;
+    cap->device_caps = V4L2_CAP_STREAMING | V4L2_CAP_VIDEO_OUTPUT;
+	cap->capabilities = cap->device_caps | V4L2_CAP_DEVICE_CAPS;
+
 	MVDU_VIDEO_BASE_PHYS(cap) = mvd->core_device->video_buffer_dma;
 
 	return 0;
@@ -876,6 +878,7 @@ static int __init video_dev_init(struct mvdu_device *core_device)
 	vd->fops = &mvdu_video_fops;
 	vd->ioctl_ops = &mvdu_video_ioctl_ops;
 	vd->release = &vdev_release;
+    vd->v4l2_dev = &core_device->v4l2_dev;
 
 	/* placeholder */
 	vd->tvnorms = V4L2_STD_PAL | V4L2_STD_NTSC | V4L2_STD_SECAM;
@@ -886,11 +889,18 @@ static int __init video_dev_init(struct mvdu_device *core_device)
 	core_device->mvl_release_buffer = &release_buf;
 	core_device->mvl_release_params = &release_params;
 
+	memset(vd->v4l2_dev, 0x0, sizeof(*vd->v4l2_dev));
+	ret = v4l2_device_register(core_device->dev, vd->v4l2_dev);
+	if (ret) {
+		dev_err(core_device->dev,
+				"failed to register v4l2 device\n");
+		goto fail_video_device_register;
+	}
 	/* We need to select some device type to call
 	 * video_register_device function. Type value defines
 	 * class/device name (we want "video").
 	 */
-	ret = video_register_device(vd, VFL_TYPE_GRABBER, -1);
+	ret = video_register_device(vd, VFL_TYPE_GRABBER, 0);
 	if (ret) {
 		dev_err(core_device->dev,
 				"failed to register video device\n");
