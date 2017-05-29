@@ -261,7 +261,7 @@ struct mvdu_device {
 	int fb_blanked;			/* flag "OSD disabled by fb_bank" */
 	u32 pseudo_palette[256];	/* required for fbcon and for logo */
 #endif
-#if defined(CONFIG_MODULE_VDU_VIDEO) || defined(CONFIG_MODULE_VDU_VIDEO_MODULE)
+#if defined(CONFIG_RCM_VDU_VIDEO) || defined(CONFIG_RCM_VDU_VIDEO_MODULE)
 
 	/* Platform-specific methods to (de)allocate video buffer */
 	int (*allocate_video_buffer)(struct mvdu_device *dev);
