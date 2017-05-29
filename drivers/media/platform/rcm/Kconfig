@@ -1,0 +1,7 @@
+config RCM_VDU_VIDEO
+	tristate "Module VDU video output support"
+	depends on VIDEO_V4L2
+	select FB_RCM_VDU_CORE
+	default m
+	---help---
+	  Support for V4L2 interface to Module VDU.
