@@ -16,6 +16,7 @@
 #include <linux/list.h>
 #include <linux/spinlock.h>
 #include <linux/timer.h>
+#include <media/v4l2-device.h>
 #include <linux/wait.h>
 
 struct mvdu_mode {
@@ -273,6 +274,7 @@ struct mvdu_device {
 	void *video_buffer_cpu;		/* video buffer CPU address */
 	dma_addr_t video_buffer_dma;	/* video buffer physical address */
 	struct resource vpubuffer_res; /* vpubuffer resources */
+	struct v4l2_device v4l2_dev;
 #endif
 };
 
