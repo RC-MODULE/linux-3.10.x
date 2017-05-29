@@ -3714,19 +3714,17 @@ static ssize_t sync_store(struct device *d, struct device_attribute *attr,
 
 #endif
 
-#if defined(CONFIG_MODULE_VDU_VIDEO) || defined(CONFIG_MODULE_VDU_VIDEO_MODULE)
+#if defined(CONFIG_RCM_VDU_VIDEO) || defined(CONFIG_RCM_VDU_VIDEO_MODULE)
 static int allocate_video_buffer(struct mvdu_device *vpu)
 {
-//	static const size_t VIDEO_BUFFER_SIZE =
-//		MVDU_VIDEO_MAX_BUFFER_SIZE * MVDU_VIDEO_MAX_BUFFERS;
+	void* p;
+	static const size_t VIDEO_BUFFER_SIZE =
+		MVDU_VIDEO_MAX_BUFFER_SIZE * MVDU_VIDEO_MAX_BUFFERS;
 
-	void* p = 0;
-
-	return PTR_ERR(p);
-/*
 	pr_info("mvdu: will allocate buffers\n");
 
 	p = devm_ioremap_resource(vpu->dev, &vpu->vpubuffer_res);
+
 	if (IS_ERR(p)) {
 		dev_err(vpu->dev, "cant remap video io memory\n");
 		return PTR_ERR(p);
@@ -3739,7 +3737,7 @@ static int allocate_video_buffer(struct mvdu_device *vpu)
 	pr_info("mvdu: did allocate buffers %p\n", p);
 
 	return 0;
-*/
+
 }
 #endif
 
@@ -3747,7 +3745,7 @@ static int module_vdu_core_of_probe(struct platform_device *pdev,
 				struct mvdu_device *vpu)
 {
 	struct device_node *np = pdev->dev.of_node;
-//	const struct property *prop;
+	const struct property *prop;
 
 	if(0 > of_property_read_u32(np, "supported_modes", &vpu->supported_modes)) {
 		dev_err(&pdev->dev, "Missing required parameter 'supported_modes'\n");
@@ -3770,7 +3768,6 @@ static int module_vdu_core_of_probe(struct platform_device *pdev,
 		return -ENODEV;
 	};
 
-#if 0
 	/* vdu video support */
 	prop = of_find_property(np, "vdubuffer", NULL);
 	if (prop && prop->value) {
@@ -3787,7 +3784,7 @@ static int module_vdu_core_of_probe(struct platform_device *pdev,
 		vpu->vpubuffer_res.flags = IORESOURCE_MEM;
 		vpu->allocate_video_buffer = allocate_video_buffer;
 	};
-#endif
+
 	return 0;
 }
 
@@ -3800,7 +3797,7 @@ static int mvdu_get_fb_params(struct platform_device *pdev, struct mvdu_device *
 			  MVDU_OSD_BUFFER_WIDTH * MVDU_OSD_BUFFER_HEIGHT;
 
 	struct device_node *of_node = pdev->dev.of_node;
-	
+
 #if 1
 	struct device_node *mem_region;
 	struct resource res;

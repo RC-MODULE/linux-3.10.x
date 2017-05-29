@@ -28,17 +28,17 @@
         device_type = "memory";
         reg = <0x40000000 0x8000000>;
     };
-	
+
 	reserved-memory {
 	    #address-cells = <1>;
 	    #size-cells = <1>;
 	    ranges;
-	
+
 	    fb_reserved: framebuffer@45C00000 {
 		reg = <0x45C00000 0x2400000>;
 	    };
 	};
-	
+
 	chosen {
 		bootargs = "console=ttyS0,38400n8 earlyprintk=serial";
 	};
@@ -129,6 +129,7 @@
 	hdmi0: hdmi@39 {
 		compatible = "rcm,hdmi";
 		reg = <0x39>;
+		force-dvi = <1>;
 	};
 };
 

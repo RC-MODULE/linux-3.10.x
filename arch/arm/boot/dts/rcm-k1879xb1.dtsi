@@ -425,11 +425,11 @@
 				interrupts = <10>;
 				interrupt-parent = <&vic1>;
 				supported_modes = <0x7FFE>;
-				default_mode = <0xd>;
+				default_mode = <0x4>;
 				output_flags = <0x200>;
 				axi_osd_param = <0x0f310000>;
 				axi_mvl_param = <0x0f310000>;
-				//vbuffer-heap = &ion_em1;
+				vdubuffer = <0xc0000000 0x2000000>; /* 32MB  EM1 !*/
 				status = "disabled";
 			};
 		};
@@ -444,6 +444,19 @@
 			maudio,spdif = <&spdif>;
 			status = "disabled";
 		};
+
+		video_decoder: video_decoder@80180000 {
+			compatible = "module,msvdhd";
+			reg = <0x80180000 0x20000>,
+					<0xc6800000 0x1800000>, /* EM1! */
+					<0x80100000 0x40000>;
+			reg-names = "registers", "extmem", "intmem";
+			interrupts = <12>; /* 44 */
+			interrupt-names = "irq";
+			interrupt-parent = <&vic1>;
+			status = "disabled";
+		};
+
 
 		ion_im0: ion@0x00100000 {
 		     compatible = "ion,physmem";
@@ -464,7 +477,7 @@
 		     ion-heap-align = <0x10>;
 		     ion-heap-name = "IM2";
 		};
-		
+
 		ion_em1: ion@c0000000 {
 		     compatible = "ion,physmem";
 		     reg = <0xc0000000 0x8000000>;
@@ -473,17 +486,6 @@
 		     //ion-heap-type = <ION_HEAP_TYPE_DMA>;
 		     ion-heap-align = <0x10>;
 		     ion-heap-name = "EM1";
-		};
-
-		video_decoder: video_decoder@80180000 {
-			compatible = "rcm,msvdhd";
-			reg = <0x80180000 0x20000>;
-			reg-names = "regs";
-			interrupts = <12>; /* 44 */
-			vbuffer-heap = &ion_em1;
-			ibuffer-heap = &ion_im2;
-			interrupt-parent = <&vic1>;
-			status = "disabled";
 		};
 
 		nmcore0 {
