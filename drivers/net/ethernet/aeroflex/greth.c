@@ -616,28 +616,27 @@ static irqreturn_t greth_interrupt(int irq, void *dev_id)
 	    ((status & (GRETH_INT_TE | GRETH_INT_TX)) && (ctrl & GRETH_TXI))) {
 		retval = IRQ_HANDLED;
 
+#ifdef CONFIG_ARM
+				/*
+				 * Clean status bits. On ARM GRETH IP needs these bits cleared
+				 * in interrupt context. PL192 VIC has this interrupt wired
+				 * as level-triggered, while on SPARC it is edge triggered.
+				 * Masking GRETH_RXI/GRETH_TXI does NOT clear pending status.
+				 * If we don't clear these bits here - the interrupt will
+				 * arrive again the next moment we return from this
+				 * handler. Since GRETH_RXI and GRETH_TXI bits will now
+				 * be 0 we'll hit unhandled interrupt error.
+				 */
+		GRETH_REGSAVE(greth->regs->status,
+			(status & (GRETH_INT_RE | GRETH_INT_RX |
+			GRETH_INT_TE | GRETH_INT_TX)));
+#endif
+
 		/* Disable interrupts and schedule poll() */
 		greth_disable_irqs(greth);
 		napi_schedule(&greth->napi);
 	}
 
-#ifdef CONFIG_ARM
-		/*
-		 * Clean status bits. On ARM GRETH IP needs these bits cleared
-		 * in interrupt context. PL192 VIC has this interrupt wired
-		 * as level-triggered, while on SPARC it is edge triggered.
-		 * Masking GRETH_RXI/GRETH_TXI does NOT clear pending status.
-		 * If we don't clear these bits here - the interrupt will
-		 * arrive again the next moment we return from this
-		 * handler. Since GRETH_RXI and GRETH_TXI bits will now
-		 * be 0 we'll hit unhandled interrupt error.
-		 */
-	if (retval != IRQ_HANDLED) {
-		GRETH_REGSAVE(greth->regs->status,
-			(status & (GRETH_INT_RE | GRETH_INT_RX |
-					 GRETH_INT_TE | GRETH_INT_TX)));
-	}
-#endif
 
 	mmiowb();
 	spin_unlock(&greth->devlock);
