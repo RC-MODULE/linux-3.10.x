@@ -82,6 +82,35 @@ static void fpga_region_put(struct fpga_region *region)
 /**
  * fpga_region_program_fpga - program FPGA
  *
+ * Return: fpga manager struct or IS_ERR() condition containing error code.
+ */
+static struct fpga_manager *fpga_region_get_manager(struct fpga_region *region)
+{
+	struct device *dev = &region->dev;
+	struct device_node *np = dev->of_node;
+	struct device_node  *mgr_node;
+	struct fpga_manager *mgr;
+
+	of_node_get(np);
+	while (np) {
+		if (of_device_is_compatible(np, "fpga-region")) {
+			mgr_node = of_parse_phandle(np, "fpga-mgr", 0);
+			if (mgr_node) {
+				mgr = of_fpga_mgr_get(mgr_node);
+				of_node_put(mgr_node);
+				of_node_put(np);
+				return mgr;
+			}
+		}
+		np = of_get_next_parent(np);
+	}
+	of_node_put(np);
+
+	return ERR_PTR(-EINVAL);
+}
+
+/**
+ * fpga_region_get_bridges - create a list of bridges
  * @region: FPGA region
  *
  * Program an FPGA using fpga image info (region->info).
@@ -91,6 +120,68 @@ static void fpga_region_put(struct fpga_region *region)
  * The caller will need to call fpga_bridges_put() before attempting to
  * reprogram the region.
  *
+ * Return 0 for success (even if there are no bridges specified)
+ * or -EBUSY if any of the bridges are in use.
+ */
+static int fpga_region_get_bridges(struct fpga_region *region,
+				   struct device_node *overlay)
+{
+	struct device *dev = &region->dev;
+	struct device_node *region_np = dev->of_node;
+	struct device_node *br, *np, *parent_br = NULL;
+	int i, ret;
+
+	/* If parent is a bridge, add to list */
+	ret = fpga_bridge_get_to_list(region_np->parent, region->info,
+				      &region->bridge_list);
+	if (ret == -EBUSY)
+		return ret;
+
+	if (!ret)
+		parent_br = region_np->parent;
+
+	/* If overlay has a list of bridges, use it. */
+	br = of_parse_phandle(overlay, "fpga-bridges", 0);
+	if (br) {
+		of_node_put(br);
+		np = overlay;
+	} else {
+		np = region_np;
+	}
+
+	for (i = 0; ; i++) {
+		br = of_parse_phandle(np, "fpga-bridges", i);
+		if (!br)
+			break;
+
+		/* If parent bridge is in list, skip it. */
+		if (br == parent_br) {
+			of_node_put(br);
+			continue;
+		}
+
+		/* If node is a bridge, get it and add to list */
+		ret = fpga_bridge_get_to_list(br, region->info,
+					      &region->bridge_list);
+		of_node_put(br);
+
+		/* If any of the bridges are in use, give up */
+		if (ret == -EBUSY) {
+			fpga_bridges_put(&region->bridge_list);
+			return -EBUSY;
+		}
+	}
+
+	return 0;
+}
+
+/**
+ * fpga_region_program_fpga - program FPGA
+ * @region: FPGA region
+ * @firmware_name: name of FPGA image firmware file
+ * @overlay: device node of the overlay
+ * Program an FPGA using information in the device tree.
+ * Function assumes that there is a firmware-name property.
  * Return 0 for success or negative error code.
  */
 int fpga_region_program_fpga(struct fpga_region *region)
