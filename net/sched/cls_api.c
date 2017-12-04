@@ -578,6 +578,7 @@ static void tcf_chain_put_explicitly_created(struct tcf_chain *chain)
 	__tcf_chain_put(chain, false, true);
 }
 
+<<<<<<< HEAD
 static void tcf_chain_flush(struct tcf_chain *chain, bool rtnl_held)
 {
 	struct tcf_proto *tp, *tp_next;
@@ -618,6 +619,15 @@ static void tc_indr_block_cmd(struct net_device *dev, struct tcf_block *block,
 		.block_shared	= tcf_block_non_null_shared(block),
 	};
 	INIT_LIST_HEAD(&bo.cb_list);
+=======
+/* XXX: Standalone actions are not allowed to jump to any chain, and bound
+ * actions should be all removed after flushing.
+ */
+void tcf_block_put_ext(struct tcf_block *block, struct Qdisc *q,
+		       struct tcf_block_ext_info *ei)
+{
+	struct tcf_chain *chain, *tmp;
+>>>>>>> net_sched: get rid of rcu_barrier() in tcf_block_put_ext()
 
 	if (!block)
 		return;
@@ -627,8 +637,16 @@ static void tc_indr_block_cmd(struct net_device *dev, struct tcf_block *block,
 	down_write(&block->cb_lock);
 	cb(dev, cb_priv, TC_SETUP_BLOCK, &bo);
 
+<<<<<<< HEAD
 	tcf_block_setup(block, &bo);
 	up_write(&block->cb_lock);
+=======
+	/* At this point, all the chains should have refcnt >= 1. Block will be
+	 * freed after all chains are gone.
+	 */
+	list_for_each_entry_safe(chain, tmp, &block->chain_list, list)
+		tcf_chain_put(chain);
+>>>>>>> net_sched: get rid of rcu_barrier() in tcf_block_put_ext()
 }
 
 static struct tcf_block *tc_dev_block(struct net_device *dev, bool ingress)
