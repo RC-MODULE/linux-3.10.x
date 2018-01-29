@@ -198,34 +198,21 @@ ENDPROC(idmap_cpu_replace_ttbr1)
 	.popsection
 
 #ifdef CONFIG_UNMAP_KERNEL_AT_EL0
-<<<<<<< HEAD
 	.pushsection ".idmap.text", "awx"
-=======
-	.pushsection ".idmap.text", "ax"
->>>>>>> arm64: kpti: Add ->enable callback to remap swapper using nG mappings
 
 	.macro	__idmap_kpti_get_pgtable_ent, type
 	dc	cvac, cur_\()\type\()p		// Ensure any existing dirty
 	dmb	sy				// lines are written back before
 	ldr	\type, [cur_\()\type\()p]	// loading the entry
-<<<<<<< HEAD
 	tbz	\type, #0, skip_\()\type	// Skip invalid and
 	tbnz	\type, #11, skip_\()\type	// non-global entries
-=======
-	tbz	\type, #0, next_\()\type	// Skip invalid entries
->>>>>>> arm64: kpti: Add ->enable callback to remap swapper using nG mappings
 	.endm
 
 	.macro __idmap_kpti_put_pgtable_ent_ng, type
 	orr	\type, \type, #PTE_NG		// Same bit for blocks and pages
-<<<<<<< HEAD
 	str	\type, [cur_\()\type\()p]	// Update the entry and ensure
 	dmb	sy				// that it is visible to all
 	dc	civac, cur_\()\type\()p		// CPUs.
-=======
-	str	\type, [cur_\()\type\()p]	// Update the entry and ensure it
-	dc	civac, cur_\()\type\()p		// is visible to all CPUs.
->>>>>>> arm64: kpti: Add ->enable callback to remap swapper using nG mappings
 	.endm
 
 /*
@@ -255,10 +242,7 @@ ENTRY(idmap_kpti_install_ng_mappings)
 	pte		.req	x16
 
 	mrs	swapper_ttb, ttbr1_el1
-<<<<<<< HEAD
 	restore_ttbr1	swapper_ttb
-=======
->>>>>>> arm64: kpti: Add ->enable callback to remap swapper using nG mappings
 	adr	flag_ptr, __idmap_kpti_flag
 
 	cbnz	cpu, __idmap_kpti_secondary
@@ -283,14 +267,9 @@ ENTRY(idmap_kpti_install_ng_mappings)
 	add	end_pgdp, cur_pgdp, #(PTRS_PER_PGD * 8)
 do_pgd:	__idmap_kpti_get_pgtable_ent	pgd
 	tbnz	pgd, #1, walk_puds
-<<<<<<< HEAD
 next_pgd:
 	__idmap_kpti_put_pgtable_ent_ng	pgd
 skip_pgd:
-=======
-	__idmap_kpti_put_pgtable_ent_ng	pgd
-next_pgd:
->>>>>>> arm64: kpti: Add ->enable callback to remap swapper using nG mappings
 	add	cur_pgdp, cur_pgdp, #8
 	cmp	cur_pgdp, end_pgdp
 	b.ne	do_pgd
@@ -307,7 +286,6 @@ next_pgd:
 	msr	sctlr_el1, x18
 	isb
 
-<<<<<<< HEAD
 	/*
 	 * Invalidate the local I-cache so that any instructions fetched
 	 * speculatively from the PoC are discarded, since they may have
@@ -317,8 +295,6 @@ next_pgd:
 	dsb	nsh
 	isb
 
-=======
->>>>>>> arm64: kpti: Add ->enable callback to remap swapper using nG mappings
 	/* Set the flag to zero to indicate that we're all done */
 	str	wzr, [flag_ptr]
 	ret
@@ -330,14 +306,9 @@ walk_puds:
 	add	end_pudp, cur_pudp, #(PTRS_PER_PUD * 8)
 do_pud:	__idmap_kpti_get_pgtable_ent	pud
 	tbnz	pud, #1, walk_pmds
-<<<<<<< HEAD
 next_pud:
 	__idmap_kpti_put_pgtable_ent_ng	pud
 skip_pud:
-=======
-	__idmap_kpti_put_pgtable_ent_ng	pud
-next_pud:
->>>>>>> arm64: kpti: Add ->enable callback to remap swapper using nG mappings
 	add	cur_pudp, cur_pudp, 8
 	cmp	cur_pudp, end_pudp
 	b.ne	do_pud
@@ -356,14 +327,9 @@ walk_pmds:
 	add	end_pmdp, cur_pmdp, #(PTRS_PER_PMD * 8)
 do_pmd:	__idmap_kpti_get_pgtable_ent	pmd
 	tbnz	pmd, #1, walk_ptes
-<<<<<<< HEAD
 next_pmd:
 	__idmap_kpti_put_pgtable_ent_ng	pmd
 skip_pmd:
-=======
-	__idmap_kpti_put_pgtable_ent_ng	pmd
-next_pmd:
->>>>>>> arm64: kpti: Add ->enable callback to remap swapper using nG mappings
 	add	cur_pmdp, cur_pmdp, #8
 	cmp	cur_pmdp, end_pmdp
 	b.ne	do_pmd
@@ -381,11 +347,7 @@ walk_ptes:
 	add	end_ptep, cur_ptep, #(PTRS_PER_PTE * 8)
 do_pte:	__idmap_kpti_get_pgtable_ent	pte
 	__idmap_kpti_put_pgtable_ent_ng	pte
-<<<<<<< HEAD
 skip_pte:
-=======
-next_pte:
->>>>>>> arm64: kpti: Add ->enable callback to remap swapper using nG mappings
 	add	cur_ptep, cur_ptep, #8
 	cmp	cur_ptep, end_ptep
 	b.ne	do_pte
@@ -409,10 +371,7 @@ __idmap_kpti_secondary:
 	cbnz	w18, 1b
 
 	/* All done, act like nothing happened */
-<<<<<<< HEAD
 	offset_ttbr1 swapper_ttb, x18
-=======
->>>>>>> arm64: kpti: Add ->enable callback to remap swapper using nG mappings
 	msr	ttbr1_el1, swapper_ttb
 	isb
 	ret
