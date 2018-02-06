@@ -11,6 +11,8 @@
 #include <linux/kvm.h>
 #include <linux/kvm_host.h>
 
+#include <kvm/arm_psci.h>
+
 #include <asm/esr.h>
 #include <asm/exception.h>
 #include <asm/kvm_asm.h>
