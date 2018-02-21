@@ -104,7 +104,7 @@ static void __init setup_i2c_fixups(void)
 static void __init k1879_dt_timer_init(void)
 {
 	of_clk_init(NULL);
-	clocksource_probe();
+	timer_probe();
 }
 
 static void __init k1879_dt_mach_init(void)
