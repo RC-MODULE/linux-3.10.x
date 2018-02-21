@@ -452,7 +452,7 @@ static long easynmc_ioctl(struct file *filp, unsigned int ioctl_num, unsigned lo
 		int ret = copy_from_user(
 			&ibuf,
 			(void __user *) ioctl_param,
-			sizeof(struct nmc_ioctl_buffer)
+			sizeof(ibuf)
 			);
 
 		if (ret)
@@ -486,7 +486,7 @@ static long easynmc_ioctl(struct file *filp, unsigned int ioctl_num, unsigned lo
 		int ret = copy_from_user(
 			&ibuf,
 			(void __user *) ioctl_param,
-			sizeof(struct nmc_irq_token)
+			sizeof(ibuf)
 			);
 		if (ret)
 			return -EFAULT;

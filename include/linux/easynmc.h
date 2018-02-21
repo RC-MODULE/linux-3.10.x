@@ -28,7 +28,6 @@ struct nmc_core {
 	void             (*reset)(struct nmc_core *self);
 	void             (*send_interrupt) (struct nmc_core *self, enum nmc_irq n);
 	void             (*clear_interrupt) (struct nmc_core *self, enum nmc_irq n);
-<<<<<<< HEAD
 	int              (*check_interrupts) (struct nmc_core *self);
 	char __iomem      *imem_virt;  /* Pointer to nmc internal memory (remapped) */
 	phys_addr_t        imem_phys;
