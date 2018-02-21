@@ -3947,9 +3947,9 @@ static int module_vdu_core_probe(struct platform_device *pdev)
 
 	init_waitqueue_head(&vdu->sa_wq);
 	init_waitqueue_head(&vdu->osd_fr_rd_end_wq);
-	setup_timer(&vdu->delayed_restart_timer,
+	timer_setup(&vdu->delayed_restart_timer,
 			mvdu_delayed_restart_timeout, (unsigned long)vdu);
-	setup_timer(&vdu->restart_watchdog_timer,
+	timer_setup(&vdu->restart_watchdog_timer,
 			mvdu_restart_watchdog_timeout, (unsigned long)vdu);
 
 //	write_reg(vdu, 0, MVDU_REG_OSD_CTRL);	/* Use RGBA, not ARGB */
