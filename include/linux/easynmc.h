@@ -23,7 +23,7 @@ struct nmc_miscdev {
 //FixMe: Hack
 #if LINUX_VERSION_CODE >= KERNEL_VERSION(4,2,0)
 #include "../../drivers/staging/android/ion/ion.h"
-#define EASYNMC_HAS_ION
+//#define EASYNMC_HAS_ION
 #endif
 
 /* This struct represents the generic NMC core */
