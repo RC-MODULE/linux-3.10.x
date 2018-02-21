@@ -14,7 +14,7 @@
 #include <linux/io.h>
 #include <linux/interrupt.h>
 #include <linux/mtd/mtd.h>
-#include <linux/mtd/nand.h>
+#include <linux/mtd/rawnand.h>
 #include <linux/mtd/nand_ecc.h>
 #include <linux/mtd/partitions.h>
 #include <linux/semaphore.h>
@@ -192,7 +192,7 @@ static inline void mnand_get_hardware_ecc(size_t i, u_char *ecc)
         ecc[2] = cdata[0];
 }
 
-void mnand_cs(int cs) 
+void mnand_cs(int cs)
 {
         uint32_t tmp;
         BUG_ON(cs>1);
@@ -202,7 +202,7 @@ void mnand_cs(int cs)
         mnand_set(0x4, tmp);
 }
 
-off_t mnand_chip_offset(off_t size) 
+off_t mnand_chip_offset(off_t size)
 {
 	int cs = 0;
 	if (size >= g_chip.chip_size[0]) {
@@ -478,8 +478,8 @@ static int mnand_core_read(loff_t off)
                                 u_char hard_ecc[MNAND_ECC_BYTESPERBLOCK];
                                 u_char *ecc_from_spare;
                                 u_char *ecc_block = g_chip.dma_area + i * MNAND_ECC_BLOCKSIZE;
-			
-                                __nand_calculate_ecc(ecc_block, 256, soft_ecc);	
+
+                                __nand_calculate_ecc(ecc_block, 256, soft_ecc);
                                 mnand_get_hardware_ecc(i, hard_ecc);
 
                                 if (memcmp(hard_ecc, soft_ecc, MNAND_ECC_BYTESPERBLOCK) != 0) {
@@ -558,6 +558,7 @@ static int mnand_read_id(int cs)
         struct nand_flash_dev* type = 0;
         int i;
         int retries=5;
+        const struct nand_manufacturer *mf;
         char* vendor = "unknown";
         mnand_cs(cs);
 
@@ -577,12 +578,10 @@ static int mnand_read_id(int cs)
         }
 
         /* Lookup the flash vendor */
-        for (i = 0; nand_manuf_ids[i].name != NULL; i++) {
-                if (((uint8_t*)g_chip.dma_area)[0] == nand_manuf_ids[i].id) {
-                        vendor =  nand_manuf_ids[i].name;
-                        break;
-                }
-        }
+        mf = nand_get_manufacturer(((uint8_t*)g_chip.dma_area)[0]);
+        if (!mf)
+                return -ENODEV;
+        vendor = mf->name;
 
         /* Lookup the flash id */
         for (i = 0; nand_flash_ids[i].name != NULL; i++) {
@@ -638,7 +637,7 @@ static int mnand_read_id(int cs)
         g_chip.mtd.writebufsize = g_chip.mtd.writesize;
         g_chip.mtd.size += (uint64_t) type->chipsize << 20;
         g_chip.chip_size[cs] = (uint64_t) type->chipsize << 20;
- 
+
         printk("%s CS%d %s size(%u) writesize(%u) oobsize(%u) erasesize(%u)\n",
                g_chip.mtd.name, cs, vendor, type->chipsize, g_chip.mtd.writesize,
                g_chip.mtd.oobsize, g_chip.mtd.erasesize);
@@ -655,7 +654,7 @@ static int mnand_erase(struct mtd_info* mtd, struct erase_info* instr)
         int err;
 
         TRACE(KERN_DEBUG, "addr=0x%08llX, len=%lld\n", instr->addr, instr->len);
-	
+
         if(instr->addr >= g_chip.mtd.size ||
             instr->addr + instr->len > g_chip.mtd.size  ||
             instr->len != g_chip.mtd.erasesize)
@@ -783,7 +782,7 @@ static int nand_check_wp(struct mtd_info *mtd)
         return (chip->read_byte(mtd) & NAND_STATUS_WP) ? 0 : 1;
 }
 
-#define PAGE_ALIGNED(x) (((x) & (g_chip.mtd.writesize-1)) ==0)
+#define MNAND_PAGE_ALIGNED(x) (((x) & (g_chip.mtd.writesize-1)) ==0)
 
 static uint8_t* mnand_fill_oob(uint8_t *oob, struct mtd_oob_ops *ops)
 {
@@ -887,7 +886,7 @@ static int mnand_write_oob(struct mtd_info* mtd, loff_t to, struct mtd_oob_ops* 
         ops->retlen = 0;
         ops->oobretlen = 0;
 
-        if(to >= g_chip.mtd.size || !PAGE_ALIGNED(to) || !PAGE_ALIGNED(dataend - data)) {
+        if(to >= g_chip.mtd.size || !MNAND_PAGE_ALIGNED(to) || !MNAND_PAGE_ALIGNED(dataend - data)) {
                 printk(KERN_DEBUG "writing non page aligned data to 0x%08llx 0x%08x\n", to, ops->len);
                 return -EINVAL;
         }
@@ -1162,7 +1161,7 @@ static int of_mnand_probe(struct platform_device* ofdev)
         //g_chip.mtd.ecclayout = &g_ecclayout;
 	mtd_set_ooblayout(&g_chip.mtd, &nand_ooblayout_ops);
 	g_chip.mtd.oobavail = 39;
-	 
+
         g_chip.mtd.dev.parent = &ofdev->dev;
 
         memset(&priv_nand_chip, 0, sizeof (priv_nand_chip));
@@ -1222,4 +1221,3 @@ module_platform_driver(of_platform_mnand_driver);
 MODULE_LICENSE("GPL");
 MODULE_AUTHOR("Kirill Mikhailov kmikhailov@module.ru");
 MODULE_DESCRIPTION("RC Module NAND Controller Driver");
-
