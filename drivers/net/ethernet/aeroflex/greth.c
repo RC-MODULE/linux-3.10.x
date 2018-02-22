@@ -400,6 +400,14 @@ static int greth_close(struct net_device *dev)
 
 	free_irq(greth->irq, (void *) dev);
 
+#ifdef CONFIG_ARM
+		/*  Workaround Gaisler weirdness: We might be
+		 *  receiving a packet when we disabled rx, wait
+		 *  till reception complete.
+		 */
+		msleep(2000);
+#endif
+
 	greth_clean_rings(greth);
 
 	return 0;
