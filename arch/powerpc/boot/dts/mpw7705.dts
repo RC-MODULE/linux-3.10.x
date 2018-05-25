@@ -1,0 +1,123 @@
+/*
+ * Device Tree Source for IBM Embedded PPC 476 Platform
+ *
+ * Copyright © 2011 Tony Breeds IBM Corporation
+ *
+ * This file is licensed under the terms of the GNU General Public
+ * License version 2.  This program is licensed "as is" without
+ * any warranty of any kind, whether express or implied.
+ */
+
+/dts-v1/;
+
+/memreserve/ 0x01f00000 0x00100000;	// spin table
+
+/ {
+	#address-cells = <2>;
+	#size-cells = <2>;
+	model = "rc-module,mpw7705";
+	compatible = "rc-module,mpw7705";
+	dcr-parent = <&{/cpus/cpu@0}>;
+
+	aliases {
+		serial0 = &uart0;
+	};
+
+	cpus {
+		#address-cells = <1>;
+		#size-cells = <0>;
+
+		cpu@0 {
+			device_type = "cpu";
+			model = "PowerPC,470S";
+			reg = <0>;
+			clock-frequency = <500000000>; // 500 Mhz
+			timebase-frequency = <100000000>; // 100Mhz
+			i-cache-line-size = <32>;
+			d-cache-line-size = <32>;
+			i-cache-size = <32768>;
+			d-cache-size = <32768>;
+			dcr-controller;
+			dcr-access-method = "native";
+			status = "ok";
+		};
+		cpu@1 {
+			device_type = "cpu";
+			model = "PowerPC,470S";
+			reg = <1>;
+			clock-frequency = <50000000>; // 500 Mhz
+			timebase-frequency = <100000000>; // 100Mhz
+			i-cache-line-size = <32>;
+			d-cache-line-size = <32>;
+			i-cache-size = <32768>;
+			d-cache-size = <32768>;
+			dcr-controller;
+			dcr-access-method = "native";
+			status = "disabled";
+			enable-method = "spin-table";
+			cpu-release-addr = <0x0 0x01f00000>;
+		};
+	};
+
+	memory {
+		device_type = "memory";
+		reg = <0x0 0x0 0x0 0x0>; // filled in by zImage
+	};
+
+	MPIC: interrupt-controller {
+		compatible = "chrp,open-pic";
+		interrupt-controller;
+		dcr-reg = <0xffc00000 0x00040000>;
+		#address-cells = <0>;
+		#size-cells = <0>;
+		#interrupt-cells = <2>;
+
+	};
+
+	plb {
+		compatible = "ibm,plb6";
+		#address-cells = <2>;
+		#size-cells = <2>;
+		ranges;
+		clock-frequency = <200000000>; // 200Mhz
+
+		POB0: opb {
+			compatible = "ibm,opb-4xx", "ibm,opb";
+			#address-cells = <1>;
+			#size-cells = <1>;
+			/* Wish there was a nicer way of specifying a full
+			 * 32-bit range
+			 */
+			ranges = <0x00000000 0x00000200 0x00000000 0x80000000
+				  0x80000000 0x00000200 0x80000000 0x80000000>;
+			clock-frequency = <100000000>;
+
+			uart0: uart0@3C034000 {
+				compatible = "arm,pl011", "arm,primecell";
+				reg = <0x3C034000 0x1000>;
+				clock-frequency = <100000000>; // PCIe refclk/MCGC0_CTL[UART]
+				current-speed = <115200>;
+				interrupt-parent = <&MPIC>;
+				interrupts = <34 2>;
+			};
+/*
+			IIC0: i2c@0 {
+				compatible = "ibm,iic-currituck", "ibm,iic";
+				reg = <0x0 0x00000014>;
+				interrupt-parent = <&MPIC>;
+				interrupts = <79 2>;
+				#address-cells = <1>;
+				#size-cells = <0>;
+                                rtc@68 {
+                                        compatible = "st,m41t80", "m41st85";
+                                        reg = <0x68>;
+                                };
+			};
+*/
+		};
+	};
+
+	chosen {
+		linux,stdout-path = &uart0;
+	};
+};

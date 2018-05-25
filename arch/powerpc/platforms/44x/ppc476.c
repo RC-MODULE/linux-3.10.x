@@ -226,30 +226,40 @@ static int __init ppc47x_get_board_rev(void)
 	u8 *fpga;
 	struct device_node *np = NULL;
 
-	if (of_machine_is_compatible("ibm,currituck")) {
-		np = of_find_compatible_node(NULL, NULL, "ibm,currituck-fpga");
-		reg = 0;
-	} else if (of_machine_is_compatible("ibm,akebono")) {
-		np = of_find_compatible_node(NULL, NULL, "ibm,akebono-fpga");
-		reg = 2;
+	if(of_machine_is_compatible("rc-module,mpw7705"))
+	{
+		/* AstroSoft ToDo: get revision of board*/
+		pr_info("%s: Found board revision %d\n", __func__, 0);
+		return 0;
 	}
+	else
+	{
+		if (of_machine_is_compatible("ibm,currituck")) {
+			np = of_find_compatible_node(NULL, NULL, "ibm,currituck-fpga");
+			reg = 0;
+		} else if (of_machine_is_compatible("ibm,akebono")) {
+			np = of_find_compatible_node(NULL, NULL, "ibm,akebono-fpga");
+			reg = 2;
+		}
 
-	if (!np)
-		goto fail;
+		if (!np)
+			goto fail;
 
-	fpga = (u8 *) of_iomap(np, 0);
-	of_node_put(np);
-	if (!fpga)
-		goto fail;
+		fpga = (u8 *) of_iomap(np, 0);
+		of_node_put(np);
+		if (!fpga)
+			goto fail;
 
-	board_rev = ioread8(fpga + reg) & 0x03;
-	pr_info("%s: Found board revision %d\n", __func__, board_rev);
-	iounmap(fpga);
-	return 0;
+		board_rev = ioread8(fpga + reg) & 0x03;
+		pr_info("%s: Found board revision %d\n", __func__, board_rev);
+		iounmap(fpga);
+		return 0;
 
-fail:
-	pr_info("%s: Unable to find board revision\n", __func__);
-	return 0;
+	fail:
+		pr_info("%s: Unable to find board revision\n", __func__);
+		return 0;
+
+	}
 }
 machine_arch_initcall(ppc47x, ppc47x_get_board_rev);
 
@@ -282,6 +292,9 @@ static int __init ppc47x_probe(void)
 		ppc_md.pci_irq_fixup = ppc47x_pci_irq_fixup;
 		return 1;
 	}
+
+	if (of_machine_is_compatible("rc-module,mpw7705"))
+		return 1;
 
 	return 0;
 }

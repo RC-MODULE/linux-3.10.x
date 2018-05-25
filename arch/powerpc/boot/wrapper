@@ -329,6 +329,9 @@ gamecube|wii)
 treeboot-currituck)
     link_address='0x1000000'
     ;;
+treeboot-mpw7705)
+    link_address='0x40000000'
+    ;;
 treeboot-akebono)
     link_address='0x1000000'
     ;;

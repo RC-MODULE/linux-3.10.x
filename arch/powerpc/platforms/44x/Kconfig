@@ -200,6 +200,17 @@ config CURRITUCK
 	help
 	  This option enables support for the IBM Currituck (476fpe) evaluation board
 
+config MPW7705
+	bool "RC-Module MPW7705 (470s) Support"
+	depends on PPC_47x
+	default n
+	select SWIOTLB
+	select 476FPE
+	select ARM_AMBA
+	select PPC4xx_PCI_EXPRESS
+	help
+	  This option enables support for the RC-Module MPW7705 (470s) evaluation board
+
 config FSP2
 	bool "IBM FSP2 (476fpe) Support"
 	depends on PPC_47x

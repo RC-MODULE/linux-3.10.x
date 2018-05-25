@@ -1169,14 +1169,22 @@ clear_utlb_entry:
 
 	/* Word 0 */
 	lis	r3,PPC44x_EARLY_DEBUG_VIRTADDR@h
+#ifndef CONFIG_MPW7705	
 	ori	r3,r3,PPC47x_TLB0_VALID | PPC47x_TLB0_TS | PPC47x_TLB0_1M
+#else
+	ori	r3,r3,PPC47x_TLB0_VALID | PPC47x_TLB0_1M
+#endif
 
 	/* Word 1 */
 	lis	r4,CONFIG_PPC_EARLY_DEBUG_44x_PHYSLOW@h
 	ori	r4,r4,CONFIG_PPC_EARLY_DEBUG_44x_PHYSHIGH
 
 	/* Word 2 */
+#ifndef CONFIG_MPW7705	
 	li	r5,(PPC47x_TLB2_S_RW | PPC47x_TLB2_IMG)
+#else
+	li	r5,(PPC47x_TLB2_S_RW | PPC47x_TLB2_IMG | PPC47x_TLB2_E)
+#endif
 
 	/* Bolted in way 0, bolt slot 5, we -hope- we don't hit the same
 	 * congruence class as the kernel, we need to make sure of it at
