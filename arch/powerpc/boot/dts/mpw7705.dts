@@ -13,8 +13,8 @@
 /memreserve/ 0x01f00000 0x00100000;	// spin table
 
 / {
-	#address-cells = <2>;
-	#size-cells = <2>;
+	#address-cells = <1>;
+	#size-cells = <1>;
 	model = "rc-module,mpw7705";
 	compatible = "rc-module,mpw7705";
 	dcr-parent = <&{/cpus/cpu@0}>;
@@ -60,8 +60,8 @@
 	};
 
 	memory {
-		device_type = "memory";
-		reg = <0x0 0x0 0x0 0x0>; // filled in by zImage
+		device_type = "memory";	
+		reg = <0x00000000 0x10000000>;  // 256MB at 0	
 	};
 
 	MPIC: interrupt-controller {
@@ -78,7 +78,7 @@
 		compatible = "ibm,plb6";
 		#address-cells = <2>;
 		#size-cells = <2>;
-		ranges;
+		/* ranges; */
 		clock-frequency = <200000000>; // 200Mhz
 
 		POB0: opb {
