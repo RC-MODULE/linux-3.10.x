@@ -21,6 +21,7 @@
 
 	aliases {
 		serial0 = &uart0;
+		mmc0 = &mmc0;
 	};
 
 	cpus {
@@ -85,7 +86,7 @@
 		clock-frequency = <250000000>; // 250Mhz
 
 		lsif0 {
-			compatible = "simple-bus";
+			compatible = "simple-bus", "ibm,plb6";
 			#address-cells = <1>;
 			#size-cells = <1>;
 			/* Wish there was a nicer way of specifying a full
@@ -104,10 +105,11 @@
 				interrupts = <34 2>;
 			};
 			
-			rmsdio {
+			mmc0: mmc0@0x3C06A000 {
 				compatible = "rc-module,mpw7705", "rc-module,mmc-0.2";
-				reg = <0x0 0x70000 0x0 0x2000>;
-				/*interrupts = <GIC_SPI 216 IRQ_TYPE_EDGE_RISING>;*/
+				reg = <0x3C06A000 0x1000>;
+				interrupt-parent = <&MPIC>;
+				interrupts = <35 2>;
 			};
 			
 /*
