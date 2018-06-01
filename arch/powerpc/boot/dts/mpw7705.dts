@@ -55,15 +55,18 @@
 			dcr-access-method = "native";
 			status = "disabled";
 			enable-method = "spin-table";
-			cpu-release-addr = <0x0 0x01f00000>;
+			cpu-release-addr = <0x0 0x01f00000>; 
+
 		};
 	};
 
 	memory {
 		device_type = "memory";	
-		reg = <0x00000000 0x10000000>;  // 256MB at 0	
+		reg = <0x00000000 0x10000000   // 256MB at 0	
+			   0x40000000 0x10000000   // 256MB at 0x40000000	
+		>;  
 	};
-
+	
 	MPIC: interrupt-controller {
 		compatible = "chrp,open-pic";
 		interrupt-controller;
