@@ -13,8 +13,8 @@
 /memreserve/ 0x01f00000 0x00100000;	// spin table
 
 / {
-	#address-cells = <1>;
-	#size-cells = <1>;
+	#address-cells = <2>;
+	#size-cells = <2>;
 	model = "rc-module,mpw7705";
 	compatible = "rc-module,mpw7705";
 	dcr-parent = <&{/cpus/cpu@0}>;
@@ -63,11 +63,25 @@
 
 	memory {
 		device_type = "memory";	
-		reg = <0x00000000 0x10000000   // 256MB at 0	
-			   0x40000000 0x10000000   // 256MB at 0x40000000	
+		reg = <0x00000000 0x00000000 0x00000000 0x10000000   // 256MB at 0	
+			   0x00000000 0x40000000 0x00000000 0x10000000   // 256MB at 0x40000000	
 		>;  
 	};
 	
+
+	lsif1clock: lsif1clock@100M {
+		#clock-cells = <0>;
+		compatible = "fixed-clock";
+		clock-frequency = <100000000>;
+	};
+
+	pclk: pclk {
+		#clock-cells = <0>;
+		compatible = "fixed-clock";
+		clock-frequency = <250000000>;
+	};
+
+
 	MPIC: interrupt-controller {
 		compatible = "chrp,open-pic";
 		interrupt-controller;
@@ -82,27 +96,24 @@
 		compatible = "ibm,plb6";
 		#address-cells = <2>;
 		#size-cells = <2>;
-		/* ranges; */
+		ranges;
 		clock-frequency = <250000000>; // 250Mhz
 
 		lsif0 {
-			compatible = "simple-bus", "ibm,plb6";
+			compatible = "arm,amba-bus", "ibm,plb6";
 			#address-cells = <1>;
 			#size-cells = <1>;
-			/* Wish there was a nicer way of specifying a full
-			 * 32-bit range
-			 */
-			ranges = <0x00000000 0x00000200 0x00000000 0x80000000
-				  0x80000000 0x00000200 0x80000000 0x80000000>;
+
+			ranges = <0x00000000 0x010 0x00000000 0x80000000
+				      0x80000000 0x010 0x80000000 0x80000000>;
+
 			clock-frequency = <100000000>;
 
 			uart0: uart0@3C034000 {
 				compatible = "arm,pl011", "arm,primecell";
 				reg = <0x3C034000 0x1000>;
-				clock-frequency = <100000000>; 
-				current-speed = <115200>;
-				interrupt-parent = <&MPIC>;
-				interrupts = <34 2>;
+				clocks = <&lsif1clock>, <&pclk>;
+				clock-names = "uartclk", "apb_pclk";
 			};
 			
 			mmc0: mmc0@0x3C06A000 {

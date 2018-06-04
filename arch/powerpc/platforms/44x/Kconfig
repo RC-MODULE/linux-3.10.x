@@ -207,6 +207,7 @@ config MPW7705
 	select SWIOTLB
 	select 476FPE
 	select ARM_AMBA
+	select COMMON_CLK
 	select PPC4xx_PCI_EXPRESS
 	help
 	  This option enables support for the RC-Module MPW7705 (470s) evaluation board
