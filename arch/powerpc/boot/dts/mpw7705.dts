@@ -21,6 +21,7 @@
 
 	aliases {
 		serial0 = &uart0;
+		serial1 = &uart1;
 		mmc0 = &mmc0;
 	};
 
@@ -109,35 +110,287 @@
 
 			clock-frequency = <100000000>;
 
+			mgpio0: mgpio0@0x3C040420 {
+				compatible = "pinctrl-single";
+				reg = <0x3C040420 1>;
+				pinctrl-single,register-width = <8>;
+				pinctrl-single,function-mask = <0x1>;
+				#address-cells = <1>;
+				#size-cells = <0>;
+				#pinctrl-cells = <2>;
+				pinctrl-single,bit-per-mux;
+
+
+				spi0_mux: spi0_mux_pinmux {
+					pinctrl-single,bits = <0 0x7 0x7>;	/* register == afsel, value, mask */
+				};
+
+				uart0_mux: uart0_mux_pinmux {
+					pinctrl-single,bits = <0 0x30 0x30>;	
+				};
+
+				uart1_mux: uart1_mux_pinmux {
+					pinctrl-single,bits = <0 0xc0 0xc0>;	
+				};
+
+
+			};
+
+
+			gpio0: gpio0@0x3C03B000 {
+				#gpio-cells = <2>;
+				compatible = "arm,pl061", "arm,primecell";
+				gpio-controller;
+				reg = <0x3C03B000 0x1000>;
+				/* interrupt-controller;
+				#interrupt-cells = <2>; */
+				interrupt-parent = <&MPIC>;
+				interrupts = <14 4>;	/* to check */
+				clocks = <&pclk>;
+				clock-names = "apb_pclk";
+				
+			};
+
+			gpio1: gpio1@0x3C03C000 {
+				#gpio-cells = <2>;
+				compatible = "arm,pl061", "arm,primecell";
+				gpio-controller;
+				reg = <0x3C03C000 0x1000>;
+				/* interrupt-controller;
+				#interrupt-cells = <2>; */
+				interrupt-parent = <&MPIC>;
+				interrupts = <15 4>;	/* to check */
+				clocks = <&pclk>;
+				clock-names = "apb_pclk";				
+			};
+
+			spi0: spi0@0x3C03E000 {
+				compatible = "arm,pl022", "arm,primecell";
+				reg = <0x3C03E000 0x1000>;
+				interrupts = <20 2>;	/* to check */
+				#address-cells = <1>;
+				#size-cells = <0>;
+				interrupt-parent = <&MPIC>;
+				clocks = <&pclk>;
+				clock-names = "apb_pclk";
+				pinctrl-names = "default";
+				pinctrl-0 = <&spi0_mux>;
+				num-cs = <1>;
+				cs-gpios = <&gpio1 2 0>;
+
+
+				spi_flash@0 {
+					compatible = "st,m25p32", "spi-flash";
+					reg = <0>;
+					spi-max-frequency = <20000000>;
+				};
+				
+			};
+
+
 			uart0: uart0@3C034000 {
 				compatible = "arm,pl011", "arm,primecell";
 				reg = <0x3C034000 0x1000>;
 				clocks = <&lsif1clock>, <&pclk>;
 				clock-names = "uartclk", "apb_pclk";
+				pinctrl-names = "default";
+				pinctrl-0 = <&uart0_mux>;				
+			};
+
+			uart1: uart1@3C035000 {
+				compatible = "arm,pl011", "arm,primecell";
+				reg = <0x3C035000 0x1000>;
+				clocks = <&lsif1clock>, <&pclk>;
+				clock-names = "uartclk", "apb_pclk";
+				pinctrl-names = "default";
+				pinctrl-0 = <&uart1_mux>;
 			};
 			
+		};
+
+		lsif1 {
+			compatible = "arm,amba-bus", "ibm,plb6";
+			#address-cells = <1>;
+			#size-cells = <1>;
+
+			ranges = <0x00000000 0x010 0x00000000 0x80000000
+				      0x80000000 0x010 0x80000000 0x80000000>;
+
+			clock-frequency = <100000000>;
+
+
+
+			mgpio0_1: mgpio0_1@0x3C060420 {
+				compatible = "pinctrl-single";
+				reg = <0x3C060420 1>;
+				pinctrl-single,register-width = <8>;
+				pinctrl-single,function-mask = <0x1>;
+				#address-cells = <1>;
+				#size-cells = <0>;
+				#pinctrl-cells = <2>;
+				pinctrl-single,bit-per-mux;
+
+				greth0_0mux: greth0_0mux_pinmux {
+					pinctrl-single,bits = <0 0xff 0xff>;	/* register == afsel, value, mask */
+				};
+			};
+
+			mgpio1_1: mgpio1_1@0x3C061420 {
+				compatible = "pinctrl-single";
+				reg = <0x3C061420 1>;
+				pinctrl-single,register-width = <8>;
+				pinctrl-single,function-mask = <0x1>;
+				#address-cells = <1>;
+				#size-cells = <0>;
+				#pinctrl-cells = <2>;
+				pinctrl-single,bit-per-mux;
+
+				greth0_1mux: greth0_1mux_pinmux {
+					pinctrl-single,bits = <0 0xff 0xff>;	/* register == afsel, value, mask */
+				};
+			};
+
+			mgpio2_1: mgpio2_1@0x3C062420 {
+				compatible = "pinctrl-single";
+				reg = <0x3C062420 1>;
+				pinctrl-single,register-width = <8>;
+				pinctrl-single,function-mask = <0x1>;
+				#address-cells = <1>;
+				#size-cells = <0>;
+				#pinctrl-cells = <2>;
+				pinctrl-single,bit-per-mux;
+
+				greth0_2mux: greth0_2mux_pinmux {
+					pinctrl-single,bits = <0 0xff 0xff>;	/* register == afsel, value, mask */
+				};
+			};
+
+			mgpio3_1: mgpio3_1@0x3C063420 {
+				compatible = "pinctrl-single";
+				reg = <0x3C063420 1>;
+				pinctrl-single,register-width = <8>;
+				pinctrl-single,function-mask = <0x1>;
+				#address-cells = <1>;
+				#size-cells = <0>;
+				#pinctrl-cells = <2>;
+				pinctrl-single,bit-per-mux;
+
+				spi1_mux: spi1_mux_pinmux {
+					pinctrl-single,bits = <0 0x07 0x07>;	
+				};
+
+				greth1_0mux: greth1_0mux_pinmux {
+					pinctrl-single,bits = <0 0xf8 0xf8>;	
+				};
+			};
+
+			mgpio4_1: mgpio4_1@0x3C064420 {
+				compatible = "pinctrl-single";
+				reg = <0x3C064420 1>;
+				pinctrl-single,register-width = <8>;
+				pinctrl-single,function-mask = <0x1>;
+				#address-cells = <1>;
+				#size-cells = <0>;
+				#pinctrl-cells = <2>;
+				pinctrl-single,bit-per-mux;
+
+				greth1_1mux: greth1_1mux_pinmux {
+					pinctrl-single,bits = <0 0xff 0xff>;
+				};
+			};
+
+			mgpio5_1: mgpio5_1@0x3C065420 {
+				compatible = "pinctrl-single";
+				reg = <0x3C065420 1>;
+				pinctrl-single,register-width = <8>;
+				pinctrl-single,function-mask = <0x1>;
+				#address-cells = <1>;
+				#size-cells = <0>;
+				#pinctrl-cells = <2>;
+				pinctrl-single,bit-per-mux;
+
+				greth1_2mux: greth1_2mux_pinmux {
+					pinctrl-single,bits = <0 0xff 0xff>;
+				};
+			};
+
+			mgpio6_1: mgpio6_1@0x3C066420 {
+				compatible = "pinctrl-single";
+				reg = <0x3C066420 1>;
+				pinctrl-single,register-width = <8>;
+				pinctrl-single,function-mask = <0x1>;
+				#address-cells = <1>;
+				#size-cells = <0>;
+				#pinctrl-cells = <2>;
+				pinctrl-single,bit-per-mux;
+
+				greth1_3mux: greth1_3mux_pinmux {
+					pinctrl-single,bits = <0 0x07 0x07>;
+				};
+
+				uart2_mux: uart2_mux_pinmux {
+					pinctrl-single,bits = <0 0x18 0x18>;
+				};
+			};
+
+			mgpio7_1: mgpio6_1@0x3C067420 {
+				compatible = "pinctrl-single";
+				reg = <0x3C067420 1>;
+				pinctrl-single,register-width = <8>;
+				pinctrl-single,function-mask = <0x1>;
+				#address-cells = <1>;
+				#size-cells = <0>;
+				#pinctrl-cells = <2>;
+				pinctrl-single,bit-per-mux;
+
+				sdio_mux: sdio_mux_pinmux {
+					pinctrl-single,bits = <0 0x1f 0x1f>;
+				};
+			};
+
 			mmc0: mmc0@0x3C06A000 {
 				compatible = "rc-module,mpw7705", "rc-module,mmc-0.2";
 				reg = <0x3C06A000 0x1000>;
 				interrupt-parent = <&MPIC>;
 				interrupts = <35 2>;
+				pinctrl-names = "default";
+				pinctrl-0 = <&sdio_mux>;
 			};
-			
-/*
-			IIC0: i2c@0 {
-				compatible = "ibm,iic-currituck", "ibm,iic";
-				reg = <0x0 0x00000014>;
-				interrupt-parent = <&MPIC>;
-				interrupts = <79 2>;
+
+
+			spi1: spi1@0x3C05A000 {
+				compatible = "arm,pl022", "arm,primecell";
+				reg = <0x3C05A000 0x1000>;
+				interrupts = <22 2>;	/* to check */
 				#address-cells = <1>;
 				#size-cells = <0>;
-                                rtc@68 {
-                                        compatible = "st,m41t80", "m41st85";
-                                        reg = <0x68>;
-                                };
+				interrupt-parent = <&MPIC>;
+				clocks = <&pclk>;
+				clock-names = "apb_pclk";
+				pinctrl-names = "default";
+				pinctrl-0 = <&spi1_mux>;
+				num-cs = <1>;
+				cs-gpios = <&gpio1 3 0>;
+
+				sdcard0: sdcard@0 {
+					compatible = "mmc-spi-slot";
+					reg = <0>;			
+					spi-max-frequency = <1000000>;
+					voltage-ranges = <3200 3400>;
+					mode = <0>;
+					broken-cd;
+					
+/*					pl022,hierarchy = <0>;
+					pl022,interface = <0>;
+					pl022,com-mode = <0x0>;
+					pl022,rx-level-trig = <0>;
+					pl022,tx-level-trig = <0>; */
+				};				
 			};
-*/
-		};
+
+
+		};		
+		
 	};
 
 	chosen {
