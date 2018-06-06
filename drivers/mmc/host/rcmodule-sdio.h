@@ -136,7 +136,7 @@
 #define RMSDIO_DMA_CH_FINISH 0x60
 
 
-#define RMSDIO_CMD_IDX(x) ((x << 16))
+#define RMSDIO_CMD_IDX(x) ((x) << 16)
 
 
 
