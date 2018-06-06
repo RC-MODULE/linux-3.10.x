@@ -375,16 +375,16 @@
 				sdcard0: sdcard@0 {
 					compatible = "mmc-spi-slot";
 					reg = <0>;			
-					spi-max-frequency = <1000000>;
+					spi-max-frequency = <20000000>;
 					voltage-ranges = <3200 3400>;
 					mode = <0>;
 					broken-cd;
 					
-/*					pl022,hierarchy = <0>;
-					pl022,interface = <0>;
-					pl022,com-mode = <0x0>;
-					pl022,rx-level-trig = <0>;
-					pl022,tx-level-trig = <0>; */
+					pl022,hierarchy = <0>;			/* SSP_MASTER */
+					pl022,interface = <0>;			/* SSP_INTERFACE_MOTOROLA_SPI */
+					pl022,com-mode = <0x1>;			/* POLLING_TRANSFER */
+					pl022,rx-level-trig = <0>;		/* SSP_RX_1_OR_MORE_ELEM */
+					pl022,tx-level-trig = <0>; 		/* SSP_TX_1_OR_MORE_EMPTY_LOC */
 				};				
 			};
 
