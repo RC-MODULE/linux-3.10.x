@@ -1355,6 +1355,8 @@ static struct platform_driver rmsdio_driver = {
 
 static int __init rmsdio_init(void)
 {
+	printk(KERN_INFO "\n\n  !!! RMSDIO init !!!\n\n"); 
+	
 	return platform_driver_probe(&rmsdio_driver, rmsdio_probe);
 }
 
