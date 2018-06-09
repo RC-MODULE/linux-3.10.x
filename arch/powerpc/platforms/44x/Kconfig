@@ -367,7 +367,7 @@ config 460SX
 
 config 476FPE
 	bool
-	select PPC_FPU
+	select PPC_FPU 
 
 config APM821xx
 	bool
