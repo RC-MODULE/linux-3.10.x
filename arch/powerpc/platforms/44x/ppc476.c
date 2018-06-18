@@ -43,6 +43,7 @@ static const struct of_device_id ppc47x_of_bus[] __initconst = {
 	{ .compatible = "ibm,plb6", },
 	{ .compatible = "ibm,opb", },
 	{ .compatible = "ibm,ebc", },
+	{ .compatible = "ibm,apb", },
 	{},
 };
 

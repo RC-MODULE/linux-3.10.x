@@ -34,7 +34,7 @@
 			model = "PowerPC,470S";
 			reg = <0>;
 			clock-frequency = <500000000>; // 500 Mhz
-			timebase-frequency = <100000000>; // 100Mhz
+			timebase-frequency = <500000000>; // 500Mhz
 			i-cache-line-size = <32>;
 			d-cache-line-size = <32>;
 			i-cache-size = <32768>;
@@ -48,7 +48,7 @@
 			model = "PowerPC,470S";
 			reg = <1>;
 			clock-frequency = <50000000>; // 500 Mhz
-			timebase-frequency = <100000000>; // 100Mhz
+			timebase-frequency = <500000000>; // 500Mhz
 			i-cache-line-size = <32>;
 			d-cache-line-size = <32>;
 			i-cache-size = <32768>;
@@ -65,7 +65,7 @@
 	memory {
 		device_type = "memory";	
 		reg = <0x00000000 0x00000000 0x00000000 0x10000000   // 256MB at 0	
-			   0x00000000 0x40000000 0x00000000 0x10000000   // 256MB at 0x40000000	
+/*			   0x00000000 0x40000000 0x00000000 0x10000000   // 256MB at 0x40000000	*/
 		>;  
 	};
 	
@@ -105,8 +105,9 @@
 			#address-cells = <1>;
 			#size-cells = <1>;
 
-			ranges = <0x00000000 0x010 0x00000000 0x80000000
-				      0x80000000 0x010 0x80000000 0x80000000>;
+			ranges = <0x3c030000 			/* from */
+					  0x010 0x3c030000 		/* to */
+					  0x00020000>;			/* size */
 
 			clock-frequency = <100000000>;
 
@@ -142,10 +143,10 @@
 				compatible = "arm,pl061", "arm,primecell";
 				gpio-controller;
 				reg = <0x3C03B000 0x1000>;
-				/* interrupt-controller;
-				#interrupt-cells = <2>; */
+				interrupt-controller;
+				#interrupt-cells = <2>;
 				interrupt-parent = <&MPIC>;
-				interrupts = <14 4>;	/* to check */
+				interrupts = <106 4>;
 				clocks = <&pclk>;
 				clock-names = "apb_pclk";
 				
@@ -156,10 +157,10 @@
 				compatible = "arm,pl061", "arm,primecell";
 				gpio-controller;
 				reg = <0x3C03C000 0x1000>;
-				/* interrupt-controller;
-				#interrupt-cells = <2>; */
+				interrupt-controller;
+				#interrupt-cells = <2>;
 				interrupt-parent = <&MPIC>;
-				interrupts = <15 4>;	/* to check */
+				interrupts = <107 4>;
 				clocks = <&pclk>;
 				clock-names = "apb_pclk";				
 			};
@@ -167,7 +168,7 @@
 			spi0: spi0@0x3C03E000 {
 				compatible = "arm,pl022", "arm,primecell";
 				reg = <0x3C03E000 0x1000>;
-				interrupts = <20 2>;	/* to check */
+				interrupts = <100 2>;
 				#address-cells = <1>;
 				#size-cells = <0>;
 				interrupt-parent = <&MPIC>;
@@ -197,6 +198,7 @@
 				pinctrl-0 = <&uart0_mux>;				
 				interrupt-parent = <&MPIC>;
 				interrupts = <101 4>;
+				status = "ok";
 			};
 
 			uart1: uart1@3C035000 {
@@ -206,7 +208,9 @@
 				clock-names = "uartclk", "apb_pclk";
 				pinctrl-names = "default";
 				pinctrl-0 = <&uart1_mux>;
-				status = "disabled";
+				interrupt-parent = <&MPIC>;
+				interrupts = <102 4>;
+				status = "ok";
 			};
 			
 		};
@@ -216,8 +220,9 @@
 			#address-cells = <1>;
 			#size-cells = <1>;
 
-			ranges = <0x00000000 0x010 0x00000000 0x80000000
-				      0x80000000 0x010 0x80000000 0x80000000>;
+			ranges = <0x3c050000 			/* from */
+					  0x010 0x3c050000 		/* to */
+					  0x00020000>;			/* size */
 
 			clock-frequency = <100000000>;
 
@@ -232,6 +237,7 @@
 				#size-cells = <0>;
 				#pinctrl-cells = <2>;
 				pinctrl-single,bit-per-mux;
+				status = "disabled";
 
 				greth0_0mux: greth0_0mux_pinmux {
 					pinctrl-single,bits = <0 0xff 0xff>;	/* register == afsel, value, mask */
@@ -247,6 +253,8 @@
 				#size-cells = <0>;
 				#pinctrl-cells = <2>;
 				pinctrl-single,bit-per-mux;
+				status = "disabled";
+				
 
 				greth0_1mux: greth0_1mux_pinmux {
 					pinctrl-single,bits = <0 0xff 0xff>;	/* register == afsel, value, mask */
@@ -262,6 +270,8 @@
 				#size-cells = <0>;
 				#pinctrl-cells = <2>;
 				pinctrl-single,bit-per-mux;
+				status = "disabled";
+
 
 				greth0_2mux: greth0_2mux_pinmux {
 					pinctrl-single,bits = <0 0xff 0xff>;	/* register == afsel, value, mask */
@@ -365,7 +375,7 @@
 			spi1: spi1@0x3C05A000 {
 				compatible = "arm,pl022", "arm,primecell";
 				reg = <0x3C05A000 0x1000>;
-				interrupts = <73 2>;	/* to check */
+				interrupts = <73 2>;
 				#address-cells = <1>;
 				#size-cells = <0>;
 				interrupt-parent = <&MPIC>;
@@ -392,9 +402,70 @@
 				};				
 			};
 
+			greth0: greth0@0x3C050000 {
+				compatible = "rc-module,greth";
+				reg = <0x3C050000 0x1000
+					   0x3C05E020 0x4>;				/* extended DMA address bits */
+				interrupt-parent = <&MPIC>;
+				interrupts = <103 4>;
+				mac-address = [ EC 17 66 77 05 01 ];
+/*				pinctrl-names = "default";
+				pinctrl-0 = <&greth0_0mux>, <&greth0_1mux>, <&greth0_2mux>; */
+			};
 
 		};		
 		
+		apb0 {
+			compatible = "ibm,apb";
+			#address-cells = <1>;
+			#size-cells = <1>;
+
+			ranges = <0x38000000 0x010 0x38000000 0x00010000>; 
+
+			thermal: thermal@0x38003000 {
+				compatible = "rc-module,thermal";
+				reg = <0x38003000 0x1000>;
+				#thermal-sensor-cells = <0>;
+
+				interrupt-parent = <&MPIC>;
+				interrupts = <32 4					/* temperature IRQ */
+							  33 4>;				/* voltage IRQ */
+			};
+		};
+
+		apb1 {
+			compatible = "ibm,apb";
+			#address-cells = <1>;
+			#size-cells = <1>;
+
+			ranges = <0x38010000 0x010 0x38010000 0x00010000>; 
+
+		};
+
+
+	};
+
+
+
+
+
+	thermal-zones {
+			cpu-thermal {
+					polling-delay-passive = <0>;
+					polling-delay =  <1000>; 
+					thermal-sensors = <&thermal>;
+					
+					trips {
+							cpu-crit {
+									temperature     = <100000>;
+									hysteresis      = <0>;
+									type            = "critical";
+							};
+					};
+
+					cooling-maps {
+					};
+			};
 	};
 
 	chosen {

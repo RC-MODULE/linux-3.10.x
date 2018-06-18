@@ -290,6 +290,15 @@ config DOVE_THERMAL
 	  Support for the Dove thermal sensor driver in the Linux thermal
 	  framework.
 
+config MODULE_THERMAL
+	tristate "Temperature sensor on RC-Module SoCs"
+	depends on PPC || COMPILE_TEST
+	depends on HAS_IOMEM
+	depends on OF
+	help
+	  Support for the RC-Module thermal sensor driver in the Linux thermal
+	  framework.
+
 config DB8500_THERMAL
 	tristate "DB8500 thermal management"
 	depends on MFD_DB8500_PRCMU
