@@ -112,6 +112,7 @@ struct greth_private {
 	u16 rx_cur;
 
 	struct greth_regs *regs;	/* Address of controller registers. */
+	u32* dma_regs;				/* Address of extended DMA addresses controller */
 	struct greth_bd *rx_bd_base;	/* Address of Rx BDs. */
 	struct greth_bd *tx_bd_base;	/* Address of Tx BDs. */
 	dma_addr_t rx_bd_base_phys;

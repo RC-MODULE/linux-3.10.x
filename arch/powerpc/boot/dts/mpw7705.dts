@@ -64,12 +64,23 @@
 
 	memory {
 		device_type = "memory";	
-		reg = <0x00000000 0x00000000 0x00000000 0x10000000   // 256MB at 0	
+		reg = <0x00000000 0x00000000 0x00000000 0x80000000   // 2Gb at 0	
 /*			   0x00000000 0x40000000 0x00000000 0x10000000   // 256MB at 0x40000000	*/
 		>;  
 	};
-	
 
+/*	reserved-memory {
+		#address-cells = <2>;
+		#size-cells = <2>;
+
+		dma_common_memory: dma_common_memory@0x10000000 {
+			compatible = "shared-dma-pool";
+			reusable;
+			reg = <0x00000000 0x10000000 0x00000000 0x800000>;
+			alignment = <0x10000>;
+		};
+	};	
+*/
 	lsif1clock: lsif1clock@100M {
 		#clock-cells = <0>;
 		compatible = "fixed-clock";
@@ -98,6 +109,7 @@
 		#address-cells = <2>;
 		#size-cells = <2>;
 		ranges;
+		dma-ranges;
 		clock-frequency = <250000000>; // 250Mhz
 
 		lsif0 {
@@ -224,6 +236,7 @@
 					  0x010 0x3c050000 		/* to */
 					  0x00020000>;			/* size */
 
+			dma-ranges = <0x40000000 0x00000000 0x00000000 0x40000000>;
 			clock-frequency = <100000000>;
 
 
@@ -237,7 +250,7 @@
 				#size-cells = <0>;
 				#pinctrl-cells = <2>;
 				pinctrl-single,bit-per-mux;
-				status = "disabled";
+				status = "ok";
 
 				greth0_0mux: greth0_0mux_pinmux {
 					pinctrl-single,bits = <0 0xff 0xff>;	/* register == afsel, value, mask */
@@ -253,7 +266,7 @@
 				#size-cells = <0>;
 				#pinctrl-cells = <2>;
 				pinctrl-single,bit-per-mux;
-				status = "disabled";
+				status = "ok";
 				
 
 				greth0_1mux: greth0_1mux_pinmux {
@@ -270,7 +283,7 @@
 				#size-cells = <0>;
 				#pinctrl-cells = <2>;
 				pinctrl-single,bit-per-mux;
-				status = "disabled";
+				status = "ok";
 
 
 				greth0_2mux: greth0_2mux_pinmux {
@@ -401,16 +414,31 @@
 					pl022,tx-level-trig = <0>; 		/* SSP_TX_1_OR_MORE_EMPTY_LOC */
 				};				
 			};
-
+/*
+			usb_otg_hs: usb_otg_hs@0x3C052000 {
+				compatible = "ti,omap4-musb";
+				reg = <0x3C052000 0x7ff>;
+				interrupts = <69 4>, <70 4>;
+				interrupt-names = "mc", "dma";
+				ti,hwmods = "usb_otg_hs";
+				usb-phy = <&usb_phy>;
+				phys = <&usb_phy>;
+				phy-names = "usb-phy";
+				multipoint = <1>;
+				num-eps = <16>;
+				ram-bits = <12>;
+				ctrl-module = <&omap_control_usbotg>;
+			};			
+*/
 			greth0: greth0@0x3C050000 {
 				compatible = "rc-module,greth";
 				reg = <0x3C050000 0x1000
 					   0x3C05E020 0x4>;				/* extended DMA address bits */
 				interrupt-parent = <&MPIC>;
-				interrupts = <103 4>;
+				interrupts = <63 4>;
 				mac-address = [ EC 17 66 77 05 01 ];
-/*				pinctrl-names = "default";
-				pinctrl-0 = <&greth0_0mux>, <&greth0_1mux>, <&greth0_2mux>; */
+				pinctrl-names = "default";
+				pinctrl-0 = <&greth0_0mux>, <&greth0_1mux>, <&greth0_2mux>;
 			};
 
 		};		

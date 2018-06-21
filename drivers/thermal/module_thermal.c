@@ -115,7 +115,7 @@ static int rcmodule_thermal_read_temp(void *data, int *temp)
 
 	val0 = read_term_reg(therminfo->regs->tavg);
 
-	// take avarage by 3 sensors
+	// TODO AstroSoft: take avarage by 3 sensors in workable HW
 	val = ((val0 & 0x3FF) /*+ ((val >> 10) & 0x3FF) + ((val >> 20)) & 0x3FF)/3*/);
 
 	for(i = 0; i < (sizeof(temp_table) - 1); i+=2)
@@ -199,13 +199,14 @@ static int rcmodule_thermal_probe(struct platform_device *pdev)
 	}
 
 	// avegage by 16 count
-	//write_term_reg(16, therminfo->regs->tctrl_avg);
+	write_term_reg(16, therminfo->regs->tctrl_avg);
 	
 	// start measuring temperature
-	// write_term_reg(0x1, therminfo->regs->tstart);
+	 write_term_reg(0x1, therminfo->regs->tstart);
 
 	// allow irq for temperature
-	// write_term_reg(0x0, therminfo->regs->tint_mask);
+	// TODO AstroSoft: fix on workable HW
+	 write_term_reg(0x0, therminfo->regs->tint_mask);
 
 	therminfo->tz_device = devm_thermal_zone_of_sensor_register(&pdev->dev, 0,
 				therminfo, &rcmodule_thermal_ops);
