@@ -23,6 +23,13 @@ config CPU_FREQ_MAPLE
 	  This adds support for frequency switching on Maple 970FX
 	  Evaluation Board and compatible boards (IBM JS2x blades).
 
+config CPU_FREQ_MODULE_MPW7705
+	bool "Support for MPW7705 Evaluation Board"
+	depends on MPW7705
+	help
+	  This adds support for frequency switching on MPW7705
+	  Evaluation Board and compatible boards.
+
 config CPU_FREQ_PMAC
 	bool "Support for Apple PowerBooks"
 	depends on ADB_PMU && PPC32

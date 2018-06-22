@@ -94,7 +94,7 @@ void platform_init(void)
 	if (mpw7705_memsize >> 32)
 		end_of_ram = ~0UL;
 	else
-		end_of_ram = 0x4000000 + mpw7705_memsize;
+		end_of_ram = mpw7705_memsize;
 	avail_ram = end_of_ram - (unsigned long)_end;
 
 	simple_alloc_init(_end, avail_ram, 128, 64);

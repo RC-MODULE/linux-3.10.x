@@ -3,7 +3,7 @@
  * Copyright (C) 2018 by AstroSoft
  * Alexey Spirkov <alexeis@astrosoft.ru>
  * 
- * Some code has been taken from rcmodule.c
+ * Some code has been taken from omap2430.c
  * Copyrights for that are attributable to:
  * Copyright (C) 2005-2007 by Texas Instruments 
  * Copyright (C) 2006 Nokia Corporation
@@ -24,7 +24,6 @@
 #include <linux/err.h>
 #include <linux/delay.h>
 #include <linux/usb/musb.h>
-#include <linux/phy/omap_control_phy.h>
 #include <linux/of_platform.h>
 
 #include "musb_core.h"
@@ -33,7 +32,7 @@ struct rcmodule_glue {
 	struct device		*dev;
 	struct platform_device	*musb;
 	enum musb_vbus_id_status status;
-	struct work_struct	omap_musb_mailbox_work;
+	struct work_struct	rcmodule_musb_mailbox_work;
 	struct device		*control_otghs;
 };
 #define glue_to_musb(g)		platform_get_drvdata(g->musb)
@@ -141,17 +140,17 @@ static int rcmodule_musb_mailbox(enum musb_vbus_id_status status)
 		return -EPROBE_DEFER;
 	}
 
-	schedule_work(&glue->omap_musb_mailbox_work);
+	schedule_work(&glue->rcmodule_musb_mailbox_work);
 
 	return 0;
 }
 
-static void omap_musb_set_mailbox(struct rcmodule_glue *glue)
+static void rcmodule_musb_set_mailbox(struct rcmodule_glue *glue)
 {
 	struct musb *musb = glue_to_musb(glue);
 //	struct musb_hdrc_platform_data *pdata =
 //		dev_get_platdata(musb->controller);
-//	struct omap_musb_board_data *data = pdata->board_data;
+//	struct rcmodule_musb_board_data *data = pdata->board_data;
 	struct usb_otg *otg = musb->xceiv->otg;
 
 	pm_runtime_get_sync(musb->controller);
@@ -163,8 +162,8 @@ static void omap_musb_set_mailbox(struct rcmodule_glue *glue)
 		musb->xceiv->otg->state = OTG_STATE_A_IDLE;
 		musb->xceiv->last_event = USB_EVENT_ID;
 		if (musb->gadget_driver) {
-			omap_control_usb_set_mode(glue->control_otghs,
-				USB_MODE_HOST);
+//			rcmodule_control_usb_set_mode(glue->control_otghs,
+//				USB_MODE_HOST);
 			rcmodule_musb_set_vbus(musb, 1);
 		}
 		break;
@@ -175,7 +174,7 @@ static void omap_musb_set_mailbox(struct rcmodule_glue *glue)
 		otg->default_a = false;
 		musb->xceiv->otg->state = OTG_STATE_B_IDLE;
 		musb->xceiv->last_event = USB_EVENT_VBUS;
-		omap_control_usb_set_mode(glue->control_otghs, USB_MODE_DEVICE);
+//		rcmodule_control_usb_set_mode(glue->control_otghs, USB_MODE_DEVICE);
 		break;
 
 	case MUSB_ID_FLOAT:
@@ -189,8 +188,8 @@ static void omap_musb_set_mailbox(struct rcmodule_glue *glue)
 //		if (data->interface_type == MUSB_INTERFACE_UTMI)		// AstroSoft To check!!!
 			otg_set_vbus(musb->xceiv->otg, 0);
 
-		omap_control_usb_set_mode(glue->control_otghs,
-			USB_MODE_DISCONNECT);
+//		rcmodule_control_usb_set_mode(glue->control_otghs,
+//			USB_MODE_DISCONNECT);
 		break;
 	default:
 		dev_dbg(musb->controller, "ID float\n");
@@ -202,12 +201,12 @@ static void omap_musb_set_mailbox(struct rcmodule_glue *glue)
 }
 
 
-static void omap_musb_mailbox_work(struct work_struct *mailbox_work)
+static void rcmodule_musb_mailbox_work(struct work_struct *mailbox_work)
 {
 	struct rcmodule_glue *glue = container_of(mailbox_work,
-				struct rcmodule_glue, omap_musb_mailbox_work);
+				struct rcmodule_glue, rcmodule_musb_mailbox_work);
 
-	omap_musb_set_mailbox(glue);
+	rcmodule_musb_set_mailbox(glue);
 }
 
 static irqreturn_t rcmodule_musb_interrupt(int irq, void *__hci)
@@ -237,7 +236,7 @@ static int rcmodule_musb_init(struct musb *musb)
 	struct device *dev = musb->controller;
 	struct rcmodule_glue *glue = dev_get_drvdata(dev->parent);
 //	struct musb_hdrc_platform_data *plat = dev_get_platdata(dev);
-//	struct omap_musb_board_data *data = plat->board_data;
+//	struct rcmodule_musb_board_data *data = plat->board_data;
 
 	/* We require some kind of external transceiver, hooked
 	 * up through ULPI.  TWL4030-family PMICs include one,
@@ -299,7 +298,7 @@ static int rcmodule_musb_init(struct musb *musb)
 //			musb_readl(musb->mregs, OTG_SIMENABLE));
 
 	if (glue->status != MUSB_UNKNOWN)
-		omap_musb_set_mailbox(glue);
+		rcmodule_musb_set_mailbox(glue);
 
 	return 0;
 }
@@ -311,13 +310,13 @@ static void rcmodule_musb_enable(struct musb *musb)
 	struct device *dev = musb->controller;
 	struct rcmodule_glue *glue = dev_get_drvdata(dev->parent);
 //	struct musb_hdrc_platform_data *pdata = dev_get_platdata(dev);
-//	struct omap_musb_board_data *data = pdata->board_data;
+//	struct rcmodule_musb_board_data *data = pdata->board_data;
 
 
 	switch (glue->status) {
 
 	case MUSB_ID_GROUND:
-		omap_control_usb_set_mode(glue->control_otghs, USB_MODE_HOST);
+//		rcmodule_control_usb_set_mode(glue->control_otghs, USB_MODE_HOST);
 //	To Check AstroSoft
 //		if (data->interface_type != MUSB_INTERFACE_UTMI)
 //			break;
@@ -337,7 +336,7 @@ static void rcmodule_musb_enable(struct musb *musb)
 		break;
 
 	case MUSB_VBUS_VALID:
-		omap_control_usb_set_mode(glue->control_otghs, USB_MODE_DEVICE);
+//		rcmodule_control_usb_set_mode(glue->control_otghs, USB_MODE_DEVICE);
 		break;
 
 	default:
@@ -350,9 +349,9 @@ static void rcmodule_musb_disable(struct musb *musb)
 	struct device *dev = musb->controller;
 	struct rcmodule_glue *glue = dev_get_drvdata(dev->parent);
 
-	if (glue->status != MUSB_UNKNOWN)
-		omap_control_usb_set_mode(glue->control_otghs,
-			USB_MODE_DISCONNECT);
+//	if (glue->status != MUSB_UNKNOWN)
+//		rcmodule_control_usb_set_mode(glue->control_otghs,
+//			USB_MODE_DISCONNECT);
 }
 
 static int rcmodule_musb_exit(struct musb *musb)
@@ -364,7 +363,7 @@ static int rcmodule_musb_exit(struct musb *musb)
 	phy_power_off(musb->phy);
 	phy_exit(musb->phy);
 	musb->phy = NULL;
-	cancel_work_sync(&glue->omap_musb_mailbox_work);
+	cancel_work_sync(&glue->rcmodule_musb_mailbox_work);
 
 	return 0;
 }
@@ -392,7 +391,7 @@ static int rcmodule_probe(struct platform_device *pdev)
 {
 	struct resource			musb_resources[3];
 	struct musb_hdrc_platform_data	*pdata = dev_get_platdata(&pdev->dev);
-//	struct omap_musb_board_data	*data;
+//	struct rcmodule_musb_board_data	*data;
 	struct platform_device		*musb;
 	struct rcmodule_glue		*glue;
 	struct device_node		*np = pdev->dev.of_node;
@@ -469,7 +468,7 @@ static int rcmodule_probe(struct platform_device *pdev)
 	 */
 	_glue	= glue;
 
-	INIT_WORK(&glue->omap_musb_mailbox_work, omap_musb_mailbox_work);
+	INIT_WORK(&glue->rcmodule_musb_mailbox_work, rcmodule_musb_mailbox_work);
 
 	memset(musb_resources, 0x00, sizeof(*musb_resources) *
 			ARRAY_SIZE(musb_resources));
@@ -578,7 +577,7 @@ static const struct dev_pm_ops rcmodule_pm_ops = {
 #ifdef CONFIG_OF
 static const struct of_device_id rcmodule_id_table[] = {
 	{
-		.compatible = "rcmodule,musb"
+		.compatible = "rc-module,musb"
 	},
 	{},
 };

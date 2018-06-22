@@ -8,6 +8,9 @@
  * any warranty of any kind, whether express or implied.
  */
 
+#include <dt-bindings/gpio/gpio.h>
+#include <dt-bindings/interrupt-controller/irq.h>
+
 /dts-v1/;
 
 /memreserve/ 0x01f00000 0x00100000;	// spin table
@@ -65,7 +68,6 @@
 	memory {
 		device_type = "memory";	
 		reg = <0x00000000 0x00000000 0x00000000 0x80000000   // 2Gb at 0	
-/*			   0x00000000 0x40000000 0x00000000 0x10000000   // 256MB at 0x40000000	*/
 		>;  
 	};
 
@@ -158,7 +160,7 @@
 				interrupt-controller;
 				#interrupt-cells = <2>;
 				interrupt-parent = <&MPIC>;
-				interrupts = <106 4>;
+				interrupts = <106 IRQ_TYPE_LEVEL_HIGH>;
 				clocks = <&pclk>;
 				clock-names = "apb_pclk";
 				
@@ -172,7 +174,7 @@
 				interrupt-controller;
 				#interrupt-cells = <2>;
 				interrupt-parent = <&MPIC>;
-				interrupts = <107 4>;
+				interrupts = <107 IRQ_TYPE_LEVEL_HIGH>;
 				clocks = <&pclk>;
 				clock-names = "apb_pclk";				
 			};
@@ -180,7 +182,7 @@
 			spi0: spi0@0x3C03E000 {
 				compatible = "arm,pl022", "arm,primecell";
 				reg = <0x3C03E000 0x1000>;
-				interrupts = <100 2>;
+				interrupts = <100 IRQ_TYPE_EDGE_FALLING>;
 				#address-cells = <1>;
 				#size-cells = <0>;
 				interrupt-parent = <&MPIC>;
@@ -209,7 +211,7 @@
 				pinctrl-names = "default";
 				pinctrl-0 = <&uart0_mux>;				
 				interrupt-parent = <&MPIC>;
-				interrupts = <101 4>;
+				interrupts = <101 IRQ_TYPE_LEVEL_HIGH>;
 				status = "ok";
 			};
 
@@ -221,7 +223,7 @@
 				pinctrl-names = "default";
 				pinctrl-0 = <&uart1_mux>;
 				interrupt-parent = <&MPIC>;
-				interrupts = <102 4>;
+				interrupts = <102 IRQ_TYPE_LEVEL_HIGH>;
 				status = "ok";
 			};
 			
@@ -238,7 +240,6 @@
 
 			dma-ranges = <0x40000000 0x00000000 0x00000000 0x40000000>;
 			clock-frequency = <100000000>;
-
 
 
 			mgpio0_1: mgpio0_1@0x3C060420 {
@@ -378,7 +379,7 @@
 				compatible = "rc-module,mpw7705", "rc-module,mmc-0.2";
 				reg = <0x3C06A000 0x1000>;
 				interrupt-parent = <&MPIC>;
-				interrupts = <67 2>;
+				interrupts = <67 IRQ_TYPE_EDGE_FALLING>;
 				pinctrl-names = "default";
 				pinctrl-0 = <&sdio_mux>;
 				status = "disabled";
@@ -388,7 +389,7 @@
 			spi1: spi1@0x3C05A000 {
 				compatible = "arm,pl022", "arm,primecell";
 				reg = <0x3C05A000 0x1000>;
-				interrupts = <73 2>;
+				interrupts = <73 IRQ_TYPE_EDGE_FALLING>;
 				#address-cells = <1>;
 				#size-cells = <0>;
 				interrupt-parent = <&MPIC>;
@@ -414,32 +415,51 @@
 					pl022,tx-level-trig = <0>; 		/* SSP_TX_1_OR_MORE_EMPTY_LOC */
 				};				
 			};
-/*
+
+			usb_phy: usb_phy@0x3C05E000
+			{
+				compatible = "rc-module,usbphy";
+				reg = <0x3C05E000 0x1000>;
+				#phy-cells = <0>;
+			};			
+
 			usb_otg_hs: usb_otg_hs@0x3C052000 {
-				compatible = "ti,omap4-musb";
+				compatible = "rc-module,musb";
 				reg = <0x3C052000 0x7ff>;
-				interrupts = <69 4>, <70 4>;
+				interrupt-parent = <&MPIC>;
+				interrupts = <69 IRQ_TYPE_LEVEL_HIGH>, <70 IRQ_TYPE_LEVEL_HIGH>;
 				interrupt-names = "mc", "dma";
-				ti,hwmods = "usb_otg_hs";
 				usb-phy = <&usb_phy>;
 				phys = <&usb_phy>;
 				phy-names = "usb-phy";
 				multipoint = <1>;
 				num-eps = <16>;
 				ram-bits = <12>;
-				ctrl-module = <&omap_control_usbotg>;
+/*				ctrl-module = <&omap_control_usbotg>; */
 			};			
-*/
+
 			greth0: greth0@0x3C050000 {
 				compatible = "rc-module,greth";
 				reg = <0x3C050000 0x1000
-					   0x3C05E020 0x4>;				/* extended DMA address bits */
+					   0x3C05E01C 0x4>;				/* extended DMA address bits */
 				interrupt-parent = <&MPIC>;
-				interrupts = <63 4>;
+				interrupts = <63 IRQ_TYPE_LEVEL_HIGH>;
 				mac-address = [ EC 17 66 77 05 01 ];
 				pinctrl-names = "default";
 				pinctrl-0 = <&greth0_0mux>, <&greth0_1mux>, <&greth0_2mux>;
 			};
+
+			greth1: greth1@0x3C051000 {
+				compatible = "rc-module,greth";
+				reg = <0x3C051000 0x1000
+					   0x3C05E020 0x4>;				/* extended DMA address bits */
+				interrupt-parent = <&MPIC>;
+				interrupts = <64 IRQ_TYPE_LEVEL_HIGH>;
+				mac-address = [ EC 17 66 77 05 02 ];
+				pinctrl-names = "default";
+				pinctrl-0 = <&greth1_0mux>, <&greth1_1mux>, <&greth1_2mux>, <&greth1_3mux>;
+			};
+
 
 		};		
 		
@@ -456,8 +476,13 @@
 				#thermal-sensor-cells = <0>;
 
 				interrupt-parent = <&MPIC>;
-				interrupts = <32 4					/* temperature IRQ */
-							  33 4>;				/* voltage IRQ */
+				interrupts = <32 IRQ_TYPE_LEVEL_HIGH	/* temperature IRQ */
+							  33 IRQ_TYPE_LEVEL_HIGH>;	/* voltage IRQ */
+			};
+
+			cpufreq: cpufreq@0x38006000 {
+				compatible = "rc-module,cpu-freq";
+				reg = <0x38006000 0x1000>;
 			};
 		};
 

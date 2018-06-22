@@ -87,8 +87,8 @@ static void greth_set_multicast_list(struct net_device *dev);
 #define GRETH_REGLOAD(a)	    (be32_to_cpu(__raw_readl(&(a))))
 #define GRETH_REGSAVE(a, v)         (__raw_writel(cpu_to_be32(v), &(a)))
 #else
-#define GRETH_REGLOAD(a)	    (readl_relaxed(&(a)))
-#define GRETH_REGSAVE(a, v)         (writel_relaxed((v), &(a)))
+#define GRETH_REGLOAD(a)	    (le32_to_cpu(__raw_readl(&(a))))
+#define GRETH_REGSAVE(a, v)         (__raw_writel(cpu_to_le32(v), &(a)))
 #endif
 
 #define GRETH_REGORIN(a, v)         (GRETH_REGSAVE(a, (GRETH_REGLOAD(a) | (v))))
@@ -161,6 +161,8 @@ static inline void greth_enable_irqs(struct greth_private *greth)
 static inline void greth_disable_irqs(struct greth_private *greth)
 {
 	GRETH_REGANDIN(greth->regs->control, ~(GRETH_RXI|GRETH_TXI));
+//	printk("disable irqs");
+//	printk("$");
 }
 
 #ifndef CONFIG_PPC
@@ -176,12 +178,12 @@ static inline u32 greth_read_bd(u32 *bd)
 #else
 static inline void greth_write_bd(u32 *bd, u32 val)
 {
-	writel_relaxed(val, bd);
+	__raw_writel(cpu_to_le32(val), bd);
 }
 
 static inline u32 greth_read_bd(u32 *bd)
 {
-	return readl_relaxed(bd);
+	return le32_to_cpu(__raw_readl(bd));
 }
 #endif
 
@@ -643,6 +645,9 @@ static irqreturn_t greth_interrupt(int irq, void *dev_id)
 
 	greth = netdev_priv(dev);
 
+//	printk("greth_interrupt");
+//	printk("!");
+
 	spin_lock(&greth->devlock);
 
 	/* Get the interrupt events that caused us to be here. */
@@ -810,6 +815,8 @@ static int greth_rx(struct net_device *dev, int limit)
 	u32 status, dma_addr;
 	unsigned long flags;
 
+//	printk("greth_rx: ");
+
 	greth = netdev_priv(dev);
 
 	for (count = 0; count < limit; ++count) {
@@ -875,6 +882,7 @@ static int greth_rx(struct net_device *dev, int limit)
 				skb_put_data(skb, phys_to_virt(dma_to_phys(greth->dev, dma_addr)),
 					     pkt_len);
 #endif
+//				printk(KERN_CONT " copy");
 
 				skb->protocol = eth_type_trans(skb, dev);
 				dev->stats.rx_bytes += pkt_len;
@@ -899,6 +907,7 @@ static int greth_rx(struct net_device *dev, int limit)
 
 		greth->rx_cur = NEXT_RX(greth->rx_cur);
 	}
+//	printk("~");
 
 	return count;
 }
@@ -1045,6 +1054,8 @@ static int greth_poll(struct napi_struct *napi, int budget)
 	u32 mask, ctrl;
 	greth = container_of(napi, struct greth_private, napi);
 
+//	printk("greth_poll");
+
 restart_txrx_poll:
 #if ! (defined(CONFIG_PPC) && defined(CONFIG_CPU_BIG_ENDIAN))
 	if (greth->gbit_mac) {
@@ -1064,28 +1075,37 @@ restart_txrx_poll:
 
 		ctrl = GRETH_REGLOAD(greth->regs->control);
 #if ! (defined(CONFIG_PPC) && defined(CONFIG_CPU_BIG_ENDIAN))
-		if ((greth->gbit_mac && (greth->tx_last != greth->tx_next)) ||
-		    (!greth->gbit_mac && netif_queue_stopped(greth->netdev))) {
+		if (
+			(greth->gbit_mac && (greth->tx_last != greth->tx_next)) ||
+		    (!greth->gbit_mac && netif_queue_stopped(greth->netdev))) 
+#else
+		if(netif_queue_stopped(greth->netdev))
+#endif		
+		{
 			GRETH_REGSAVE(greth->regs->control,
 					ctrl | GRETH_TXI | GRETH_RXI);
 			mask = GRETH_INT_RX | GRETH_INT_RE |
 			       GRETH_INT_TX | GRETH_INT_TE;
+//			printk(KERN_CONT "ena0 ");
 		} else 
-#endif		
 		{
 			GRETH_REGSAVE(greth->regs->control, ctrl | GRETH_RXI);
 			mask = GRETH_INT_RX | GRETH_INT_RE;
+//			printk(KERN_CONT "ena ");
 		}
 
 		if (GRETH_REGLOAD(greth->regs->status) & mask) {
 			GRETH_REGSAVE(greth->regs->control, ctrl);
 			spin_unlock_irqrestore(&greth->devlock, flags);
+///			printk(KERN_CONT "disa ");
 			goto restart_txrx_poll;
 		} else {
 			napi_complete_done(napi, work_done);
 			spin_unlock_irqrestore(&greth->devlock, flags);
 		}
 	}
+//	printk("greth_poll_exit");
+//	printk("^");
 
 	return work_done;
 }
