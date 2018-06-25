@@ -226,6 +226,23 @@
 				interrupts = <102 IRQ_TYPE_LEVEL_HIGH>;
 				status = "ok";
 			};
+
+			i2c0: i2c@0x3C03D000 {
+				compatible = "rc-module,i2cmst";
+				#address-cells = <1>;
+				#size-cells = <0>;
+				reg = <0x3C03D000 0x1000>;
+				clocks = <&lsif1clock>;
+				reg-shift = <2>;
+				reg-io-width = <4>;
+				interrupt-parent = <&MPIC>;
+				interrupts = <99 IRQ_TYPE_LEVEL_HIGH>;
+				
+				rtc@68 {
+					compatible = "dallas,ds1338";
+					reg = <0x68>;
+				};
+			};
 			
 		};
 
@@ -459,8 +476,6 @@
 				pinctrl-names = "default";
 				pinctrl-0 = <&greth1_0mux>, <&greth1_1mux>, <&greth1_2mux>, <&greth1_3mux>;
 			};
-
-
 		};		
 		
 		apb0 {
