@@ -20,7 +20,7 @@
  * Free Software Foundation;  either version 2 of the  License, or (at your
  * option) any later version.
  */
-#define DEBUG
+
 #include <linux/init.h>
 #include <linux/of.h>
 #include <linux/of_platform.h>
