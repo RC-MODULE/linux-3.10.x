@@ -129,6 +129,7 @@ config USB_MUSB_AM335X_CHILD
 config USB_MUSB_MODULE
 	tristate "RC-Module platforms"
 	depends on PPC || COMPILE_TEST
+	select GENERIC_PHY
 
 comment "MUSB DMA mode"
 

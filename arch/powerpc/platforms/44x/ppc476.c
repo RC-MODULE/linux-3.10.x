@@ -20,7 +20,7 @@
  * Free Software Foundation;  either version 2 of the  License, or (at your
  * option) any later version.
  */
-
+#define DEBUG
 #include <linux/init.h>
 #include <linux/of.h>
 #include <linux/of_platform.h>
@@ -175,12 +175,16 @@ static int smp_ppc47x_kick_cpu(int cpu)
 		return 1;
 	}
 
+#ifndef CONFIG_MPW7705
 	/* Assume it's mapped as part of the linear mapping. This is a bit
 	 * fishy but will work fine for now
 	 *
 	 * XXX: Is there any reason to assume differently?
 	 */
 	spin_table = (u32 *)__va(*spin_table_addr_prop);
+#else
+	spin_table = ioremap(*spin_table_addr_prop, sizeof(u32)*6);
+#endif
 	pr_debug("CPU%d: Spin table mapped at %p\n", cpu, spin_table);
 
 	spin_table[3] = cpu;
@@ -188,6 +192,9 @@ static int smp_ppc47x_kick_cpu(int cpu)
 	spin_table[1] = __pa(start_secondary_47x);
 	mb();
 
+#ifdef CONFIG_MPW7705
+	iounmap(spin_table);
+#endif
 	return 0;
 }
 

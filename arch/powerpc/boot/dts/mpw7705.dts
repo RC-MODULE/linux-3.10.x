@@ -13,8 +13,6 @@
 
 /dts-v1/;
 
-/memreserve/ 0x01f00000 0x00100000;	// spin table
-
 / {
 	#address-cells = <2>;
 	#size-cells = <2>;
@@ -58,9 +56,9 @@
 			d-cache-size = <32768>;
 			dcr-controller;
 			dcr-access-method = "native";
-			status = "disabled";
+			status = "ok";
 			enable-method = "spin-table";
-			cpu-release-addr = <0x0 0x01f00000>; 
+			cpu-release-addr = <0x010 0x0007FFE0>; 
 
 		};
 	};
@@ -103,7 +101,6 @@
 		#address-cells = <0>;
 		#size-cells = <0>;
 		#interrupt-cells = <2>;
-
 	};
 
 	plb {
@@ -433,10 +430,10 @@
 				};				
 			};
 
-			usb_phy: usb_phy@0x3C05E000
+			usb2_phy: usb2_phy@0x3C05E000
 			{
 				compatible = "rc-module,usbphy";
-				reg = <0x3C05E000 0x1000>;
+				reg = <0x3C05E02C 0x4>;
 				#phy-cells = <0>;
 			};			
 
@@ -446,9 +443,9 @@
 				interrupt-parent = <&MPIC>;
 				interrupts = <69 IRQ_TYPE_LEVEL_HIGH>, <70 IRQ_TYPE_LEVEL_HIGH>;
 				interrupt-names = "mc", "dma";
-				usb-phy = <&usb_phy>;
-				phys = <&usb_phy>;
-				phy-names = "usb-phy";
+				usb-phy = <&usb2_phy>;
+				phys = <&usb2_phy>;
+				phy-names = "usb2-phy";
 				multipoint = <1>;
 				num-eps = <16>;
 				ram-bits = <12>;

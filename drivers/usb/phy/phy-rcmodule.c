@@ -20,7 +20,7 @@
 #include "phy-generic.h"
 
 /* USB PHY control register offsets */
-#define USB_PHY_RESET_OFFSET     0x2C
+#define USB_PHY_RESET_OFFSET     0x0
 
 
 #define USB_PHY_POR_RESET        BIT(0)
@@ -84,6 +84,7 @@ static int rcmodule_usbphy_probe(struct platform_device *pdev)
 	struct resource		*res;
 	int ret;
 
+//	printk("rcmodule_usbphy_probe");
 	k_phy = devm_kzalloc(dev, sizeof(*k_phy), GFP_KERNEL);
 	if (!k_phy)
 		return -ENOMEM;
