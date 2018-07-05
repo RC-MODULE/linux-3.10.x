@@ -427,12 +427,14 @@
 					pl022,com-mode = <0x0>;			/* INTERRUPT_TRANSFER */
 					pl022,rx-level-trig = <0>;		/* SSP_RX_1_OR_MORE_ELEM */
 					pl022,tx-level-trig = <0>; 		/* SSP_TX_1_OR_MORE_EMPTY_LOC */
+
+					status = "ok";
 				};				
 			};
 
 			usb2_phy: usb2_phy@0x3C05E000
 			{
-				compatible = "rc-module,usbphy";
+				compatible = "rc-module,usbphy2";
 				reg = <0x3C05E02C 0x4>;
 				#phy-cells = <0>;
 			};			
@@ -446,10 +448,17 @@
 				usb-phy = <&usb2_phy>;
 				phys = <&usb2_phy>;
 				phy-names = "usb2-phy";
+
+				/* select clock to 24mhz
+				 * set bit 10 - USBPHY_REFCLK_SEL */				
+				sctl = <&sctl>;
+				sctl-reg = <8>, <10>, <1>;	/* reg, offset, bit */
+
 				multipoint = <1>;
 				num-eps = <16>;
 				ram-bits = <12>;
-/*				ctrl-module = <&omap_control_usbotg>; */
+				mode = <1>;
+				power = <500>;
 			};			
 
 			greth0: greth0@0x3C050000 {
@@ -481,6 +490,11 @@
 			#size-cells = <1>;
 
 			ranges = <0x38000000 0x010 0x38000000 0x00010000>; 
+
+			sctl: sctl@0x38000000
+			{
+				reg = <0x38000000 0x1000>;
+			};
 
 			thermal: thermal@0x38003000 {
 				compatible = "rc-module,thermal";

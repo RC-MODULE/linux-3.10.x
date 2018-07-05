@@ -129,7 +129,6 @@ config USB_MUSB_AM335X_CHILD
 config USB_MUSB_MODULE
 	tristate "RC-Module platforms"
 	depends on PPC || COMPILE_TEST
-	select GENERIC_PHY
 
 comment "MUSB DMA mode"
 
@@ -154,7 +153,7 @@ config USB_UX500_DMA
 
 config USB_INVENTRA_DMA
 	bool 'Inventra'
-	depends on USB_MUSB_OMAP2PLUS || USB_MUSB_BLACKFIN
+	depends on USB_MUSB_OMAP2PLUS || USB_MUSB_BLACKFIN || USB_MUSB_MODULE
 	help
 	  Enable DMA transfers using Mentor's engine.
 

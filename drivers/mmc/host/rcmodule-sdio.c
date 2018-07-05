@@ -1210,6 +1210,8 @@ static int __init rmsdio_probe(struct platform_device *pdev)
 		goto out;
 	}
 
+	set_dma_offset(&pdev->dev, - (pdev->dev.dma_pfn_offset << PAGE_SHIFT));
+
 	STEP(4);
 
 	rmsdio_power_down(host);
@@ -1225,7 +1227,6 @@ static int __init rmsdio_probe(struct platform_device *pdev)
 
 	host->irq = irq;
 	pr_debug("rmsdio: Using irq %d\n", irq);
-
 	if (rmsd_data->gpio_card_detect) {
 		ret = gpio_request(rmsd_data->gpio_card_detect, "carddetect-gpio"/*DRIVER_NAME " cd"*/);
 		// !!! ret = gpio_request_by_name(dev, "carddetect-gpio", 0, & rmsd_data->gpio_card_detect, GPIOD_IS_IN);
@@ -1279,7 +1280,7 @@ static int __init rmsdio_probe(struct platform_device *pdev)
 	else
 		printk(KERN_INFO "lacking card detect (fall back to polling)\n");
 	
-	host->dev->coherent_dma_mask=DMA_BIT_MASK(32);
+	host->dev->coherent_dma_mask=DMA_BIT_MASK(25);
 	init_waitqueue_head(&host->queue);
 	printk(KERN_INFO "rmsdio becomes ready\n");
 	return 0;

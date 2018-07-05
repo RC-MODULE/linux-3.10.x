@@ -52,15 +52,6 @@ config KEYSTONE_USB_PHY
 	  interface to interact with USB 2.0 and USB 3.0 PHY that is part
 	  of the Keystone SOC.
 
-config MODULE_USB_PHY
-	tristate "RC Module USB PHY Driver"
-	depends on PPC_47x || COMPILE_TEST
-	depends on NOP_USB_XCEIV
-	help
-	  Enable this to support RC Module USB phy. This driver provides
-	  interface to interact with USB 2.0 PHY that is part of the RC Module SOC.
-
-
 config NOP_USB_XCEIV
 	tristate "NOP USB Transceiver Driver"
 	depends on USB_GADGET || !USB_GADGET # if USB_GADGET=m, NOP can't be built-in

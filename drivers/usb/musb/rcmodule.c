@@ -11,6 +11,7 @@
  *
  * This file is part of the Inventra Controller Driver for Linux.
  */
+// #define DEBUG
 #include <linux/module.h>
 #include <linux/kernel.h>
 #include <linux/sched.h>
@@ -25,188 +26,120 @@
 #include <linux/delay.h>
 #include <linux/usb/musb.h>
 #include <linux/of_platform.h>
-
+#include <linux/dma-mapping.h>
 #include "musb_core.h"
 
 struct rcmodule_glue {
 	struct device		*dev;
 	struct platform_device	*musb;
 	enum musb_vbus_id_status status;
-	struct work_struct	rcmodule_musb_mailbox_work;
-	struct device		*control_otghs;
 };
 #define glue_to_musb(g)		platform_get_drvdata(g->musb)
 
-static struct rcmodule_glue	*_glue;
 
-static void rcmodule_musb_set_vbus(struct musb *musb, int is_on)
+
+#define	POLL_SECONDS	2
+
+static void otg_timer(struct timer_list *t)
 {
-	struct usb_otg	*otg = musb->xceiv->otg;
-	u8		devctl;
-	unsigned long timeout = jiffies + msecs_to_jiffies(1000);
-	/* HDRC controls CPEN, but beware current surges during device
-	 * connect.  They can trigger transient overcurrent conditions
-	 * that must be ignored.
+	struct musb		*musb = from_timer(musb, t, dev_timer);
+	void __iomem		*mregs = musb->mregs;
+	u8			devctl;
+	unsigned long		flags;
+
+
+
+	/* We poll because DaVinci's won't expose several OTG-critical
+	* status change events (from the transceiver) otherwise.
 	 */
+	devctl = musb_readb(mregs, MUSB_DEVCTL);
+	dev_dbg(musb->controller, "poll devctl %02x (%s)\n", devctl,
+		usb_otg_state_string(musb->xceiv->otg->state));
 
-	devctl = musb_readb(musb->mregs, MUSB_DEVCTL);
+	spin_lock_irqsave(&musb->lock, flags);
 
-	if (is_on) {
-		if (musb->xceiv->otg->state == OTG_STATE_A_IDLE) {
-			int loops = 100;
-			/* start the session */
-			devctl |= MUSB_DEVCTL_SESSION;
-			musb_writeb(musb->mregs, MUSB_DEVCTL, devctl);
-			/*
-			 * Wait for the musb to set as A device to enable the
-			 * VBUS
-			 */
-			while (musb_readb(musb->mregs, MUSB_DEVCTL) &
-			       MUSB_DEVCTL_BDEVICE) {
 
-				mdelay(5);
-				cpu_relax();
+//	musb->int_usb = musb_readb(musb->mregs, MUSB_INTRUSB);
+//	musb->int_tx = musb_readw(musb->mregs, MUSB_INTRTX);
+//	musb->int_rx = musb_readw(musb->mregs, MUSB_INTRRX);
 
-				if (time_after(jiffies, timeout)
-				    || loops-- <= 0) {
-					dev_err(musb->controller,
-					"configured as A device timeout");
-					break;
-				}
-			}
+//	dev_dbg(musb->controller, "otg_timer %x, %x, %x, %x", musb->int_usb, musb->int_tx, musb->int_rx, musb_readb(musb->mregs, MUSB_INTRUSBE));
 
-			otg_set_vbus(otg, 1);
-		} else {
-			musb->is_active = 1;
-			otg->default_a = 1;
-			musb->xceiv->otg->state = OTG_STATE_A_WAIT_VRISE;
-			devctl |= MUSB_DEVCTL_SESSION;
-			MUSB_HST_MODE(musb);
-		}
-	} else {
-		musb->is_active = 0;
+//	if (musb->int_usb || musb->int_tx || musb->int_rx)
+//		musb_interrupt(musb);
 
-		/* NOTE:  we're skipping A_WAIT_VFALL -> A_IDLE and
-		 * jumping right to B_IDLE...
+
+	switch (musb->xceiv->otg->state) {
+	case OTG_STATE_A_WAIT_VFALL:
+		/* Wait till VBUS falls below SessionEnd (~0.2V); the 1.3 RTL
+		 * seems to mis-handle session "start" otherwise (or in our
+		 * case "recover"), in routine "VBUS was valid by the time
+		 * VBUSERR got reported during enumeration" cases.
 		 */
-
-		otg->default_a = 0;
-		musb->xceiv->otg->state = OTG_STATE_B_IDLE;
-		devctl &= ~MUSB_DEVCTL_SESSION;
-
-		MUSB_DEV_MODE(musb);
-	}
-	musb_writeb(musb->mregs, MUSB_DEVCTL, devctl);
-
-	dev_dbg(musb->controller, "VBUS %s, devctl %02x "
-		/* otg %3x conf %08x prcm %08x */ "\n",
-		usb_otg_state_string(musb->xceiv->otg->state),
-		musb_readb(musb->mregs, MUSB_DEVCTL));
-}
-
-static inline void rcmodule_low_level_exit(struct musb *musb)
-{
-	//u32 l;
-
-	// ToDO AstroSoft if needed:
-	/* in any role */
-	// l = musb_readl(musb->mregs, OTG_FORCESTDBY);
-	// l |= ENABLEFORCE;	/* enable MSTANDBY */
-	// musb_writel(musb->mregs, OTG_FORCESTDBY, l);
-}
-
-static inline void rcmodule_low_level_init(struct musb *musb)
-{
-	//u32 l;
-
-	// ToDO AstroSoft if needed:
-	// l = musb_readl(musb->mregs, OTG_FORCESTDBY);
-	// l &= ~ENABLEFORCE;	/* disable MSTANDBY */
-	// musb_writel(musb->mregs, OTG_FORCESTDBY, l);
-}
-
-static int rcmodule_musb_mailbox(enum musb_vbus_id_status status)
-{
-	struct rcmodule_glue	*glue = _glue;
-
-	if (!glue) {
-		pr_err("%s: musb core is not yet initialized\n", __func__);
-		return -EPROBE_DEFER;
-	}
-	glue->status = status;
-
-	if (!glue_to_musb(glue)) {
-		pr_err("%s: musb core is not yet ready\n", __func__);
-		return -EPROBE_DEFER;
-	}
-
-	schedule_work(&glue->rcmodule_musb_mailbox_work);
-
-	return 0;
-}
-
-static void rcmodule_musb_set_mailbox(struct rcmodule_glue *glue)
-{
-	struct musb *musb = glue_to_musb(glue);
-//	struct musb_hdrc_platform_data *pdata =
-//		dev_get_platdata(musb->controller);
-//	struct rcmodule_musb_board_data *data = pdata->board_data;
-	struct usb_otg *otg = musb->xceiv->otg;
-
-	pm_runtime_get_sync(musb->controller);
-	switch (glue->status) {
-	case MUSB_ID_GROUND:
-		dev_dbg(musb->controller, "ID GND\n");
-
-		otg->default_a = true;
-		musb->xceiv->otg->state = OTG_STATE_A_IDLE;
-		musb->xceiv->last_event = USB_EVENT_ID;
-		if (musb->gadget_driver) {
-//			rcmodule_control_usb_set_mode(glue->control_otghs,
-//				USB_MODE_HOST);
-			rcmodule_musb_set_vbus(musb, 1);
+		if (devctl & MUSB_DEVCTL_VBUS) {
+			mod_timer(&musb->dev_timer, jiffies + POLL_SECONDS * HZ);
+			break;
 		}
-		break;
-
-	case MUSB_VBUS_VALID:
-		dev_dbg(musb->controller, "VBUS Connect\n");
-
-		otg->default_a = false;
-		musb->xceiv->otg->state = OTG_STATE_B_IDLE;
-		musb->xceiv->last_event = USB_EVENT_VBUS;
-//		rcmodule_control_usb_set_mode(glue->control_otghs, USB_MODE_DEVICE);
-		break;
-
-	case MUSB_ID_FLOAT:
-	case MUSB_VBUS_OFF:
-		dev_dbg(musb->controller, "VBUS Disconnect\n");
-
-		musb->xceiv->last_event = USB_EVENT_NONE;
-		if (musb->gadget_driver)
-			rcmodule_musb_set_vbus(musb, 0);
-
-//		if (data->interface_type == MUSB_INTERFACE_UTMI)		// AstroSoft To check!!!
-			otg_set_vbus(musb->xceiv->otg, 0);
-
-//		rcmodule_control_usb_set_mode(glue->control_otghs,
-//			USB_MODE_DISCONNECT);
+		musb->xceiv->otg->state = OTG_STATE_A_WAIT_VRISE;
+//		musb_writel(musb->ctrl_base, DAVINCI_USB_INT_SET_REG,
+//			MUSB_INTR_VBUSERROR << DAVINCI_USB_USBINT_SHIFT);
+//		break;
+	case OTG_STATE_B_IDLE:
+		/*
+		 * There's no ID-changed IRQ, so we have no good way to tell
+		 * when to switch to the A-Default state machine (by setting
+		 * the DEVCTL.SESSION flag).
+		 *
+		 * Workaround:  whenever we're in B_IDLE, try setting the
+		 * session flag every few seconds.  If it works, ID was
+		 * grounded and we're now in the A-Default state machine.
+		 *
+		 * NOTE setting the session flag is _supposed_ to trigger
+		 * SRP, but clearly it doesn't.
+		 */
+		musb_writeb(mregs, MUSB_DEVCTL,
+				devctl | MUSB_DEVCTL_SESSION);
+		devctl = musb_readb(mregs, MUSB_DEVCTL);
+		if (devctl & MUSB_DEVCTL_BDEVICE)
+			mod_timer(&musb->dev_timer, jiffies + POLL_SECONDS * HZ);
+		else
+			musb->xceiv->otg->state = OTG_STATE_A_IDLE;
 		break;
 	default:
-		dev_dbg(musb->controller, "ID float\n");
+		break;
 	}
-	pm_runtime_mark_last_busy(musb->controller);
-	pm_runtime_put_autosuspend(musb->controller);
-	atomic_notifier_call_chain(&musb->xceiv->notifier,
-			musb->xceiv->last_event, NULL);
+	spin_unlock_irqrestore(&musb->lock, flags);
 }
 
 
-static void rcmodule_musb_mailbox_work(struct work_struct *mailbox_work)
+static void rcmodule_musb_try_idle(struct musb *musb, unsigned long timeout)
 {
-	struct rcmodule_glue *glue = container_of(mailbox_work,
-				struct rcmodule_glue, rcmodule_musb_mailbox_work);
+	static unsigned long last_timer;
 
-	rcmodule_musb_set_mailbox(glue);
+	if (timeout == 0)
+		timeout = jiffies + msecs_to_jiffies(3);
+
+	/* Never idle if active, or when VBUS timeout is not set as host */
+	if (musb->is_active || (musb->a_wait_bcon == 0 &&
+				musb->xceiv->otg->state == OTG_STATE_A_WAIT_BCON)) {
+		dev_dbg(musb->controller, "%s active, deleting timer\n",
+			usb_otg_state_string(musb->xceiv->otg->state));
+		del_timer(&musb->dev_timer);
+		last_timer = jiffies;
+		return;
+	}
+
+	if (time_after(last_timer, timeout) && timer_pending(&musb->dev_timer)) {
+		dev_dbg(musb->controller, "Longer idle timer already pending, ignoring...\n");
+		return;
+	}
+	last_timer = timeout;
+
+	dev_dbg(musb->controller, "%s inactive, starting idle timer for %u ms\n",
+		usb_otg_state_string(musb->xceiv->otg->state),
+		jiffies_to_msecs(timeout - jiffies));
+
+	mod_timer(&musb->dev_timer, timeout);
 }
 
 static irqreturn_t rcmodule_musb_interrupt(int irq, void *__hci)
@@ -220,6 +153,8 @@ static irqreturn_t rcmodule_musb_interrupt(int irq, void *__hci)
 	musb->int_usb = musb_readb(musb->mregs, MUSB_INTRUSB);
 	musb->int_tx = musb_readw(musb->mregs, MUSB_INTRTX);
 	musb->int_rx = musb_readw(musb->mregs, MUSB_INTRRX);
+
+//	printk("rcmodule_musb_interrupt %x, %x, %x", musb->int_usb, musb->int_tx, musb->int_rx);
 
 	if (musb->int_usb || musb->int_tx || musb->int_rx)
 		retval = musb_interrupt(musb);
@@ -238,19 +173,8 @@ static int rcmodule_musb_init(struct musb *musb)
 //	struct musb_hdrc_platform_data *plat = dev_get_platdata(dev);
 //	struct rcmodule_musb_board_data *data = plat->board_data;
 
-	/* We require some kind of external transceiver, hooked
-	 * up through ULPI.  TWL4030-family PMICs include one,
-	 * which needs a driver, drivers aren't always needed.
-	 */
 	if (dev->parent->of_node) {
 		musb->phy = devm_phy_get(dev->parent, "usb2-phy");
-
-		/* We can't totally remove musb->xceiv as of now because
-		 * musb core uses xceiv.state and xceiv.otg. Once we have
-		 * a separate state machine to handle otg, these can be moved
-		 * out of xceiv and then we can start using the generic PHY
-		 * framework
-		 */
 		musb->xceiv = devm_usb_get_phy_by_phandle(dev->parent,
 		    "usb-phy", 0);
 	} else {
@@ -273,85 +197,15 @@ static int rcmodule_musb_init(struct musb *musb)
 		return PTR_ERR(musb->phy);
 	}
 	musb->isr = rcmodule_musb_interrupt;
+
+//	timer_setup(&musb->dev_timer, otg_timer, 0);
+
 	phy_init(musb->phy);
 	phy_power_on(musb->phy);
 
-//  To check: AstroSoft
-//	l = musb_readl(musb->mregs, OTG_INTERFSEL);
 
-//	if (data->interface_type == MUSB_INTERFACE_UTMI) {
-//		/* OMAP4 uses Internal PHY GS70 which uses UTMI interface */
-//		l &= ~ULPI_12PIN;       /* Disable ULPI */
-//		l |= UTMI_8BIT;         /* Enable UTMI  */
-//	} else {
-//		l |= ULPI_12PIN;
-//	}
-
-//	musb_writel(musb->mregs, OTG_INTERFSEL, l);
-
-//	dev_dbg(dev, "HS USB OTG: revision 0x%x, sysconfig 0x%02x, "
-//			"sysstatus 0x%x, intrfsel 0x%x, simenable  0x%x\n",
-//			musb_readl(musb->mregs, OTG_REVISION),
-//			musb_readl(musb->mregs, OTG_SYSCONFIG),
-//			musb_readl(musb->mregs, OTG_SYSSTATUS),
-//			musb_readl(musb->mregs, OTG_INTERFSEL),
-//			musb_readl(musb->mregs, OTG_SIMENABLE));
-
-	if (glue->status != MUSB_UNKNOWN)
-		rcmodule_musb_set_mailbox(glue);
 
 	return 0;
-}
-
-static void rcmodule_musb_enable(struct musb *musb)
-{
-	u8		devctl;
-	unsigned long timeout = jiffies + msecs_to_jiffies(1000);
-	struct device *dev = musb->controller;
-	struct rcmodule_glue *glue = dev_get_drvdata(dev->parent);
-//	struct musb_hdrc_platform_data *pdata = dev_get_platdata(dev);
-//	struct rcmodule_musb_board_data *data = pdata->board_data;
-
-
-	switch (glue->status) {
-
-	case MUSB_ID_GROUND:
-//		rcmodule_control_usb_set_mode(glue->control_otghs, USB_MODE_HOST);
-//	To Check AstroSoft
-//		if (data->interface_type != MUSB_INTERFACE_UTMI)
-//			break;
-		devctl = musb_readb(musb->mregs, MUSB_DEVCTL);
-		/* start the session */
-		devctl |= MUSB_DEVCTL_SESSION;
-		musb_writeb(musb->mregs, MUSB_DEVCTL, devctl);
-		while (musb_readb(musb->mregs, MUSB_DEVCTL) &
-				MUSB_DEVCTL_BDEVICE) {
-			cpu_relax();
-
-			if (time_after(jiffies, timeout)) {
-				dev_err(dev, "configured as A device timeout");
-				break;
-			}
-		}
-		break;
-
-	case MUSB_VBUS_VALID:
-//		rcmodule_control_usb_set_mode(glue->control_otghs, USB_MODE_DEVICE);
-		break;
-
-	default:
-		break;
-	}
-}
-
-static void rcmodule_musb_disable(struct musb *musb)
-{
-	struct device *dev = musb->controller;
-	struct rcmodule_glue *glue = dev_get_drvdata(dev->parent);
-
-//	if (glue->status != MUSB_UNKNOWN)
-//		rcmodule_control_usb_set_mode(glue->control_otghs,
-//			USB_MODE_DISCONNECT);
 }
 
 static int rcmodule_musb_exit(struct musb *musb)
@@ -359,14 +213,85 @@ static int rcmodule_musb_exit(struct musb *musb)
 	struct device *dev = musb->controller;
 	struct rcmodule_glue *glue = dev_get_drvdata(dev->parent);
 
-	rcmodule_low_level_exit(musb);
+//	del_timer_sync(&musb->dev_timer);
+
 	phy_power_off(musb->phy);
 	phy_exit(musb->phy);
 	musb->phy = NULL;
-	cancel_work_sync(&glue->rcmodule_musb_mailbox_work);
 
 	return 0;
 }
+
+/*
+ * Load an endpoint's FIFO
+ */
+static void _write_fifo_8(struct musb_hw_ep *hw_ep, u16 len,
+				    const u8 *src)
+{
+	//struct musb *musb = hw_ep->musb;
+	void __iomem *fifo = hw_ep->fifo;
+
+	printk("%cX ep%d fifo %p count %d buf %p\n",
+			'T', hw_ep->epnum, fifo, len, src);
+
+	print_hex_dump(KERN_INFO, "TX: ", DUMP_PREFIX_OFFSET, 16, 1,
+			src, len, true);
+
+	if (unlikely(len == 0))
+		return;
+
+	prefetch((u8 *)src);
+
+	iowrite8_rep(fifo, src, len);
+}
+
+/*
+ * Unload an endpoint's FIFO
+ */
+static void _read_fifo_8(struct musb_hw_ep *hw_ep, u16 len, u8 *dst)
+{
+	//struct musb *musb = hw_ep->musb;
+	void __iomem *fifo = hw_ep->fifo;
+
+	printk("%cX ep%d fifo %p count %d buf %p\n",
+			'R', hw_ep->epnum, fifo, len, dst);
+
+	if (unlikely(len == 0))
+		return;
+
+	/* byte aligned */
+	ioread8_rep(fifo, dst, len);
+
+	print_hex_dump(KERN_INFO, "RX: ", DUMP_PREFIX_OFFSET, 16, 1,
+			dst, len, true);
+
+}
+
+
+static u16 _readw(const void __iomem *addr, unsigned offset)
+{
+	u16 data = le16_to_cpu(__raw_readw(addr + offset));
+	return data;
+}
+
+static void _writew(void __iomem *addr, unsigned offset, u16 data)
+{
+	__raw_writew(cpu_to_le16(data), addr + offset);
+}
+
+static u32 _readl(const void __iomem *addr, unsigned offset)
+{
+	u32 data = le32_to_cpu(__raw_readl(addr + offset));
+
+	return data;
+}
+
+static void _writel(void __iomem *addr, unsigned offset, u32 data)
+{
+	__raw_writel(cpu_to_le32(data), addr + offset);
+}
+
+
 
 static const struct musb_platform_ops rcmodule_ops = {
 	.quirks		= MUSB_DMA_INVENTRA,
@@ -377,15 +302,19 @@ static const struct musb_platform_ops rcmodule_ops = {
 	.init		= rcmodule_musb_init,
 	.exit		= rcmodule_musb_exit,
 
-	.set_vbus	= rcmodule_musb_set_vbus,
+//	.try_idle	= rcmodule_musb_try_idle,
 
-	.enable		= rcmodule_musb_enable,
-	.disable	= rcmodule_musb_disable,
 
-	.phy_callback	= rcmodule_musb_mailbox,
+	.read_fifo = _read_fifo_8,
+	.write_fifo = _write_fifo_8,
+
+    .readw 		= _readw,
+	.writew 	= _writew,
+	.readl		= _readl, 
+	.writel 	= _writel
 };
 
-static u64 rcmodule_dmamask = DMA_BIT_MASK(32);
+static u64 rcmodule_dmamask = DMA_BIT_MASK(25); // use only first Gb
 
 static int rcmodule_probe(struct platform_device *pdev)
 {
@@ -411,14 +340,18 @@ static int rcmodule_probe(struct platform_device *pdev)
 	musb->dev.parent		= &pdev->dev;
 	musb->dev.dma_mask		= &rcmodule_dmamask;
 	musb->dev.coherent_dma_mask	= rcmodule_dmamask;
+	musb->dev.dma_pfn_offset = pdev->dev.dma_pfn_offset;
 
 	glue->dev			= &pdev->dev;
 	glue->musb			= musb;
 	glue->status			= MUSB_UNKNOWN;
-	glue->control_otghs = ERR_PTR(-ENODEV);
+	//glue->control_otghs = ERR_PTR(-ENODEV);
+
+//	printk("Set DMA offset to %lx ", - (pdev->dev.dma_pfn_offset << PAGE_SHIFT));
+	set_dma_offset(&musb->dev, - (musb->dev.dma_pfn_offset << PAGE_SHIFT));
 
 	if (np) {
-		struct device_node *control_node;
+		struct device_node *sctl;
 		struct platform_device *control_pdev;
 
 		pdata = devm_kzalloc(&pdev->dev, sizeof(*pdata), GFP_KERNEL);
@@ -433,12 +366,12 @@ static int rcmodule_probe(struct platform_device *pdev)
 		if (!config)
 			goto err2;
 
-		of_property_read_u32(np, "mode", (u32 *)&pdata->mode);
+		of_property_read_u32(np, "mode", &val); pdata->mode = (u8) val;
 //		of_property_read_u32(np, "interface-type",
 //						(u32 *)&data->interface_type);
-		of_property_read_u32(np, "num-eps", (u32 *)&config->num_eps);
-		of_property_read_u32(np, "ram-bits", (u32 *)&config->ram_bits);
-		of_property_read_u32(np, "power", (u32 *)&pdata->power);
+		of_property_read_u32(np, "num-eps", &val); config->num_eps = (u8) val;
+		of_property_read_u32(np, "ram-bits", &val); config->ram_bits = (u8) val;
+		of_property_read_u32(np, "power", &val); pdata->power = (u8) val;
 
 		ret = of_property_read_u32(np, "multipoint", &val);
 		if (!ret && val)
@@ -447,28 +380,46 @@ static int rcmodule_probe(struct platform_device *pdev)
 		pdata->board_data	= 0; //data;
 		pdata->config		= config;
 
-		control_node = of_parse_phandle(np, "ctrl-module", 0);
-		if (control_node) {
-			control_pdev = of_find_device_by_node(control_node);
+		// process control register		
+		sctl = of_parse_phandle(np, "sctl", 0);
+		if (sctl) {
+			void* sctl_reg = 0;
+			struct resource		*res;
+			u32 sctl_val[3];
+			control_pdev = of_find_device_by_node(sctl);
 			if (!control_pdev) {
-				dev_err(&pdev->dev, "Failed to get control device\n");
+				dev_err(&pdev->dev, "Failed to get SCTL device\n");
 				ret = -EINVAL;
 				goto err2;
 			}
-			glue->control_otghs = &control_pdev->dev;
+			res = platform_get_resource(control_pdev, IORESOURCE_MEM, 0);
+			sctl_reg = devm_ioremap_resource(&control_pdev->dev, res);
+			if (IS_ERR(sctl_reg))
+			{
+				dev_err(&pdev->dev, "Failed to allocate SCTL resource\n");
+				ret = -EINVAL;
+				goto err2;
+			}
+			if(!of_property_read_u32_array(np, "sctl-reg", &sctl_val[0], 3))
+			{
+				dev_info(&pdev->dev, "Setup SCTL register %d, offset %d, bit %d", sctl_val[0], sctl_val[1], sctl_val[2]);
+				u32 value = __raw_readl(sctl_reg + sctl_val[0]);
+				value &= ~(1<<sctl_val[1]);
+				value |=  sctl_val[2] << sctl_val[1];
+				__raw_writel(value, sctl_reg + sctl_val[0]);
+			}
+			else
+				dev_err(&pdev->dev, "Failed to read sctl-reg values\n");
+
+			devm_iounmap(&control_pdev->dev, sctl_reg);
+
+			//glue->control_otghs = &control_pdev->dev;
 		}
 	}
 	pdata->platform_ops		= &rcmodule_ops;
 
 	platform_set_drvdata(pdev, glue);
 
-	/*
-	 * REVISIT if we ever have two instances of the wrapper, we will be
-	 * in big trouble
-	 */
-	_glue	= glue;
-
-	INIT_WORK(&glue->rcmodule_musb_mailbox_work, rcmodule_musb_mailbox_work);
 
 	memset(musb_resources, 0x00, sizeof(*musb_resources) *
 			ARRAY_SIZE(musb_resources));
@@ -531,49 +482,6 @@ static int rcmodule_remove(struct platform_device *pdev)
 	return 0;
 }
 
-#ifdef CONFIG_PM
-
-static int rcmodule_runtime_suspend(struct device *dev)
-{
-	struct rcmodule_glue		*glue = dev_get_drvdata(dev);
-	struct musb			*musb = glue_to_musb(glue);
-
-	if (!musb)
-		return 0;
-
-	musb->context.otg_interfsel = musb_readl(musb->mregs,
-						 OTG_INTERFSEL);
-
-	rcmodule_low_level_exit(musb);
-
-	return 0;
-}
-
-static int rcmodule_runtime_resume(struct device *dev)
-{
-	struct rcmodule_glue		*glue = dev_get_drvdata(dev);
-	struct musb			*musb = glue_to_musb(glue);
-
-	if (!musb)
-		return 0;
-
-	rcmodule_low_level_init(musb);
-	musb_writel(musb->mregs, OTG_INTERFSEL,
-		    musb->context.otg_interfsel);
-
-	return 0;
-}
-
-static const struct dev_pm_ops rcmodule_pm_ops = {
-	.runtime_suspend = rcmodule_runtime_suspend,
-	.runtime_resume = rcmodule_runtime_resume,
-};
-
-#define DEV_PM_OPS	(&rcmodule_pm_ops)
-#else
-#define DEV_PM_OPS	NULL
-#endif
-
 #ifdef CONFIG_OF
 static const struct of_device_id rcmodule_id_table[] = {
 	{
@@ -589,7 +497,6 @@ static struct platform_driver rcmodule_driver = {
 	.remove		= rcmodule_remove,
 	.driver		= {
 		.name	= "musb-rcmodule",
-		.pm	= DEV_PM_OPS,
 		.of_match_table = of_match_ptr(rcmodule_id_table),
 	},
 };

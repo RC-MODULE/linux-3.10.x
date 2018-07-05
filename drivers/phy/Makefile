@@ -22,4 +22,5 @@ obj-y					+= broadcom/	\
 					   ralink/	\
 					   samsung/	\
 					   st/		\
-					   ti/
+					   ti/		\
+					   rcmodule/	\
