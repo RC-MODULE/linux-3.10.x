@@ -1,0 +1,25 @@
+#
+# RC Module specific drivers for SoC 
+#
+
+menu "RC Module SoC specific drivers"
+
+config EASYNMC
+	tristate "EasyNMC DSP Framework"
+	help
+      Provides a generic lowlevel interface for NeuroMatrix DSP cores 
+      as found in RC Module's SoCs.
+
+config EASYNMC_CORE_TEST
+    tristate "EasyNMC Dummy Test Core"
+    depends on EASYNMC
+    help
+      A dummy virtual test core.
+
+config EASYNMC_CORE_NMC3
+    tristate "EasyNMC NMC3 Core"
+    depends on EASYNMC
+    help
+	  NMC3 core defined by DeviceTree.
+
+endmenu
