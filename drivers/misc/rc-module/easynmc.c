@@ -454,7 +454,7 @@ static long easynmc_ioctl(struct file *filp, unsigned int ioctl_num, unsigned lo
 		int ret = copy_from_user(
 			&ibuf, 
 			(void __user *) ioctl_param, 
-			sizeof(struct nmc_irq_token)
+			sizeof(struct nmc_ioctl_buffer)
 			);
 		if (ret)
 			return -EFAULT;
@@ -992,7 +992,7 @@ static const struct file_operations proc_fops = {
 
 static int __init easynmc_init(void)
 {
-	printk("EasyNMC Unified DSP Framework. (c) RC Module 2014\n");
+	printk("EasyNMC Unified DSP Framework. (c) RC Module 2018\n");
 	nmc_proc_entry = proc_create("nmc", 0644, NULL, &proc_fops);
 	if (nmc_proc_entry == NULL) { 
 //		remove_proc_entry("nmc", &proc_root);

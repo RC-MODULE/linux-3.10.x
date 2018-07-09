@@ -459,6 +459,7 @@
 				ram-bits = <12>;
 				mode = <1>;
 				power = <500>;
+				status = "ok";
 			};			
 
 			greth0: greth0@0x3C050000 {
@@ -509,6 +510,7 @@
 			cpufreq: cpufreq@0x38006000 {
 				compatible = "rc-module,cpu-freq";
 				reg = <0x38006000 0x1000>;
+				status = "disabled";
 			};
 		};
 
@@ -521,12 +523,120 @@
 
 		};
 
+		dspcores {
+			compatible = "ibm,apb";	 /* to check bus type */
+			#address-cells = <1>;
+			#size-cells = <1>;
 
+			ranges = <0x38FFC000 0x010 0x38FFC000 0x000840000>; 
+
+
+			nmc3_0_core0: nmc3_0_core0@0x39000000 {
+				compatible = "rc-module,easynmc";
+				core-name = "nmcore0_0";
+				core-type = "nmc3";
+				device-id = <0>;
+				reg =   
+					<0x39000000 0x00020000>, 
+					<0x38FFC010 0x4>,
+					<0x38FFC004 0x4>,
+					<0x38FFC034 0x4>,
+					<0x38FFC030 0x4>,
+					<0x38FFC038 0x4>,
+					<0x38FFC03C 0x4>;
+				reg-names = 
+						"imem",
+						"reset_reg",
+						"nmi_reg",
+						"hp_clr_reg",
+						"lp_clr_reg",
+						"hp_set_reg",
+						"lp_set_reg";
+				interrupt-parent = <&MPIC>;
+				interrupts = <39 IRQ_TYPE_LEVEL_HIGH>, <41 IRQ_TYPE_LEVEL_HIGH>;
+				interrupt-names = "hp", "lp";		
+				status = "disabled";
+			};
+			nmc3_0_core1: nmc3_0_core1@0x39020000 {
+				compatible = "rc-module,easynmc";
+				core-name = "nmcore0_1";
+				core-type = "nmc3";
+				device-id = <1>;
+				reg =   
+					<0x39020000 0x00020000>, 
+					<0x38FFD010 0x4>,
+					<0x38FFD004 0x4>,
+					<0x38FFD034 0x4>,
+					<0x38FFD030 0x4>,
+					<0x38FFD038 0x4>,
+					<0x38FFD03C 0x4>;
+				reg-names = 
+						"imem",
+						"reset_reg",
+						"nmi_reg",
+						"hp_clr_reg",
+						"lp_clr_reg",
+						"hp_set_reg",
+						"lp_set_reg";
+				interrupt-parent = <&MPIC>;
+				interrupts = <40 IRQ_TYPE_LEVEL_HIGH>, <42 IRQ_TYPE_LEVEL_HIGH>;
+				interrupt-names = "hp", "lp";		
+				status = "disabled";
+			};
+			nmc3_1_core0: nmc3_1_core0@0x39040000 {
+				compatible = "rc-module,easynmc";
+				core-name = "nmcore1_0";
+				core-type = "nmc3";
+				device-id = <2>;
+				reg =   
+					<0x39040000 0x00020000>, 
+					<0x38FFE010 0x4>,
+					<0x38FFE004 0x4>,
+					<0x38FFE034 0x4>,
+					<0x38FFE030 0x4>,
+					<0x38FFE038 0x4>,
+					<0x38FFE03C 0x4>;
+				reg-names = 
+						"imem",
+						"reset_reg",
+						"nmi_reg",
+						"hp_clr_reg",
+						"lp_clr_reg",
+						"hp_set_reg",
+						"lp_set_reg";
+				interrupt-parent = <&MPIC>;
+				interrupts = <43 IRQ_TYPE_LEVEL_HIGH>, <45 IRQ_TYPE_LEVEL_HIGH>;
+				interrupt-names = "hp", "lp";		
+				status = "disabled";
+			};
+			nmc3_1_core1: nmc3_1_core1@0x39060000 {
+				compatible = "rc-module,easynmc";
+				core-name = "nmcore1_1";
+				core-type = "nmc3";
+				device-id = <3>;
+				reg =   
+					<0x39060000 0x00020000>, 
+					<0x38FFF010 0x4>,
+					<0x38FFF004 0x4>,
+					<0x38FFF034 0x4>,
+					<0x38FFF030 0x4>,
+					<0x38FFF038 0x4>,
+					<0x38FFF03C 0x4>;
+				reg-names = 
+						"imem",
+						"reset_reg",
+						"nmi_reg",
+						"hp_clr_reg",
+						"lp_clr_reg",
+						"hp_set_reg",
+						"lp_set_reg";
+				interrupt-parent = <&MPIC>;
+				interrupts = <44 IRQ_TYPE_LEVEL_HIGH>, <46 IRQ_TYPE_LEVEL_HIGH>;
+				interrupt-names = "hp", "lp";		
+				status = "disabled";
+			};
+		};
 	};
-
-
-
-
 
 	thermal-zones {
 			cpu-thermal {

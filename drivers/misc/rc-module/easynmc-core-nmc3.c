@@ -103,7 +103,7 @@ static int __init easynmc_probe (struct platform_device *pdev)
 									\
 	}								\
 	res->flags &= ~(IORESOURCE_CACHEABLE);				\
-	core->name = devm_request_and_ioremap(&pdev->dev, res);		\
+	core->name = devm_ioremap_resource(&pdev->dev, res);		\
 	if (IS_ERR(core->name)) {					\
 		printk(DRVNAME ": request/remap failed for " #name " \n"); \
 		goto errfreemem;					\
@@ -126,13 +126,13 @@ static int __init easynmc_probe (struct platform_device *pdev)
 	GRAB_MEM_RESOURCE(lp_clr_reg);
 	GRAB_MEM_RESOURCE(lp_set_reg);
 
-	GRAB_IRQ_RESOURCE(HP, core->c.irqs[NMC_IRQ_HP]);
-	GRAB_IRQ_RESOURCE(LP, core->c.irqs[NMC_IRQ_LP]);
+	GRAB_IRQ_RESOURCE(hp, core->c.irqs[NMC_IRQ_HP]);
+	GRAB_IRQ_RESOURCE(lp, core->c.irqs[NMC_IRQ_LP]);
 	
 	res = platform_get_resource_byname(pdev, IORESOURCE_MEM, "imem");	
 	core->c.imem_size = res->end - res->start + 1;
 	core->c.imem_phys = res->start;
-	core->c.imem_virt = devm_request_and_ioremap(&pdev->dev, res);
+	core->c.imem_virt = devm_ioremap_resource(&pdev->dev, res);
 
 	core->c.reset             = nmc3_reset; 
 	core->c.send_interrupt    = nmc3_send_interrupt; 
@@ -176,6 +176,7 @@ errfreemem:
 
 static int easynmc_remove (struct platform_device *pdev)
 {
+	// ToDo: devm_unmap ?
 	struct nmc3_core *core = dev_get_drvdata(&pdev->dev);
 	if (!core)
 		BUG();
@@ -183,7 +184,7 @@ static int easynmc_remove (struct platform_device *pdev)
 }
 
 static const struct of_device_id easynmc_nmc3_of_match_table[] = {
-	{ .compatible = "rcm,easynmc", },
+	{ .compatible = "rc-module,easynmc", },
 	{ /* end of list */ }
 };
 MODULE_DEVICE_TABLE(of, easynmc_nmc3_of_match_table);
