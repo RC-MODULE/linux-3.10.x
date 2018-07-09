@@ -11,7 +11,7 @@
  *
  * This file is part of the Inventra Controller Driver for Linux.
  */
-// #define DEBUG
+
 #include <linux/module.h>
 #include <linux/kernel.h>
 #include <linux/sched.h>
@@ -32,115 +32,9 @@
 struct rcmodule_glue {
 	struct device		*dev;
 	struct platform_device	*musb;
-	enum musb_vbus_id_status status;
 };
 #define glue_to_musb(g)		platform_get_drvdata(g->musb)
 
-
-
-#define	POLL_SECONDS	2
-
-static void otg_timer(struct timer_list *t)
-{
-	struct musb		*musb = from_timer(musb, t, dev_timer);
-	void __iomem		*mregs = musb->mregs;
-	u8			devctl;
-	unsigned long		flags;
-
-
-
-	/* We poll because DaVinci's won't expose several OTG-critical
-	* status change events (from the transceiver) otherwise.
-	 */
-	devctl = musb_readb(mregs, MUSB_DEVCTL);
-	dev_dbg(musb->controller, "poll devctl %02x (%s)\n", devctl,
-		usb_otg_state_string(musb->xceiv->otg->state));
-
-	spin_lock_irqsave(&musb->lock, flags);
-
-
-//	musb->int_usb = musb_readb(musb->mregs, MUSB_INTRUSB);
-//	musb->int_tx = musb_readw(musb->mregs, MUSB_INTRTX);
-//	musb->int_rx = musb_readw(musb->mregs, MUSB_INTRRX);
-
-//	dev_dbg(musb->controller, "otg_timer %x, %x, %x, %x", musb->int_usb, musb->int_tx, musb->int_rx, musb_readb(musb->mregs, MUSB_INTRUSBE));
-
-//	if (musb->int_usb || musb->int_tx || musb->int_rx)
-//		musb_interrupt(musb);
-
-
-	switch (musb->xceiv->otg->state) {
-	case OTG_STATE_A_WAIT_VFALL:
-		/* Wait till VBUS falls below SessionEnd (~0.2V); the 1.3 RTL
-		 * seems to mis-handle session "start" otherwise (or in our
-		 * case "recover"), in routine "VBUS was valid by the time
-		 * VBUSERR got reported during enumeration" cases.
-		 */
-		if (devctl & MUSB_DEVCTL_VBUS) {
-			mod_timer(&musb->dev_timer, jiffies + POLL_SECONDS * HZ);
-			break;
-		}
-		musb->xceiv->otg->state = OTG_STATE_A_WAIT_VRISE;
-//		musb_writel(musb->ctrl_base, DAVINCI_USB_INT_SET_REG,
-//			MUSB_INTR_VBUSERROR << DAVINCI_USB_USBINT_SHIFT);
-//		break;
-	case OTG_STATE_B_IDLE:
-		/*
-		 * There's no ID-changed IRQ, so we have no good way to tell
-		 * when to switch to the A-Default state machine (by setting
-		 * the DEVCTL.SESSION flag).
-		 *
-		 * Workaround:  whenever we're in B_IDLE, try setting the
-		 * session flag every few seconds.  If it works, ID was
-		 * grounded and we're now in the A-Default state machine.
-		 *
-		 * NOTE setting the session flag is _supposed_ to trigger
-		 * SRP, but clearly it doesn't.
-		 */
-		musb_writeb(mregs, MUSB_DEVCTL,
-				devctl | MUSB_DEVCTL_SESSION);
-		devctl = musb_readb(mregs, MUSB_DEVCTL);
-		if (devctl & MUSB_DEVCTL_BDEVICE)
-			mod_timer(&musb->dev_timer, jiffies + POLL_SECONDS * HZ);
-		else
-			musb->xceiv->otg->state = OTG_STATE_A_IDLE;
-		break;
-	default:
-		break;
-	}
-	spin_unlock_irqrestore(&musb->lock, flags);
-}
-
-
-static void rcmodule_musb_try_idle(struct musb *musb, unsigned long timeout)
-{
-	static unsigned long last_timer;
-
-	if (timeout == 0)
-		timeout = jiffies + msecs_to_jiffies(3);
-
-	/* Never idle if active, or when VBUS timeout is not set as host */
-	if (musb->is_active || (musb->a_wait_bcon == 0 &&
-				musb->xceiv->otg->state == OTG_STATE_A_WAIT_BCON)) {
-		dev_dbg(musb->controller, "%s active, deleting timer\n",
-			usb_otg_state_string(musb->xceiv->otg->state));
-		del_timer(&musb->dev_timer);
-		last_timer = jiffies;
-		return;
-	}
-
-	if (time_after(last_timer, timeout) && timer_pending(&musb->dev_timer)) {
-		dev_dbg(musb->controller, "Longer idle timer already pending, ignoring...\n");
-		return;
-	}
-	last_timer = timeout;
-
-	dev_dbg(musb->controller, "%s inactive, starting idle timer for %u ms\n",
-		usb_otg_state_string(musb->xceiv->otg->state),
-		jiffies_to_msecs(timeout - jiffies));
-
-	mod_timer(&musb->dev_timer, timeout);
-}
 
 static irqreturn_t rcmodule_musb_interrupt(int irq, void *__hci)
 {
@@ -154,7 +48,14 @@ static irqreturn_t rcmodule_musb_interrupt(int irq, void *__hci)
 	musb->int_tx = musb_readw(musb->mregs, MUSB_INTRTX);
 	musb->int_rx = musb_readw(musb->mregs, MUSB_INTRRX);
 
-//	printk("rcmodule_musb_interrupt %x, %x, %x", musb->int_usb, musb->int_tx, musb->int_rx);
+
+	if((musb->int_usb & MUSB_INTR_DISCONNECT) && (musb->port1_status & USB_PORT_STAT_C_RESET << 16))
+	{
+		// skip disconnect irq after reset
+		dev_dbg(musb->controller, "Skip disconnect irq after reset...");
+		spin_unlock_irqrestore(&musb->lock, flags);
+		return IRQ_HANDLED;
+	}
 
 	if (musb->int_usb || musb->int_tx || musb->int_rx)
 		retval = musb_interrupt(musb);
@@ -166,12 +67,8 @@ static irqreturn_t rcmodule_musb_interrupt(int irq, void *__hci)
 
 static int rcmodule_musb_init(struct musb *musb)
 {
-//	u32 l;
 	int status = 0;
 	struct device *dev = musb->controller;
-	struct rcmodule_glue *glue = dev_get_drvdata(dev->parent);
-//	struct musb_hdrc_platform_data *plat = dev_get_platdata(dev);
-//	struct rcmodule_musb_board_data *data = plat->board_data;
 
 	if (dev->parent->of_node) {
 		musb->phy = devm_phy_get(dev->parent, "usb2-phy");
@@ -198,45 +95,36 @@ static int rcmodule_musb_init(struct musb *musb)
 	}
 	musb->isr = rcmodule_musb_interrupt;
 
-//	timer_setup(&musb->dev_timer, otg_timer, 0);
-
 	phy_init(musb->phy);
 	phy_power_on(musb->phy);
-
-
 
 	return 0;
 }
 
 static int rcmodule_musb_exit(struct musb *musb)
 {
-	struct device *dev = musb->controller;
-	struct rcmodule_glue *glue = dev_get_drvdata(dev->parent);
-
-//	del_timer_sync(&musb->dev_timer);
-
 	phy_power_off(musb->phy);
 	phy_exit(musb->phy);
 	musb->phy = NULL;
-
 	return 0;
 }
 
 /*
  * Load an endpoint's FIFO
  */
-static void _write_fifo_8(struct musb_hw_ep *hw_ep, u16 len,
+static void __maybe_unused _write_fifo_8(struct musb_hw_ep *hw_ep, u16 len,
 				    const u8 *src)
 {
 	//struct musb *musb = hw_ep->musb;
 	void __iomem *fifo = hw_ep->fifo;
 
+#ifdef DEBUG
 	printk("%cX ep%d fifo %p count %d buf %p\n",
 			'T', hw_ep->epnum, fifo, len, src);
 
 	print_hex_dump(KERN_INFO, "TX: ", DUMP_PREFIX_OFFSET, 16, 1,
 			src, len, true);
-
+#endif
 	if (unlikely(len == 0))
 		return;
 
@@ -248,23 +136,25 @@ static void _write_fifo_8(struct musb_hw_ep *hw_ep, u16 len,
 /*
  * Unload an endpoint's FIFO
  */
-static void _read_fifo_8(struct musb_hw_ep *hw_ep, u16 len, u8 *dst)
+static void __maybe_unused _read_fifo_8(struct musb_hw_ep *hw_ep, u16 len, u8 *dst)
 {
 	//struct musb *musb = hw_ep->musb;
 	void __iomem *fifo = hw_ep->fifo;
 
+#ifdef DEBUG
 	printk("%cX ep%d fifo %p count %d buf %p\n",
 			'R', hw_ep->epnum, fifo, len, dst);
-
+#endif
 	if (unlikely(len == 0))
 		return;
 
 	/* byte aligned */
 	ioread8_rep(fifo, dst, len);
 
+#ifdef DEBUG
 	print_hex_dump(KERN_INFO, "RX: ", DUMP_PREFIX_OFFSET, 16, 1,
 			dst, len, true);
-
+#endif
 }
 
 
@@ -302,11 +192,8 @@ static const struct musb_platform_ops rcmodule_ops = {
 	.init		= rcmodule_musb_init,
 	.exit		= rcmodule_musb_exit,
 
-//	.try_idle	= rcmodule_musb_try_idle,
-
-
-	.read_fifo = _read_fifo_8,
-	.write_fifo = _write_fifo_8,
+//	.read_fifo = _read_fifo_8,
+//	.write_fifo = _write_fifo_8,
 
     .readw 		= _readw,
 	.writew 	= _writew,
@@ -320,7 +207,6 @@ static int rcmodule_probe(struct platform_device *pdev)
 {
 	struct resource			musb_resources[3];
 	struct musb_hdrc_platform_data	*pdata = dev_get_platdata(&pdev->dev);
-//	struct rcmodule_musb_board_data	*data;
 	struct platform_device		*musb;
 	struct rcmodule_glue		*glue;
 	struct device_node		*np = pdev->dev.of_node;
@@ -344,10 +230,7 @@ static int rcmodule_probe(struct platform_device *pdev)
 
 	glue->dev			= &pdev->dev;
 	glue->musb			= musb;
-	glue->status			= MUSB_UNKNOWN;
-	//glue->control_otghs = ERR_PTR(-ENODEV);
 
-//	printk("Set DMA offset to %lx ", - (pdev->dev.dma_pfn_offset << PAGE_SHIFT));
 	set_dma_offset(&musb->dev, - (musb->dev.dma_pfn_offset << PAGE_SHIFT));
 
 	if (np) {
@@ -358,17 +241,11 @@ static int rcmodule_probe(struct platform_device *pdev)
 		if (!pdata)
 			goto err2;
 
-//		data = devm_kzalloc(&pdev->dev, sizeof(*data), GFP_KERNEL);
-//		if (!data)
-//			goto err2;
-
 		config = devm_kzalloc(&pdev->dev, sizeof(*config), GFP_KERNEL);
 		if (!config)
 			goto err2;
 
 		of_property_read_u32(np, "mode", &val); pdata->mode = (u8) val;
-//		of_property_read_u32(np, "interface-type",
-//						(u32 *)&data->interface_type);
 		of_property_read_u32(np, "num-eps", &val); config->num_eps = (u8) val;
 		of_property_read_u32(np, "ram-bits", &val); config->ram_bits = (u8) val;
 		of_property_read_u32(np, "power", &val); pdata->power = (u8) val;
@@ -377,7 +254,7 @@ static int rcmodule_probe(struct platform_device *pdev)
 		if (!ret && val)
 			config->multipoint = true;
 
-		pdata->board_data	= 0; //data;
+		pdata->board_data	= 0; // not needed for a while
 		pdata->config		= config;
 
 		// process control register		
@@ -402,8 +279,8 @@ static int rcmodule_probe(struct platform_device *pdev)
 			}
 			if(!of_property_read_u32_array(np, "sctl-reg", &sctl_val[0], 3))
 			{
-				dev_info(&pdev->dev, "Setup SCTL register %d, offset %d, bit %d", sctl_val[0], sctl_val[1], sctl_val[2]);
 				u32 value = __raw_readl(sctl_reg + sctl_val[0]);
+				dev_dbg(&pdev->dev, "Setup SCTL register %d, offset %d, bit %d", sctl_val[0], sctl_val[1], sctl_val[2]);
 				value &= ~(1<<sctl_val[1]);
 				value |=  sctl_val[2] << sctl_val[1];
 				__raw_writel(value, sctl_reg + sctl_val[0]);
@@ -412,14 +289,11 @@ static int rcmodule_probe(struct platform_device *pdev)
 				dev_err(&pdev->dev, "Failed to read sctl-reg values\n");
 
 			devm_iounmap(&control_pdev->dev, sctl_reg);
-
-			//glue->control_otghs = &control_pdev->dev;
 		}
 	}
 	pdata->platform_ops		= &rcmodule_ops;
 
 	platform_set_drvdata(pdev, glue);
-
 
 	memset(musb_resources, 0x00, sizeof(*musb_resources) *
 			ARRAY_SIZE(musb_resources));
@@ -452,7 +326,7 @@ static int rcmodule_probe(struct platform_device *pdev)
 		goto err2;
 	}
 
-	pm_runtime_enable(glue->dev);
+	pm_runtime_enable(&pdev->dev);
 
 	ret = platform_device_add(musb);
 	if (ret) {
