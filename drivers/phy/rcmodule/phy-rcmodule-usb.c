@@ -47,7 +47,7 @@ static int phy_rcmodule_usb2_init(struct phy *phy)
 {
 	struct rcmodule_usbphy *k_phy = phy_get_drvdata(phy);
 
-	printk("phy_rcmodule_usb2_init");
+	dev_dbg(&phy->dev, "Initialize USB PHY");
 
     // USB reset sequence begin
 	rcmodule_usbphy_writel(k_phy->phy_ctrl, USB_PHY_RESET_OFFSET, USB_PHY_POR_RESET | USB_PHY_UTMI_RESET_PHY);
@@ -72,7 +72,7 @@ static int phy_rcmodule_usb2_exit(struct phy *phy)
 {
 	struct rcmodule_usbphy *k_phy = phy_get_drvdata(phy);
 
-	printk("phy_rcmodule_usb2_exit");
+	dev_dbg(&phy->dev, "Suspend USB PHY");
 	rcmodule_usbphy_writel(k_phy->phy_ctrl, USB_PHY_RESET_OFFSET, USB_PHY_POR_RESET|USB_PHY_UTMI_SESPENDM_EN);
 
 	return 0;
@@ -82,21 +82,17 @@ static int phy_rcmodule_usb2_exit(struct phy *phy)
 static const struct phy_ops phy_rcmodule_usb2_ops = {
 	.init		= phy_rcmodule_usb2_init,
 	.exit		= phy_rcmodule_usb2_exit,
-//	.power_on	= phy_rcmodule_usb2_power_on,
-//	.power_off	= phy_rcmodule_usb2_power_off,
 	.owner		= THIS_MODULE,
 };
 
 
 static int rcmodule_usb_set_host(struct usb_otg *otg, struct usb_bus *host)
 {
-	printk("rcmodule_usb_set_host");
+	// ToDO switching. Possible not needed...
 
 	otg->host = host;
 	if (!host)
 		otg->state = OTG_STATE_UNDEFINED;
-
-	//musb_mailbox(MUSB_ID_GROUND);
 
 	return 0;
 }
@@ -104,13 +100,11 @@ static int rcmodule_usb_set_host(struct usb_otg *otg, struct usb_bus *host)
 static int rcmodule_usb_set_peripheral(struct usb_otg *otg,
 		struct usb_gadget *gadget)
 {
-	printk("rcmodule_usb_set_peripheral");
+	// ToDO switching. Possible not needed...
 
 	otg->gadget = gadget;
 	if (!gadget)
 		otg->state = OTG_STATE_UNDEFINED;
-
-	//musb_mailbox(MUSB_ID_FLOAT);
 
 	return 0;
 }
