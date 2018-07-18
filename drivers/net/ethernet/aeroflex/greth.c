@@ -161,8 +161,6 @@ static inline void greth_enable_irqs(struct greth_private *greth)
 static inline void greth_disable_irqs(struct greth_private *greth)
 {
 	GRETH_REGANDIN(greth->regs->control, ~(GRETH_RXI|GRETH_TXI));
-//	printk("disable irqs");
-//	printk("$");
 }
 
 #ifndef CONFIG_PPC
@@ -645,9 +643,6 @@ static irqreturn_t greth_interrupt(int irq, void *dev_id)
 
 	greth = netdev_priv(dev);
 
-//	printk("greth_interrupt");
-//	printk("!");
-
 	spin_lock(&greth->devlock);
 
 	/* Get the interrupt events that caused us to be here. */
@@ -882,7 +877,6 @@ static int greth_rx(struct net_device *dev, int limit)
 				skb_put_data(skb, phys_to_virt(dma_to_phys(greth->dev, dma_addr)),
 					     pkt_len);
 #endif
-//				printk(KERN_CONT " copy");
 
 				skb->protocol = eth_type_trans(skb, dev);
 				dev->stats.rx_bytes += pkt_len;
@@ -907,7 +901,6 @@ static int greth_rx(struct net_device *dev, int limit)
 
 		greth->rx_cur = NEXT_RX(greth->rx_cur);
 	}
-//	printk("~");
 
 	return count;
 }
@@ -1054,8 +1047,6 @@ static int greth_poll(struct napi_struct *napi, int budget)
 	u32 mask, ctrl;
 	greth = container_of(napi, struct greth_private, napi);
 
-//	printk("greth_poll");
-
 restart_txrx_poll:
 #if ! (defined(CONFIG_PPC) && defined(CONFIG_CPU_BIG_ENDIAN))
 	if (greth->gbit_mac) {
@@ -1086,26 +1077,21 @@ restart_txrx_poll:
 					ctrl | GRETH_TXI | GRETH_RXI);
 			mask = GRETH_INT_RX | GRETH_INT_RE |
 			       GRETH_INT_TX | GRETH_INT_TE;
-//			printk(KERN_CONT "ena0 ");
 		} else 
 		{
 			GRETH_REGSAVE(greth->regs->control, ctrl | GRETH_RXI);
 			mask = GRETH_INT_RX | GRETH_INT_RE;
-//			printk(KERN_CONT "ena ");
 		}
 
 		if (GRETH_REGLOAD(greth->regs->status) & mask) {
 			GRETH_REGSAVE(greth->regs->control, ctrl);
 			spin_unlock_irqrestore(&greth->devlock, flags);
-///			printk(KERN_CONT "disa ");
 			goto restart_txrx_poll;
 		} else {
 			napi_complete_done(napi, work_done);
 			spin_unlock_irqrestore(&greth->devlock, flags);
 		}
 	}
-//	printk("greth_poll_exit");
-//	printk("^");
 
 	return work_done;
 }

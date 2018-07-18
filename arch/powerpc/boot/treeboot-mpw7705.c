@@ -62,24 +62,6 @@ static unsigned long long mpw7705_detect_memsize(void)
 
 static void mpw7705_fixups(void)
 {
-	/*
-	void *devp = finddevice("/");
-	u32 dma_ranges[7];
-
-	dt_fixup_memory(0x0ULL,  ibm_currituck_memsize);
-
-	while ((devp = find_node_by_devtype(devp, "pci"))) {
-		if (getprop(devp, "dma-ranges", dma_ranges, sizeof(dma_ranges)) < 0) {
-			printf("%s: Failed to get dma-ranges\r\n", __func__);
-			continue;
-		}
-
-		dma_ranges[5] = ibm_currituck_memsize >> 32;
-		dma_ranges[6] = ibm_currituck_memsize & 0xffffffffUL;
-
-		setprop(devp, "dma-ranges", dma_ranges, sizeof(dma_ranges));
-	}
-	*/
 }
 
 #define SPRN_PIR	0x11E	/* Processor Identification Register */

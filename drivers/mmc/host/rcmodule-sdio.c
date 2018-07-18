@@ -36,15 +36,16 @@
  *
  */
 
-#define DEBUG
+//#define DEBUG
 
 //#define DBG_IO
-#define DEBUG_ERRORBITS
+//#define DEBUG_ERRORBITS
 //#define DBG_RESPONSE
 //#define DBG_CALLS
-#define DBG_CMD
+//#define DBG_CMD
 //#define DBG_LINES
-#define DBG_BLOCKS
+//#define DBG_BLOCKS
+//#define DBG_INTR
 
 #include <linux/module.h>
 #include <linux/init.h>
@@ -58,13 +59,15 @@
 #include <linux/irq.h>
 #include <linux/gpio.h>
 #include <linux/mmc/host.h>
+#include <linux/clk.h>
 
 #include "rcmodule-sdio.h"
 
+
 #define DRIVER_NAME	"rmsdio"
 
-#define RMSDIO_CLKDIV_MAX  0xff
-#define RMSDIO_TIMEOUT (1 * HZ)
+#define RMSDIO_CLKDIV_MAX  0xFF
+#define RMSDIO_TIMEOUT (1 * HZ/10)
 
 #define MATCH_BITS(v,bits) ((v & bits)==bits)
 
@@ -178,7 +181,7 @@ static void dump_regs(void *dev)
 		printk(KERN_INFO t);	\
 	}
 
-#ifdef DEBUG
+#if defined(DEBUG) || defined(DBG_INTR)
 static void decode_intr(struct rmsdio_host *h, char* text, uint32_t i)
 {
 	printk(KERN_INFO "rmsdio: %s ", text); 
@@ -775,10 +778,9 @@ static inline int rmsdio_read_flow(struct mmc_host *mmc, struct mmc_request *mrq
 					    (wintr))),
 				RMSDIO_TIMEOUT
 			);
-#ifndef DBG_BLOCKS			
-		if (wret <= 0)  // !!!
+
+		if (wret <= 0)
 			goto bailout;
-#endif			
 		
 #ifdef DBG_BLOCKS		
 		printk(KERN_INFO "$$%d$$", blocks);
@@ -917,8 +919,8 @@ static void rmsdio_request(struct mmc_host * mmc, struct mmc_request * mrq)
 	if ( is_sdio_irq_enabled() )
 		eereg |= RMSDIO_ERR_ENABLE_CARD_INT; 
 
-	if ( data && 
-	     cmd->opcode != 51 && cmd->opcode != 13 && cmd->opcode != 6 ) {  // !!! Cannot use DMA for these commands
+	if ( data ) /*&& 
+	     cmd->opcode != 51 && cmd->opcode != 13 && cmd->opcode != 6 )*/ {  // !!! Cannot use DMA for these commands
 		int dir = (data->flags & MMC_DATA_WRITE) ? DMA_TO_DEVICE : DMA_FROM_DEVICE;
 		/* Prepare dma stuff */
 		host->sg_frags = dma_map_sg(mmc_dev(host->mmc), data->sg, data->sg_len, dir);
@@ -947,25 +949,6 @@ static void rmsdio_request(struct mmc_host * mmc, struct mmc_request * mrq)
 
 		dma_unmap_sg(mmc_dev(host->mmc), data->sg, host->sg_frags, dir);
 	} else {
-		if ( data && cmd->opcode == 51 ) {  // Send fake data
-			static const uint8_t buf[8] = { 0x00, 0x35, 0x80, 0x00, 0x00, 0x00, 0x00, 0x00 };
-			memcpy(sg_virt(data->sg), buf, sizeof(buf));
-		}
-		if ( data && cmd->opcode == 13 ) {  // Send fake data
-			static const uint8_t buf[64] = { 0x80, 0x00, 0x00, 0x00,   0x02, 0x00, 0x00, 0x00,   0x03, 0x03, 0x90, 0x00,   0x08, 0x05, 0x00, 0x00,  
-			                                 0x00, 0x00, 0x00, 0x00,   0x00, 0x00, 0x00, 0x00,   0x00, 0x00, 0x00, 0x00,   0x00, 0x00, 0x00, 0x00,    
-			                                 0x00, 0x00, 0x00, 0x00,   0x00, 0x00, 0x00, 0x00,   0x00, 0x00, 0x00, 0x00,   0x00, 0x00, 0x00, 0x00,    
-			                                 0x00, 0x00, 0x00, 0x00,   0x00, 0x00, 0x00, 0x00,   0x00, 0x00, 0x00, 0x00,   0x00, 0x00, 0x00, 0x00 };
-			memcpy(sg_virt(data->sg), buf, sizeof(buf));
-		}
-		if ( data && cmd->opcode == 6 ) {  // Send fake data
-			static const uint8_t buf[64] = { 0xFF, 0xFF, 0xFF, 0xFF,   0xFF, 0xFF, 0xFF, 0xFF,   0xFF, 0xFF, 0xFF, 0xFF,   0xFF, 0xFF, 0xFF, 0xFF,  
-			                                 0xFF, 0xFF, 0xFF, 0xFF,   0xFF, 0xFF, 0xFF, 0xFF,   0xFF, 0xFF, 0xFF, 0xFF,   0xFF, 0xFF, 0xFF, 0xFF,    
-			                                 0xFF, 0xFF, 0xFF, 0xFF,   0xFF, 0xFF, 0xFF, 0xFF,   0xFF, 0xFF, 0xFF, 0xFF,   0xFF, 0xFF, 0xFF, 0xFF,    
-			                                 0xFF, 0xFF, 0xFF, 0xFF,   0xFF, 0xFF, 0xFF, 0xFF,   0xFF, 0xFF, 0xFF, 0xFF,   0xFF, 0xFF, 0xFF, 0xFF };
-			memcpy(sg_virt(data->sg), buf, sizeof(buf));
-		}
-
 		/* We only reach this place when no xfer data issued */
 		rmsdio_write(RMSDIO_ERR_ENABLE, eereg);	
 		intr |= RMSDIO_IRQ_CMDDONE | RMSDIO_IRQ_CARDERROR;
@@ -1006,7 +989,9 @@ static irqreturn_t rmsdio_irq(int irq, void *dev)
 	MARK();
 	
 	host->irqstat |= (irqstat & (~RMSDIO_IRQ_SDIO));
+#ifdef DEBUG	
 	decode_intr(host, "IRQ! new irqstat: ", host->irqstat);
+#endif	
 	wv = rmsdio_read(RMSDIO_IRQ_MASKS);
 	/* We need to read this one at least once, even 
 	 * if we do not use it.  
@@ -1032,8 +1017,6 @@ static irqreturn_t rmsdio_irq(int irq, void *dev)
 	 * wake up the state machine 
 	 */
 	wake_up_interruptible(&host->queue);
-	
-	printk(KERN_INFO "<====SDIO IRQ HANDLED====>\n");
 	
 	return IRQ_HANDLED;
 }
@@ -1085,6 +1068,7 @@ static void rmsdio_set_ios(struct mmc_host *mmc, struct mmc_ios *ios)
 	MARK();
 
 	dev_dbg(host->dev, "rmsdio: setting i/o params: pmode=%d, clock=%d, bw=%d\n", ios->power_mode, ios->clock, ios->bus_width);
+//	printk("rmsdio: setting i/o params: pmode=%d, clock=%d, bw=%d\n", ios->power_mode, ios->clock, ios->bus_width);
 
 	rmsdio_write(RMSDIO_CTRL, RMSDIO_CTRL_CRSR_HR);
 	if (ios->power_mode == MMC_POWER_UP)
@@ -1095,7 +1079,7 @@ static void rmsdio_set_ios(struct mmc_host *mmc, struct mmc_ios *ios)
 		dev_dbg(host->dev, "clock somewhat disabled\n");
 	} else if (ios->clock != host->clock)
 	{
-		uint32_t m = DIV_ROUND_UP(host->base_clock, ios->clock) - 1;
+		uint32_t m = DIV_ROUND_UP(host->base_clock, ios->clock * 2) - 1;
 		if (m > RMSDIO_CLKDIV_MAX)
 			m = RMSDIO_CLKDIV_MAX;
 		//m = 0x18;
@@ -1126,8 +1110,10 @@ static void rmsdio_set_ios(struct mmc_host *mmc, struct mmc_ios *ios)
 	/* TODO: Force drive mode? Move to module params? */
 	host->ctrl_reg = ctrl_reg;
 	dev_dbg(host->dev, "ctrl is now 0x%04x \n", ctrl_reg);
-	if (ios->power_mode == MMC_POWER_OFF)
-		rmsdio_power_down(host);
+
+// HW unable to reenable SDIO after SPI - so - disable it for a while
+//	if (ios->power_mode == MMC_POWER_OFF)
+//		rmsdio_power_down(host);
 }
 
 static const struct mmc_host_ops rmsdio_ops = {
@@ -1148,20 +1134,23 @@ static int __init rmsdio_probe(struct platform_device *pdev)
 {
 	struct mmc_host *mmc = NULL;
 	struct rmsdio_host *host = NULL;
-	const struct rmsdio_platform_data *rmsd_data;
+	//const struct rmsdio_platform_data *rmsd_data;
 	struct resource *r;
 	int ret, irq;
+	struct clk *clk;
+	struct device_node		*np = pdev->dev.of_node;
+
 	
 	printk(KERN_INFO "rmsdio: RC Module SD/SDIO/MMC driver (c) 2012\n");
 		
 	r = platform_get_resource(pdev, IORESOURCE_MEM, 0);
 	irq = platform_get_irq(pdev, 0);
-	rmsd_data = pdev->dev.platform_data;
+	//rmsd_data = pdev->dev.platform_data;
 	
-	if ( ! rmsd_data )  // !!!
-		rmsd_data = pdev->dev.platform_data = & s_rmsd_data;
+	//if ( ! rmsd_data )  // !!!
+	//	rmsd_data = pdev->dev.platform_data = & s_rmsd_data;
 	
-	if (!r || irq < 0 || !rmsd_data)
+	if (!r || irq < 0 /*|| !rmsd_data*/)
 		return -ENXIO;
 
 	STEP(1);
@@ -1184,7 +1173,6 @@ static int __init rmsdio_probe(struct platform_device *pdev)
 	host->mmc = mmc;
 	host->dev = &pdev->dev;
 	host->res = r;
-	host->base_clock = rmsd_data->clock / 2;
 	mmc->ops = &rmsdio_ops;
 	/* TODO: More caps & ocr_avail */
 
@@ -1198,8 +1186,33 @@ static int __init rmsdio_probe(struct platform_device *pdev)
 	mmc->max_seg_size = mmc->max_blk_size * mmc->max_blk_count;
 	mmc->max_req_size = mmc->max_blk_size * mmc->max_blk_count;
 
-	mmc->f_min = DIV_ROUND_UP(host->base_clock, RMSDIO_CLKDIV_MAX);
-	mmc->f_max = host->base_clock;
+
+	clk = devm_clk_get(&pdev->dev, "mmc");
+	if (IS_ERR(clk)) 
+		return -ENODEV;
+
+	clk_enable(clk);
+
+	host->base_clock = clk_get_rate(clk);
+
+	if (!host->base_clock)
+		return -EINVAL;
+
+
+	mmc->f_min = DIV_ROUND_UP(host->base_clock, 2*(RMSDIO_CLKDIV_MAX+1));
+	if (np) {
+		int val;
+		if(of_property_read_u32(np, "max-frequency", &val) == 0)
+		{
+			printk(KERN_INFO "rmsdio: limit max speed to %d Hz", val);		
+			mmc->f_max = val;
+		}
+	}
+	else
+	{
+		mmc->f_max = host->base_clock;
+	}
+
 	pr_debug("rmsdio: maximum clock is %d Hz minimum is %d Hz\n", mmc->f_max, mmc->f_min);
 	host->sdio_irq_enabled = 0;
 	spin_lock_init(&host->lock);	
@@ -1214,6 +1227,8 @@ static int __init rmsdio_probe(struct platform_device *pdev)
 
 	STEP(4);
 
+	init_waitqueue_head(&host->queue);
+
 	rmsdio_power_down(host);
 	ret = request_irq(irq, rmsdio_irq, 0, DRIVER_NAME, host);
 	if (ret) {
@@ -1227,40 +1242,42 @@ static int __init rmsdio_probe(struct platform_device *pdev)
 
 	host->irq = irq;
 	pr_debug("rmsdio: Using irq %d\n", irq);
-	if (rmsd_data->gpio_card_detect) {
-		ret = gpio_request(rmsd_data->gpio_card_detect, "carddetect-gpio"/*DRIVER_NAME " cd"*/);
-		// !!! ret = gpio_request_by_name(dev, "carddetect-gpio", 0, & rmsd_data->gpio_card_detect, GPIOD_IS_IN);
-		pr_debug("rmsdio: gpio_card_detect: gpio_request: ret=%d\n", ret);
-		if (ret == 0) {
-			gpio_direction_input(rmsd_data->gpio_card_detect);
-			irq = gpio_to_irq(rmsd_data->gpio_card_detect);
-			ret = request_irq(irq, rmsdio_card_detect_irq,
-					  IRQ_TYPE_EDGE_RISING | IRQ_TYPE_EDGE_FALLING,
-					  DRIVER_NAME " cd", host);
-			pr_debug("rmsdio: gpio_card_detect: request_irq: ret=%d\n", ret);
-			if (ret == 0)
-				host->gpio_card_detect =
-					rmsd_data->gpio_card_detect;
-			else
-				gpio_free(rmsd_data->gpio_card_detect);
-		}
-	}
+
+//	if (rmsd_data->gpio_card_detect) {
+//		ret = gpio_request(rmsd_data->gpio_card_detect, "carddetect-gpio"/*DRIVER_NAME " cd"*/);
+//		// !!! ret = gpio_request_by_name(dev, "carddetect-gpio", 0, & rmsd_data->gpio_card_detect, GPIOD_IS_IN);
+//		pr_debug("rmsdio: gpio_card_detect: gpio_request: ret=%d\n", ret);
+//		if (ret == 0) {
+//			gpio_direction_input(rmsd_data->gpio_card_detect);
+//			irq = gpio_to_irq(rmsd_data->gpio_card_detect);
+//			ret = request_irq(irq, rmsdio_card_detect_irq,
+//					  IRQ_TYPE_EDGE_RISING | IRQ_TYPE_EDGE_FALLING,
+//					  DRIVER_NAME " cd", host);
+//			pr_debug("rmsdio: gpio_card_detect: request_irq: ret=%d\n", ret);
+//			if (ret == 0)
+//				host->gpio_card_detect =
+//					rmsd_data->gpio_card_detect;
+//			else
+//				gpio_free(rmsd_data->gpio_card_detect);
+//		}
+//	}
 	/*
 	   if (!host->gpio_card_detect) 
 	   mmc->caps |= MMC_CAP_NEEDS_POLL;
 	*/
 
-	STEP(6);
+//	STEP(6);
 
-	if (rmsd_data->gpio_write_protect) {
-		ret = gpio_request(rmsd_data->gpio_write_protect,
-				   DRIVER_NAME " wp");
-		if (ret == 0) {
-			gpio_direction_input(rmsd_data->gpio_write_protect);
-			host->gpio_write_protect =
-				rmsd_data->gpio_write_protect;
-		}
-	}
+//	if (rmsd_data->gpio_write_protect) {
+//		ret = gpio_request(rmsd_data->gpio_write_protect,
+//				   DRIVER_NAME " wp");
+//		if (ret == 0) {
+//			gpio_direction_input(rmsd_data->gpio_write_protect);
+//			host->gpio_write_protect =
+//				rmsd_data->gpio_write_protect;
+//		}
+//	}
+
 	rmsdio_clean_isr(host, 0); /* Clean up anything */
 	platform_set_drvdata(pdev, mmc);
 	ret = mmc_add_host(mmc);
@@ -1281,7 +1298,6 @@ static int __init rmsdio_probe(struct platform_device *pdev)
 		printk(KERN_INFO "lacking card detect (fall back to polling)\n");
 	
 	host->dev->coherent_dma_mask=DMA_BIT_MASK(25);
-	init_waitqueue_head(&host->queue);
 	printk(KERN_INFO "rmsdio becomes ready\n");
 	return 0;
 	

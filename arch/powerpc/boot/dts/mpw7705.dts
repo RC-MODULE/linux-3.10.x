@@ -393,17 +393,20 @@
 				compatible = "rc-module,mpw7705", "rc-module,mmc-0.2";
 				reg = <0x3C06A000 0x1000>;
 				interrupt-parent = <&MPIC>;
-				interrupts = <67 IRQ_TYPE_EDGE_FALLING>;
+				interrupts = <67 IRQ_TYPE_LEVEL_HIGH>;
 				pinctrl-names = "default";
 				pinctrl-0 = <&sdio_mux>;
-				status = "disabled";
+				clocks = <&lsif1clock>;
+				max-frequency = <4000000>; 
+				clock-names = "mmc";
+				status = "ok";
 			};
 
 
 			spi1: spi1@0x3C05A000 {
 				compatible = "arm,pl022", "arm,primecell";
 				reg = <0x3C05A000 0x1000>;
-				interrupts = <73 IRQ_TYPE_EDGE_FALLING>;
+				interrupts = <73 IRQ_TYPE_LEVEL_HIGH>;
 				#address-cells = <1>;
 				#size-cells = <0>;
 				interrupt-parent = <&MPIC>;
@@ -428,7 +431,7 @@
 					pl022,rx-level-trig = <0>;		/* SSP_RX_1_OR_MORE_ELEM */
 					pl022,tx-level-trig = <0>; 		/* SSP_TX_1_OR_MORE_EMPTY_LOC */
 
-					status = "ok";
+					status = "disabled";
 				};				
 			};
 
@@ -457,7 +460,7 @@
 				multipoint = <1>;
 				num-eps = <16>;
 				ram-bits = <12>;
-				mode = <1>;
+				mode = <2>;
 				power = <500>;
 				status = "ok";
 			};			
@@ -510,7 +513,7 @@
 			cpufreq: cpufreq@0x38006000 {
 				compatible = "rc-module,cpu-freq";
 				reg = <0x38006000 0x1000>;
-				status = "disabled";
+				status = "ok";
 			};
 		};
 

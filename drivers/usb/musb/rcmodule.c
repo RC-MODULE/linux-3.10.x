@@ -198,7 +198,8 @@ static const struct musb_platform_ops rcmodule_ops = {
     .readw 		= _readw,
 	.writew 	= _writew,
 	.readl		= _readl, 
-	.writel 	= _writel
+	.writel 	= _writel,
+	.fifo_mode  = 4
 };
 
 static u64 rcmodule_dmamask = DMA_BIT_MASK(25); // use only first Gb
