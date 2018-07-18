@@ -397,7 +397,7 @@
 				pinctrl-names = "default";
 				pinctrl-0 = <&sdio_mux>;
 				clocks = <&lsif1clock>;
-				max-frequency = <4000000>; 
+				max-frequency = <1000000>; 
 				clock-names = "mmc";
 				status = "ok";
 			};
