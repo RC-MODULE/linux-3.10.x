@@ -363,7 +363,7 @@ static bool isprintable(const char c)
 	return ((c >= 'A' && c <= 'Z') || (c >= 'a' && c <= 'z') || (c >= '!' && c <= '?') || c == ' ') ? true : false;
 }
 
-static void print_buf(const u8 * buf, uint size)
+static void __maybe_unused print_buf(const u8 * buf, uint size)
 {
 	char tmp[20], out[20 + 2 * 512], * ptr = out;
 	uint len = (size < 512 ? size : 512), sub_len, i;
@@ -1021,7 +1021,7 @@ static irqreturn_t rmsdio_irq(int irq, void *dev)
 	return IRQ_HANDLED;
 }
 
-static irqreturn_t rmsdio_card_detect_irq(int irq, void *dev)
+static irqreturn_t __maybe_unused rmsdio_card_detect_irq(int irq, void *dev)
 {
 	struct rmsdio_host *host = dev;
 
@@ -1123,12 +1123,6 @@ static const struct mmc_host_ops rmsdio_ops = {
 	.enable_sdio_irq	= rmsdio_enable_sdio_irq,
 };
 
-static struct rmsdio_platform_data s_rmsd_data =
-{
-	.gpio_card_detect = 0x3C03C000,
-	.gpio_write_protect = 0,
-	.clock = 2000000
-};
 
 static int __init rmsdio_probe(struct platform_device *pdev)
 {
@@ -1242,6 +1236,8 @@ static int __init rmsdio_probe(struct platform_device *pdev)
 
 	host->irq = irq;
 	pr_debug("rmsdio: Using irq %d\n", irq);
+
+/* There are not connection to card detect and RW on board for a while - comment it */
 
 //	if (rmsd_data->gpio_card_detect) {
 //		ret = gpio_request(rmsd_data->gpio_card_detect, "carddetect-gpio"/*DRIVER_NAME " cd"*/);
