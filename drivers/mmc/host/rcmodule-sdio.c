@@ -1124,7 +1124,7 @@ static const struct mmc_host_ops rmsdio_ops = {
 };
 
 
-static int __init rmsdio_probe(struct platform_device *pdev)
+static int rmsdio_probe(struct platform_device *pdev)
 {
 	struct mmc_host *mmc = NULL;
 	struct rmsdio_host *host = NULL;

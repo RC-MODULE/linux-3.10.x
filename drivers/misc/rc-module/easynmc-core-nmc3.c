@@ -87,7 +87,7 @@ void nmc3_clear_interrupt(struct nmc_core *self, enum nmc_irq n)
 }
 
 
-static int __init easynmc_probe (struct platform_device *pdev)
+static int easynmc_probe (struct platform_device *pdev)
 {
 	int ret=-EIO;
 	struct resource *res; 
