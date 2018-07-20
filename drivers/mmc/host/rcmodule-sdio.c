@@ -199,165 +199,6 @@ static void decode_intr(struct rmsdio_host *h, char* text, uint32_t i)
 #define decode_intr(h,t,i) 
 #endif
 
-
-
-
-//+
-
-extern int _read_tlb_entry(uint32_t ea, uint32_t * tlb, uint32_t dummy);
-
-typedef enum 
-{
-	TLBSID_4K   = 0x00,
-	TLBSID_16K  = 0x01,
-	TLBSID_64K  = 0x03,
-	TLBSID_1M   = 0x07,
-	TLBSID_16M  = 0x0F,
-	TLBSID_256M = 0x1F,
-	TLBSID_1G   = 0x3F,
-	TLBSID_ERR  = 0xFF
-} TLB_SIZE_ID;
-
-////////////////////////////////////////////////////////////////
-
-typedef struct 
-{
-	TLB_SIZE_ID sid;
-	const char * name;
-} tlb_sid_name;
-
-static const tlb_sid_name tlb_sid_names[] = 
-{
-	{ TLBSID_4K,   "4k"   },
-	{ TLBSID_16K,  "16k"  },
-	{ TLBSID_64K,  "64k"  },
-	{ TLBSID_1M,   "1m"   },
-	{ TLBSID_16M,  "16m"  },
-	{ TLBSID_256M, "256m" },
-	{ TLBSID_1G,   "1g"   },
-	{ TLBSID_ERR,  ""     }
-};	
-
-static const char * get_tlb_sid_name(TLB_SIZE_ID tlb_sid)
-{
-	uint i;
-	for ( i = 0; tlb_sid_names[i].sid != TLBSID_ERR; ++ i ) 
-		if ( tlb_sid_names[i].sid == tlb_sid )
-			break;
-	return tlb_sid_names[i].name;
-}
-
-////////////////////////////////////////////////////////////////
-
-/* Current:
-  epn  v ts  sz   _  rpn  _ erpn  __  ili ild u wimg  e  _ uxwr sxwr
- 00000 1  0   1m  f 00000 2  010 2000  1   1  0   4  BE  0   0    7
- 10000 1  0 256m  b 10000 0  010 0000  1   1  0   5  LE  0   0    3
- 20000 1  0 256m  b 20000 0  010 0000  1   1  0   5  LE  0   0    3
- 30000 1  0 256m  f 30000 2  010 0000  1   1  0   5  LE  0   0    3
- 40000 1  0 256m  3 00000 3  000 0000  1   1  0   4  BE  0   7    7
- fff00 1  0   1m  f fff00 3  3ff 2000  1   1  0   5  BE  0   0    5
-*/
-
-static void print_tlb_hdr(void)
-{
-	printk(KERN_INFO "  epn  v ts  sz   _" "  rpn  _ erpn" "  __  ili ild u wimg  e  _ uxwr sxwr");
-}
-
-typedef struct 
-{
-  uint32_t epn   : 20;  // [0:19]
-  uint32_t v     : 1;   // [20]
-  uint32_t ts    : 1;   // [21]
-  uint32_t dsiz  : 6;   // [22:27]  set 0x0, 0x1, 0x3, 0x7, 0xF, 0x1F, 0x3F (4K, 16K, 64K, 1M, 16M, 256M, 1GB) 
-  uint32_t blank : 4;   // [28:31]
-} tlb_entr_0;
-
-typedef union
-{
-	tlb_entr_0 entr;
-	uint32_t   data;
-} tlb_entr_data_0;
-
-typedef struct 
-{
-  uint32_t rpn   : 20;  // [0:19]
-  uint32_t blank : 2;   // [20:21]
-  uint32_t erpn  : 10;  // [22:31]
-} tlb_entr_1;
-
-typedef union
-{
-	tlb_entr_1 entr;
-	uint32_t   data;
-} tlb_entr_data_1;
-
-typedef struct 
-{
-  uint32_t blank1 : 14;  // [0:13]
-  uint32_t il1i   : 1;   // [14]
-  uint32_t il1d   : 1;   // [15]
-  uint32_t u      : 4;   // [16:19]
-  uint32_t wimg   : 4;   // [20:23]
-  uint32_t e      : 1;   // [24]  0-BE, 1-LE
-  uint32_t blank2 : 1;   // [25]
-  uint32_t uxwr   : 3;   // [26:28]
-  uint32_t sxwr   : 3;   // [29:31]
-} tlb_entr_2;
-
-typedef union
-{
-	tlb_entr_2 entr;
-	uint32_t   data;
-} tlb_entr_data_2;
-
-static void print_tlb_entr(tlb_entr_0 * tlb0, tlb_entr_1 * tlb1, tlb_entr_2 * tlb2)
-{
-	printk(KERN_INFO " %05x %d  %d %4s  %01x" " %05x %01x  %03x" " %04x  %d   %d  %01x   %01x  %s  %d   %01x    %01x", 
-	                  tlb0->epn, tlb0->v, tlb0->ts, get_tlb_sid_name((TLB_SIZE_ID) tlb0->dsiz), tlb0->blank, 
-										tlb1->rpn, tlb1->blank, tlb1->erpn, 
-										tlb2->blank1, tlb2->il1i, tlb2->il1d, tlb2->u, tlb2->wimg, (tlb2->e ? "LE" : "BE"), tlb2->blank2, tlb2->uxwr, tlb2->sxwr);
-}
-
-typedef struct 
-{
-	uint32_t tlb_0;
-	uint32_t tlb_1;
-	uint32_t tlb_2;
-} tlb_entr;
-
-static tlb_entr s_tlb_arr[1024];
-static int s_tlb_cnt = -1;
-
-#define countof(arr)  (sizeof(arr) / sizeof((arr)[0]))
-
-int mem_map_tlbs(bool print_all) 
-{
-	uint32_t ea;
-	const uint32_t dlt = 0x1 << 12;
-	
-	print_tlb_hdr();
-	printk(KERN_INFO "\n");
-	
-	s_tlb_cnt = -1;
-	for ( ea = 0x00000000; ea + dlt > ea; ea += dlt ) {
-		uint32_t tlb[3] = { 0, 0, 0 };	
-		uint32_t res = _read_tlb_entry(ea, tlb, 0);
-		if ( res != 0 && (s_tlb_cnt == -1 || s_tlb_arr[s_tlb_cnt].tlb_0 != tlb[0]) ) {
-			if ( ++ s_tlb_cnt == countof(s_tlb_arr) )
-				return -1;
-			s_tlb_arr[s_tlb_cnt].tlb_0 = tlb[0];
-			s_tlb_arr[s_tlb_cnt].tlb_1 = tlb[1];
-			s_tlb_arr[s_tlb_cnt].tlb_2 = tlb[2];
-			if ( print_all || ((tlb_entr_1 *) & tlb[1])->erpn != 0 ) 
-				print_tlb_entr((tlb_entr_0 *) & tlb[0], (tlb_entr_1 *) & tlb[1], (tlb_entr_2 *) & tlb[2]);
-		}			
-	}
-	return 0;
-}
-
-////////////////////////////////////////////////////////////////
-
 static bool isprintable(const char c)
 {
 	return ((c >= 'A' && c <= 'Z') || (c >= 'a' && c <= 'z') || (c >= '!' && c <= '?') || c == ' ') ? true : false;
@@ -391,12 +232,6 @@ static void __maybe_unused print_buf(const u8 * buf, uint size)
 	
 	printk(KERN_INFO "%s", out);
 }
-
-//-
-
-
-
-
 
 /*
   static u32 rmsdio_finish_data(struct rmsdio_host *host, struct mmc_data *data,
@@ -919,8 +754,7 @@ static void rmsdio_request(struct mmc_host * mmc, struct mmc_request * mrq)
 	if ( is_sdio_irq_enabled() )
 		eereg |= RMSDIO_ERR_ENABLE_CARD_INT; 
 
-	if ( data ) /*&& 
-	     cmd->opcode != 51 && cmd->opcode != 13 && cmd->opcode != 6 )*/ {  // !!! Cannot use DMA for these commands
+	if ( data ) {  
 		int dir = (data->flags & MMC_DATA_WRITE) ? DMA_TO_DEVICE : DMA_FROM_DEVICE;
 		/* Prepare dma stuff */
 		host->sg_frags = dma_map_sg(mmc_dev(host->mmc), data->sg, data->sg_len, dir);
@@ -1068,7 +902,6 @@ static void rmsdio_set_ios(struct mmc_host *mmc, struct mmc_ios *ios)
 	MARK();
 
 	dev_dbg(host->dev, "rmsdio: setting i/o params: pmode=%d, clock=%d, bw=%d\n", ios->power_mode, ios->clock, ios->bus_width);
-//	printk("rmsdio: setting i/o params: pmode=%d, clock=%d, bw=%d\n", ios->power_mode, ios->clock, ios->bus_width);
 
 	rmsdio_write(RMSDIO_CTRL, RMSDIO_CTRL_CRSR_HR);
 	if (ios->power_mode == MMC_POWER_UP)
@@ -1128,23 +961,18 @@ static int rmsdio_probe(struct platform_device *pdev)
 {
 	struct mmc_host *mmc = NULL;
 	struct rmsdio_host *host = NULL;
-	//const struct rmsdio_platform_data *rmsd_data;
 	struct resource *r;
 	int ret, irq;
 	struct clk *clk;
 	struct device_node		*np = pdev->dev.of_node;
 
 	
-	printk(KERN_INFO "rmsdio: RC Module SD/SDIO/MMC driver (c) 2012\n");
+	printk(KERN_INFO "rmsdio: RC Module SD/SDIO/MMC driver (c) 2018\n");
 		
 	r = platform_get_resource(pdev, IORESOURCE_MEM, 0);
 	irq = platform_get_irq(pdev, 0);
-	//rmsd_data = pdev->dev.platform_data;
 	
-	//if ( ! rmsd_data )  // !!!
-	//	rmsd_data = pdev->dev.platform_data = & s_rmsd_data;
-	
-	if (!r || irq < 0 /*|| !rmsd_data*/)
+	if (!r || irq < 0 )
 		return -ENXIO;
 
 	STEP(1);
