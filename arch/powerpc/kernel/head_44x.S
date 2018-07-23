@@ -1280,4 +1280,3 @@ abatron_pteptrs:
 temp_boot_stack:
 	.space	1024
 #endif /* CONFIG_SMP */
-

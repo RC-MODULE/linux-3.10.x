@@ -46,7 +46,6 @@ config MMC_PXA
 
 config MMC_RCMODULE
 	tristate "MMC/SD/SDIO host support for RC Module's SoCs"
-#	depends on MACH_REALVIEW_EB
 	help
 	  This selects the SDHCI support for RC Module System-on-Chip devices.
 
