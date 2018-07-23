@@ -260,6 +260,7 @@ static int __init ppc47x_get_board_rev(void)
 	pr_info("%s: Found board revision %d\n", __func__, board_rev);
 	iounmap(fpga);
 	return 0;
+
 fail:
 	pr_info("%s: Unable to find board revision\n", __func__);
 	return 0;
