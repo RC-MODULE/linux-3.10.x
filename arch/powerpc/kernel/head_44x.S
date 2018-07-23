@@ -1172,7 +1172,7 @@ clear_utlb_entry:
 #ifndef CONFIG_MPW7705	
 	ori	r3,r3,PPC47x_TLB0_VALID | PPC47x_TLB0_TS | PPC47x_TLB0_1M
 #else
-	ori	r3,r3,PPC47x_TLB0_VALID | PPC47x_TLB0_1M
+	ori	r3,r3,PPC47x_TLB0_VALID |                  PPC47x_TLB0_1M
 #endif
 
 	/* Word 1 */
@@ -1180,11 +1180,7 @@ clear_utlb_entry:
 	ori	r4,r4,CONFIG_PPC_EARLY_DEBUG_44x_PHYSHIGH
 
 	/* Word 2 */
-#ifndef CONFIG_MPW7705	
 	li	r5,(PPC47x_TLB2_S_RW | PPC47x_TLB2_IMG)
-#else
-	li	r5,(PPC47x_TLB2_S_RW | PPC47x_TLB2_IMG | PPC47x_TLB2_E)
-#endif
 
 	/* Bolted in way 0, bolt slot 5, we -hope- we don't hit the same
 	 * congruence class as the kernel, we need to make sure of it at
@@ -1285,21 +1281,3 @@ temp_boot_stack:
 	.space	1024
 #endif /* CONFIG_SMP */
 
-.global _read_tlb_entry
-_read_tlb_entry:
-	tlbsx. r5, r0, r3  // [r3] - EA, [r5] - Way, Index
-	bne    rte_nf      // branch if not found
-	
-	tlbre r3, r5, 0
-	stw   r3, 0(r4)
-	tlbre r3, r5, 1
-	stw   r3, 4(r4)
-	tlbre r3, r5, 2
-	stw   r3, 8(r4)
-
-	add r3, r0, r5
-	blr
-	
-rte_nf:
-	addi r3, r0, 0
-	blr
