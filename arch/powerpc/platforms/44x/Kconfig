@@ -211,6 +211,7 @@ config MPW7705
 	select PPC4xx_PCI_EXPRESS
 	select NOT_COHERENT_CACHE
 	select DEFAULT_UIMAGE
+	select PPC_UDBG_PL011
 	help
 	  This option enables support for the RC-Module MPW7705 (470s) evaluation board
 

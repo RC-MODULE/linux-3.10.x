@@ -52,7 +52,11 @@ void __init udbg_early_init(void)
 	udbg_init_btext();
 #elif defined(CONFIG_PPC_EARLY_DEBUG_44x)
 	/* PPC44x debug */
+#ifndef CONFIG_PPC_UDBG_PL011
 	udbg_init_44x_as1();
+#else
+	udbg_init_44x_pl011();
+#endif
 #elif defined(CONFIG_PPC_EARLY_DEBUG_40x)
 	/* PPC40x debug */
 	udbg_init_40x_realmode();

@@ -279,6 +279,10 @@ config PPC_UDBG_16550
 	bool
 	default n
 
+config PPC_UDBG_PL011
+	bool
+	default n
+
 config GENERIC_TBSYNC
 	bool
 	default y if PPC32 && SMP

@@ -1169,7 +1169,7 @@ clear_utlb_entry:
 
 	/* Word 0 */
 	lis	r3,PPC44x_EARLY_DEBUG_VIRTADDR@h
-#ifndef CONFIG_MPW7705	
+#ifndef CONFIG_PPC_UDBG_PL011	
 	ori	r3,r3,PPC47x_TLB0_VALID | PPC47x_TLB0_TS | PPC47x_TLB0_1M
 #else
 	ori	r3,r3,PPC47x_TLB0_VALID |                  PPC47x_TLB0_1M

@@ -259,83 +259,6 @@ void __init udbg_init_pas_realmode(void)
 
 #include <platforms/44x/44x.h>
 
-
-#define     PL011_UARTFR          0x018
-#define     PL011_UARTRIS         0x03C
-#define     PL011_UARTDR          0x000
-#define 	PL011_RXFE_i     	  4
-#define 	PL011_TXFE_i     	  7
-#define 	PL011_TXRIS_i    	  5
-#define 	PL011_RXFF_i     	  6
-#define 	PL011_TXFF_i     	  5
-#define 	PL011_RXRIS_i    	  4
-
-
-static volatile uint32_t _ioread32(uint32_t const base_addr)
-{
-    return le32_to_cpu(*((volatile uint32_t*)(base_addr)));
-}
-
-static  void _iowrite32(uint32_t const value, uint32_t const base_addr)
-{
-    *((volatile uint32_t*)(base_addr)) = cpu_to_le32(value);
-}
-
-static int tx_fifo_ready(uint32_t base_addr)
-{
-  if (_ioread32(base_addr + PL011_UARTFR) & (1 << PL011_TXFE_i))
-  return 0;
-
-  if (_ioread32(base_addr + PL011_UARTRIS) & (1 << PL011_TXRIS_i))
-  return 0;
-
-  do{
-    if (!(_ioread32(base_addr + PL011_UARTFR) & (1 << PL011_TXFF_i)))
-    return 0; //FIFO is not full, i.e. at least 1 byte can be pushed
-  }
-  while(1);
-
-  return -1;
-}
-
-static void uart_write_char(unsigned char c)
-{
-  tx_fifo_ready(PPC44x_EARLY_DEBUG_VIRTADDR);
-  _iowrite32((char)c, PPC44x_EARLY_DEBUG_VIRTADDR + PL011_UARTDR);
-}
-
-void rumboot_putstring(const char *str)
-{
-  while (*str)
-  	uart_write_char(*str++);
-}
-
-#ifdef CONFIG_MPW7705
-
-static u8 udbg_uart_in_44x_as1(unsigned int reg)
-{
-	if(reg == UART_LSR)
-	{
-		u8 result = 0;
-		u32 status = _ioread32(PPC44x_EARLY_DEBUG_VIRTADDR + PL011_UARTFR);
-		result |= (status & (1 << PL011_TXFE_i))?LSR_THRE:0;
-		result |= (status & (1 << PL011_RXFE_i))?0:LSR_DR;
-		return result;
-	}
-	else if(reg == UART_RBR)
-	{
- 		uint32_t uartdr = _ioread32(PPC44x_EARLY_DEBUG_VIRTADDR + PL011_UARTDR);
-  		return  uartdr & 0xff;
-	}
-	return 0;
-}
-
-static void udbg_uart_out_44x_as1(unsigned int reg, u8 val)
-{
-	uart_write_char(val);
-}
-#else
-
 static u8 udbg_uart_in_44x_as1(unsigned int reg)
 {
 	return as1_readb((void __iomem *)PPC44x_EARLY_DEBUG_VIRTADDR + reg);
@@ -345,8 +268,6 @@ static void udbg_uart_out_44x_as1(unsigned int reg, u8 val)
 {
 	as1_writeb(val, (void __iomem *)PPC44x_EARLY_DEBUG_VIRTADDR + reg);
 }
-
-#endif
 
 void __init udbg_init_44x_as1(void)
 {
