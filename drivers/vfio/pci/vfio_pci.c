@@ -28,6 +28,7 @@
 #include <linux/uaccess.h>
 #include <linux/vfio.h>
 #include <linux/vgaarb.h>
+#include <linux/nospec.h>
 
 #include "vfio_pci_private.h"
 
@@ -302,6 +303,7 @@ static void vfio_pci_disable(struct vfio_pci_device *vdev)
 {
 	struct pci_dev *pdev = vdev->pdev;
 	struct vfio_pci_dummy_resource *dummy_res, *tmp;
+	struct vfio_pci_ioeventfd *ioeventfd, *ioeventfd_tmp;
 	int i, bar;
 
 	/* Stop the device from further DMA */
@@ -310,6 +312,15 @@ static void vfio_pci_disable(struct vfio_pci_device *vdev)
 	vfio_pci_set_irqs_ioctl(vdev, VFIO_IRQ_SET_DATA_NONE |
 				VFIO_IRQ_SET_ACTION_TRIGGER,
 				vdev->irq_type, 0, 0, NULL);
+
+	/* Device closed, don't need mutex here */
+	list_for_each_entry_safe(ioeventfd, ioeventfd_tmp,
+				 &vdev->ioeventfds_list, next) {
+		vfio_virqfd_disable(&ioeventfd->virqfd);
+		list_del(&ioeventfd->next);
+		kfree(ioeventfd);
+	}
+	vdev->ioeventfds_nr = 0;
 
 	vdev->virq_disabled = false;
 
@@ -717,6 +728,9 @@ static long vfio_pci_ioctl(void *device_data,
 			if (info.index >=
 			    VFIO_PCI_NUM_REGIONS + vdev->num_regions)
 				return -EINVAL;
+			info.index = array_index_nospec(info.index,
+							VFIO_PCI_NUM_REGIONS +
+							vdev->num_regions);
 
 			i = info.index - VFIO_PCI_NUM_REGIONS;
 
@@ -1009,6 +1023,28 @@ hot_reset_release:
 
 		kfree(groups);
 		return ret;
+	} else if (cmd == VFIO_DEVICE_IOEVENTFD) {
+		struct vfio_device_ioeventfd ioeventfd;
+		int count;
+
+		minsz = offsetofend(struct vfio_device_ioeventfd, fd);
+
+		if (copy_from_user(&ioeventfd, (void __user *)arg, minsz))
+			return -EFAULT;
+
+		if (ioeventfd.argsz < minsz)
+			return -EINVAL;
+
+		if (ioeventfd.flags & ~VFIO_DEVICE_IOEVENTFD_SIZE_MASK)
+			return -EINVAL;
+
+		count = ioeventfd.flags & VFIO_DEVICE_IOEVENTFD_SIZE_MASK;
+
+		if (hweight8(count) != 1 || ioeventfd.fd < -1)
+			return -EINVAL;
+
+		return vfio_pci_ioeventfd(vdev, ioeventfd.offset,
+					  ioeventfd.data, count, ioeventfd.fd);
 	}
 
 	return -ENOTTY;
@@ -1171,6 +1207,8 @@ static int vfio_pci_probe(struct pci_dev *pdev, const struct pci_device_id *id)
 	vdev->irq_type = VFIO_PCI_NUM_IRQS;
 	mutex_init(&vdev->igate);
 	spin_lock_init(&vdev->irqlock);
+	mutex_init(&vdev->ioeventfds_lock);
+	INIT_LIST_HEAD(&vdev->ioeventfds_list);
 
 	ret = vfio_add_group_dev(&pdev->dev, &vfio_pci_ops, vdev);
 	if (ret) {
@@ -1212,6 +1250,7 @@ static void vfio_pci_remove(struct pci_dev *pdev)
 
 	vfio_iommu_group_put(pdev->dev.iommu_group, &pdev->dev);
 	kfree(vdev->region);
+	mutex_destroy(&vdev->ioeventfds_lock);
 	kfree(vdev);
 
 	if (vfio_pci_is_vga(pdev)) {

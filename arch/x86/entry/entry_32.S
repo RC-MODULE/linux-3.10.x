@@ -239,7 +239,7 @@ ENTRY(__switch_to_asm)
 	movl	%esp, TASK_threadsp(%eax)
 	movl	TASK_threadsp(%edx), %esp
 
-#ifdef CONFIG_CC_STACKPROTECTOR
+#ifdef CONFIG_STACKPROTECTOR
 	movl	TASK_stack_canary(%edx), %ebx
 	movl	%ebx, PER_CPU_VAR(stack_canary)+stack_canary_offset
 #endif
@@ -477,7 +477,7 @@ ENTRY(entry_SYSENTER_32)
 	 * whereas POPF does not.)
 	 */
 	addl	$PT_EFLAGS-PT_DS, %esp	/* point esp at pt_regs->flags */
-	btr	$X86_EFLAGS_IF_BIT, (%esp)
+	btrl	$X86_EFLAGS_IF_BIT, (%esp)
 	popfl
 
 	/*
@@ -901,6 +901,9 @@ BUILD_INTERRUPT3(hyperv_callback_vector, HYPERVISOR_CALLBACK_VECTOR,
 
 BUILD_INTERRUPT3(hyperv_reenlightenment_vector, HYPERV_REENLIGHTENMENT_VECTOR,
 		 hyperv_reenlightenment_intr)
+
+BUILD_INTERRUPT3(hv_stimer0_callback_vector, HYPERV_STIMER0_VECTOR,
+		 hv_stimer0_vector_handler)
 
 #endif /* CONFIG_HYPERV */
 

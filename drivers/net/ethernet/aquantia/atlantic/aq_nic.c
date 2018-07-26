@@ -95,6 +95,7 @@ void aq_nic_cfg_start(struct aq_nic_s *self)
 	/*rss rings */
 	cfg->vecs = min(cfg->aq_hw_caps->vecs, AQ_CFG_VECS_DEF);
 	cfg->vecs = min(cfg->vecs, num_online_cpus());
+	cfg->vecs = min(cfg->vecs, self->irqvecs);
 	/* cfg->vecs should be power of 2 for RSS */
 	if (cfg->vecs >= 8U)
 		cfg->vecs = 8U;
@@ -246,6 +247,8 @@ void aq_nic_ndev_init(struct aq_nic_s *self)
 
 	self->ndev->hw_features |= aq_hw_caps->hw_features;
 	self->ndev->features = aq_hw_caps->hw_features;
+	self->ndev->vlan_features |= NETIF_F_HW_CSUM | NETIF_F_RXCSUM |
+				     NETIF_F_RXHASH | NETIF_F_SG | NETIF_F_LRO;
 	self->ndev->priv_flags = aq_hw_caps->hw_priv_flags;
 	self->ndev->priv_flags |= IFF_LIVE_ADDR_CHANGE;
 
@@ -560,34 +563,41 @@ err_exit:
 
 int aq_nic_set_multicast_list(struct aq_nic_s *self, struct net_device *ndev)
 {
+	unsigned int packet_filter = self->packet_filter;
 	struct netdev_hw_addr *ha = NULL;
 	unsigned int i = 0U;
 
-	self->mc_list.count = 0U;
-
-	netdev_for_each_mc_addr(ha, ndev) {
-		ether_addr_copy(self->mc_list.ar[i++], ha->addr);
-		++self->mc_list.count;
-
-		if (i >= AQ_CFG_MULTICAST_ADDRESS_MAX)
-			break;
-	}
-
-	if (i >= AQ_CFG_MULTICAST_ADDRESS_MAX) {
-		/* Number of filters is too big: atlantic does not support this.
-		 * Force all multi filter to support this.
-		 * With this we disable all UC filters and setup "all pass"
-		 * multicast mask
-		 */
-		self->packet_filter |= IFF_ALLMULTI;
-		self->aq_nic_cfg.mc_list_count = 0;
-		return self->aq_hw_ops->hw_packet_filter_set(self->aq_hw,
-							     self->packet_filter);
+	self->mc_list.count = 0;
+	if (netdev_uc_count(ndev) > AQ_HW_MULTICAST_ADDRESS_MAX) {
+		packet_filter |= IFF_PROMISC;
 	} else {
-		return self->aq_hw_ops->hw_multicast_list_set(self->aq_hw,
-						    self->mc_list.ar,
-						    self->mc_list.count);
+		netdev_for_each_uc_addr(ha, ndev) {
+			ether_addr_copy(self->mc_list.ar[i++], ha->addr);
+
+			if (i >= AQ_HW_MULTICAST_ADDRESS_MAX)
+				break;
+		}
 	}
+
+	if (i + netdev_mc_count(ndev) > AQ_HW_MULTICAST_ADDRESS_MAX) {
+		packet_filter |= IFF_ALLMULTI;
+	} else {
+		netdev_for_each_mc_addr(ha, ndev) {
+			ether_addr_copy(self->mc_list.ar[i++], ha->addr);
+
+			if (i >= AQ_HW_MULTICAST_ADDRESS_MAX)
+				break;
+		}
+	}
+
+	if (i > 0 && i < AQ_HW_MULTICAST_ADDRESS_MAX) {
+		packet_filter |= IFF_MULTICAST;
+		self->mc_list.count = i;
+		self->aq_hw_ops->hw_multicast_list_set(self->aq_hw,
+						       self->mc_list.ar,
+						       self->mc_list.count);
+	}
+	return aq_nic_set_packet_filter(self, packet_filter);
 }
 
 int aq_nic_set_mtu(struct aq_nic_s *self, int new_mtu)
@@ -951,9 +961,11 @@ void aq_nic_shutdown(struct aq_nic_s *self)
 
 	netif_device_detach(self->ndev);
 
-	err = aq_nic_stop(self);
-	if (err < 0)
-		goto err_exit;
+	if (netif_running(self->ndev)) {
+		err = aq_nic_stop(self);
+		if (err < 0)
+			goto err_exit;
+	}
 	aq_nic_deinit(self);
 
 err_exit:

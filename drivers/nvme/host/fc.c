@@ -142,6 +142,7 @@ struct nvme_fc_ctrl {
 	struct nvme_fc_rport	*rport;
 	u32			cnum;
 
+	bool			ioq_live;
 	bool			assoc_active;
 	u64			association_id;
 
@@ -588,6 +589,8 @@ nvme_fc_attach_to_suspended_rport(struct nvme_fc_lport *lport,
 			return ERR_PTR(-ESTALE);
 		}
 
+		rport->remoteport.port_role = pinfo->port_role;
+		rport->remoteport.port_id = pinfo->port_id;
 		rport->remoteport.port_state = FC_OBJSTATE_ONLINE;
 		rport->dev_loss_end = 0;
 
@@ -768,8 +771,7 @@ nvme_fc_ctrl_connectivity_loss(struct nvme_fc_ctrl *ctrl)
 		 */
 		if (nvme_reset_ctrl(&ctrl->ctrl)) {
 			dev_warn(ctrl->ctrl.device,
-				"NVME-FC{%d}: Couldn't schedule reset. "
-				"Deleting controller.\n",
+				"NVME-FC{%d}: Couldn't schedule reset.\n",
 				ctrl->cnum);
 			nvme_delete_ctrl(&ctrl->ctrl);
 		}
@@ -836,8 +838,7 @@ nvme_fc_unregister_remoteport(struct nvme_fc_remote_port *portptr)
 		/* if dev_loss_tmo==0, dev loss is immediate */
 		if (!portptr->dev_loss_tmo) {
 			dev_warn(ctrl->ctrl.device,
-				"NVME-FC{%d}: controller connectivity lost. "
-				"Deleting controller.\n",
+				"NVME-FC{%d}: controller connectivity lost.\n",
 				ctrl->cnum);
 			nvme_delete_ctrl(&ctrl->ctrl);
 		} else
@@ -1470,21 +1471,6 @@ nvme_fc_xmt_disconnect_assoc(struct nvme_fc_ctrl *ctrl)
 
 static void nvme_fc_error_recovery(struct nvme_fc_ctrl *ctrl, char *errmsg);
 
-static int
-nvme_fc_reinit_request(void *data, struct request *rq)
-{
-	struct nvme_fc_fcp_op *op = blk_mq_rq_to_pdu(rq);
-	struct nvme_fc_cmd_iu *cmdiu = &op->cmd_iu;
-
-	memset(cmdiu, 0, sizeof(*cmdiu));
-	cmdiu->scsi_id = NVME_CMD_SCSI_ID;
-	cmdiu->fc_id = NVME_CMD_FC_ID;
-	cmdiu->iu_len = cpu_to_be16(sizeof(*cmdiu) / sizeof(u32));
-	memset(&op->rsp_iu, 0, sizeof(op->rsp_iu));
-
-	return 0;
-}
-
 static void
 __nvme_fc_exit_request(struct nvme_fc_ctrl *ctrl,
 		struct nvme_fc_fcp_op *op)
@@ -1685,16 +1671,6 @@ done:
 		nvme_fc_ctrl_put(ctrl);
 		goto check_error;
 	}
-
-	/*
-	 * Force failures of commands if we're killing the controller
-	 * or have an error on a command used to create an new association
-	 */
-	if (status &&
-	    (blk_queue_dying(rq->q) ||
-	     ctrl->ctrl.state == NVME_CTRL_NEW ||
-	     ctrl->ctrl.state == NVME_CTRL_CONNECTING))
-		status |= cpu_to_le16(NVME_SC_DNR << 1);
 
 	__nvme_fc_fcpop_chk_teardowns(ctrl, op, opstate);
 	nvme_end_request(rq, status, result);
@@ -1903,6 +1879,7 @@ nvme_fc_free_queue(struct nvme_fc_queue *queue)
 	 */
 
 	queue->connection_id = 0;
+	atomic_set(&queue->csn, 1);
 }
 
 static void
@@ -2076,20 +2053,10 @@ nvme_fc_timeout(struct request *rq, bool reserved)
 {
 	struct nvme_fc_fcp_op *op = blk_mq_rq_to_pdu(rq);
 	struct nvme_fc_ctrl *ctrl = op->ctrl;
-	int ret;
-
-	if (ctrl->rport->remoteport.port_state != FC_OBJSTATE_ONLINE ||
-			atomic_read(&op->state) == FCPOP_STATE_ABORTED)
-		return BLK_EH_RESET_TIMER;
-
-	ret = __nvme_fc_abort_op(ctrl, op);
-	if (ret)
-		/* io wasn't active to abort */
-		return BLK_EH_NOT_HANDLED;
 
 	/*
 	 * we can't individually ABTS an io without affecting the queue,
-	 * thus killing the queue, adn thus the association.
+	 * thus killing the queue, and thus the association.
 	 * So resolve by performing a controller reset, which will stop
 	 * the host/io stack, terminate the association on the link,
 	 * and recreate an association on the link.
@@ -2191,7 +2158,7 @@ nvme_fc_start_fcp_op(struct nvme_fc_ctrl *ctrl, struct nvme_fc_queue *queue,
 	struct nvme_fc_cmd_iu *cmdiu = &op->cmd_iu;
 	struct nvme_command *sqe = &cmdiu->sqe;
 	u32 csn;
-	int ret;
+	int ret, opstate;
 
 	/*
 	 * before attempting to send the io, check to see if we believe
@@ -2269,6 +2236,9 @@ nvme_fc_start_fcp_op(struct nvme_fc_ctrl *ctrl, struct nvme_fc_queue *queue,
 					queue->lldd_handle, &op->fcp_req);
 
 	if (ret) {
+		opstate = atomic_xchg(&op->state, FCPOP_STATE_COMPLETE);
+		__nvme_fc_fcpop_chk_teardowns(ctrl, op, opstate);
+
 		if (!(op->flags & FCOP_FLAGS_AEN))
 			nvme_fc_unmap_data(ctrl, op->rq, op);
 
@@ -2284,14 +2254,6 @@ nvme_fc_start_fcp_op(struct nvme_fc_ctrl *ctrl, struct nvme_fc_queue *queue,
 	return BLK_STS_OK;
 }
 
-static inline blk_status_t nvme_fc_is_ready(struct nvme_fc_queue *queue,
-		struct request *rq)
-{
-	if (unlikely(!test_bit(NVME_FC_Q_LIVE, &queue->flags)))
-		return nvmf_check_init_req(&queue->ctrl->ctrl, rq);
-	return BLK_STS_OK;
-}
-
 static blk_status_t
 nvme_fc_queue_rq(struct blk_mq_hw_ctx *hctx,
 			const struct blk_mq_queue_data *bd)
@@ -2304,12 +2266,13 @@ nvme_fc_queue_rq(struct blk_mq_hw_ctx *hctx,
 	struct nvme_fc_cmd_iu *cmdiu = &op->cmd_iu;
 	struct nvme_command *sqe = &cmdiu->sqe;
 	enum nvmefc_fcp_datadir	io_dir;
+	bool queue_ready = test_bit(NVME_FC_Q_LIVE, &queue->flags);
 	u32 data_len;
 	blk_status_t ret;
 
-	ret = nvme_fc_is_ready(queue, rq);
-	if (unlikely(ret))
-		return ret;
+	if (ctrl->rport->remoteport.port_state != FC_OBJSTATE_ONLINE ||
+	    !nvmf_check_ready(&queue->ctrl->ctrl, rq, queue_ready))
+		return nvmf_fail_nonready_command(rq);
 
 	ret = nvme_setup_cmd(ns, rq, sqe);
 	if (ret)
@@ -2416,9 +2379,6 @@ nvme_fc_terminate_exchange(struct request *req, void *data, bool reserved)
 	struct nvme_fc_ctrl *ctrl = to_fc_ctrl(nctrl);
 	struct nvme_fc_fcp_op *op = blk_mq_rq_to_pdu(req);
 
-	if (!blk_mq_request_started(req))
-		return;
-
 	__nvme_fc_abort_op(ctrl, op);
 }
 
@@ -2489,6 +2449,8 @@ nvme_fc_create_io_queues(struct nvme_fc_ctrl *ctrl)
 	if (ret)
 		goto out_delete_hw_queues;
 
+	ctrl->ioq_live = true;
+
 	return 0;
 
 out_delete_hw_queues:
@@ -2506,7 +2468,7 @@ out_free_tag_set:
 }
 
 static int
-nvme_fc_reinit_io_queues(struct nvme_fc_ctrl *ctrl)
+nvme_fc_recreate_io_queues(struct nvme_fc_ctrl *ctrl)
 {
 	struct nvmf_ctrl_options *opts = ctrl->ctrl.opts;
 	unsigned int nr_io_queues;
@@ -2525,12 +2487,6 @@ nvme_fc_reinit_io_queues(struct nvme_fc_ctrl *ctrl)
 	/* check for io queues existing */
 	if (ctrl->ctrl.queue_count == 1)
 		return 0;
-
-	nvme_fc_init_io_queues(ctrl);
-
-	ret = nvme_reinit_tagset(&ctrl->ctrl, ctrl->ctrl.tagset);
-	if (ret)
-		goto out_free_io_queues;
 
 	ret = nvme_fc_create_hw_io_queues(ctrl, ctrl->ctrl.sqsize + 1);
 	if (ret)
@@ -2629,8 +2585,6 @@ nvme_fc_create_association(struct nvme_fc_ctrl *ctrl)
 	 * Create the admin queue
 	 */
 
-	nvme_fc_init_queue(ctrl, 0);
-
 	ret = __nvme_fc_create_hw_queue(ctrl, &ctrl->queues[0], 0,
 				NVME_AQ_DEPTH);
 	if (ret)
@@ -2641,8 +2595,7 @@ nvme_fc_create_association(struct nvme_fc_ctrl *ctrl)
 	if (ret)
 		goto out_delete_hw_queue;
 
-	if (ctrl->ctrl.state != NVME_CTRL_NEW)
-		blk_mq_unquiesce_queue(ctrl->ctrl.admin_q);
+	blk_mq_unquiesce_queue(ctrl->ctrl.admin_q);
 
 	ret = nvmf_connect_admin_queue(&ctrl->ctrl);
 	if (ret)
@@ -2715,10 +2668,10 @@ nvme_fc_create_association(struct nvme_fc_ctrl *ctrl)
 	 */
 
 	if (ctrl->ctrl.queue_count > 1) {
-		if (ctrl->ctrl.state == NVME_CTRL_NEW)
+		if (!ctrl->ioq_live)
 			ret = nvme_fc_create_io_queues(ctrl);
 		else
-			ret = nvme_fc_reinit_io_queues(ctrl);
+			ret = nvme_fc_recreate_io_queues(ctrl);
 		if (ret)
 			goto out_term_aen_ops;
 	}
@@ -2802,8 +2755,7 @@ nvme_fc_delete_association(struct nvme_fc_ctrl *ctrl)
 	 * use blk_mq_tagset_busy_itr() and the transport routine to
 	 * terminate the exchanges.
 	 */
-	if (ctrl->ctrl.state != NVME_CTRL_NEW)
-		blk_mq_quiesce_queue(ctrl->ctrl.admin_q);
+	blk_mq_quiesce_queue(ctrl->ctrl.admin_q);
 	blk_mq_tagset_busy_iter(&ctrl->admin_tag_set,
 				nvme_fc_terminate_exchange, &ctrl->ctrl);
 
@@ -2838,6 +2790,9 @@ nvme_fc_delete_association(struct nvme_fc_ctrl *ctrl)
 	/* re-enable the admin_q so anything new can fast fail */
 	blk_mq_unquiesce_queue(ctrl->ctrl.admin_q);
 
+	/* resume the io queues so that things will fast fail */
+	nvme_start_queues(&ctrl->ctrl);
+
 	nvme_fc_ctlr_inactive_on_rport(ctrl);
 }
 
@@ -2852,9 +2807,6 @@ nvme_fc_delete_ctrl(struct nvme_ctrl *nctrl)
 	 * waiting for io to terminate
 	 */
 	nvme_fc_delete_association(ctrl);
-
-	/* resume the io queues so that things will fast fail */
-	nvme_start_queues(nctrl);
 }
 
 static void
@@ -2889,14 +2841,13 @@ nvme_fc_reconnect_or_delete(struct nvme_fc_ctrl *ctrl, int status)
 		if (portptr->port_state == FC_OBJSTATE_ONLINE)
 			dev_warn(ctrl->ctrl.device,
 				"NVME-FC{%d}: Max reconnect attempts (%d) "
-				"reached. Removing controller\n",
+				"reached.\n",
 				ctrl->cnum, ctrl->ctrl.nr_reconnects);
 		else
 			dev_warn(ctrl->ctrl.device,
 				"NVME-FC{%d}: dev_loss_tmo (%d) expired "
-				"while waiting for remoteport connectivity. "
-				"Removing controller\n", ctrl->cnum,
-				portptr->dev_loss_tmo);
+				"while waiting for remoteport connectivity.\n",
+				ctrl->cnum, portptr->dev_loss_tmo);
 		WARN_ON(nvme_delete_ctrl(&ctrl->ctrl));
 	}
 }
@@ -2944,7 +2895,6 @@ static const struct nvme_ctrl_ops nvme_fc_ctrl_ops = {
 	.submit_async_event	= nvme_fc_submit_async_event,
 	.delete_ctrl		= nvme_fc_delete_ctrl,
 	.get_address		= nvmf_get_address,
-	.reinit_request		= nvme_fc_reinit_request,
 };
 
 static void
@@ -2961,7 +2911,7 @@ nvme_fc_connect_ctrl_work(struct work_struct *work)
 		nvme_fc_reconnect_or_delete(ctrl, ret);
 	else
 		dev_info(ctrl->ctrl.device,
-			"NVME-FC{%d}: controller reconnect complete\n",
+			"NVME-FC{%d}: controller connect complete\n",
 			ctrl->cnum);
 }
 
@@ -3009,7 +2959,7 @@ nvme_fc_init_ctrl(struct device *dev, struct nvmf_ctrl_options *opts,
 {
 	struct nvme_fc_ctrl *ctrl;
 	unsigned long flags;
-	int ret, idx, retry;
+	int ret, idx;
 
 	if (!(rport->remoteport.port_role &
 	    (FC_PORT_ROLE_NVME_DISCOVERY | FC_PORT_ROLE_NVME_TARGET))) {
@@ -3036,11 +2986,13 @@ nvme_fc_init_ctrl(struct device *dev, struct nvmf_ctrl_options *opts,
 	}
 
 	ctrl->ctrl.opts = opts;
+	ctrl->ctrl.nr_reconnects = 0;
 	INIT_LIST_HEAD(&ctrl->ctrl_list);
 	ctrl->lport = lport;
 	ctrl->rport = rport;
 	ctrl->dev = lport->dev;
 	ctrl->cnum = idx;
+	ctrl->ioq_live = false;
 	ctrl->assoc_active = false;
 	init_waitqueue_head(&ctrl->ioabort_wait);
 
@@ -3059,12 +3011,15 @@ nvme_fc_init_ctrl(struct device *dev, struct nvmf_ctrl_options *opts,
 
 	ctrl->ctrl.sqsize = opts->queue_size - 1;
 	ctrl->ctrl.kato = opts->kato;
+	ctrl->ctrl.cntlid = 0xffff;
 
 	ret = -ENOMEM;
 	ctrl->queues = kcalloc(ctrl->ctrl.queue_count,
 				sizeof(struct nvme_fc_queue), GFP_KERNEL);
 	if (!ctrl->queues)
 		goto out_free_ida;
+
+	nvme_fc_init_queue(ctrl, 0);
 
 	memset(&ctrl->admin_tag_set, 0, sizeof(ctrl->admin_tag_set));
 	ctrl->admin_tag_set.ops = &nvme_fc_admin_mq_ops;
@@ -3108,64 +3063,54 @@ nvme_fc_init_ctrl(struct device *dev, struct nvmf_ctrl_options *opts,
 	list_add_tail(&ctrl->ctrl_list, &rport->ctrl_list);
 	spin_unlock_irqrestore(&rport->lock, flags);
 
-	/*
-	 * It's possible that transactions used to create the association
-	 * may fail. Examples: CreateAssociation LS or CreateIOConnection
-	 * LS gets dropped/corrupted/fails; or a frame gets dropped or a
-	 * command times out for one of the actions to init the controller
-	 * (Connect, Get/Set_Property, Set_Features, etc). Many of these
-	 * transport errors (frame drop, LS failure) inherently must kill
-	 * the association. The transport is coded so that any command used
-	 * to create the association (prior to a LIVE state transition
-	 * while NEW or CONNECTING) will fail if it completes in error or
-	 * times out.
-	 *
-	 * As such: as the connect request was mostly likely due to a
-	 * udev event that discovered the remote port, meaning there is
-	 * not an admin or script there to restart if the connect
-	 * request fails, retry the initial connection creation up to
-	 * three times before giving up and declaring failure.
-	 */
-	for (retry = 0; retry < 3; retry++) {
-		ret = nvme_fc_create_association(ctrl);
-		if (!ret)
-			break;
-	}
-
-	if (ret) {
-		/* couldn't schedule retry - fail out */
+	if (!nvme_change_ctrl_state(&ctrl->ctrl, NVME_CTRL_RESETTING) ||
+	    !nvme_change_ctrl_state(&ctrl->ctrl, NVME_CTRL_CONNECTING)) {
 		dev_err(ctrl->ctrl.device,
-			"NVME-FC{%d}: Connect retry failed\n", ctrl->cnum);
-
-		ctrl->ctrl.opts = NULL;
-
-		/* initiate nvme ctrl ref counting teardown */
-		nvme_uninit_ctrl(&ctrl->ctrl);
-
-		/* Remove core ctrl ref. */
-		nvme_put_ctrl(&ctrl->ctrl);
-
-		/* as we're past the point where we transition to the ref
-		 * counting teardown path, if we return a bad pointer here,
-		 * the calling routine, thinking it's prior to the
-		 * transition, will do an rport put. Since the teardown
-		 * path also does a rport put, we do an extra get here to
-		 * so proper order/teardown happens.
-		 */
-		nvme_fc_rport_get(rport);
-
-		if (ret > 0)
-			ret = -EIO;
-		return ERR_PTR(ret);
+			"NVME-FC{%d}: failed to init ctrl state\n", ctrl->cnum);
+		goto fail_ctrl;
 	}
 
 	nvme_get_ctrl(&ctrl->ctrl);
+
+	if (!queue_delayed_work(nvme_wq, &ctrl->connect_work, 0)) {
+		nvme_put_ctrl(&ctrl->ctrl);
+		dev_err(ctrl->ctrl.device,
+			"NVME-FC{%d}: failed to schedule initial connect\n",
+			ctrl->cnum);
+		goto fail_ctrl;
+	}
+
+	flush_delayed_work(&ctrl->connect_work);
 
 	dev_info(ctrl->ctrl.device,
 		"NVME-FC{%d}: new ctrl: NQN \"%s\"\n",
 		ctrl->cnum, ctrl->ctrl.opts->subsysnqn);
 
 	return &ctrl->ctrl;
+
+fail_ctrl:
+	nvme_change_ctrl_state(&ctrl->ctrl, NVME_CTRL_DELETING);
+	cancel_work_sync(&ctrl->ctrl.reset_work);
+	cancel_delayed_work_sync(&ctrl->connect_work);
+
+	ctrl->ctrl.opts = NULL;
+
+	/* initiate nvme ctrl ref counting teardown */
+	nvme_uninit_ctrl(&ctrl->ctrl);
+
+	/* Remove core ctrl ref. */
+	nvme_put_ctrl(&ctrl->ctrl);
+
+	/* as we're past the point where we transition to the ref
+	 * counting teardown path, if we return a bad pointer here,
+	 * the calling routine, thinking it's prior to the
+	 * transition, will do an rport put. Since the teardown
+	 * path also does a rport put, we do an extra get here to
+	 * so proper order/teardown happens.
+	 */
+	nvme_fc_rport_get(rport);
+
+	return ERR_PTR(-EIO);
 
 out_cleanup_admin_q:
 	blk_cleanup_queue(ctrl->ctrl.admin_q);
@@ -3294,6 +3239,8 @@ nvme_fc_create_ctrl(struct device *dev, struct nvmf_ctrl_options *opts)
 	}
 	spin_unlock_irqrestore(&nvme_fc_lock, flags);
 
+	pr_warn("%s: %s - %s combination not found\n",
+		__func__, opts->traddr, opts->host_traddr);
 	return ERR_PTR(-ENOENT);
 }
 

@@ -311,7 +311,7 @@ validate_group(struct perf_event *event)
 	if (!validate_event(event->pmu, &fake_pmu, leader))
 		return -EINVAL;
 
-	list_for_each_entry(sibling, &leader->sibling_list, group_entry) {
+	for_each_sibling_event(sibling, leader) {
 		if (!validate_event(event->pmu, &fake_pmu, sibling))
 			return -EINVAL;
 	}
@@ -339,7 +339,7 @@ static irqreturn_t armpmu_dispatch_irq(int irq, void *dev)
 		return IRQ_NONE;
 
 	start_clock = sched_clock();
-	ret = armpmu->handle_irq(irq, armpmu);
+	ret = armpmu->handle_irq(armpmu);
 	finish_clock = sched_clock();
 
 	perf_sample_event_took(finish_clock - start_clock);

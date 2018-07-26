@@ -361,6 +361,8 @@ struct ct_arg {
 	dma_addr_t	rsp_dma;
 	u32		req_size;
 	u32		rsp_size;
+	u32		req_allocated_size;
+	u32		rsp_allocated_size;
 	void		*req;
 	void		*rsp;
 	port_id_t	id;
@@ -2279,8 +2281,6 @@ enum discovery_state {
 	DSC_LOGIN_PEND,
 	DSC_LOGIN_FAILED,
 	DSC_GPDB,
-	DSC_GFPN_ID,
-	DSC_GPSC,
 	DSC_UPD_FCPORT,
 	DSC_LOGIN_COMPLETE,
 	DSC_ADISC,
@@ -2346,6 +2346,7 @@ typedef struct fc_port {
 	unsigned int login_succ:1;
 	unsigned int query:1;
 	unsigned int id_changed:1;
+	unsigned int rscn_rcvd:1;
 
 	struct work_struct nvme_del_work;
 	struct completion nvme_del_done;
@@ -2356,6 +2357,8 @@ typedef struct fc_port {
 #define NVME_PRLI_SP_DISCOVERY  BIT_3
 	uint8_t nvme_flag;
 #define NVME_FLAG_REGISTERED 4
+#define NVME_FLAG_DELETING 2
+#define NVME_FLAG_RESETTING 1
 
 	struct fc_port *conflict;
 	unsigned char logout_completed;
@@ -2981,8 +2984,14 @@ enum scan_flags_t {
 	SF_QUEUED = BIT_1,
 };
 
+enum fc4type_t {
+	FS_FC4TYPE_FCP	= BIT_0,
+	FS_FC4TYPE_NVME	= BIT_1,
+};
+
 struct fab_scan_rp {
 	port_id_t id;
+	enum fc4type_t fc4type;
 	u8 port_name[8];
 	u8 node_name[8];
 };
@@ -3218,6 +3227,7 @@ enum qla_work_type {
 	QLA_EVT_GNNID,
 	QLA_EVT_GFPNID,
 	QLA_EVT_SP_RETRY,
+	QLA_EVT_IIDMA,
 };
 
 
@@ -3274,6 +3284,7 @@ struct qla_work_evt {
 		} nack;
 		struct {
 			u8 fc4_type;
+			srb_t *sp;
 		} gpnft;
 	 } u;
 };
@@ -3463,7 +3474,6 @@ struct qla_qpair {
 	struct work_struct q_work;
 	struct list_head qp_list_elem; /* vha->qp_list */
 	struct list_head hints_list;
-	struct list_head nvme_done_list;
 	uint16_t cpuid;
 	struct qla_tgt_counters tgt_counters;
 };
@@ -4281,8 +4291,6 @@ typedef struct scsi_qla_host {
 	struct		nvme_fc_local_port *nvme_local_port;
 	struct completion nvme_del_done;
 	struct list_head nvme_rport_list;
-	atomic_t 	nvme_active_aen_cnt;
-	uint16_t	nvme_last_rptd_aen;
 
 	uint16_t	fcoe_vlan_id;
 	uint16_t	fcoe_fcf_idx;

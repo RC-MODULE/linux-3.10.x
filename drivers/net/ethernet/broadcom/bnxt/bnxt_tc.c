@@ -27,6 +27,15 @@
 #define BNXT_FID_INVALID			0xffff
 #define VLAN_TCI(vid, prio)	((vid) | ((prio) << VLAN_PRIO_SHIFT))
 
+#define is_vlan_pcp_wildcarded(vlan_tci_mask)	\
+	((ntohs(vlan_tci_mask) & VLAN_PRIO_MASK) == 0x0000)
+#define is_vlan_pcp_exactmatch(vlan_tci_mask)	\
+	((ntohs(vlan_tci_mask) & VLAN_PRIO_MASK) == VLAN_PRIO_MASK)
+#define is_vlan_pcp_zero(vlan_tci)	\
+	((ntohs(vlan_tci) & VLAN_PRIO_MASK) == 0x0000)
+#define is_vid_exactmatch(vlan_tci_mask)	\
+	((ntohs(vlan_tci_mask) & VLAN_VID_MASK) == VLAN_VID_MASK)
+
 /* Return the dst fid of the func for flow forwarding
  * For PFs: src_fid is the fid of the PF
  * For VF-reps: src_fid the fid of the VF
@@ -375,6 +384,45 @@ static bool is_wildcard(void *mask, int len)
 			return false;
 	}
 	return true;
+}
+
+static bool is_exactmatch(void *mask, int len)
+{
+	const u8 *p = mask;
+	int i;
+
+	for (i = 0; i < len; i++)
+		if (p[i] != 0xff)
+			return false;
+
+	return true;
+}
+
+static bool is_vlan_tci_allowed(__be16  vlan_tci_mask,
+				__be16  vlan_tci)
+{
+	/* VLAN priority must be either exactly zero or fully wildcarded and
+	 * VLAN id must be exact match.
+	 */
+	if (is_vid_exactmatch(vlan_tci_mask) &&
+	    ((is_vlan_pcp_exactmatch(vlan_tci_mask) &&
+	      is_vlan_pcp_zero(vlan_tci)) ||
+	     is_vlan_pcp_wildcarded(vlan_tci_mask)))
+		return true;
+
+	return false;
+}
+
+static bool bits_set(void *key, int len)
+{
+	const u8 *p = key;
+	int i;
+
+	for (i = 0; i < len; i++)
+		if (p[i] != 0)
+			return true;
+
+	return false;
 }
 
 static int bnxt_hwrm_cfa_flow_alloc(struct bnxt *bp, struct bnxt_tc_flow *flow,
@@ -764,6 +812,41 @@ static bool bnxt_tc_can_offload(struct bnxt *bp, struct bnxt_tc_flow *flow)
 		return false;
 	}
 
+	/* Currently source/dest MAC cannot be partial wildcard  */
+	if (bits_set(&flow->l2_key.smac, sizeof(flow->l2_key.smac)) &&
+	    !is_exactmatch(flow->l2_mask.smac, sizeof(flow->l2_mask.smac))) {
+		netdev_info(bp->dev, "Wildcard match unsupported for Source MAC\n");
+		return false;
+	}
+	if (bits_set(&flow->l2_key.dmac, sizeof(flow->l2_key.dmac)) &&
+	    !is_exactmatch(&flow->l2_mask.dmac, sizeof(flow->l2_mask.dmac))) {
+		netdev_info(bp->dev, "Wildcard match unsupported for Dest MAC\n");
+		return false;
+	}
+
+	/* Currently VLAN fields cannot be partial wildcard */
+	if (bits_set(&flow->l2_key.inner_vlan_tci,
+		     sizeof(flow->l2_key.inner_vlan_tci)) &&
+	    !is_vlan_tci_allowed(flow->l2_mask.inner_vlan_tci,
+				 flow->l2_key.inner_vlan_tci)) {
+		netdev_info(bp->dev, "Unsupported VLAN TCI\n");
+		return false;
+	}
+	if (bits_set(&flow->l2_key.inner_vlan_tpid,
+		     sizeof(flow->l2_key.inner_vlan_tpid)) &&
+	    !is_exactmatch(&flow->l2_mask.inner_vlan_tpid,
+			   sizeof(flow->l2_mask.inner_vlan_tpid))) {
+		netdev_info(bp->dev, "Wildcard match unsupported for VLAN TPID\n");
+		return false;
+	}
+
+	/* Currently Ethertype must be set */
+	if (!is_exactmatch(&flow->l2_mask.ether_type,
+			   sizeof(flow->l2_mask.ether_type))) {
+		netdev_info(bp->dev, "Wildcard match unsupported for Ethertype\n");
+		return false;
+	}
+
 	return true;
 }
 
@@ -992,8 +1075,10 @@ static int bnxt_tc_get_decap_handle(struct bnxt *bp, struct bnxt_tc_flow *flow,
 
 	/* Check if there's another flow using the same tunnel decap.
 	 * If not, add this tunnel to the table and resolve the other
-	 * tunnel header fileds
+	 * tunnel header fileds. Ignore src_port in the tunnel_key,
+	 * since it is not required for decap filters.
 	 */
+	decap_key->tp_src = 0;
 	decap_node = bnxt_tc_get_tunnel_node(bp, &tc_info->decap_table,
 					     &tc_info->decap_ht_params,
 					     decap_key);

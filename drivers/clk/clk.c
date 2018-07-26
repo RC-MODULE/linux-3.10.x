@@ -6,7 +6,7 @@
  * it under the terms of the GNU General Public License version 2 as
  * published by the Free Software Foundation.
  *
- * Standard functionality for the common clock API.  See Documentation/clk.txt
+ * Standard functionality for the common clock API.  See Documentation/driver-api/clk.rst
  */
 
 #include <linux/clk.h>
@@ -24,7 +24,6 @@
 #include <linux/pm_runtime.h>
 #include <linux/sched.h>
 #include <linux/clkdev.h>
-#include <linux/stringify.h>
 
 #include "clk.h"
 
@@ -426,9 +425,9 @@ static bool mux_is_better_rate(unsigned long rate, unsigned long now,
 	return now <= rate && now > best;
 }
 
-static int
-clk_mux_determine_rate_flags(struct clk_hw *hw, struct clk_rate_request *req,
-			     unsigned long flags)
+int clk_mux_determine_rate_flags(struct clk_hw *hw,
+				 struct clk_rate_request *req,
+				 unsigned long flags)
 {
 	struct clk_core *core = hw->core, *parent, *best_parent = NULL;
 	int i, num_parents, ret;
@@ -488,6 +487,7 @@ out:
 
 	return 0;
 }
+EXPORT_SYMBOL_GPL(clk_mux_determine_rate_flags);
 
 struct clk *__clk_lookup(const char *name)
 {
@@ -548,7 +548,8 @@ static void clk_core_rate_unprotect(struct clk_core *core)
 	if (!core)
 		return;
 
-	if (WARN_ON(core->protect_count == 0))
+	if (WARN(core->protect_count == 0,
+	    "%s already unprotected\n", core->name))
 		return;
 
 	if (--core->protect_count > 0)
@@ -681,16 +682,18 @@ static void clk_core_unprepare(struct clk_core *core)
 	if (!core)
 		return;
 
-	if (WARN_ON(core->prepare_count == 0))
+	if (WARN(core->prepare_count == 0,
+	    "%s already unprepared\n", core->name))
 		return;
 
-	if (WARN_ON(core->prepare_count == 1 && core->flags & CLK_IS_CRITICAL))
+	if (WARN(core->prepare_count == 1 && core->flags & CLK_IS_CRITICAL,
+	    "Unpreparing critical %s\n", core->name))
 		return;
 
 	if (--core->prepare_count > 0)
 		return;
 
-	WARN_ON(core->enable_count > 0);
+	WARN(core->enable_count > 0, "Unpreparing enabled %s\n", core->name);
 
 	trace_clk_unprepare(core);
 
@@ -808,10 +811,11 @@ static void clk_core_disable(struct clk_core *core)
 	if (!core)
 		return;
 
-	if (WARN_ON(core->enable_count == 0))
+	if (WARN(core->enable_count == 0, "%s already disabled\n", core->name))
 		return;
 
-	if (WARN_ON(core->enable_count == 1 && core->flags & CLK_IS_CRITICAL))
+	if (WARN(core->enable_count == 1 && core->flags & CLK_IS_CRITICAL,
+	    "Disabling critical %s\n", core->name))
 		return;
 
 	if (--core->enable_count > 0)
@@ -866,7 +870,8 @@ static int clk_core_enable(struct clk_core *core)
 	if (!core)
 		return 0;
 
-	if (WARN_ON(core->prepare_count == 0))
+	if (WARN(core->prepare_count == 0,
+	    "Enabling unprepared %s\n", core->name))
 		return -ESHUTDOWN;
 
 	if (core->enable_count == 0) {
@@ -2170,7 +2175,6 @@ void clk_hw_reparent(struct clk_hw *hw, struct clk_hw *new_parent)
 bool clk_has_parent(struct clk *clk, struct clk *parent)
 {
 	struct clk_core *core, *parent_core;
-	unsigned int i;
 
 	/* NULL clocks should be nops, so return success if either is NULL. */
 	if (!clk || !parent)
@@ -2183,11 +2187,8 @@ bool clk_has_parent(struct clk *clk, struct clk *parent)
 	if (core->parent == parent_core)
 		return true;
 
-	for (i = 0; i < core->num_parents; i++)
-		if (strcmp(core->parent_names[i], parent_core->name) == 0)
-			return true;
-
-	return false;
+	return match_string(core->parent_names, core->num_parents,
+			    parent_core->name) >= 0;
 }
 EXPORT_SYMBOL_GPL(clk_has_parent);
 
@@ -2375,6 +2376,9 @@ static int clk_core_get_phase(struct clk_core *core)
 	int ret;
 
 	clk_prepare_lock();
+	/* Always try to update cached phase if possible */
+	if (core->ops->get_phase)
+		core->phase = core->ops->get_phase(core->hw);
 	ret = core->phase;
 	clk_prepare_unlock();
 
@@ -2491,19 +2495,7 @@ static int clk_summary_show(struct seq_file *s, void *data)
 
 	return 0;
 }
-
-
-static int clk_summary_open(struct inode *inode, struct file *file)
-{
-	return single_open(file, clk_summary_show, inode->i_private);
-}
-
-static const struct file_operations clk_summary_fops = {
-	.open		= clk_summary_open,
-	.read		= seq_read,
-	.llseek		= seq_lseek,
-	.release	= single_release,
-};
+DEFINE_SHOW_ATTRIBUTE(clk_summary);
 
 static void clk_dump_one(struct seq_file *s, struct clk_core *c, int level)
 {
@@ -2537,7 +2529,7 @@ static void clk_dump_subtree(struct seq_file *s, struct clk_core *c, int level)
 	seq_putc(s, '}');
 }
 
-static int clk_dump(struct seq_file *s, void *data)
+static int clk_dump_show(struct seq_file *s, void *data)
 {
 	struct clk_core *c;
 	bool first_node = true;
@@ -2560,25 +2552,13 @@ static int clk_dump(struct seq_file *s, void *data)
 	seq_puts(s, "}\n");
 	return 0;
 }
-
-
-static int clk_dump_open(struct inode *inode, struct file *file)
-{
-	return single_open(file, clk_dump, inode->i_private);
-}
-
-static const struct file_operations clk_dump_fops = {
-	.open		= clk_dump_open,
-	.read		= seq_read,
-	.llseek		= seq_lseek,
-	.release	= single_release,
-};
+DEFINE_SHOW_ATTRIBUTE(clk_dump);
 
 static const struct {
 	unsigned long flag;
 	const char *name;
 } clk_flags[] = {
-#define ENTRY(f) { f, __stringify(f) }
+#define ENTRY(f) { f, #f }
 	ENTRY(CLK_SET_RATE_GATE),
 	ENTRY(CLK_SET_PARENT_GATE),
 	ENTRY(CLK_SET_RATE_PARENT),
@@ -2594,7 +2574,7 @@ static const struct {
 #undef ENTRY
 };
 
-static int clk_flags_dump(struct seq_file *s, void *data)
+static int clk_flags_show(struct seq_file *s, void *data)
 {
 	struct clk_core *core = s->private;
 	unsigned long flags = core->flags;
@@ -2613,20 +2593,9 @@ static int clk_flags_dump(struct seq_file *s, void *data)
 
 	return 0;
 }
+DEFINE_SHOW_ATTRIBUTE(clk_flags);
 
-static int clk_flags_open(struct inode *inode, struct file *file)
-{
-	return single_open(file, clk_flags_dump, inode->i_private);
-}
-
-static const struct file_operations clk_flags_fops = {
-	.open		= clk_flags_open,
-	.read		= seq_read,
-	.llseek		= seq_lseek,
-	.release	= single_release,
-};
-
-static int possible_parents_dump(struct seq_file *s, void *data)
+static int possible_parents_show(struct seq_file *s, void *data)
 {
 	struct clk_core *core = s->private;
 	int i;
@@ -2638,94 +2607,33 @@ static int possible_parents_dump(struct seq_file *s, void *data)
 
 	return 0;
 }
+DEFINE_SHOW_ATTRIBUTE(possible_parents);
 
-static int possible_parents_open(struct inode *inode, struct file *file)
+static void clk_debug_create_one(struct clk_core *core, struct dentry *pdentry)
 {
-	return single_open(file, possible_parents_dump, inode->i_private);
-}
+	struct dentry *root;
 
-static const struct file_operations possible_parents_fops = {
-	.open		= possible_parents_open,
-	.read		= seq_read,
-	.llseek		= seq_lseek,
-	.release	= single_release,
-};
+	if (!core || !pdentry)
+		return;
 
-static int clk_debug_create_one(struct clk_core *core, struct dentry *pdentry)
-{
-	struct dentry *d;
-	int ret = -ENOMEM;
+	root = debugfs_create_dir(core->name, pdentry);
+	core->dentry = root;
 
-	if (!core || !pdentry) {
-		ret = -EINVAL;
-		goto out;
-	}
+	debugfs_create_ulong("clk_rate", 0444, root, &core->rate);
+	debugfs_create_ulong("clk_accuracy", 0444, root, &core->accuracy);
+	debugfs_create_u32("clk_phase", 0444, root, &core->phase);
+	debugfs_create_file("clk_flags", 0444, root, core, &clk_flags_fops);
+	debugfs_create_u32("clk_prepare_count", 0444, root, &core->prepare_count);
+	debugfs_create_u32("clk_enable_count", 0444, root, &core->enable_count);
+	debugfs_create_u32("clk_protect_count", 0444, root, &core->protect_count);
+	debugfs_create_u32("clk_notifier_count", 0444, root, &core->notifier_count);
 
-	d = debugfs_create_dir(core->name, pdentry);
-	if (!d)
-		goto out;
+	if (core->num_parents > 1)
+		debugfs_create_file("clk_possible_parents", 0444, root, core,
+				    &possible_parents_fops);
 
-	core->dentry = d;
-
-	d = debugfs_create_ulong("clk_rate", 0444, core->dentry, &core->rate);
-	if (!d)
-		goto err_out;
-
-	d = debugfs_create_ulong("clk_accuracy", 0444, core->dentry,
-				 &core->accuracy);
-	if (!d)
-		goto err_out;
-
-	d = debugfs_create_u32("clk_phase", 0444, core->dentry, &core->phase);
-	if (!d)
-		goto err_out;
-
-	d = debugfs_create_file("clk_flags", 0444, core->dentry, core,
-				&clk_flags_fops);
-	if (!d)
-		goto err_out;
-
-	d = debugfs_create_u32("clk_prepare_count", 0444, core->dentry,
-			       &core->prepare_count);
-	if (!d)
-		goto err_out;
-
-	d = debugfs_create_u32("clk_enable_count", 0444, core->dentry,
-			       &core->enable_count);
-	if (!d)
-		goto err_out;
-
-	d = debugfs_create_u32("clk_protect_count", 0444, core->dentry,
-			       &core->protect_count);
-	if (!d)
-		goto err_out;
-
-	d = debugfs_create_u32("clk_notifier_count", 0444, core->dentry,
-			       &core->notifier_count);
-	if (!d)
-		goto err_out;
-
-	if (core->num_parents > 1) {
-		d = debugfs_create_file("clk_possible_parents", 0444,
-				core->dentry, core, &possible_parents_fops);
-		if (!d)
-			goto err_out;
-	}
-
-	if (core->ops->debug_init) {
-		ret = core->ops->debug_init(core->hw, core->dentry);
-		if (ret)
-			goto err_out;
-	}
-
-	ret = 0;
-	goto out;
-
-err_out:
-	debugfs_remove_recursive(core->dentry);
-	core->dentry = NULL;
-out:
-	return ret;
+	if (core->ops->debug_init)
+		core->ops->debug_init(core->hw, core->dentry);
 }
 
 /**
@@ -2736,17 +2644,13 @@ out:
  * initialized.  Otherwise it bails out early since the debugfs clk directory
  * will be created lazily by clk_debug_init as part of a late_initcall.
  */
-static int clk_debug_register(struct clk_core *core)
+static void clk_debug_register(struct clk_core *core)
 {
-	int ret = 0;
-
 	mutex_lock(&clk_debug_lock);
 	hlist_add_head(&core->debug_node, &clk_debug_list);
 	if (inited)
-		ret = clk_debug_create_one(core, rootdir);
+		clk_debug_create_one(core, rootdir);
 	mutex_unlock(&clk_debug_lock);
-
-	return ret;
 }
 
  /**
@@ -2766,19 +2670,6 @@ static void clk_debug_unregister(struct clk_core *core)
 	mutex_unlock(&clk_debug_lock);
 }
 
-struct dentry *clk_debugfs_add_file(struct clk_hw *hw, char *name, umode_t mode,
-				void *data, const struct file_operations *fops)
-{
-	struct dentry *d = NULL;
-
-	if (hw->core->dentry)
-		d = debugfs_create_file(name, mode, hw->core->dentry, data,
-					fops);
-
-	return d;
-}
-EXPORT_SYMBOL_GPL(clk_debugfs_add_file);
-
 /**
  * clk_debug_init - lazily populate the debugfs clk directory
  *
@@ -2791,32 +2682,17 @@ EXPORT_SYMBOL_GPL(clk_debugfs_add_file);
 static int __init clk_debug_init(void)
 {
 	struct clk_core *core;
-	struct dentry *d;
 
 	rootdir = debugfs_create_dir("clk", NULL);
 
-	if (!rootdir)
-		return -ENOMEM;
-
-	d = debugfs_create_file("clk_summary", 0444, rootdir, &all_lists,
-				&clk_summary_fops);
-	if (!d)
-		return -ENOMEM;
-
-	d = debugfs_create_file("clk_dump", 0444, rootdir, &all_lists,
-				&clk_dump_fops);
-	if (!d)
-		return -ENOMEM;
-
-	d = debugfs_create_file("clk_orphan_summary", 0444, rootdir,
-				&orphan_list, &clk_summary_fops);
-	if (!d)
-		return -ENOMEM;
-
-	d = debugfs_create_file("clk_orphan_dump", 0444, rootdir,
-				&orphan_list, &clk_dump_fops);
-	if (!d)
-		return -ENOMEM;
+	debugfs_create_file("clk_summary", 0444, rootdir, &all_lists,
+			    &clk_summary_fops);
+	debugfs_create_file("clk_dump", 0444, rootdir, &all_lists,
+			    &clk_dump_fops);
+	debugfs_create_file("clk_orphan_summary", 0444, rootdir, &orphan_list,
+			    &clk_summary_fops);
+	debugfs_create_file("clk_orphan_dump", 0444, rootdir, &orphan_list,
+			    &clk_dump_fops);
 
 	mutex_lock(&clk_debug_lock);
 	hlist_for_each_entry(core, &clk_debug_list, debug_node)
@@ -2829,7 +2705,7 @@ static int __init clk_debug_init(void)
 }
 late_initcall(clk_debug_init);
 #else
-static inline int clk_debug_register(struct clk_core *core) { return 0; }
+static inline void clk_debug_register(struct clk_core *core) { }
 static inline void clk_debug_reparent(struct clk_core *core,
 				      struct clk_core *new_parent)
 {
@@ -2870,7 +2746,7 @@ static int __clk_core_init(struct clk_core *core)
 		goto out;
 	}
 
-	/* check that clk_ops are sane.  See Documentation/clk.txt */
+	/* check that clk_ops are sane.  See Documentation/driver-api/clk.rst */
 	if (core->ops->set_rate &&
 	    !((core->ops->round_rate || core->ops->determine_rate) &&
 	      core->ops->recalc_rate)) {
@@ -2931,6 +2807,17 @@ static int __clk_core_init(struct clk_core *core)
 		hlist_add_head(&core->child_node, &clk_orphan_list);
 		core->orphan = true;
 	}
+
+	/*
+	 * optional platform-specific magic
+	 *
+	 * The .init callback is not used by any of the basic clock types, but
+	 * exists for weird hardware that must perform initialization magic.
+	 * Please consider other ways of solving initialization problems before
+	 * using this callback, as its use is discouraged.
+	 */
+	if (core->ops->init)
+		core->ops->init(core->hw);
 
 	/*
 	 * Set clk's accuracy.  The preferred method is to use
@@ -3008,17 +2895,6 @@ static int __clk_core_init(struct clk_core *core)
 			__clk_recalc_rates(orphan, 0);
 		}
 	}
-
-	/*
-	 * optional platform-specific magic
-	 *
-	 * The .init callback is not used by any of the basic clock types, but
-	 * exists for weird hardware that must perform initialization magic.
-	 * Please consider other ways of solving initialization problems before
-	 * using this callback, as its use is discouraged.
-	 */
-	if (core->ops->init)
-		core->ops->init(core->hw);
 
 	kref_init(&core->ref);
 out:
@@ -3949,7 +3825,7 @@ int of_clk_parent_fill(struct device_node *np, const char **parents,
 EXPORT_SYMBOL_GPL(of_clk_parent_fill);
 
 struct clock_provider {
-	of_clk_init_cb_t clk_init_cb;
+	void (*clk_init_cb)(struct device_node *);
 	struct device_node *np;
 	struct list_head node;
 };

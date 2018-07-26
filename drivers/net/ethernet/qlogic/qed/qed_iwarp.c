@@ -271,6 +271,8 @@ int qed_iwarp_create_qp(struct qed_hwfn *p_hwfn,
 	p_ramrod->sq_num_pages = qp->sq_num_pages;
 	p_ramrod->rq_num_pages = qp->rq_num_pages;
 
+	p_ramrod->srq_id.srq_idx = cpu_to_le16(qp->srq_id);
+	p_ramrod->srq_id.opaque_fid = cpu_to_le16(p_hwfn->hw_info.opaque_fid);
 	p_ramrod->qp_handle_for_cqe.hi = cpu_to_le32(qp->qp_handle.hi);
 	p_ramrod->qp_handle_for_cqe.lo = cpu_to_le32(qp->qp_handle.lo);
 
@@ -1157,7 +1159,6 @@ int qed_iwarp_connect(void *rdma_cxt,
 	struct qed_iwarp_info *iwarp_info;
 	struct qed_iwarp_ep *ep;
 	u8 mpa_data_size = 0;
-	u8 ts_hdr_size = 0;
 	u32 cid;
 	int rc;
 
@@ -1216,10 +1217,7 @@ int qed_iwarp_connect(void *rdma_cxt,
 	       iparams->cm_info.private_data,
 	       iparams->cm_info.private_data_len);
 
-	if (p_hwfn->p_rdma_info->iwarp.tcp_flags & QED_IWARP_TS_EN)
-		ts_hdr_size = TIMESTAMP_HEADER_SIZE;
-
-	ep->mss = iparams->mss - ts_hdr_size;
+	ep->mss = iparams->mss;
 	ep->mss = min_t(u16, QED_IWARP_MAX_FW_MSS, ep->mss);
 
 	ep->event_cb = iparams->event_cb;
@@ -1799,7 +1797,7 @@ enum qed_iwarp_mpa_pkt_type {
 /* fpdu can be fragmented over maximum 3 bds: header, partial mpa, unaligned */
 #define QED_IWARP_MAX_BDS_PER_FPDU 3
 
-char *pkt_type_str[] = {
+static const char * const pkt_type_str[] = {
 	"QED_IWARP_MPA_PKT_PACKED",
 	"QED_IWARP_MPA_PKT_PARTIAL",
 	"QED_IWARP_MPA_PKT_UNALIGNED"
@@ -2335,7 +2333,6 @@ qed_iwarp_ll2_comp_syn_pkt(void *cxt, struct qed_ll2_comp_rx_data *data)
 	u8 local_mac_addr[ETH_ALEN];
 	struct qed_iwarp_ep *ep;
 	int tcp_start_offset;
-	u8 ts_hdr_size = 0;
 	u8 ll2_syn_handle;
 	int payload_len;
 	u32 hdr_size;
@@ -2375,13 +2372,6 @@ qed_iwarp_ll2_comp_syn_pkt(void *cxt, struct qed_ll2_comp_rx_data *data)
 
 		memset(&tx_pkt, 0, sizeof(tx_pkt));
 		tx_pkt.num_of_bds = 1;
-		tx_pkt.vlan = data->vlan;
-
-		if (GET_FIELD(data->parse_flags,
-			      PARSING_AND_ERR_FLAGS_TAG8021QEXIST))
-			SET_FIELD(tx_pkt.bd_flags,
-				  CORE_TX_BD_DATA_VLAN_INSERTION, 1);
-
 		tx_pkt.l4_hdr_offset_w = (data->length.packet_length) >> 2;
 		tx_pkt.tx_dest = QED_LL2_TX_DEST_LB;
 		tx_pkt.first_frag = buf->data_phys_addr +
@@ -2420,11 +2410,7 @@ qed_iwarp_ll2_comp_syn_pkt(void *cxt, struct qed_ll2_comp_rx_data *data)
 
 	memcpy(&ep->cm_info, &cm_info, sizeof(ep->cm_info));
 
-	if (p_hwfn->p_rdma_info->iwarp.tcp_flags & QED_IWARP_TS_EN)
-		ts_hdr_size = TIMESTAMP_HEADER_SIZE;
-
-	hdr_size = ((cm_info.ip_version == QED_TCP_IPV4) ? 40 : 60) +
-		   ts_hdr_size;
+	hdr_size = ((cm_info.ip_version == QED_TCP_IPV4) ? 40 : 60);
 	ep->mss = p_hwfn->p_rdma_info->iwarp.max_mtu - hdr_size;
 	ep->mss = min_t(u16, QED_IWARP_MAX_FW_MSS, ep->mss);
 
@@ -3011,8 +2997,11 @@ static int qed_iwarp_async_event(struct qed_hwfn *p_hwfn,
 				 union event_ring_data *data,
 				 u8 fw_return_code)
 {
+	struct qed_rdma_events events = p_hwfn->p_rdma_info->events;
 	struct regpair *fw_handle = &data->rdma_data.async_handle;
 	struct qed_iwarp_ep *ep = NULL;
+	u16 srq_offset;
+	u16 srq_id;
 	u16 cid;
 
 	ep = (struct qed_iwarp_ep *)(uintptr_t)HILO_64(fw_handle->hi,
@@ -3073,6 +3062,24 @@ static int qed_iwarp_async_event(struct qed_hwfn *p_hwfn,
 			   "(0x%x)IWARP_EVENT_TYPE_ASYNC_CID_CLEANED\n", cid);
 		qed_iwarp_cid_cleaned(p_hwfn, cid);
 
+		break;
+	case IWARP_EVENT_TYPE_ASYNC_SRQ_EMPTY:
+		DP_NOTICE(p_hwfn, "IWARP_EVENT_TYPE_ASYNC_SRQ_EMPTY\n");
+		srq_offset = p_hwfn->p_rdma_info->srq_id_offset;
+		/* FW assigns value that is no greater than u16 */
+		srq_id = ((u16)le32_to_cpu(fw_handle->lo)) - srq_offset;
+		events.affiliated_event(events.context,
+					QED_IWARP_EVENT_SRQ_EMPTY,
+					&srq_id);
+		break;
+	case IWARP_EVENT_TYPE_ASYNC_SRQ_LIMIT:
+		DP_NOTICE(p_hwfn, "IWARP_EVENT_TYPE_ASYNC_SRQ_LIMIT\n");
+		srq_offset = p_hwfn->p_rdma_info->srq_id_offset;
+		/* FW assigns value that is no greater than u16 */
+		srq_id = ((u16)le32_to_cpu(fw_handle->lo)) - srq_offset;
+		events.affiliated_event(events.context,
+					QED_IWARP_EVENT_SRQ_LIMIT,
+					&srq_id);
 		break;
 	case IWARP_EVENT_TYPE_ASYNC_CQ_OVERFLOW:
 		DP_NOTICE(p_hwfn, "IWARP_EVENT_TYPE_ASYNC_CQ_OVERFLOW\n");

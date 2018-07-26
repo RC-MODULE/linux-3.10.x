@@ -12,6 +12,7 @@
 #define __BCM_SYSPORT_H
 
 #include <linux/if_vlan.h>
+#include <linux/net_dim.h>
 
 /* Receive/transmit descriptor format */
 #define DESC_ADDR_HI_STATUS_LEN	0x00
@@ -277,7 +278,8 @@ struct bcm_rsb {
 #define  GIB_GTX_CLK_EXT_CLK		(0 << GIB_GTX_CLK_SEL_SHIFT)
 #define  GIB_GTX_CLK_125MHZ		(1 << GIB_GTX_CLK_SEL_SHIFT)
 #define  GIB_GTX_CLK_250MHZ		(2 << GIB_GTX_CLK_SEL_SHIFT)
-#define  GIB_FCS_STRIP			(1 << 6)
+#define  GIB_FCS_STRIP_SHIFT		6
+#define  GIB_FCS_STRIP			(1 << GIB_FCS_STRIP_SHIFT)
 #define  GIB_LCL_LOOP_EN		(1 << 7)
 #define  GIB_LCL_LOOP_TXEN		(1 << 8)
 #define  GIB_RMT_LOOP_EN		(1 << 9)
@@ -695,6 +697,14 @@ struct bcm_sysport_hw_params {
 	unsigned int	num_rx_desc_words;
 };
 
+struct bcm_sysport_net_dim {
+	u16			use_dim;
+	u16			event_ctr;
+	unsigned long		packets;
+	unsigned long		bytes;
+	struct net_dim		dim;
+};
+
 /* Software view of the TX ring */
 struct bcm_sysport_tx_ring {
 	spinlock_t	lock;		/* Ring lock for tx reclaim/xmit */
@@ -742,6 +752,10 @@ struct bcm_sysport_priv {
 	unsigned int		num_rx_bds;
 	unsigned int		rx_read_ptr;
 	unsigned int		rx_c_index;
+
+	struct bcm_sysport_net_dim	dim;
+	u32			rx_max_coalesced_frames;
+	u32			rx_coalesce_usecs;
 
 	/* PHY device */
 	struct device_node	*phy_dn;

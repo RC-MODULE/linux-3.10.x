@@ -76,6 +76,7 @@ struct ipcm_cookie {
 	__u8			ttl;
 	__s16			tos;
 	char			priority;
+	__u16			gso_size;
 };
 
 #define IPCB(skb) ((struct inet_skb_parm*)((skb)->cb))
@@ -91,6 +92,17 @@ static inline int inet_sdif(struct sk_buff *skb)
 	return 0;
 }
 
+/* Special input handler for packets caught by router alert option.
+   They are selected only by protocol field, and then processed likely
+   local ones; but only if someone wants them! Otherwise, router
+   not running rsvpd will kill RSVP.
+
+   It is user level problem, what it will make with them.
+   I have no idea, how it will masquearde or NAT them (it is joke, joke :-)),
+   but receiver should be enough clever f.e. to forward mtrace requests,
+   sent to multicast group to reach destination designated router.
+ */
+
 struct ip_ra_chain {
 	struct ip_ra_chain __rcu *next;
 	struct sock		*sk;
@@ -100,8 +112,6 @@ struct ip_ra_chain {
 	};
 	struct rcu_head		rcu;
 };
-
-extern struct ip_ra_chain __rcu *ip_ra_chain;
 
 /* IP flags. */
 #define IP_CE		0x8000		/* Flag: "Congestion"		*/
@@ -162,7 +172,7 @@ struct sk_buff *ip_make_skb(struct sock *sk, struct flowi4 *fl4,
 					int len, int odd, struct sk_buff *skb),
 			    void *from, int length, int transhdrlen,
 			    struct ipcm_cookie *ipc, struct rtable **rtp,
-			    unsigned int flags);
+			    struct inet_cork *cork, unsigned int flags);
 
 static inline struct sk_buff *ip_finish_skb(struct sock *sk, struct flowi4 *fl4)
 {
@@ -186,15 +196,15 @@ int ip4_datagram_connect(struct sock *sk, struct sockaddr *uaddr, int addr_len);
 void ip4_datagram_release_cb(struct sock *sk);
 
 struct ip_reply_arg {
-	struct kvec iov[1];   
+	struct kvec iov[1];
 	int	    flags;
 	__wsum 	    csum;
 	int	    csumoffset; /* u16 offset of csum in iov[0].iov_base */
-				/* -1 if not needed */ 
+				/* -1 if not needed */
 	int	    bound_dev_if;
 	u8  	    tos;
 	kuid_t	    uid;
-}; 
+};
 
 #define IP_REPLY_ARG_NOSRCCHECK 1
 
@@ -386,6 +396,9 @@ static inline unsigned int ip_skb_dst_mtu(struct sock *sk,
 
 	return min(READ_ONCE(skb_dst(skb)->dev->mtu), IP_MAX_MTU);
 }
+
+int ip_metrics_convert(struct net *net, struct nlattr *fc_mx, int fc_mx_len,
+		       u32 *metrics);
 
 u32 ip_idents_reserve(u32 hash, int segs);
 void __ip_select_ident(struct net *net, struct iphdr *iph, int segs);
@@ -579,18 +592,17 @@ static inline struct sk_buff *ip_check_defrag(struct net *net, struct sk_buff *s
 	return skb;
 }
 #endif
-int ip_frag_mem(struct net *net);
 
 /*
  *	Functions provided by ip_forward.c
  */
- 
+
 int ip_forward(struct sk_buff *skb);
- 
+
 /*
  *	Functions provided by ip_options.c
  */
- 
+
 void ip_options_build(struct sk_buff *skb, struct ip_options *opt,
 		      __be32 daddr, struct rtable *rt, int is_frag);
 
@@ -651,5 +663,8 @@ extern int sysctl_icmp_msgs_burst;
 #ifdef CONFIG_PROC_FS
 int ip_misc_proc_init(void);
 #endif
+
+int rtm_getroute_parse_ip_proto(struct nlattr *attr, u8 *ip_proto,
+				struct netlink_ext_ack *extack);
 
 #endif	/* _IP_H */

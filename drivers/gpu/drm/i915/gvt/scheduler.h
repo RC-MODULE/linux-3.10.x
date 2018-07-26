@@ -80,7 +80,7 @@ struct intel_shadow_wa_ctx {
 struct intel_vgpu_workload {
 	struct intel_vgpu *vgpu;
 	int ring_id;
-	struct drm_i915_gem_request *req;
+	struct i915_request *req;
 	/* if this workload has been dispatched to i915? */
 	bool dispatched;
 	bool shadowed;
@@ -125,6 +125,7 @@ struct intel_vgpu_shadow_bb {
 	unsigned int clflush;
 	bool accessing;
 	unsigned long bb_offset;
+	bool ppgtt;
 };
 
 #define workload_q_head(vgpu, ring_id) \

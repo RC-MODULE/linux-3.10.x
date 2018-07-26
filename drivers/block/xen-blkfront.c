@@ -129,13 +129,12 @@ static const struct block_device_operations xlvbd_block_fops;
  */
 
 static unsigned int xen_blkif_max_segments = 32;
-module_param_named(max_indirect_segments, xen_blkif_max_segments, uint,
-		   S_IRUGO);
+module_param_named(max_indirect_segments, xen_blkif_max_segments, uint, 0444);
 MODULE_PARM_DESC(max_indirect_segments,
 		 "Maximum amount of segments in indirect requests (default is 32)");
 
 static unsigned int xen_blkif_max_queues = 4;
-module_param_named(max_queues, xen_blkif_max_queues, uint, S_IRUGO);
+module_param_named(max_queues, xen_blkif_max_queues, uint, 0444);
 MODULE_PARM_DESC(max_queues, "Maximum number of hardware queues/rings used per virtual disk");
 
 /*
@@ -143,7 +142,7 @@ MODULE_PARM_DESC(max_queues, "Maximum number of hardware queues/rings used per v
  * backend, 4KB page granularity is used.
  */
 static unsigned int xen_blkif_max_ring_order;
-module_param_named(max_ring_page_order, xen_blkif_max_ring_order, int, S_IRUGO);
+module_param_named(max_ring_page_order, xen_blkif_max_ring_order, int, 0444);
 MODULE_PARM_DESC(max_ring_page_order, "Maximum order of pages to be used for the shared ring");
 
 #define BLK_RING_SIZE(info)	\
@@ -932,15 +931,15 @@ static void blkif_set_queue_limits(struct blkfront_info *info)
 	unsigned int segments = info->max_indirect_segments ? :
 				BLKIF_MAX_SEGMENTS_PER_REQUEST;
 
-	queue_flag_set_unlocked(QUEUE_FLAG_VIRT, rq);
+	blk_queue_flag_set(QUEUE_FLAG_VIRT, rq);
 
 	if (info->feature_discard) {
-		queue_flag_set_unlocked(QUEUE_FLAG_DISCARD, rq);
+		blk_queue_flag_set(QUEUE_FLAG_DISCARD, rq);
 		blk_queue_max_discard_sectors(rq, get_capacity(gd));
 		rq->limits.discard_granularity = info->discard_granularity;
 		rq->limits.discard_alignment = info->discard_alignment;
 		if (info->feature_secdiscard)
-			queue_flag_set_unlocked(QUEUE_FLAG_SECERASE, rq);
+			blk_queue_flag_set(QUEUE_FLAG_SECERASE, rq);
 	}
 
 	/* Hard sector size and max sectors impersonate the equiv. hardware. */
@@ -1611,8 +1610,8 @@ static irqreturn_t blkif_interrupt(int irq, void *dev_id)
 				blkif_req(req)->error = BLK_STS_NOTSUPP;
 				info->feature_discard = 0;
 				info->feature_secdiscard = 0;
-				queue_flag_clear(QUEUE_FLAG_DISCARD, rq);
-				queue_flag_clear(QUEUE_FLAG_SECERASE, rq);
+				blk_queue_flag_clear(QUEUE_FLAG_DISCARD, rq);
+				blk_queue_flag_clear(QUEUE_FLAG_SECERASE, rq);
 			}
 			break;
 		case BLKIF_OP_FLUSH_DISKCACHE:
@@ -1907,7 +1906,9 @@ static int negotiate_mq(struct blkfront_info *info)
 	if (!info->nr_rings)
 		info->nr_rings = 1;
 
-	info->rinfo = kzalloc(sizeof(struct blkfront_ring_info) * info->nr_rings, GFP_KERNEL);
+	info->rinfo = kcalloc(info->nr_rings,
+			      sizeof(struct blkfront_ring_info),
+			      GFP_KERNEL);
 	if (!info->rinfo) {
 		xenbus_dev_fatal(info->xbdev, -ENOMEM, "allocating ring_info structure");
 		return -ENOMEM;
@@ -2217,15 +2218,18 @@ static int blkfront_setup_indirect(struct blkfront_ring_info *rinfo)
 	}
 
 	for (i = 0; i < BLK_RING_SIZE(info); i++) {
-		rinfo->shadow[i].grants_used = kzalloc(
-			sizeof(rinfo->shadow[i].grants_used[0]) * grants,
-			GFP_NOIO);
-		rinfo->shadow[i].sg = kzalloc(sizeof(rinfo->shadow[i].sg[0]) * psegs, GFP_NOIO);
-		if (info->max_indirect_segments)
-			rinfo->shadow[i].indirect_grants = kzalloc(
-				sizeof(rinfo->shadow[i].indirect_grants[0]) *
-				INDIRECT_GREFS(grants),
+		rinfo->shadow[i].grants_used =
+			kcalloc(grants,
+				sizeof(rinfo->shadow[i].grants_used[0]),
 				GFP_NOIO);
+		rinfo->shadow[i].sg = kcalloc(psegs,
+					      sizeof(rinfo->shadow[i].sg[0]),
+					      GFP_NOIO);
+		if (info->max_indirect_segments)
+			rinfo->shadow[i].indirect_grants =
+				kcalloc(INDIRECT_GREFS(grants),
+					sizeof(rinfo->shadow[i].indirect_grants[0]),
+					GFP_NOIO);
 		if ((rinfo->shadow[i].grants_used == NULL) ||
 			(rinfo->shadow[i].sg == NULL) ||
 		     (info->max_indirect_segments &&

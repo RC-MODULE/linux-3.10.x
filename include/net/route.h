@@ -66,8 +66,6 @@ struct rtable {
 	u32			rt_mtu_locked:1,
 				rt_pmtu:31;
 
-	u32			rt_table_id;
-
 	struct list_head	rt_uncached;
 	struct uncached_list	*rt_uncached_list;
 };
@@ -227,6 +225,7 @@ struct rtable *rt_dst_alloc(struct net_device *dev,
 struct in_ifaddr;
 void fib_add_ifaddr(struct in_ifaddr *);
 void fib_del_ifaddr(struct in_ifaddr *, struct in_ifaddr *);
+void fib_modify_prefix_metric(struct in_ifaddr *ifa, u32 new_metric);
 
 void rt_add_uncached_list(struct rtable *rt);
 void rt_del_uncached_list(struct rtable *rt);

@@ -101,14 +101,16 @@ static void construct(struct dc_stream_state *stream,
 	stream->status.link = stream->sink->link;
 
 	update_stream_signal(stream);
+
+	stream->out_transfer_func = dc_create_transfer_func();
+	stream->out_transfer_func->type = TF_TYPE_BYPASS;
 }
 
 static void destruct(struct dc_stream_state *stream)
 {
 	dc_sink_release(stream->sink);
 	if (stream->out_transfer_func != NULL) {
-		dc_transfer_func_release(
-				stream->out_transfer_func);
+		dc_transfer_func_release(stream->out_transfer_func);
 		stream->out_transfer_func = NULL;
 	}
 }
@@ -176,6 +178,7 @@ bool dc_stream_set_cursor_attributes(
 	int i;
 	struct dc  *core_dc;
 	struct resource_context *res_ctx;
+	struct pipe_ctx *pipe_to_program = NULL;
 
 	if (NULL == stream) {
 		dm_error("DC: dc_stream is NULL!\n");
@@ -198,15 +201,22 @@ bool dc_stream_set_cursor_attributes(
 	for (i = 0; i < MAX_PIPES; i++) {
 		struct pipe_ctx *pipe_ctx = &res_ctx->pipe_ctx[i];
 
-		if (pipe_ctx->stream != stream || (!pipe_ctx->plane_res.xfm &&
-		    !pipe_ctx->plane_res.dpp) || !pipe_ctx->plane_res.ipp)
+		if (pipe_ctx->stream != stream)
 			continue;
 		if (pipe_ctx->top_pipe && pipe_ctx->plane_state != pipe_ctx->top_pipe->plane_state)
 			continue;
 
+		if (!pipe_to_program) {
+			pipe_to_program = pipe_ctx;
+			core_dc->hwss.pipe_control_lock(core_dc, pipe_to_program, true);
+		}
 
 		core_dc->hwss.set_cursor_attribute(pipe_ctx);
 	}
+
+	if (pipe_to_program)
+		core_dc->hwss.pipe_control_lock(core_dc, pipe_to_program, false);
+
 	return true;
 }
 
@@ -217,6 +227,7 @@ bool dc_stream_set_cursor_position(
 	int i;
 	struct dc  *core_dc;
 	struct resource_context *res_ctx;
+	struct pipe_ctx *pipe_to_program = NULL;
 
 	if (NULL == stream) {
 		dm_error("DC: dc_stream is NULL!\n");
@@ -242,8 +253,16 @@ bool dc_stream_set_cursor_position(
 				!pipe_ctx->plane_res.ipp)
 			continue;
 
+		if (!pipe_to_program) {
+			pipe_to_program = pipe_ctx;
+			core_dc->hwss.pipe_control_lock(core_dc, pipe_to_program, true);
+		}
+
 		core_dc->hwss.set_cursor_position(pipe_ctx);
 	}
+
+	if (pipe_to_program)
+		core_dc->hwss.pipe_control_lock(core_dc, pipe_to_program, false);
 
 	return true;
 }

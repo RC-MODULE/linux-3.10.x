@@ -35,9 +35,9 @@ extern struct mm_iommu_table_group_mem_t *mm_iommu_lookup_rm(
 extern struct mm_iommu_table_group_mem_t *mm_iommu_find(struct mm_struct *mm,
 		unsigned long ua, unsigned long entries);
 extern long mm_iommu_ua_to_hpa(struct mm_iommu_table_group_mem_t *mem,
-		unsigned long ua, unsigned long *hpa);
+		unsigned long ua, unsigned int pageshift, unsigned long *hpa);
 extern long mm_iommu_ua_to_hpa_rm(struct mm_iommu_table_group_mem_t *mem,
-		unsigned long ua, unsigned long *hpa);
+		unsigned long ua, unsigned int pageshift, unsigned long *hpa);
 extern long mm_iommu_mapped_inc(struct mm_iommu_table_group_mem_t *mem);
 extern void mm_iommu_mapped_dec(struct mm_iommu_table_group_mem_t *mem);
 #endif
@@ -60,12 +60,51 @@ extern int hash__alloc_context_id(void);
 extern void hash__reserve_context_id(int id);
 extern void __destroy_context(int context_id);
 static inline void mmu_context_init(void) { }
+
+static inline int alloc_extended_context(struct mm_struct *mm,
+					 unsigned long ea)
+{
+	int context_id;
+
+	int index = ea >> MAX_EA_BITS_PER_CONTEXT;
+
+	context_id = hash__alloc_context_id();
+	if (context_id < 0)
+		return context_id;
+
+	VM_WARN_ON(mm->context.extended_id[index]);
+	mm->context.extended_id[index] = context_id;
+	return context_id;
+}
+
+static inline bool need_extra_context(struct mm_struct *mm, unsigned long ea)
+{
+	int context_id;
+
+	context_id = get_ea_context(&mm->context, ea);
+	if (!context_id)
+		return true;
+	return false;
+}
+
 #else
 extern void switch_mmu_context(struct mm_struct *prev, struct mm_struct *next,
 			       struct task_struct *tsk);
 extern unsigned long __init_new_context(void);
 extern void __destroy_context(unsigned long context_id);
 extern void mmu_context_init(void);
+static inline int alloc_extended_context(struct mm_struct *mm,
+					 unsigned long ea)
+{
+	/* non book3s_64 should never find this called */
+	WARN_ON(1);
+	return -ENOMEM;
+}
+
+static inline bool need_extra_context(struct mm_struct *mm, unsigned long ea)
+{
+	return false;
+}
 #endif
 
 #if defined(CONFIG_KVM_BOOK3S_HV_POSSIBLE) && defined(CONFIG_PPC_RADIX_MMU)
@@ -210,11 +249,6 @@ static inline bool arch_vma_access_permitted(struct vm_area_struct *vma,
 #define thread_pkey_regs_save(thread)
 #define thread_pkey_regs_restore(new_thread, old_thread)
 #define thread_pkey_regs_init(thread)
-
-static inline int vma_pkey(struct vm_area_struct *vma)
-{
-	return 0;
-}
 
 static inline u64 pte_to_hpte_pkey_bits(u64 pteflags)
 {

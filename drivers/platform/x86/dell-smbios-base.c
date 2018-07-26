@@ -514,7 +514,7 @@ static int build_tokens_sysfs(struct platform_device *dev)
 		continue;
 
 loop_fail_create_value:
-		kfree(value_name);
+		kfree(location_name);
 		goto out_unwind_strings;
 	}
 	smbios_attribute_group.attrs = token_attrs;
@@ -525,7 +525,7 @@ loop_fail_create_value:
 	return 0;
 
 out_unwind_strings:
-	for (i = i-1; i > 0; i--) {
+	while (i--) {
 		kfree(token_location_attrs[i].attr.name);
 		kfree(token_value_attrs[i].attr.name);
 	}
@@ -555,11 +555,10 @@ static void free_group(struct platform_device *pdev)
 
 static int __init dell_smbios_init(void)
 {
-	const struct dmi_device *valid;
 	int ret, wmi, smm;
 
-	valid = dmi_find_device(DMI_DEV_TYPE_OEM_STRING, "Dell System", NULL);
-	if (!valid) {
+	if (!dmi_find_device(DMI_DEV_TYPE_OEM_STRING, "Dell System", NULL) &&
+	    !dmi_find_device(DMI_DEV_TYPE_OEM_STRING, "www.dell.com", NULL)) {
 		pr_err("Unable to run on non-Dell system\n");
 		return -ENODEV;
 	}

@@ -235,7 +235,7 @@ const char *parse_fs_dst(struct trace_seq *p,
 
 	switch (dst->type) {
 	case MLX5_FLOW_DESTINATION_TYPE_VPORT:
-		trace_seq_printf(p, "vport=%u\n", dst->vport_num);
+		trace_seq_printf(p, "vport=%u\n", dst->vport.num);
 		break;
 	case MLX5_FLOW_DESTINATION_TYPE_FLOW_TABLE:
 		trace_seq_printf(p, "ft=%p\n", dst->ft);
@@ -245,6 +245,9 @@ const char *parse_fs_dst(struct trace_seq *p,
 		break;
 	case MLX5_FLOW_DESTINATION_TYPE_COUNTER:
 		trace_seq_printf(p, "counter_id=%u\n", counter_id);
+		break;
+	case MLX5_FLOW_DESTINATION_TYPE_PORT:
+		trace_seq_printf(p, "port\n");
 		break;
 	}
 

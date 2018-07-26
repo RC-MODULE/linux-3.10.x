@@ -89,15 +89,19 @@ static int service_tx_status_request(
 		}
 
 		is_in = epnum & USB_DIR_IN;
-		if (is_in) {
-			epnum &= 0x0f;
-			ep = &musb->endpoints[epnum].ep_in;
-		} else {
-			ep = &musb->endpoints[epnum].ep_out;
+		epnum &= 0x0f;
+		if (epnum >= MUSB_C_NUM_EPS) {
+			handled = -EINVAL;
+			break;
 		}
+
+		if (is_in)
+			ep = &musb->endpoints[epnum].ep_in;
+		else
+			ep = &musb->endpoints[epnum].ep_out;
 		regs = musb->endpoints[epnum].regs;
 
-		if (epnum >= MUSB_C_NUM_EPS || !ep->desc) {
+		if (!ep->desc) {
 			handled = -EINVAL;
 			break;
 		}
@@ -213,7 +217,8 @@ __acquires(musb->lock)
 		case USB_REQ_SET_ADDRESS:
 			/* change it after the status stage */
 			musb->set_address = true;
-			musb->address = (u8) (le16_to_cpu(ctrlrequest->wValue) & 0x7f);
+			musb->address = (u8) (le16_to_cpu(ctrlrequest->wValue) &
+									0x7f);
 			handled = 1;
 			break;
 
@@ -239,12 +244,14 @@ __acquires(musb->lock)
 				u16			csr;
 
 				if (epnum == 0 || epnum >= MUSB_C_NUM_EPS ||
-				    le16_to_cpu(ctrlrequest->wValue) != USB_ENDPOINT_HALT)
+				    le16_to_cpu(ctrlrequest->wValue)
+						!= USB_ENDPOINT_HALT)
 					break;
 
 				ep = musb->endpoints + epnum;
 				regs = ep->regs;
-				is_in = le16_to_cpu(ctrlrequest->wIndex) & USB_DIR_IN;
+				is_in = le16_to_cpu(ctrlrequest->wIndex) &
+								USB_DIR_IN;
 				if (is_in)
 					musb_ep = &ep->ep_in;
 				else
@@ -303,10 +310,12 @@ __acquires(musb->lock)
 				case USB_DEVICE_TEST_MODE:
 					if (musb->g.speed != USB_SPEED_HIGH)
 						goto stall;
-					if (le16_to_cpu(ctrlrequest->wIndex) & 0xff)
+					if (le16_to_cpu(ctrlrequest->wIndex) &
+									0xff)
 						goto stall;
 
-					switch (le16_to_cpu(ctrlrequest->wIndex) >> 8) {
+					switch (le16_to_cpu(ctrlrequest->wIndex)
+									 >> 8) {
 					case 1:
 						pr_debug("TEST_J\n");
 						/* TEST_J */
@@ -403,12 +412,14 @@ stall:
 				u16			csr;
 
 				if (epnum == 0 || epnum >= MUSB_C_NUM_EPS ||
-				    le16_to_cpu(ctrlrequest->wValue)	!= USB_ENDPOINT_HALT)
+				    le16_to_cpu(ctrlrequest->wValue)
+						!= USB_ENDPOINT_HALT)
 					break;
 
 				ep = musb->endpoints + epnum;
 				regs = ep->regs;
-				is_in = le16_to_cpu(ctrlrequest->wIndex) & USB_DIR_IN;
+				is_in = le16_to_cpu(ctrlrequest->wIndex) &
+								USB_DIR_IN;
 				if (is_in)
 					musb_ep = &ep->ep_in;
 				else

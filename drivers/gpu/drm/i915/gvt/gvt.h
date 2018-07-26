@@ -48,6 +48,7 @@
 #include "cmd_parser.h"
 #include "fb_decoder.h"
 #include "dmabuf.h"
+#include "page_track.h"
 
 #define GVT_MAX_VGPU 8
 
@@ -98,7 +99,6 @@ struct intel_vgpu_fence {
 struct intel_vgpu_mmio {
 	void *vreg;
 	void *sreg;
-	bool disable_warn_untrack;
 };
 
 #define INTEL_GVT_MAX_BAR_NUM 4
@@ -131,11 +131,9 @@ struct intel_vgpu_opregion {
 
 #define vgpu_opregion(vgpu) (&(vgpu->opregion))
 
-#define INTEL_GVT_MAX_PORT 5
-
 struct intel_vgpu_display {
 	struct intel_vgpu_i2c_edid i2c_edid;
-	struct intel_vgpu_port ports[INTEL_GVT_MAX_PORT];
+	struct intel_vgpu_port ports[I915_MAX_PORTS];
 	struct intel_vgpu_sbi sbi;
 };
 
@@ -190,6 +188,7 @@ struct intel_vgpu {
 	struct intel_vgpu_opregion opregion;
 	struct intel_vgpu_display display;
 	struct intel_vgpu_submission submission;
+	struct radix_tree_root page_track_tree;
 	u32 hws_pga[I915_NUM_ENGINES];
 
 	struct dentry *debugfs;
@@ -201,8 +200,16 @@ struct intel_vgpu {
 		int num_regions;
 		struct eventfd_ctx *intx_trigger;
 		struct eventfd_ctx *msi_trigger;
-		struct rb_root cache;
+
+		/*
+		 * Two caches are used to avoid mapping duplicated pages (eg.
+		 * scratch pages). This help to reduce dma setup overhead.
+		 */
+		struct rb_root gfn_cache;
+		struct rb_root dma_addr_cache;
+		unsigned long nr_cache_entries;
 		struct mutex cache_lock;
+
 		struct notifier_block iommu_notifier;
 		struct notifier_block group_notifier;
 		struct kvm *kvm;
@@ -218,6 +225,7 @@ struct intel_vgpu {
 
 	struct completion vblank_done;
 
+	u32 scan_nonprivbb;
 };
 
 /* validating GM healthy status*/
@@ -260,6 +268,8 @@ struct intel_gvt_mmio {
 #define F_CMD_ACCESSED	(1 << 5)
 /* This reg could be accessed by unaligned address */
 #define F_UNALIGN	(1 << 6)
+/* This reg is saved/restored in context */
+#define F_IN_CTX	(1 << 7)
 
 	struct gvt_mmio_block *mmio_block;
 	unsigned int num_mmio_block;
@@ -308,7 +318,10 @@ struct intel_gvt {
 	wait_queue_head_t service_thread_wq;
 	unsigned long service_request;
 
-	struct engine_mmio *engine_mmio_list;
+	struct {
+		struct engine_mmio *mmio;
+		int ctx_mmio_count[I915_NUM_ENGINES];
+	} engine_mmio_list;
 
 	struct dentry *debugfs_root;
 };
@@ -626,6 +639,33 @@ static inline bool intel_gvt_mmio_has_mode_mask(
 			struct intel_gvt *gvt, unsigned int offset)
 {
 	return gvt->mmio.mmio_attribute[offset >> 2] & F_MODE_MASK;
+}
+
+/**
+ * intel_gvt_mmio_is_in_ctx - check if a MMIO has in-ctx mask
+ * @gvt: a GVT device
+ * @offset: register offset
+ *
+ * Returns:
+ * True if a MMIO has a in-context mask, false if it isn't.
+ *
+ */
+static inline bool intel_gvt_mmio_is_in_ctx(
+			struct intel_gvt *gvt, unsigned int offset)
+{
+	return gvt->mmio.mmio_attribute[offset >> 2] & F_IN_CTX;
+}
+
+/**
+ * intel_gvt_mmio_set_in_ctx - mask a MMIO in logical context
+ * @gvt: a GVT device
+ * @offset: register offset
+ *
+ */
+static inline void intel_gvt_mmio_set_in_ctx(
+			struct intel_gvt *gvt, unsigned int offset)
+{
+	gvt->mmio.mmio_attribute[offset >> 2] |= F_IN_CTX;
 }
 
 int intel_gvt_debugfs_add_vgpu(struct intel_vgpu *vgpu);

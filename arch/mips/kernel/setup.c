@@ -93,7 +93,7 @@ void __init add_memory_region(phys_addr_t start, phys_addr_t size, long type)
 	 * If the region reaches the top of the physical address space, adjust
 	 * the size slightly so that (start + size) doesn't overflow
 	 */
-	if (start + size - 1 == (phys_addr_t)ULLONG_MAX)
+	if (start + size - 1 == PHYS_ADDR_MAX)
 		--size;
 
 	/* Sanity check */
@@ -155,7 +155,8 @@ void __init detect_memory_region(phys_addr_t start, phys_addr_t sz_min, phys_add
 	add_memory_region(start, size, BOOT_MEM_RAM);
 }
 
-bool __init memory_region_available(phys_addr_t start, phys_addr_t size)
+static bool __init __maybe_unused memory_region_available(phys_addr_t start,
+							  phys_addr_t size)
 {
 	int i;
 	bool in_ram = false, free = true;
@@ -375,7 +376,7 @@ static void __init bootmem_init(void)
 	unsigned long reserved_end;
 	unsigned long mapstart = ~0UL;
 	unsigned long bootmap_size;
-	phys_addr_t ramstart = (phys_addr_t)ULLONG_MAX;
+	phys_addr_t ramstart = PHYS_ADDR_MAX;
 	bool bootmap_valid = false;
 	int i;
 
@@ -453,7 +454,7 @@ static void __init bootmem_init(void)
 		pr_info("Wasting %lu bytes for tracking %lu unused pages\n",
 			(min_low_pfn - ARCH_PFN_OFFSET) * sizeof(struct page),
 			min_low_pfn - ARCH_PFN_OFFSET);
-	} else if (min_low_pfn < ARCH_PFN_OFFSET) {
+	} else if (ARCH_PFN_OFFSET - min_low_pfn > 0UL) {
 		pr_info("%lu free pages won't be used\n",
 			ARCH_PFN_OFFSET - min_low_pfn);
 	}
