@@ -140,7 +140,8 @@ __acquires(ep->musb->lock)
 	ep->busy = 1;
 	spin_unlock(&musb->lock);
 
-	if (!dma_mapping_error(&musb->g.dev, request->dma))
+	if (!get_dma_ops(&musb->g.dev) || 
+		!dma_mapping_error(&musb->g.dev, request->dma))
 		unmap_dma_buffer(req, musb);
 
 	trace_musb_req_gb(req);
