@@ -84,7 +84,7 @@
 	lsif1clock: lsif1clock@100M {
 		#clock-cells = <0>;
 		compatible = "fixed-clock";
-		clock-frequency = <100000000>;
+		clock-frequency = <57142857>;
 	};
 
 	pclk: pclk {
@@ -119,8 +119,6 @@
 			ranges = <0x3c030000 			/* from */
 					  0x010 0x3c030000 		/* to */
 					  0x00020000>;			/* size */
-
-			clock-frequency = <100000000>;
 
 			mgpio0: mgpio0@0x3C040420 {
 				compatible = "pinctrl-single";
@@ -157,7 +155,7 @@
 				interrupt-controller;
 				#interrupt-cells = <2>;
 				interrupt-parent = <&MPIC>;
-				interrupts = <106 IRQ_TYPE_LEVEL_HIGH>;
+				interrupts = <106 0>;	// IRQ_TYPE_EDGE_RISING
 				clocks = <&pclk>;
 				clock-names = "apb_pclk";
 				
@@ -171,7 +169,7 @@
 				interrupt-controller;
 				#interrupt-cells = <2>;
 				interrupt-parent = <&MPIC>;
-				interrupts = <107 IRQ_TYPE_LEVEL_HIGH>;
+				interrupts = <107 0>;	// IRQ_TYPE_EDGE_RISING
 				clocks = <&pclk>;
 				clock-names = "apb_pclk";				
 			};
@@ -179,7 +177,7 @@
 			spi0: spi0@0x3C03E000 {
 				compatible = "arm,pl022", "arm,primecell";
 				reg = <0x3C03E000 0x1000>;
-				interrupts = <100 IRQ_TYPE_EDGE_FALLING>;
+				interrupts = <100 0>;	// IRQ_TYPE_EDGE_RISING
 				#address-cells = <1>;
 				#size-cells = <0>;
 				interrupt-parent = <&MPIC>;
@@ -208,7 +206,7 @@
 				pinctrl-names = "default";
 				pinctrl-0 = <&uart0_mux>;				
 				interrupt-parent = <&MPIC>;
-				interrupts = <101 IRQ_TYPE_LEVEL_HIGH>;
+				interrupts = <101 0>;	// IRQ_TYPE_EDGE_RISING
 				status = "ok";
 			};
 
@@ -220,7 +218,7 @@
 				pinctrl-names = "default";
 				pinctrl-0 = <&uart1_mux>;
 				interrupt-parent = <&MPIC>;
-				interrupts = <102 IRQ_TYPE_LEVEL_HIGH>;
+				interrupts = <102 0>;	// IRQ_TYPE_EDGE_RISING
 				status = "ok";
 			};
 
@@ -233,7 +231,7 @@
 				reg-shift = <2>;
 				reg-io-width = <4>;
 				interrupt-parent = <&MPIC>;
-				interrupts = <99 IRQ_TYPE_LEVEL_HIGH>;
+				interrupts = <99 0>;	// IRQ_TYPE_EDGE_RISING
 				
 				rtc@68 {
 					compatible = "dallas,ds1338";
@@ -253,8 +251,6 @@
 					  0x00020000>;			/* size */
 
 			dma-ranges = <0x40000000 0x00000000 0x00000000 0x40000000>;
-			clock-frequency = <100000000>;
-
 
 			mgpio0_1: mgpio0_1@0x3C060420 {
 				compatible = "pinctrl-single";
@@ -393,7 +389,7 @@
 				compatible = "rc-module,mpw7705", "rc-module,mmc-0.2";
 				reg = <0x3C06A000 0x1000>;
 				interrupt-parent = <&MPIC>;
-				interrupts = <67 IRQ_TYPE_LEVEL_HIGH>;
+				interrupts = <67 0>;	// IRQ_TYPE_EDGE_RISING
 				pinctrl-names = "default";
 				pinctrl-0 = <&sdio_mux>;
 				clocks = <&lsif1clock>;
@@ -406,7 +402,7 @@
 			spi1: spi1@0x3C05A000 {
 				compatible = "arm,pl022", "arm,primecell";
 				reg = <0x3C05A000 0x1000>;
-				interrupts = <73 IRQ_TYPE_LEVEL_HIGH>;
+				interrupts = <73 0>;	// IRQ_TYPE_EDGE_RISING
 				#address-cells = <1>;
 				#size-cells = <0>;
 				interrupt-parent = <&MPIC>;
@@ -446,7 +442,7 @@
 				compatible = "rc-module,musb";
 				reg = <0x3C052000 0x7ff>;
 				interrupt-parent = <&MPIC>;
-				interrupts = <69 IRQ_TYPE_LEVEL_HIGH>, <70 IRQ_TYPE_LEVEL_HIGH>;
+				interrupts = <69 0>, <70 0>;
 				interrupt-names = "mc", "dma";
 				usb-phy = <&usb2_phy>;
 				phys = <&usb2_phy>;
@@ -470,7 +466,7 @@
 				reg = <0x3C050000 0x1000
 					   0x3C05E01C 0x4>;				/* extended DMA address bits */
 				interrupt-parent = <&MPIC>;
-				interrupts = <63 IRQ_TYPE_LEVEL_HIGH>;
+				interrupts = <63 0>;	// IRQ_TYPE_EDGE_RISING
 				mac-address = [ EC 17 66 77 05 01 ];
 				pinctrl-names = "default";
 				pinctrl-0 = <&greth0_0mux>, <&greth0_1mux>, <&greth0_2mux>;
@@ -481,7 +477,7 @@
 				reg = <0x3C051000 0x1000
 					   0x3C05E020 0x4>;				/* extended DMA address bits */
 				interrupt-parent = <&MPIC>;
-				interrupts = <64 IRQ_TYPE_LEVEL_HIGH>;
+				interrupts = <64 0>;	// IRQ_TYPE_EDGE_RISING
 				mac-address = [ EC 17 66 77 05 02 ];
 				pinctrl-names = "default";
 				pinctrl-0 = <&greth1_0mux>, <&greth1_1mux>, <&greth1_2mux>, <&greth1_3mux>;
@@ -506,8 +502,8 @@
 				#thermal-sensor-cells = <0>;
 
 				interrupt-parent = <&MPIC>;
-				interrupts = <32 IRQ_TYPE_LEVEL_HIGH	/* temperature IRQ */
-							  33 IRQ_TYPE_LEVEL_HIGH>;	/* voltage IRQ */
+				interrupts = <32 0 		/*  IRQ_TYPE_EDGE_RISING temperature IRQ */
+							  33 0>;	/*  IRQ_TYPE_EDGE_RISING  voltage IRQ */
 			};
 
 			cpufreq: cpufreq@0x38006000 {
@@ -556,7 +552,7 @@
 						"hp_set_reg",
 						"lp_set_reg";
 				interrupt-parent = <&MPIC>;
-				interrupts = <39 IRQ_TYPE_LEVEL_HIGH>, <41 IRQ_TYPE_LEVEL_HIGH>;
+				interrupts = <39 0>, <41 0>;
 				interrupt-names = "hp", "lp";		
 				status = "disabled";
 			};
@@ -582,7 +578,7 @@
 						"hp_set_reg",
 						"lp_set_reg";
 				interrupt-parent = <&MPIC>;
-				interrupts = <40 IRQ_TYPE_LEVEL_HIGH>, <42 IRQ_TYPE_LEVEL_HIGH>;
+				interrupts = <40 0>, <42 0>;
 				interrupt-names = "hp", "lp";		
 				status = "disabled";
 			};
@@ -608,7 +604,7 @@
 						"hp_set_reg",
 						"lp_set_reg";
 				interrupt-parent = <&MPIC>;
-				interrupts = <43 IRQ_TYPE_LEVEL_HIGH>, <45 IRQ_TYPE_LEVEL_HIGH>;
+				interrupts = <43 0>, <45 0>;
 				interrupt-names = "hp", "lp";		
 				status = "disabled";
 			};
@@ -634,7 +630,7 @@
 						"hp_set_reg",
 						"lp_set_reg";
 				interrupt-parent = <&MPIC>;
-				interrupts = <44 IRQ_TYPE_LEVEL_HIGH>, <46 IRQ_TYPE_LEVEL_HIGH>;
+				interrupts = <44 0>, <46 0>;
 				interrupt-names = "hp", "lp";		
 				status = "disabled";
 			};
@@ -661,6 +657,6 @@
 	};
 
 	chosen {
-		linux,stdout-path = &uart0;
+		stdout-path = &uart0;
 	};
 };

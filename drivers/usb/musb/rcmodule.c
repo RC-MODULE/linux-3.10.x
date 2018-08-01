@@ -74,9 +74,6 @@ static int rcmodule_musb_init(struct musb *musb)
 		musb->phy = devm_phy_get(dev->parent, "usb2-phy");
 		musb->xceiv = devm_usb_get_phy_by_phandle(dev->parent,
 		    "usb-phy", 0);
-	} else {
-		musb->xceiv = devm_usb_get_phy_dev(dev, 0);
-		musb->phy = devm_phy_get(dev, "usb");
 	}
 
 	if (IS_ERR(musb->xceiv)) {
@@ -197,8 +194,8 @@ static const struct musb_platform_ops rcmodule_ops = {
 
     .readw 		= _readw,
 	.writew 	= _writew,
-	.readl		= _readl, 
-	.writel 	= _writel,
+//	.readl		= _readl, 
+//	.writel 	= _writel,
 	.fifo_mode  = 4
 };
 
