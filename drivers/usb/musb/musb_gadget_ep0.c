@@ -219,7 +219,7 @@ __acquires(musb->lock)
 		case USB_REQ_SET_ADDRESS:
 			/* change it after the status stage */
 			musb->set_address = true;
-			musb->address = (u8) reqval;
+			musb->address = (u8) (reqval & 0x7f);
 			handled = 1;
 			break;
 
