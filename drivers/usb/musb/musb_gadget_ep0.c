@@ -209,6 +209,8 @@ __acquires(musb->lock)
 	int handled = -EINVAL;
 	void __iomem *mbase = musb->mregs;
 	const u8 recip = ctrlrequest->bRequestType & USB_RECIP_MASK;
+	u16 reqval = le16_to_cpu(ctrlrequest->wValue);
+	u16 reqidx = le16_to_cpu(ctrlrequest->wIndex);
 
 	/* the gadget driver handles everything except what we MUST handle */
 	if ((ctrlrequest->bRequestType & USB_TYPE_MASK)
@@ -217,16 +219,14 @@ __acquires(musb->lock)
 		case USB_REQ_SET_ADDRESS:
 			/* change it after the status stage */
 			musb->set_address = true;
-			musb->address = (u8) (le16_to_cpu(ctrlrequest->wValue) &
-									0x7f);
+			musb->address = (u8) reqval;
 			handled = 1;
 			break;
 
 		case USB_REQ_CLEAR_FEATURE:
 			switch (recip) {
 			case USB_RECIP_DEVICE:
-				if (le16_to_cpu(ctrlrequest->wValue)
-						!= USB_DEVICE_REMOTE_WAKEUP)
+				if (reqval != USB_DEVICE_REMOTE_WAKEUP)
 					break;
 				musb->may_wakeup = 0;
 				handled = 1;
@@ -234,8 +234,7 @@ __acquires(musb->lock)
 			case USB_RECIP_INTERFACE:
 				break;
 			case USB_RECIP_ENDPOINT:{
-				const u8		epnum =
-					le16_to_cpu(ctrlrequest->wIndex) & 0x0f;
+				const u8		epnum = reqidx & 0x0f;
 				struct musb_ep		*musb_ep;
 				struct musb_hw_ep	*ep;
 				struct musb_request	*request;
@@ -244,14 +243,12 @@ __acquires(musb->lock)
 				u16			csr;
 
 				if (epnum == 0 || epnum >= MUSB_C_NUM_EPS ||
-				    le16_to_cpu(ctrlrequest->wValue)
-						!= USB_ENDPOINT_HALT)
+				    reqval != USB_ENDPOINT_HALT)
 					break;
 
 				ep = musb->endpoints + epnum;
 				regs = ep->regs;
-				is_in = le16_to_cpu(ctrlrequest->wIndex) &
-								USB_DIR_IN;
+				is_in = reqidx & USB_DIR_IN;
 				if (is_in)
 					musb_ep = &ep->ep_in;
 				else
@@ -303,19 +300,17 @@ __acquires(musb->lock)
 			switch (recip) {
 			case USB_RECIP_DEVICE:
 				handled = 1;
-				switch (le16_to_cpu(ctrlrequest->wValue)) {
+				switch (reqval) {
 				case USB_DEVICE_REMOTE_WAKEUP:
 					musb->may_wakeup = 1;
 					break;
 				case USB_DEVICE_TEST_MODE:
 					if (musb->g.speed != USB_SPEED_HIGH)
 						goto stall;
-					if (le16_to_cpu(ctrlrequest->wIndex) &
-									0xff)
+					if (reqidx & 0xff)
 						goto stall;
 
-					switch (le16_to_cpu(ctrlrequest->wIndex)
-									 >> 8) {
+					switch (reqidx >> 8) {
 					case 1:
 						pr_debug("TEST_J\n");
 						/* TEST_J */
@@ -403,8 +398,7 @@ stall:
 				break;
 
 			case USB_RECIP_ENDPOINT:{
-				const u8		epnum =
-					le16_to_cpu(ctrlrequest->wIndex) & 0x0f;
+				const u8		epnum = reqidx & 0x0f;
 				struct musb_ep		*musb_ep;
 				struct musb_hw_ep	*ep;
 				void __iomem		*regs;
@@ -412,14 +406,12 @@ stall:
 				u16			csr;
 
 				if (epnum == 0 || epnum >= MUSB_C_NUM_EPS ||
-				    le16_to_cpu(ctrlrequest->wValue)
-						!= USB_ENDPOINT_HALT)
+				    reqval != USB_ENDPOINT_HALT)
 					break;
 
 				ep = musb->endpoints + epnum;
 				regs = ep->regs;
-				is_in = le16_to_cpu(ctrlrequest->wIndex) &
-								USB_DIR_IN;
+				is_in = reqidx & USB_DIR_IN;
 				if (is_in)
 					musb_ep = &ep->ep_in;
 				else
@@ -615,7 +607,7 @@ musb_read_setup(struct musb *musb, struct usb_ctrlrequest *req)
 	 */
 	musb->set_address = false;
 	musb->ackpend = MUSB_CSR0_P_SVDRXPKTRDY;
-	if (le16_to_cpu(req->wLength) == 0) {
+	if (req->wLength == 0) {
 		if (req->bRequestType & USB_DIR_IN)
 			musb->ackpend |= MUSB_CSR0_TXPKTRDY;
 		musb->ep0_state = MUSB_EP0_STAGE_ACKWAIT;
