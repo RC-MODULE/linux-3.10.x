@@ -29,7 +29,7 @@ struct nmc_core {
 	void             (*send_interrupt) (struct nmc_core *self, enum nmc_irq n);
 	void             (*clear_interrupt) (struct nmc_core *self, enum nmc_irq n);
 	char __iomem      *imem_virt;  /* Pointer to nmc internal memory (remapped) */
-	unsigned long      imem_phys; 
+	phys_addr_t        imem_phys; 
 	size_t             imem_size; /* size in bytes */ 
 	/* Private data */
 	int                id; 

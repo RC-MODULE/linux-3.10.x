@@ -379,7 +379,7 @@ static long easynmc_ioctl(struct file *filp, unsigned int ioctl_num, unsigned lo
 
 		chan = (struct nmc_stdio_channel *) &core->imem_virt[addr];
 
-		if ((chan->size & (chan->size - 1)) != 0) {
+		if ((chan->size & (le32_to_cpu(chan->size) - 1)) != 0) {
 			printk("easynmc: IO buffer size not power of 2, not attaching\n");
 			return -EIO;
 		}
@@ -391,7 +391,7 @@ static long easynmc_ioctl(struct file *filp, unsigned int ioctl_num, unsigned lo
 		
 		dbg("Attached %s length %d words", 
 		    (ioctl_num == IOCTL_NMC3_ATTACH_STDIN) ? "stdin" : "stdout",
-		     chan->size);
+		     le32_to_cpu(chan->size));
 		chan->isr_on_io = 1; /* Enable interrupt transport */
 
 		/* Wake up. We may have data in there already! */
@@ -534,7 +534,7 @@ static int imem_mmap(struct file * filp, struct vm_area_struct * vma)
 {
 	struct nmc_core *core = EASYNMC_MISC2CORE(filp->private_data);
 	size_t size = vma->vm_end - vma->vm_start;
-	unsigned long phys_start = (vma->vm_pgoff << PAGE_SHIFT) + core->imem_phys; 
+	phys_addr_t phys_start = (vma->vm_pgoff << PAGE_SHIFT) + core->imem_phys; 
 	vma->vm_pgoff = phys_start >> PAGE_SHIFT;
 	
 	if (!core->imem_phys) { 
@@ -542,8 +542,8 @@ static int imem_mmap(struct file * filp, struct vm_area_struct * vma)
 		return -EIO;
 	}
 	
-	dbg("Requested mmap: start 0x%lx len 0x%lx \n", 
-	    (unsigned long) phys_start, 
+	dbg("Requested mmap: start 0x%llx len 0x%lx \n", 
+	    phys_start, 
 	    (unsigned long) size);
 	
 	/* Dumb bounds check */
@@ -624,7 +624,7 @@ static size_t copy_from_nmc_to_user(unsigned char __user* to, const uint32_t* fr
 		return (copy_to_user(to, from, len * sizeof(uint32_t)) >> 2);
 	
 	for (i = 0; i < len; i++) {
-		unsigned char data = (unsigned char) (from[i] & 0xFF);
+		unsigned char data = (unsigned char) (le32_to_cpu(from[i]) & 0xFF);
 		if (0 > put_user(data, to++))
 			ret++;
 	}
@@ -644,7 +644,7 @@ static size_t copy_from_user_to_nmc(uint32_t* to, const unsigned char __user* fr
 		if (0 > get_user(data, from++))
 			ret++;
 		else
-			to[i] = (uint32_t) data;		
+			to[i] = cpu_to_le32((uint32_t) data);		
 	}
 
 	return ret;
@@ -663,9 +663,9 @@ static ssize_t stdio_read(struct file *filp, char __user *buff, size_t count, lo
 	notcopied = 0;
 	while (count && (notcopied==0)) { 
 		size_t processed; 
-		size_t occupied = CIRC_CNT_TO_END(core->stdout->head, 
-						  core->stdout->tail, 
-						  core->stdout->size);
+		size_t occupied = CIRC_CNT_TO_END(le32_to_cpu(core->stdout->head), 
+						  le32_to_cpu(core->stdout->tail), 
+						  le32_to_cpu(core->stdout->size));
 		if (!core->reformat_stdout) 
 			occupied = occupied << 2; /* If no reformatting 4x more data! */
 		
@@ -680,9 +680,9 @@ static ssize_t stdio_read(struct file *filp, char __user *buff, size_t count, lo
 				/* If nothing read, block until something's avail */
 				ret = wait_event_interruptible(
 					core->qh, 
-					CIRC_CNT(core->stdout->head, 
-						 core->stdout->tail,
-						 core->stdout->size)
+					CIRC_CNT(le32_to_cpu(core->stdout->head), 
+						 le32_to_cpu(core->stdout->tail),
+						 le32_to_cpu(core->stdout->size))
 
 					);
 				if (ret < 0) 
@@ -692,7 +692,7 @@ static ssize_t stdio_read(struct file *filp, char __user *buff, size_t count, lo
 
 		notcopied = copy_from_nmc_to_user(
 			&buff[copied],
-			&core->stdout->data[core->stdout->tail],
+			&core->stdout->data[le32_to_cpu(core->stdout->tail)],
 			tocopy,
 			core->reformat_stdout
 			);
@@ -701,8 +701,8 @@ static ssize_t stdio_read(struct file *filp, char __user *buff, size_t count, lo
 		processed = tocopy - notcopied;
 		count  -= processed; 
 		copied += processed;
-		core->stdout->tail += processed;
-		core->stdout->tail &= (core->stdout->size - 1);
+		core->stdout->tail = cpu_to_le32( le32_to_cpu(core->stdout->tail) + processed);
+		core->stdout->tail = cpu_to_le32( le32_to_cpu(core->stdout->tail) & (le32_to_cpu(core->stdout->size) - 1));
 	}
 	
 	*offp += copied;
@@ -725,9 +725,9 @@ static ssize_t stdio_write(struct file *filp, const char __user *buff, size_t co
 	notcopied = 0;
 	while (count && (notcopied==0)) { 
 		size_t processed; 
-		size_t numfree = CIRC_SPACE_TO_END(core->stdin->head, 
-						  core->stdin->tail, 
-						  core->stdin->size);
+		size_t numfree = CIRC_SPACE_TO_END(le32_to_cpu(core->stdin->head), 
+						  le32_to_cpu(core->stdin->tail), 
+						  le32_to_cpu(core->stdin->size));
 		if (!core->reformat_stdin) 
 			numfree = numfree << 2; /* If no reformatting 4x more data! */
 		
@@ -742,9 +742,9 @@ static ssize_t stdio_write(struct file *filp, const char __user *buff, size_t co
 				/* If nothing can be written, block until we write more */
 				ret = wait_event_interruptible(
 					core->qh, 
-					CIRC_SPACE(core->stdin->head, 
-						   core->stdin->tail,
-						   core->stdin->size)
+					CIRC_SPACE(le32_to_cpu(core->stdin->head), 
+						   le32_to_cpu(core->stdin->tail),
+						   le32_to_cpu(core->stdin->size))
 					);
 				if (ret < 0) 
 					break;
@@ -753,7 +753,7 @@ static ssize_t stdio_write(struct file *filp, const char __user *buff, size_t co
 		};
 
 		notcopied = copy_from_user_to_nmc(
-			&core->stdin->data[core->stdin->head],
+			&core->stdin->data[le32_to_cpu(core->stdin->head)],
 			&buff[copied],
 			tocopy,
 			core->reformat_stdin
@@ -763,8 +763,8 @@ static ssize_t stdio_write(struct file *filp, const char __user *buff, size_t co
 		processed = tocopy - notcopied;
 		count  -= processed; 
 		copied += processed;
-		core->stdin->head += processed;
-		core->stdin->head &= (core->stdin->size - 1);
+		core->stdin->head = cpu_to_le32(le32_to_cpu(core->stdin->head) + processed);
+		core->stdin->head = cpu_to_le32(le32_to_cpu(core->stdin->head) & (le32_to_cpu(core->stdin->size) - 1));
 	}
 	
 	*offp += copied;
@@ -783,15 +783,15 @@ unsigned int stdio_poll(struct file *filp, poll_table *wait)
 	poll_wait(filp, &core->qh, wait);
 
 	if (core->stdout &&
-	    CIRC_CNT(core->stdout->head, 
-		     core->stdout->tail, 
-		     core->stdout->size))
+	    CIRC_CNT(le32_to_cpu(core->stdout->head), 
+		     le32_to_cpu(core->stdout->tail), 
+		     le32_to_cpu(core->stdout->size)))
 		mask|= (POLLIN | POLLRDNORM);
 
 	if (core->stdin &&
-	    CIRC_SPACE(core->stdin->head, 
-		     core->stdin->tail, 
-		     core->stdin->size))
+	    CIRC_SPACE(le32_to_cpu(core->stdin->head), 
+		     le32_to_cpu(core->stdin->tail), 
+		     le32_to_cpu(core->stdin->size)))
 		mask|= (POLLOUT | POLLWRNORM);
 
 	return mask;

@@ -25,6 +25,8 @@
 #include <linux/fs.h>
 #include <linux/slab.h>
 #include <linux/workqueue.h>
+#include <linux/mfd/syscon.h>
+#include <linux/regmap.h>
 #include <generated/utsrelease.h>
 #include <linux/miscdevice.h>
 #include <linux/spinlock.h>
@@ -35,36 +37,61 @@
 
 #define DRVNAME "easynmc-nmc3"
 
-struct nmc3_core { 
-	struct nmc_core c;
-	uint32_t *nmi_reg;
-	uint32_t *reset_reg;
-	uint32_t *hp_clr_reg;
-	uint32_t *lp_clr_reg;
-	uint32_t *hp_set_reg;
-	uint32_t *lp_set_reg;
+struct nmc_control_reg {
+	uint32_t offset;
+	uint32_t bit;
 };
 
+struct nmc3_core { 
+	struct nmc_core c;
+	struct regmap *control;
+	struct regmap *reset;
+	uint32_t reset_bit;
+	struct nmc_control_reg lp_status_reg;
+	struct nmc_control_reg hp_status_reg;
+	struct nmc_control_reg lp_set_reg;
+	struct nmc_control_reg hp_set_reg;
+	struct nmc_control_reg nmi_set_reg;
+	struct nmc_control_reg lp_clr_reg;
+	struct nmc_control_reg hp_clr_reg;
+};
+
+#define UNLOCK 0x1ACCE551
 
 void nmc3_reset(struct nmc_core *self) 
 {
 	struct nmc3_core *core = (struct nmc3_core *) self;
-	iowrite32(0xff, core->reset_reg);
+
+	// active reset low
+	regmap_write(core->reset, 0x00c, UNLOCK);   // allow changing other regs
+	regmap_update_bits(core->reset, 0x018, BIT(core->reset_bit), 0); // write 0 to reset
+	regmap_update_bits(core->reset, 0x018, BIT(core->reset_bit), BIT(core->reset_bit)); // write 1 to reset
+	regmap_write(core->reset, 0x00c, 0);   // disable changing other regs
+
+	// clear all interrupts
+	regmap_write(core->control, core->hp_clr_reg.offset, BIT(core->hp_clr_reg.bit));
+	regmap_write(core->control, core->lp_clr_reg.offset, BIT(core->lp_clr_reg.bit));
+
 }
 
 void nmc3_send_interrupt(struct nmc_core *self, enum nmc_irq n) 
 {
+	// all interrupt set bit cleared automaticaly after set 
 	struct nmc3_core *core = (struct nmc3_core *) self;
 	switch (n) {
 	case NMC_IRQ_NMI:
-		iowrite32(0x1, core->nmi_reg);
-		iowrite32(0x0, core->nmi_reg);
+		// clear all interrupts
+		regmap_write(core->control, core->hp_clr_reg.offset, BIT(core->hp_clr_reg.bit));
+		regmap_write(core->control, core->lp_clr_reg.offset, BIT(core->lp_clr_reg.bit));
+
+		regmap_write(core->control, core->nmi_set_reg.offset, 0);
+		regmap_write(core->control, core->nmi_set_reg.offset, BIT(core->nmi_set_reg.bit));
 		break;
 	case NMC_IRQ_HP:
-		iowrite32(0x1, core->hp_set_reg);
+		regmap_write(core->control, core->hp_set_reg.offset, BIT(core->hp_set_reg.bit));
 		break;
 	case NMC_IRQ_LP:
-		iowrite32(0x1, core->lp_set_reg);
+		regmap_write(core->control, core->lp_set_reg.offset, BIT(core->lp_set_reg.bit));
 		break;		
 	default:
 		printk(DRVNAME ": Warning - invalid IRQ request - %d\n", n);
@@ -76,10 +103,10 @@ void nmc3_clear_interrupt(struct nmc_core *self, enum nmc_irq n)
 	struct nmc3_core *core = (struct nmc3_core *) self;
 	switch (n) {
 	case NMC_IRQ_HP:
-		iowrite32(0x1, core->hp_clr_reg);
+		regmap_write(core->control, core->hp_clr_reg.offset, BIT(core->hp_clr_reg.bit));
 		break;
 	case NMC_IRQ_LP:
-		iowrite32(0x1, core->lp_clr_reg);
+		regmap_write(core->control, core->lp_clr_reg.offset, BIT(core->lp_clr_reg.bit));
 		break;		
 	default:
 		printk(DRVNAME ": Warning - invalid IRQ clear request - %d\n", n);
@@ -92,22 +119,32 @@ static int easynmc_probe (struct platform_device *pdev)
 	int ret=-EIO;
 	struct resource *res; 
 	struct nmc3_core *core = kmalloc(sizeof(struct nmc3_core), GFP_KERNEL);
+	struct device_node		*np = pdev->dev.of_node;
+	struct device_node *tmp;
+
 	if (!core) 
 		return -ENOMEM;
 
-#define GRAB_MEM_RESOURCE(name)						\
- 	res = platform_get_resource_byname(pdev, IORESOURCE_MEM, #name); \
-	if (!res) {							\
-		printk(DRVNAME ": failed to get mem resource " #name " \n"); \
-		goto errfreemem;					\
-									\
-	}								\
-	res->flags &= ~(IORESOURCE_CACHEABLE);				\
-	core->name = devm_ioremap_resource(&pdev->dev, res);		\
-	if (IS_ERR(core->name)) {					\
-		printk(DRVNAME ": request/remap failed for " #name " \n"); \
-		goto errfreemem;					\
-	}								\
+	memset(core, 0, sizeof(struct nmc3_core));
+
+	// get control registers for reset and interrupt
+
+	tmp = of_parse_phandle(np, "control", 0);
+	if (!tmp) {
+		printk(DRVNAME ": failed to find control register reference\n");
+		goto errfreemem;					
+	}
+	core->control = syscon_node_to_regmap(tmp);
+
+	tmp = of_parse_phandle(np, "reset", 0);
+	if (!tmp) {
+		printk(DRVNAME ": failed to find reset register reference\n");
+		goto errfreemem;					
+	}
+	core->reset = syscon_node_to_regmap(tmp);
+
+
+
 
 #define GRAB_IRQ_RESOURCE(name, to)					\
  	res = platform_get_resource_byname(pdev, IORESOURCE_IRQ, #name); \
@@ -118,13 +155,31 @@ static int easynmc_probe (struct platform_device *pdev)
 	}								\
 	to=res->start;
 	
+#define GRAB_NMC_REG(name)	\
+	if(of_property_read_u32_array(np, #name, (uint32_t*) &(core->name), 2)) \
+	{ \
+		printk(DRVNAME ": unable to get " #name " value"); \
+		goto errfreemem; \
+	} 
 
-	GRAB_MEM_RESOURCE(reset_reg);
-	GRAB_MEM_RESOURCE(nmi_reg);
-	GRAB_MEM_RESOURCE(hp_clr_reg);
-	GRAB_MEM_RESOURCE(hp_set_reg);
-	GRAB_MEM_RESOURCE(lp_clr_reg);
-	GRAB_MEM_RESOURCE(lp_set_reg);
+	GRAB_NMC_REG(lp_status_reg);
+	GRAB_NMC_REG(hp_status_reg);
+	GRAB_NMC_REG(lp_set_reg);
+	GRAB_NMC_REG(hp_set_reg);
+	GRAB_NMC_REG(nmi_set_reg);
+	GRAB_NMC_REG(hp_clr_reg);
+	GRAB_NMC_REG(lp_clr_reg);	
+
+
+
+
+	if(of_property_read_u32(np, "reset_bit", (uint32_t*) &(core->reset_bit)))
+	{
+		printk(DRVNAME ": unable to get reset_bit value");		
+		goto errfreemem;
+	} 
+
+	printk(DRVNAME ": nmi_set_reg: %x %x", core->nmi_set_reg.offset, core->nmi_set_reg.bit);		
 
 	GRAB_IRQ_RESOURCE(hp, core->c.irqs[NMC_IRQ_HP]);
 	GRAB_IRQ_RESOURCE(lp, core->c.irqs[NMC_IRQ_LP]);
@@ -165,8 +220,33 @@ static int easynmc_probe (struct platform_device *pdev)
 	core->c.dev = &pdev->dev;
 	dev_set_drvdata(&pdev->dev, core);
 	easynmc_register_core(&core->c);
+
+	{
+		uint32_t val;
+		
+		if( regmap_read(core->control, core->hp_status_reg.offset, &val) )  // read reset reg value
+		{
+			printk(DRVNAME ": Warning - unable to access reset regmap\n");
+			goto errfreemem;
+		}
+		printk(DRVNAME ": IRQ status: %08X\n", val);
+	}
 	
-	
+	nmc3_clear_interrupt(&core->c, NMC_IRQ_HP);
+	nmc3_clear_interrupt(&core->c, NMC_IRQ_LP);
+
+	{
+		uint32_t val;
+		
+		if( regmap_read(core->control, core->hp_status_reg.offset, &val) )  // read reset reg value
+		{
+			printk(DRVNAME ": Warning - unable to access reset regmap\n");
+			goto errfreemem;
+		}
+		printk(DRVNAME ": IRQ status after clear: %08X\n", val);
+	}
+
+
 	return 0;
 errfreemem:
 	kfree(core);

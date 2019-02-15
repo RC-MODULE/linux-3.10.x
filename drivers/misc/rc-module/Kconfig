@@ -19,6 +19,7 @@ config EASYNMC_CORE_TEST
 config EASYNMC_CORE_NMC3
     tristate "EasyNMC NMC3 Core"
     depends on EASYNMC
+    select MFD_SYSCON
     help
 	  NMC3 core defined by DeviceTree.
 

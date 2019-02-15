@@ -915,7 +915,7 @@ static void rmsdio_set_ios(struct mmc_host *mmc, struct mmc_ios *ios)
 		uint32_t m = DIV_ROUND_UP(host->base_clock, ios->clock * 2) - 1;
 		if (m > RMSDIO_CLKDIV_MAX)
 			m = RMSDIO_CLKDIV_MAX;
-		//m = 0x18;
+		m = 0x18;
 		rmsdio_write(RMSDIO_CLKDIV, m);
 		host->clock = ios->clock;
 		host->ns_per_clk = 1000000000 / (host->base_clock / (m+1));
