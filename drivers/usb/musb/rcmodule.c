@@ -28,6 +28,8 @@
 #include <linux/of_platform.h>
 #include <linux/dma-mapping.h>
 #include "musb_core.h"
+#include <linux/mfd/syscon.h>
+#include <linux/regmap.h>
 
 struct rcmodule_glue {
 	struct device		*dev;
@@ -255,38 +257,33 @@ static int rcmodule_probe(struct platform_device *pdev)
 		pdata->board_data	= 0; // not needed for a while
 		pdata->config		= config;
 
-		// process control register		
-		sctl = of_parse_phandle(np, "sctl", 0);
-		if (sctl) {
-			void* sctl_reg = 0;
-			struct resource		*res;
-			u32 sctl_val[3];
-			control_pdev = of_find_device_by_node(sctl);
-			if (!control_pdev) {
-				dev_err(&pdev->dev, "Failed to get SCTL device\n");
-				ret = -EINVAL;
-				goto err2;
-			}
-			res = platform_get_resource(control_pdev, IORESOURCE_MEM, 0);
-			sctl_reg = devm_ioremap_resource(&control_pdev->dev, res);
-			if (IS_ERR(sctl_reg))
-			{
-				dev_err(&pdev->dev, "Failed to allocate SCTL resource\n");
-				ret = -EINVAL;
-				goto err2;
-			}
-			if(!of_property_read_u32_array(np, "sctl-reg", &sctl_val[0], 3))
-			{
-				u32 value = __raw_readl(sctl_reg + sctl_val[0]);
-				dev_dbg(&pdev->dev, "Setup SCTL register %d, offset %d, bit %d", sctl_val[0], sctl_val[1], sctl_val[2]);
-				value &= ~(1<<sctl_val[1]);
-				value |=  sctl_val[2] << sctl_val[1];
-				__raw_writel(value, sctl_reg + sctl_val[0]);
-			}
-			else
-				dev_err(&pdev->dev, "Failed to read sctl-reg values\n");
 
-			devm_iounmap(&control_pdev->dev, sctl_reg);
+		// process control register		
+		sctl = of_parse_phandle(np, "control", 0);
+		if (sctl) {
+			struct regmap * control = syscon_node_to_regmap(sctl);
+			unsigned int offs, bitno;
+			int ret;
+
+			ret = of_property_read_u32_index(pdev->dev.of_node, "control", 1,
+							&offs);
+			if (ret < 0) {
+				dev_err(&pdev->dev, "Unable to find offset in control register\n");
+				goto err2;
+			}
+
+			ret = of_property_read_u32_index(pdev->dev.of_node, "control", 2,
+							&bitno);
+			if (ret < 0) {
+				dev_err(&pdev->dev, "Unable to find bit number in control register\n");
+				goto err2;
+			}
+
+			if(regmap_update_bits(control, offs, BIT(bitno), BIT(bitno))) // write 1 - 24Mhz
+			{
+				dev_err(&pdev->dev, "Unable to change control register value\n");
+				goto err2;
+			}
 		}
 	}
 	pdata->platform_ops		= &rcmodule_ops;

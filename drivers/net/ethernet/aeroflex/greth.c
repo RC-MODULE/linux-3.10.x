@@ -191,7 +191,7 @@ static void greth_clean_rings(struct greth_private *greth)
 	struct greth_bd *rx_bdp = greth->rx_bd_base;
 	struct greth_bd *tx_bdp = greth->tx_bd_base;
 
-#if ! (defined(CONFIG_PPC) && defined(CONFIG_CPU_BIG_ENDIAN))
+//#if ! (defined(CONFIG_PPC) && defined(CONFIG_CPU_BIG_ENDIAN))
 	if (greth->gbit_mac) {
 
 		/* Free and unmap RX buffers */
@@ -235,7 +235,7 @@ static void greth_clean_rings(struct greth_private *greth)
 
 
 	} else 
-#endif	
+//#endif	
 	{ /* 10/100 Mbps MAC */
 
 		for (i = 0; i < GRETH_RXBD_NUM; i++, rx_bdp++) {
@@ -265,7 +265,7 @@ static int greth_init_rings(struct greth_private *greth)
 	tx_bd = greth->tx_bd_base;
 
 	/* Initialize descriptor rings and buffers */
-#if ! (defined(CONFIG_PPC) && defined(CONFIG_CPU_BIG_ENDIAN))
+//#if ! (defined(CONFIG_PPC) && defined(CONFIG_CPU_BIG_ENDIAN))
 	if (greth->gbit_mac) {
 		struct sk_buff *skb;
 
@@ -293,7 +293,7 @@ static int greth_init_rings(struct greth_private *greth)
 		}
 
 	} else 
-#endif	
+//#endif	
 	{
 
 		/* 10/100 MAC uses a fixed set of buffers and copy to/from SKBs */
@@ -418,7 +418,7 @@ static int greth_close(struct net_device *dev)
 	return 0;
 }
 
-#ifdef CONFIG_PPC
+#ifdef _CONFIG_PPC
 // ToDo: speed-up
 void *swapcpy(void *p, const void *q, __kernel_size_t size)
 {
@@ -477,11 +477,11 @@ greth_start_xmit(struct sk_buff *skb, struct net_device *dev)
 
 	bdp = greth->tx_bd_base + greth->tx_next;
 	dma_addr = greth_read_bd(&bdp->addr);
-#if defined(CONFIG_PPC) && defined(CONFIG_CPU_BIG_ENDIAN)
-	swapcpy((unsigned char *) phys_to_virt(dma_to_phys(greth->dev, dma_addr)), skb->data, skb->len);
-#else
+//#if defined(CONFIG_PPC) && defined(CONFIG_CPU_BIG_ENDIAN)
+//	swapcpy((unsigned char *) phys_to_virt(dma_to_phys(greth->dev, dma_addr)), skb->data, skb->len);
+//#else
 	memcpy((unsigned char *) phys_to_virt(dma_to_phys(greth->dev, dma_addr)), skb->data, skb->len);
-#endif
+//#endif
 	dma_sync_single_for_device(greth->dev, dma_to_phys(greth->dev, dma_addr), skb->len, DMA_TO_DEVICE);
 	status = GRETH_BD_EN | GRETH_BD_IE | (skb->len & GRETH_BD_LEN);
 	greth->tx_bufs_length[greth->tx_next] = skb->len & GRETH_BD_LEN;
@@ -790,7 +790,7 @@ static void __maybe_unused greth_clean_tx_gbit(struct net_device *dev)
 	}
 }
 
-#ifdef CONFIG_PPC
+#ifdef _CONFIG_PPC
 static inline void *skb_put_swap_data(struct sk_buff *skb, const void *data,
 				 unsigned int len)
 {
@@ -870,13 +870,13 @@ static int greth_rx(struct net_device *dev, int limit)
 				if (netif_msg_pktdata(greth))
 					greth_print_rx_packet(phys_to_virt(dma_to_phys(greth->dev, dma_addr)), pkt_len);
 
-#if defined(CONFIG_PPC) && defined(CONFIG_CPU_BIG_ENDIAN)
-				skb_put_swap_data(skb, phys_to_virt(dma_to_phys(greth->dev, dma_addr)),
-					     pkt_len);
-#else
+//#if defined(CONFIG_PPC) && defined(CONFIG_CPU_BIG_ENDIAN)
+//				skb_put_swap_data(skb, phys_to_virt(dma_to_phys(greth->dev, dma_addr)),
+//					     pkt_len);
+//#else
 				skb_put_data(skb, phys_to_virt(dma_to_phys(greth->dev, dma_addr)),
 					     pkt_len);
-#endif
+//#endif
 
 				skb->protocol = eth_type_trans(skb, dev);
 				dev->stats.rx_bytes += pkt_len;
@@ -1048,12 +1048,12 @@ static int greth_poll(struct napi_struct *napi, int budget)
 	greth = container_of(napi, struct greth_private, napi);
 
 restart_txrx_poll:
-#if ! (defined(CONFIG_PPC) && defined(CONFIG_CPU_BIG_ENDIAN))
+//#if ! (defined(CONFIG_PPC) && defined(CONFIG_CPU_BIG_ENDIAN))
 	if (greth->gbit_mac) {
 		greth_clean_tx_gbit(greth->netdev);
 		work_done += greth_rx_gbit(greth->netdev, budget - work_done);
 	} else 
-#endif	
+//#endif	
 	{
 		if (netif_queue_stopped(greth->netdev))
 			greth_clean_tx(greth->netdev);
@@ -1065,13 +1065,13 @@ restart_txrx_poll:
 		spin_lock_irqsave(&greth->devlock, flags);
 
 		ctrl = GRETH_REGLOAD(greth->regs->control);
-#if ! (defined(CONFIG_PPC) && defined(CONFIG_CPU_BIG_ENDIAN))
+//#if ! (defined(CONFIG_PPC) && defined(CONFIG_CPU_BIG_ENDIAN))
 		if (
 			(greth->gbit_mac && (greth->tx_last != greth->tx_next)) ||
 		    (!greth->gbit_mac && netif_queue_stopped(greth->netdev))) 
-#else
-		if(netif_queue_stopped(greth->netdev))
-#endif		
+//#else
+//		if(netif_queue_stopped(greth->netdev))
+//#endif		
 		{
 			GRETH_REGSAVE(greth->regs->control,
 					ctrl | GRETH_TXI | GRETH_RXI);
@@ -1590,11 +1590,11 @@ static int greth_of_probe(struct platform_device *ofdev)
 		dev->hw_features = NETIF_F_SG | NETIF_F_IP_CSUM |
 			NETIF_F_RXCSUM;
 		dev->features = dev->hw_features | NETIF_F_HIGHDMA;
-#if ! (defined(CONFIG_PPC) && defined(CONFIG_CPU_BIG_ENDIAN))
+//#if ! (defined(CONFIG_PPC) && defined(CONFIG_CPU_BIG_ENDIAN))
 	// need to rotate everything  - not sure that we able to have enough speed
 	// todo.
 		greth_netdev_ops.ndo_start_xmit = greth_start_xmit_gbit;
-#endif		
+//#endif		
 	}
 
 	if (greth->multicast) {
