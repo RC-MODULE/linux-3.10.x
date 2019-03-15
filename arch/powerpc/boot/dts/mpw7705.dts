@@ -23,6 +23,7 @@
 	aliases {
 		serial0 = &uart0;
 		serial1 = &uart1;
+		serial2 = &uart2;
 		mmc0 = &mmc0;
 	};
 
@@ -34,8 +35,8 @@
 			device_type = "cpu";
 			model = "PowerPC,470S";
 			reg = <0>;
-			clock-frequency = <500000000>; // 500 Mhz
-			timebase-frequency = <500000000>; // 500Mhz
+			clock-frequency = <800000000>; // 800 Mhz
+			timebase-frequency = <800000000>; // 800Mhz
 			i-cache-line-size = <32>;
 			d-cache-line-size = <32>;
 			i-cache-size = <32768>;
@@ -48,8 +49,8 @@
 			device_type = "cpu";
 			model = "PowerPC,470S";
 			reg = <1>;
-			clock-frequency = <50000000>; // 500 Mhz
-			timebase-frequency = <500000000>; // 500Mhz
+			clock-frequency = <80000000>; // 800 Mhz
+			timebase-frequency = <800000000>; // 800Mhz
 			i-cache-line-size = <32>;
 			d-cache-line-size = <32>;
 			i-cache-size = <32768>;
@@ -61,6 +62,29 @@
 			cpu-release-addr = <0x010 0x0007FFE0>; 
 
 		};
+	};
+
+	reserved-memory {
+			#address-cells = <2>;
+			#size-cells = <2>;
+			ranges;
+
+			nmc_mem0: nmc_mem0 {
+					size = <0 0x1000000>;
+					alignment = <0 0x1000000>;
+			};
+			nmc_mem1: nmc_mem1 {
+					size = <0 0x1000000>;
+					alignment = <0 0x1000000>;
+			};
+			nmc_mem2: nmc_mem2 {
+					size = <0 0x1000000>;
+					alignment = <0 0x1000000>;
+			};
+			nmc_mem3: nmc_mem3 {
+					size = <0 0x1000000>;
+					alignment = <0 0x1000000>;
+			};
 	};
 
 	memory {
@@ -488,8 +512,13 @@
 
 			cpufreq: cpufreq@0x38006000 {
 				compatible = "rc-module,cpu-freq";
-				reg = <0x38006000 0x1000>;
-				status = "disabled";
+				control = <&crg_cpu>;
+				/*	     freq       fb  pre post div	*/
+				freqs = <200000     16  1   1   0>,
+						<400000     32  1   1   0>,
+						<800000     64  1   1   0>;
+
+				status = "ok";
 			};
 		};
 
@@ -519,6 +548,8 @@
 				reg = <0x39000000 0x00020000>;	// imem
 				reg-names = "imem";
 
+				memory-region = <&nmc_mem0>;
+
 				control = <&sctl>;
 				reset = <&crg_cpu>;
 
@@ -544,6 +575,8 @@
 				reg = <0x39020000 0x00020000>;	// imem
 				reg-names = "imem";
 
+				memory-region = <&nmc_mem1>;
+
 				control = <&sctl>;
 				reset = <&crg_cpu>;
 
@@ -568,6 +601,8 @@
 				reg = <0x39040000 0x00020000>;	// imem
 				reg-names = "imem";
 
+				memory-region = <&nmc_mem2>;
+
 				control = <&sctl>;
 				reset = <&crg_cpu>;
 
@@ -591,6 +626,8 @@
 				device-id = <3>;
 				reg = <0x39060000 0x00020000>;	// imem
 				reg-names = "imem";
+
+				memory-region = <&nmc_mem3>;
 
 				control = <&sctl>;
 				reset = <&crg_cpu>;
