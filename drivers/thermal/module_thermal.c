@@ -48,8 +48,8 @@ struct termal_regs {
 	u32 vstart;
 };
 
-#define read_term_reg(X) readl_relaxed(&(X))
-#define write_term_reg(Y, X) writel_relaxed((Y), &(X))
+#define read_term_reg(X) le32_to_cpu(__raw_readl(&(X)))
+#define write_term_reg(Y, X) __raw_writel(cpu_to_le32(Y), &(X))
 
 struct rcmodule_therm_info {
 	struct device			*dev;
@@ -107,27 +107,44 @@ static const int temp_table[] = {
  * Return 0 on success otherwise error number to show reason of failure.
  */
 
+#undef TABLE_METHOD
+
 static int rcmodule_thermal_read_temp(void *data, int *temp)
 {
 	struct rcmodule_therm_info *therminfo = data;
 	unsigned int val, val0;
-	int i;
 
 	val0 = read_term_reg(therminfo->regs->tavg);
 
-	// TODO AstroSoft: take avarage by 3 sensors in workable HW
-	val = ((val0 & 0x3FF) /*+ ((val >> 10) & 0x3FF) + ((val >> 20)) & 0x3FF)/3*/);
+	//  take avarage by 3 sensors 
+	val = ((val0 & 0x3FF) + ((val0 >> 10) & 0x3FF) + ((val0 >> 20) & 0x3FF));
 
-	for(i = 0; i < (sizeof(temp_table) - 1); i+=2)
+#ifdef DEBUG
+	printk("tvag: %d, %d, %d\n", (val0 & 0x3FF), ((val0 >> 10) & 0x3FF), ((val0 >> 20) & 0x3FF));
+#endif
+
+	if(val < 390*3)
+		*temp = 125000;
+	else if(val > 650*3)
+		*temp = -40000;
+	else
 	{
-		if(val > temp_table[i])
-			break;
+#ifdef TABLE_METHOD
+		int i;
+		for(i = 0; i < (sizeof(temp_table) - 1); i+=2)
+		{
+			if(val > temp_table[i])
+				break;
+		}
+		*temp = temp_table[i+1]*1000;
+#else		
+
+		*temp = ((65000000*3 - val*100000)/473 + -40000);
+#endif		
 	}
 
-#ifdef DBEUG
-	printk("--- temp: %d, from (%x) draft: %x, %x", temp_table[i+1], val0, read_term_reg(therminfo->regs->tavg), read_term_reg(therminfo->regs->tsens));
-
-	printk("tavg:      %x", read_term_reg(therminfo->regs->tavg));
+#ifdef DEBUG
+	printk("--- temp*1000: %d, from (%x)", *temp, val);
 	printk("tctrl_avg: %x", read_term_reg(therminfo->regs->tctrl_avg));
 	printk("tgrad:     %x", read_term_reg(therminfo->regs->tgrad));
 	printk("thigh:     %x", read_term_reg(therminfo->regs->thigh));
@@ -140,8 +157,6 @@ static int rcmodule_thermal_read_temp(void *data, int *temp)
 	printk("tid:       %x", read_term_reg(therminfo->regs->tid));
 	printk("tstart:    %x", read_term_reg(therminfo->regs->tstart));
 #endif
-
-	*temp = temp_table[i+1]*1000;
 
 	return 0;
 }
@@ -202,7 +217,7 @@ static int rcmodule_thermal_probe(struct platform_device *pdev)
 	write_term_reg(16, therminfo->regs->tctrl_avg);
 	
 	// start measuring temperature
-	 write_term_reg(0x1, therminfo->regs->tstart);
+	write_term_reg(0x1, therminfo->regs->tstart);
 
 	// allow irq for temperature
 	// TODO AstroSoft: fix on workable HW
