@@ -915,7 +915,7 @@ static void rmsdio_set_ios(struct mmc_host *mmc, struct mmc_ios *ios)
 		uint32_t m = DIV_ROUND_UP(host->base_clock, ios->clock * 2) - 1;
 		if (m > RMSDIO_CLKDIV_MAX)
 			m = RMSDIO_CLKDIV_MAX;
-		m = 0x18;
+		//m = 0x6;
 		rmsdio_write(RMSDIO_CLKDIV, m);
 		host->clock = ios->clock;
 		host->ns_per_clk = 1000000000 / (host->base_clock / (m+1));
@@ -1022,6 +1022,15 @@ static int rmsdio_probe(struct platform_device *pdev)
 
 
 	mmc->f_min = DIV_ROUND_UP(host->base_clock, 2*(RMSDIO_CLKDIV_MAX+1));
+	if (np) {
+		int val;
+		if(of_property_read_u32(np, "min-frequency", &val) == 0)
+		{
+			printk(KERN_INFO "rmsdio: limit min speed to %d Hz", val);		
+			mmc->f_min = val;
+		}
+	}
+
 	if (np) {
 		int val;
 		if(of_property_read_u32(np, "max-frequency", &val) == 0)
