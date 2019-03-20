@@ -17,9 +17,11 @@
 #include <linux/io.h>
 #include <linux/of.h>
 #include <linux/usb/musb.h>
+#include <linux/mfd/syscon.h>
+#include <linux/regmap.h>
 
 /* USB PHY control register offsets */
-#define USB_PHY_RESET_OFFSET     0x0
+#define USB_PHY_RESET_OFFSET     0x10
 
 
 #define USB_PHY_POR_RESET        BIT(0)
@@ -29,6 +31,7 @@
 
 struct rcmodule_usbphy {
 	void __iomem		*phy_ctrl;
+	struct regmap 		*control;
 	struct usb_phy		phy;
 };
 
@@ -50,20 +53,20 @@ static int phy_rcmodule_usb2_init(struct phy *phy)
 	dev_dbg(&phy->dev, "Initialize USB PHY");
 
     // USB reset sequence begin
-	rcmodule_usbphy_writel(k_phy->phy_ctrl, USB_PHY_RESET_OFFSET, USB_PHY_POR_RESET | USB_PHY_UTMI_RESET_PHY);
+	regmap_write(k_phy->control, USB_PHY_RESET_OFFSET, USB_PHY_POR_RESET | USB_PHY_UTMI_RESET_PHY);
     // T1 - POR LOW
-	rcmodule_usbphy_writel(k_phy->phy_ctrl, USB_PHY_RESET_OFFSET, USB_PHY_UTMI_RESET_PHY);
+	regmap_write(k_phy->control, USB_PHY_RESET_OFFSET, USB_PHY_UTMI_RESET_PHY);
     usleep_range(10, 1000);
 
     // T2 - SUSPENDM HIGH
-	rcmodule_usbphy_writel(k_phy->phy_ctrl, USB_PHY_RESET_OFFSET, USB_PHY_UTMI_RESET_PHY | USB_PHY_UTMI_SESPENDM_EN);
+	regmap_write(k_phy->control, USB_PHY_RESET_OFFSET, USB_PHY_UTMI_RESET_PHY | USB_PHY_UTMI_SESPENDM_EN);
 	usleep_range(47, 1000);
 
     //T3 T4 UTMI_RESET LOW
-	rcmodule_usbphy_writel(k_phy->phy_ctrl, USB_PHY_RESET_OFFSET, USB_PHY_UTMI_SESPENDM_EN);
+	regmap_write(k_phy->control, USB_PHY_RESET_OFFSET, USB_PHY_UTMI_SESPENDM_EN);
 
     //T5 - Release reset USB controller
-	rcmodule_usbphy_writel(k_phy->phy_ctrl, USB_PHY_RESET_OFFSET, USB_PHY_UTMI_SESPENDM_EN | USB_PHY_UTMI_RESET_MUSB);
+	regmap_write(k_phy->control, USB_PHY_RESET_OFFSET, USB_PHY_UTMI_SESPENDM_EN | USB_PHY_UTMI_RESET_MUSB);
 
 	return 0;
 }
@@ -73,7 +76,7 @@ static int phy_rcmodule_usb2_exit(struct phy *phy)
 	struct rcmodule_usbphy *k_phy = phy_get_drvdata(phy);
 
 	dev_dbg(&phy->dev, "Suspend USB PHY");
-	rcmodule_usbphy_writel(k_phy->phy_ctrl, USB_PHY_RESET_OFFSET, USB_PHY_POR_RESET|USB_PHY_UTMI_SESPENDM_EN);
+	regmap_write(k_phy->control, USB_PHY_RESET_OFFSET, USB_PHY_POR_RESET|USB_PHY_UTMI_SESPENDM_EN);
 
 	return 0;
 }
@@ -94,6 +97,8 @@ static int rcmodule_usb_set_host(struct usb_otg *otg, struct usb_bus *host)
 	if (!host)
 		otg->state = OTG_STATE_UNDEFINED;
 
+	printk("phy-rcmodule-usb: to HOST, %d", otg->state);
+
 	return 0;
 }
 
@@ -106,6 +111,9 @@ static int rcmodule_usb_set_peripheral(struct usb_otg *otg,
 	if (!gadget)
 		otg->state = OTG_STATE_UNDEFINED;
 
+	printk("phy-rcmodule-usb: to PEREPHERAL, %d", otg->state);
+
+
 	return 0;
 }
 
@@ -117,7 +125,7 @@ static int rcmodule_usbphy2_probe(struct platform_device *pdev)
 	struct phy *phy;
 	struct phy_provider *phy_provider;
 	struct usb_otg *otg;
-
+	struct device_node *tmp;
 
 	printk("rcmodule_usbphy2_probe");
 
@@ -133,6 +141,14 @@ static int rcmodule_usbphy2_probe(struct platform_device *pdev)
 	k_phy->phy_ctrl = devm_ioremap_resource(dev, res);
 	if (IS_ERR(k_phy->phy_ctrl))
 		return PTR_ERR(k_phy->phy_ctrl);
+
+	tmp = of_parse_phandle(pdev->dev.of_node, "control", 0);
+	if (!tmp) {
+		dev_err(&pdev->dev, "failed to find control register reference\n");
+		return -EINVAL;
+	}
+	k_phy->control = syscon_node_to_regmap(tmp);
+
 
 	k_phy->phy.dev = &pdev->dev;
 	k_phy->phy.label = "rcmodule-usbphy";
