@@ -378,7 +378,7 @@ EXPORT_SYMBOL_GPL(musb_writew);
 
 u32 musb_readl(const void __iomem *addr, unsigned offset)
 {
-	u32 data = __raw_readl(addr + offset);
+	u32 data = le32_to_cpu(__raw_readl(addr + offset));
 
 	trace_musb_readl(__builtin_return_address(0), addr, offset, data);
 	return data;
@@ -388,7 +388,7 @@ EXPORT_SYMBOL_GPL(musb_readl);
 void musb_writel(void __iomem *addr, unsigned offset, u32 data)
 {
 	trace_musb_writel(__builtin_return_address(0), addr, offset, data);
-	__raw_writel(data, addr + offset);
+	__raw_writel(cpu_to_le32(data), addr + offset);
 }
 EXPORT_SYMBOL_GPL(musb_writel);
 
