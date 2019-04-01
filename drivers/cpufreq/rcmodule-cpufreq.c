@@ -58,48 +58,69 @@ static int rcmodule_switch_cpufreq(struct rcmodule_cpufreq_data *drv_data,
 	unsigned long flags;
 	unsigned int val;
 	int retval = 0;
+	unsigned int fbdiv, prdiv, postdiv, cpudiv;
 
-	local_irq_save(flags);
-
-	if (!regmap_write(drv_data->control, CPUFREQ_WRLOCK_OFFSET,
-			  CPUFREQ_WRUNLOCK)) // unlock
+	// first check that we really need to change frequency
+	if(regmap_read(drv_data->control, CPUFREQ_FBDIV_OFFSET, &fbdiv))
 	{
-
-		// write new data to PLL control
-		regmap_write(drv_data->control, CPUFREQ_FBDIV_OFFSET,
-			     drv_data->cpu_modes[index].fbdiv);
-		regmap_write(drv_data->control, CPUFREQ_PRDIV_OFFSET,
-			     drv_data->cpu_modes[index].prediv);
-		regmap_write(drv_data->control, CPUFREQ_PSDIV_OFFSET,
-			     drv_data->cpu_modes[index].postdiv);
-		regmap_write(drv_data->control, CPUFREQ_CKDIVMODE_CPU_OFFSET,
-			     drv_data->cpu_modes[index].cpudiv);
-
-		regmap_update_bits(drv_data->control, CPUFREQ_PLLCTRL_OFFSET,
-				   BIT(0), 1); // restart PLL
-
-		regmap_write(drv_data->control, CPUFREQ_WRLOCK_OFFSET,
-			     0); // lock back
-
-		// wait while PLL will be stabilized enough
-		// just estimated behavior - no manual for a while
-		do {
-			if (regmap_read(drv_data->control,
-					CPUFREQ_PLLSTATE_OFFSET, &val)) {
-				pr_err("Unable to access control regmap\n");
-				retval = 2;
-			}
-		} while (!(val & 0x1));
-
-		if( !retval ) 
-			ppc_proc_freq = drv_data->cpu_modes[index].freq_khz * 1000;
-
-	} else {
 		pr_err("Unable to access control regmap\n");
-		retval = 1;
+		return 2;
+	}
+	regmap_read(drv_data->control, CPUFREQ_PRDIV_OFFSET, &prdiv);
+	regmap_read(drv_data->control, CPUFREQ_PSDIV_OFFSET, &postdiv);
+	regmap_read(drv_data->control, CPUFREQ_CKDIVMODE_CPU_OFFSET, &cpudiv);
+
+	if (drv_data->cpu_modes[index].fbdiv != fbdiv ||
+	    drv_data->cpu_modes[index].prediv != prdiv ||
+	    drv_data->cpu_modes[index].postdiv != postdiv ||
+	    drv_data->cpu_modes[index].cpudiv != cpudiv) {
+		local_irq_save(flags);
+
+		if (!regmap_write(drv_data->control, CPUFREQ_WRLOCK_OFFSET,
+				  CPUFREQ_WRUNLOCK)) // unlock
+		{
+			// write new data to PLL control
+			regmap_write(drv_data->control, CPUFREQ_FBDIV_OFFSET,
+				     drv_data->cpu_modes[index].fbdiv);
+			regmap_write(drv_data->control, CPUFREQ_PRDIV_OFFSET,
+				     drv_data->cpu_modes[index].prediv);
+			regmap_write(drv_data->control, CPUFREQ_PSDIV_OFFSET,
+				     drv_data->cpu_modes[index].postdiv);
+			regmap_write(drv_data->control,
+				     CPUFREQ_CKDIVMODE_CPU_OFFSET,
+				     drv_data->cpu_modes[index].cpudiv);
+
+			regmap_update_bits(drv_data->control,
+					   CPUFREQ_PLLCTRL_OFFSET, BIT(0),
+					   1); // restart PLL
+
+			regmap_write(drv_data->control, CPUFREQ_WRLOCK_OFFSET,
+				     0); // lock back
+
+			// wait while PLL will be stabilized enough
+			// just estimated behavior - no manual for a while
+			do {
+				if (regmap_read(drv_data->control,
+						CPUFREQ_PLLSTATE_OFFSET,
+						&val)) {
+					pr_err("Unable to access control regmap\n");
+					retval = 2;
+				}
+			} while (!(val & 0x1));
+
+			if (!retval)
+				ppc_proc_freq =
+					drv_data->cpu_modes[index].freq_khz *
+					1000;
+
+		} else {
+			pr_err("Unable to access control regmap\n");
+			retval = 1;
+		}
+
+		local_irq_restore(flags);
 	}
 
-	local_irq_restore(flags);
 	return retval;
 }
 

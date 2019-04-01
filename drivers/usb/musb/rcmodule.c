@@ -168,20 +168,6 @@ static void _writew(void __iomem *addr, unsigned offset, u16 data)
 	__raw_writew(cpu_to_le16(data), addr + offset);
 }
 
-static u32 _readl(const void __iomem *addr, unsigned offset)
-{
-	u32 data = le32_to_cpu(__raw_readl(addr + offset));
-
-	return data;
-}
-
-static void _writel(void __iomem *addr, unsigned offset, u32 data)
-{
-	__raw_writel(cpu_to_le32(data), addr + offset);
-}
-
-
-
 static const struct musb_platform_ops rcmodule_ops = {
 	.quirks		= MUSB_DMA_INVENTRA,
 #ifdef CONFIG_USB_INVENTRA_DMA
@@ -190,14 +176,8 @@ static const struct musb_platform_ops rcmodule_ops = {
 #endif
 	.init		= rcmodule_musb_init,
 	.exit		= rcmodule_musb_exit,
-
-//	.read_fifo = _read_fifo_8,
-//	.write_fifo = _write_fifo_8,
-
     .readw 		= _readw,
 	.writew 	= _writew,
-//	.readl		= _readl, 
-//	.writel 	= _writel,
 	.fifo_mode  = 4
 };
 
@@ -235,7 +215,6 @@ static int rcmodule_probe(struct platform_device *pdev)
 
 	if (np) {
 		struct device_node *sctl;
-		struct platform_device *control_pdev;
 
 		pdata = devm_kzalloc(&pdev->dev, sizeof(*pdata), GFP_KERNEL);
 		if (!pdata)

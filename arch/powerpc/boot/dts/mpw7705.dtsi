@@ -1,0 +1,663 @@
+/*
+ * Device Tree Source for RC-Module TX011 platform
+ *
+ * Copyright © 2019 Alexey Spirkov <alexeis@astrosoft.ru>
+ *
+ * This file is licensed under the terms of the GNU General Public
+ * License version 2.  This program is licensed "as is" without
+ * any warranty of any kind, whether express or implied.
+ */
+
+//#include <dt-bindings/gpio/gpio.h>
+//#include <dt-bindings/interrupt-controller/irq.h>
+
+/dts-v1/;
+
+/ {
+	#address-cells = <2>;
+	#size-cells = <2>;
+	dcr-parent = <&{/cpus/cpu@0}>;
+
+	cpus {
+		#address-cells = <1>;
+		#size-cells = <0>;
+
+		cpu@0 {
+			device_type = "cpu";
+			model = "PowerPC,470S";
+			reg = <0>;
+			clock-frequency = <800000000>; // 800 Mhz
+			timebase-frequency = <800000000>; // 800Mhz
+			i-cache-line-size = <32>;
+			d-cache-line-size = <32>;
+			i-cache-size = <32768>;
+			d-cache-size = <32768>;
+			dcr-controller;
+			dcr-access-method = "native";
+			status = "ok";
+		};
+		cpu@1 {
+			device_type = "cpu";
+			model = "PowerPC,470S";
+			reg = <1>;
+			clock-frequency = <80000000>; // 800 Mhz
+			timebase-frequency = <800000000>; // 800Mhz
+			i-cache-line-size = <32>;
+			d-cache-line-size = <32>;
+			i-cache-size = <32768>;
+			d-cache-size = <32768>;
+			dcr-controller;
+			dcr-access-method = "native";
+			status = "ok";
+			enable-method = "spin-table";
+			cpu-release-addr = <0x010 0x0007FFE0>; 
+
+		};
+	};
+
+	reserved-memory {
+			#address-cells = <2>;
+			#size-cells = <2>;
+			ranges;
+
+			nmc_mem0: nmc_mem0 {
+					size = <0 0x1000000>;
+					alignment = <0 0x1000000>;
+			};
+			nmc_mem1: nmc_mem1 {
+					size = <0 0x1000000>;
+					alignment = <0 0x1000000>;
+			};
+			nmc_mem2: nmc_mem2 {
+					size = <0 0x1000000>;
+					alignment = <0 0x1000000>;
+			};
+			nmc_mem3: nmc_mem3 {
+					size = <0 0x1000000>;
+					alignment = <0 0x1000000>;
+			};
+	};
+
+	memory {
+		device_type = "memory";	
+		reg = <0x00000000 0x00000000 0x00000000 0x00000000   // should be mofified at startup
+		
+		>;  
+	};
+
+	lsif1clock: lsif1clock@100M {
+		#clock-cells = <0>;
+		compatible = "fixed-clock";
+		clock-frequency = <100000000>;
+	};
+
+	pclk: pclk {
+		#clock-cells = <0>;
+		compatible = "fixed-clock";
+		clock-frequency = <250000000>;
+	};
+
+
+	MPIC: interrupt-controller {
+		compatible = "chrp,open-pic";
+		interrupt-controller;
+		dcr-reg = <0xffc00000 0x00040000>; 
+		#address-cells = <0>;
+		#size-cells = <0>;
+		#interrupt-cells = <2>;
+	};
+
+	plb {
+		compatible = "ibm,plb6";
+		#address-cells = <2>;
+		#size-cells = <2>;
+		ranges;
+		dma-ranges;
+		clock-frequency = <250000000>; // 250Mhz
+
+		lsif0 {
+			compatible = "arm,amba-bus", "ibm,plb6";
+			#address-cells = <1>;
+			#size-cells = <1>;
+
+			ranges = <0x3c030000 			/* from */
+					  0x010 0x3c030000 		/* to */
+					  0x0001B000>;			/* size */
+
+			dma-ranges = <0x40000000 0x00000000 0x00000000 0x40000000>;
+
+			lsif0_config: lsif0_config@0x3C03F000 {	
+				compatible = "syscon";
+				reg = <0x3C03F000 0x1000>;
+			};
+
+			mgpio1_0: mgpio0@0x3C041420 {
+				compatible = "pinctrl-single";
+				reg = <0x3C041420 1>;
+				pinctrl-single,register-width = <8>;
+				pinctrl-single,function-mask = <0x1>;
+				#address-cells = <1>;
+				#size-cells = <0>;
+				#pinctrl-cells = <2>;
+				pinctrl-single,bit-per-mux;
+
+				greth1_0mux: greth1_0mux_pinmux {
+					pinctrl-single,bits = <0 0xF0 0xF0>;	
+				};
+
+			};
+
+			mgpio2_0: mgpio0@0x3C042420 {
+				compatible = "pinctrl-single";
+				reg = <0x3C042420 1>;
+				pinctrl-single,register-width = <8>;
+				pinctrl-single,function-mask = <0x1>;
+				#address-cells = <1>;
+				#size-cells = <0>;
+				#pinctrl-cells = <2>;
+				pinctrl-single,bit-per-mux;
+
+				greth1_1mux: greth1_1mux_pinmux {
+					pinctrl-single,bits = <0 0xFF 0xFF>;	
+				};
+			};
+
+			mgpio6_0: mgpio0@0x3C046420 {
+				compatible = "pinctrl-single";
+				reg = <0x3C046420 1>;
+				pinctrl-single,register-width = <8>;
+				pinctrl-single,function-mask = <0x1>;
+				#address-cells = <1>;
+				#size-cells = <0>;
+				#pinctrl-cells = <2>;
+				pinctrl-single,bit-per-mux;
+
+				greth1_2mux: greth1_2mux_pinmux {
+					pinctrl-single,bits = <0 0xFE 0xFE>;	
+				};
+
+			};
+
+			mgpio7_0: mgpio0@0x3C047420 {
+				compatible = "pinctrl-single";
+				reg = <0x3C047420 1>;
+				pinctrl-single,register-width = <8>;
+				pinctrl-single,function-mask = <0x1>;
+				#address-cells = <1>;
+				#size-cells = <0>;
+				#pinctrl-cells = <2>;
+				pinctrl-single,bit-per-mux;
+
+				greth1_3mux: greth1_3mux_pinmux {
+					pinctrl-single,bits = <0 0x0F 0x0F>;	
+				};
+
+			};
+
+			greth1: greth1@0x3C034000 {
+				compatible = "rc-module,greth";
+				reg = <0x3C034000 0x1000>;
+				control = <&lsif0_config>;
+
+				interrupt-parent = <&MPIC>;
+				interrupts = <108 0>;	// IRQ_TYPE_EDGE_RISING
+				pinctrl-names = "default";
+				pinctrl-0 = <&greth1_0mux>, <&greth1_1mux>, <&greth1_2mux>, <&greth1_3mux>;
+                status = "disabled";
+			};
+			
+		};
+
+		lsif1 {
+			compatible = "arm,amba-bus", "ibm,plb6";
+			#address-cells = <1>;
+			#size-cells = <1>;
+
+			ranges = <0x3c050000 			/* from */
+					  0x010 0x3c050000 		/* to */
+					  0x00020000>;			/* size */
+
+			dma-ranges = <0x40000000 0x00000000 0x00000000 0x40000000>;
+
+			lsif1_config: lsif1_config@0x3C060000 {	
+				compatible = "syscon";
+				reg = <0x3C060000 0x1000>;
+			};
+			
+			mgpio0_1: mgpio0_1@0x3C067420 {
+				compatible = "pinctrl-single";
+				reg = <0x3C067420 1>;
+				pinctrl-single,register-width = <8>;
+				pinctrl-single,function-mask = <0x1>;
+				#address-cells = <1>;
+				#size-cells = <0>;
+				#pinctrl-cells = <2>;
+				pinctrl-single,bit-per-mux;
+				status = "disabled";
+			};
+
+			mgpio1_1: mgpio1_1@0x3C068420 {
+				compatible = "pinctrl-single";
+				reg = <0x3C068420 1>;
+				pinctrl-single,register-width = <8>;
+				pinctrl-single,function-mask = <0x1>;
+				#address-cells = <1>;
+				#size-cells = <0>;
+				#pinctrl-cells = <2>;
+				pinctrl-single,bit-per-mux;
+				status = "disabled";
+			};
+
+			mgpio2_1: mgpio2_1@0x3C069420 {
+				compatible = "pinctrl-single";
+				reg = <0x3C069420 1>;
+				pinctrl-single,register-width = <8>;
+				pinctrl-single,function-mask = <0x1>;
+				#address-cells = <1>;
+				#size-cells = <0>;
+				#pinctrl-cells = <2>;
+				pinctrl-single,bit-per-mux;
+				status = "ok";
+
+				uart0_mux: uart0_mux_pinmux {
+					pinctrl-single,bits = <0 0xC0 0xC0>;	
+				};
+			};
+
+			mgpio3_1: mgpio3_1@0x3C06A420 {
+				compatible = "pinctrl-single";
+				reg = <0x3C06A420 1>;
+				pinctrl-single,register-width = <8>;
+				pinctrl-single,function-mask = <0x1>;
+				#address-cells = <1>;
+				#size-cells = <0>;
+				#pinctrl-cells = <2>;
+				pinctrl-single,bit-per-mux;
+				status = "ok";
+
+				uart1_mux: uart1_mux_pinmux {
+					pinctrl-single,bits = <0 0x03 0x03>;	
+				};
+
+				uart2_mux: uart2_mux_pinmux {
+					pinctrl-single,bits = <0 0x0C 0x0C>;	
+				};
+
+				spi0_mux: spi0_mux_pinmux {
+					pinctrl-single,bits = <0 0x70 0x70>;	/* register == afsel, value, mask */
+				};
+			};
+
+			mgpio4_1: mgpio4_1@0x3C06B420 {
+				compatible = "pinctrl-single";
+				reg = <0x3C06B420 1>;
+				pinctrl-single,register-width = <8>;
+				pinctrl-single,function-mask = <0x1>;
+				#address-cells = <1>;
+				#size-cells = <0>;
+				#pinctrl-cells = <2>;
+				pinctrl-single,bit-per-mux;
+				status = "ok";
+
+				spi1_mux: spi1_mux_pinmux {
+					pinctrl-single,bits = <0 0x07 0x07>;	
+				};
+
+				sdio_mux: sdio_mux_pinmux {
+					pinctrl-single,bits = <0 0xF8 0xF8>;
+				};
+			};				
+			
+			
+			i2c0: i2c@0x3C05A000 {
+				compatible = "rc-module,i2cmst";
+				#address-cells = <1>;
+				#size-cells = <0>;
+				reg = <0x3C05A000 0x1000>;
+				clocks = <&lsif1clock>;
+				reg-shift = <2>;
+				reg-io-width = <4>;
+				interrupt-parent = <&MPIC>;
+				interrupts = <99 0>;	// IRQ_TYPE_EDGE_RISING
+                status = "disabled";
+			};						
+
+			i2c1: i2c@0x3C05B000 {
+				compatible = "rc-module,i2cmst";
+				#address-cells = <1>;
+				#size-cells = <0>;
+				reg = <0x3C05B000 0x1000>;
+				clocks = <&lsif1clock>;
+				reg-shift = <2>;
+				reg-io-width = <4>;
+				interrupt-parent = <&MPIC>;
+				interrupts = <74 0>;	// IRQ_TYPE_EDGE_RISING
+				status = "disabled";
+			};						
+
+			i2c2: i2c@0x3C05C000 {
+				compatible = "rc-module,i2cmst";
+				#address-cells = <1>;
+				#size-cells = <0>;
+				reg = <0x3C05C000 0x1000>;
+				clocks = <&lsif1clock>;
+				reg-shift = <2>;
+				reg-io-width = <4>;
+				interrupt-parent = <&MPIC>;
+				interrupts = <66 0>;	// IRQ_TYPE_EDGE_RISING
+				status = "disabled";
+			};						
+
+			uart0: uart0@3C05D000 {
+				compatible = "arm,pl011", "arm,primecell";
+				reg = <0x3C05D000 0x1000>;
+				clocks = <&lsif1clock>, <&pclk>;
+				clock-names = "uartclk", "apb_pclk";
+				pinctrl-names = "default";
+				pinctrl-0 = <&uart0_mux>;				
+				interrupt-parent = <&MPIC>;
+				interrupts = <101 0>;	// IRQ_TYPE_EDGE_RISING
+                status = "disabled";
+			};
+
+			uart1: uart2@3C05E000 {
+				compatible = "arm,pl011", "arm,primecell";
+				reg = <0x3C05E000 0x1000>;
+				clocks = <&lsif1clock>, <&pclk>;
+				clock-names = "uartclk", "apb_pclk";
+				pinctrl-names = "default";
+				pinctrl-0 = <&uart1_mux>;
+				interrupt-parent = <&MPIC>;
+				interrupts = <102 0>;	// IRQ_TYPE_EDGE_RISING
+                status = "disabled";
+			};
+
+			uart2: uart3@3C05F000 {
+				compatible = "arm,pl011", "arm,primecell";
+				reg = <0x3C05F000 0x1000>;
+				clocks = <&lsif1clock>, <&pclk>;
+				clock-names = "uartclk", "apb_pclk";
+				pinctrl-names = "default";
+				pinctrl-0 = <&uart2_mux>;
+				interrupt-parent = <&MPIC>;
+				interrupts = <65 0>;	// IRQ_TYPE_EDGE_RISING
+                status = "disabled";
+			};
+
+			spi0: spi0@0x3C061000 {
+				compatible = "arm,pl022", "arm,primecell";
+				reg = <0x3C061000 0x1000>;
+				interrupts = <100 0>;	// IRQ_TYPE_EDGE_RISING
+				#address-cells = <1>;
+				#size-cells = <0>;
+				interrupt-parent = <&MPIC>;
+				clocks = <&pclk>;
+				clock-names = "apb_pclk";
+				pinctrl-names = "default";
+				pinctrl-0 = <&spi0_mux>;
+				num-cs = <1>;
+				cs-gpios = <&gpio1 2 0>;
+				status = "disabled";
+			};			
+
+			spi1: spi1@0x3C062000 {
+				compatible = "arm,pl022", "arm,primecell";
+				reg = <0x3C062000 0x1000>;
+				interrupts = <73 0>;	// IRQ_TYPE_EDGE_RISING
+				#address-cells = <1>;
+				#size-cells = <0>;
+				interrupt-parent = <&MPIC>;
+				clocks = <&pclk>;
+				clock-names = "apb_pclk";
+				pinctrl-names = "default";
+				pinctrl-0 = <&spi1_mux>;	
+				num-cs = <1>;
+				cs-gpios = <&gpio1 3 0>;
+
+				status = "disabled";
+			};			
+
+			mmc0: mmc0@0x3C064000 {
+				compatible = "rc-module,mpw7705", "rc-module,mmc-0.2";
+				reg = <0x3C064000 0x1000>;
+				interrupt-parent = <&MPIC>;
+				interrupts = <67 0>;	// IRQ_TYPE_EDGE_RISING
+				pinctrl-names = "default";
+				pinctrl-0 = <&sdio_mux>;
+				clocks = <&lsif1clock>;
+				min-frequency = <1000000>; 
+				max-frequency = <4000000>; 
+				clock-names = "mmc";
+                status = "disabled";
+			};
+
+			gpio0: gpio0@0x3C065000 {
+				#gpio-cells = <2>;
+				compatible = "arm,pl061", "arm,primecell";
+				gpio-controller;
+				reg = <0x3C065000 0x1000>;
+				interrupt-controller;
+				#interrupt-cells = <2>;
+				interrupt-parent = <&MPIC>;
+				interrupts = <106 0>;	// IRQ_TYPE_EDGE_RISING
+				clocks = <&pclk>;
+				clock-names = "apb_pclk";
+                status = "disabled";				
+			};
+
+			gpio1: gpio1@0x3C066000 {
+				#gpio-cells = <2>;
+				compatible = "arm,pl061", "arm,primecell";
+				gpio-controller;
+				reg = <0x3C066000 0x1000>;
+				interrupt-controller;
+				#interrupt-cells = <2>;
+				interrupt-parent = <&MPIC>;
+				interrupts = <107 0>;	// IRQ_TYPE_EDGE_RISING
+				clocks = <&pclk>;
+				clock-names = "apb_pclk";
+                status = "disabled";
+			};
+
+			usb2_phy: usb2_phy@0x3C06C000
+			{
+				compatible = "rc-module,usbphy2";
+				reg = <0x3C06C000 0x1000>;
+				control = <&lsif1_config>;
+				#phy-cells = <0>;
+				status = "ok";
+			};			
+
+			usb_otg_hs: usb_otg_hs@0x3C06D000 {
+				compatible = "rc-module,musb";
+				reg = <0x3C06D000 0x7ff>;
+				interrupt-parent = <&MPIC>;
+				interrupts = <69 0>, <70 0>;
+				interrupt-names = "mc", "dma";
+				usb-phy = <&usb2_phy>;
+				phys = <&usb2_phy>;
+				phy-names = "usb2-phy";
+
+				/* select clock to 24mhz
+				 * set bit 10 - USBPHY_REFCLK_SEL */				
+				control = <&sctl 8 10>;	/* control, reg, bit */
+
+				multipoint = <1>;
+				num-eps = <16>;
+				ram-bits = <12>;
+				mode = <3>;			/* 1 - host, 2 - device, 3 - otg */
+				power = <500>;
+                status = "disabled";
+			};			
+
+		};		
+		
+		apb0 {
+			compatible = "ibm,apb";
+			#address-cells = <1>;
+			#size-cells = <1>;
+
+			ranges = <0x38000000 0x010 0x38000000 0x00010000>; 
+
+			sctl: sctl@0x38000000
+			{
+				compatible = "syscon";
+				reg = <0x38000000 0x1000>;
+			};
+			
+			crg_cpu: crg_cpu@0x38006000
+			{
+				compatible = "syscon";
+				reg = <0x38006000 0x1000>;
+			};
+
+			crg_ddr: crg_cpu@0x38007000
+			{
+				compatible = "syscon";
+				reg = <0x38007000 0x1000>;
+			};
+
+			thermal: thermal@0x38003000 {
+				compatible = "rc-module,thermal";
+				reg = <0x38003000 0x1000>;
+				#thermal-sensor-cells = <0>;
+
+				interrupt-parent = <&MPIC>;
+				interrupts = <32 0 		/*  IRQ_TYPE_EDGE_RISING temperature IRQ */
+							  33 0>;	/*  IRQ_TYPE_EDGE_RISING  voltage IRQ */
+                status = "disabled";
+			};
+
+			cpufreq: cpufreq@0x38006000 {
+				compatible = "rc-module,cpu-freq";
+				control = <&crg_cpu>;
+				status = "disabled";
+			};
+		};
+
+		apb1 {
+			compatible = "ibm,apb";
+			#address-cells = <1>;
+			#size-cells = <1>;
+
+			ranges = <0x38010000 0x010 0x38010000 0x00010000>; 
+
+		};
+
+		dspcores {
+			compatible = "ibm,apb";	 /* to check bus type */
+			#address-cells = <1>;
+			#size-cells = <1>;
+
+			ranges = <0x39000000 0x010 0x39000000 0x000080000>; 
+
+
+			nmc3_0_core0: nmc3_0_core0@0x39000000 {
+				compatible = "rc-module,easynmc";
+				core-name = "K1879-nmc";
+				core-type = "nmc3";
+				device-id = <0>;
+
+				reg = <0x39000000 0x00020000>;	// imem
+				reg-names = "imem";
+
+				memory-region = <&nmc_mem0>;
+
+				control = <&sctl>;
+				reset = <&crg_cpu>;
+
+				reset_bit = 	<5>; 			// reset bit no
+				lp_status_reg = <0x240>, <0>; 	// sctl offset, bit-no
+				hp_status_reg = <0x240>, <1>; 	// sctl offset, bit-no
+				lp_set_reg = 	<0x248>, <0>;	// sctl offset, bit-no
+				hp_set_reg = 	<0x248>, <1>;	// sctl offset, bit-no
+				nmi_set_reg =	<0x248>, <2>;	// sctl offset, bit-no
+				hp_clr_reg = 	<0x244>, <0>;	// sctl offset, bit-no
+				lp_clr_reg = 	<0x244>, <1>;	// sctl offset, bit-no
+
+				interrupt-parent = <&MPIC>;
+				interrupts = <39 0>, <41 0>;
+				interrupt-names = "lp", "hp";		
+                status = "disabled";
+			};
+			nmc3_0_core1: nmc3_0_core1@0x39020000 {
+				compatible = "rc-module,easynmc";
+				core-name = "K1879-nmc";
+				core-type = "nmc3";
+				device-id = <1>;
+				reg = <0x39020000 0x00020000>;	// imem
+				reg-names = "imem";
+
+				memory-region = <&nmc_mem1>;
+
+				control = <&sctl>;
+				reset = <&crg_cpu>;
+
+				reset_bit = 	<6>; 			// reset bit no
+				lp_status_reg = <0x240>, <2>; 	// sctl offset, bit-no
+				hp_status_reg = <0x240>, <3>; 	// sctl offset, bit-no
+				lp_set_reg = 	<0x248>, <3>;	// sctl offset, bit-no
+				hp_set_reg = 	<0x248>, <4>;	// sctl offset, bit-no
+				nmi_set_reg =	<0x248>, <5>;	// sctl offset, bit-no
+				hp_clr_reg = 	<0x244>, <2>;	// sctl offset, bit-no
+				lp_clr_reg = 	<0x244>, <3>;	// sctl offset, bit-no
+				interrupt-parent = <&MPIC>;
+				interrupts = <40 0>, <42 0>;
+				interrupt-names = "lp", "hp";		
+                status = "disabled";
+			};
+			nmc3_1_core0: nmc3_1_core0@0x39040000 {
+				compatible = "rc-module,easynmc";
+				core-name = "K1879-nmc";
+				core-type = "nmc3";
+				device-id = <2>;
+				reg = <0x39040000 0x00020000>;	// imem
+				reg-names = "imem";
+
+				memory-region = <&nmc_mem2>;
+
+				control = <&sctl>;
+				reset = <&crg_cpu>;
+
+				reset_bit = 	<7>; 			// reset bit no
+				lp_status_reg = <0x240>, <4>; 	// sctl offset, bit-no
+				hp_status_reg = <0x240>, <5>; 	// sctl offset, bit-no
+				lp_set_reg = 	<0x248>, <6>;	// sctl offset, bit-no
+				hp_set_reg = 	<0x248>, <7>;	// sctl offset, bit-no
+				nmi_set_reg =	<0x248>, <8>;	// sctl offset, bit-no
+				hp_clr_reg = 	<0x244>, <4>;	// sctl offset, bit-no
+				lp_clr_reg = 	<0x244>, <5>;	// sctl offset, bit-no
+				interrupt-parent = <&MPIC>;
+				interrupts = <43 0>, <45 0>;
+				interrupt-names = "lp", "hp";		
+                status = "disabled";
+			};
+			nmc3_1_core1: nmc3_1_core1@0x39060000 {
+				compatible = "rc-module,easynmc";
+				core-name = "K1879-nmc";
+				core-type = "nmc3";
+				device-id = <3>;
+				reg = <0x39060000 0x00020000>;	// imem
+				reg-names = "imem";
+
+				memory-region = <&nmc_mem3>;
+
+				control = <&sctl>;
+				reset = <&crg_cpu>;
+
+				reset_bit = 	<8>; 			// reset bit no
+				lp_status_reg = <0x240>, <6>; 	// sctl offset, bit-no
+				hp_status_reg = <0x240>, <7>; 	// sctl offset, bit-no
+				lp_set_reg = 	<0x248>, <9>;	// sctl offset, bit-no
+				hp_set_reg = 	<0x248>, <10>;	// sctl offset, bit-no
+				nmi_set_reg =	<0x248>, <11>;	// sctl offset, bit-no
+				hp_clr_reg = 	<0x244>, <6>;	// sctl offset, bit-no
+				lp_clr_reg = 	<0x244>, <7>;	// sctl offset, bit-no
+				interrupt-parent = <&MPIC>;
+				interrupts = <44 0>, <46 0>;
+				interrupt-names = "lp", "hp";		
+                status = "disabled";
+			};
+		};
+	};
+};
