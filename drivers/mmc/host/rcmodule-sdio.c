@@ -46,6 +46,7 @@
 //#define DBG_LINES
 //#define DBG_BLOCKS
 //#define DBG_INTR
+//#define DBG_MARKS
 
 #include <linux/module.h>
 #include <linux/init.h>
@@ -139,8 +140,13 @@ struct rmsdio_host {
 #define rmsdio_read(offs)		readl(iobase + (offs))
 #endif
 
+#ifdef DBG_MARKS
 #define LIGHT()  printk(KERN_INFO "::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::")
 #define DO_MARK()  printk(KERN_INFO "rmsdio: ==========> %s \n", __FUNCTION__)
+#else
+#define LIGHT()
+#define DO_MARK()
+#endif
 #ifdef DBG_CALLS
 	#define MARK() DO_MARK()
 	#define STEP(n)  printk(KERN_INFO "   rmsdio: ======> %s(%d)\n", __FUNCTION__, n)

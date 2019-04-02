@@ -77,7 +77,7 @@
 			};
 
 			usb_otg_hs: usb_otg_hs@0x3C06D000 {
-				mode = <3>;			/* 1 - host, 2 - device, 3 - otg */
+				mode = <1>;			/* 1 - host, 2 - device */
 				status = "ok";
 			};			
 		};		
