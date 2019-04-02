@@ -213,15 +213,17 @@ static int rcmodule_thermal_probe(struct platform_device *pdev)
 		goto errIrq0Requested;
 	}
 
+	// disable initialization for a while - its stalls sensor
+	
 	// avegage by 16 count
-	write_term_reg(16, therminfo->regs->tctrl_avg);
+	//write_term_reg(16, therminfo->regs->tctrl_avg);
 	
 	// start measuring temperature
-	write_term_reg(0x1, therminfo->regs->tstart);
+	//write_term_reg(0x1, therminfo->regs->tstart);
 
 	// allow irq for temperature
 	// TODO AstroSoft: fix on workable HW
-	 write_term_reg(0x0, therminfo->regs->tint_mask);
+	// write_term_reg(0x0, therminfo->regs->tint_mask);
 
 	therminfo->tz_device = devm_thermal_zone_of_sensor_register(&pdev->dev, 0,
 				therminfo, &rcmodule_thermal_ops);
