@@ -63,8 +63,8 @@
 			};			
 
 			mmc0: mmc0@0x3C064000 {
-				min-frequency = <1000000>; 
-				max-frequency = <4000000>; 
+				max-frequency = <8000000>;
+				cd-gpios = <&gpio1 1 0>;	/* card detect */
 				status = "ok";
 			};
 

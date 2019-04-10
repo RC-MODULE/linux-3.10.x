@@ -78,8 +78,8 @@
 	
 struct rmsdio_platform_data 
 {
-	int gpio_card_detect; //card detect
-	int gpio_write_protect; // r/w gpio
+//	int gpio_card_detect; //card detect
+//	int gpio_write_protect; // r/w gpio
 	int clock; //Incoming clock rate
 };
 	
@@ -109,8 +109,8 @@ struct rmsdio_host {
 	int dma_mode;
 	int irq;
 	int sdio_irq_enabled;
-	int gpio_card_detect;
-	int gpio_write_protect;
+//	int gpio_card_detect;
+//	int gpio_write_protect;
 };
 
 
@@ -508,7 +508,7 @@ static inline int rmsdio_write_flow(struct mmc_host *mmc, struct mmc_request *mr
 	rmsdio_wait_irq(
 		wret, host->queue,
 		(MATCH_BITS(host->irqstat, 
-			    (wintr))),
+				(wintr))),
 		RMSDIO_TIMEOUT
 		);
 
@@ -563,11 +563,11 @@ static inline int rmsdio_write_flow(struct mmc_host *mmc, struct mmc_request *mr
 		rmsdio_wait_irq(
 			wret, host->queue,
 			(MATCH_BITS(host->irqstat, 
-				    (wintr))),
+					(wintr))),
 			RMSDIO_TIMEOUT
 			);
 
-		if (wret<=0)
+		if (wret <= 0 && !MATCH_BITS(rmsdio_read(RMSDIO_IRQ_STATUS), (wintr)))
 			goto bailout;
 
 		rmsdio_clean_isr(host, 0);
@@ -612,15 +612,15 @@ static inline int rmsdio_read_flow(struct mmc_host *mmc, struct mmc_request *mrq
 		blocks++;
 		//rmsdio_write(RMSDIO_IRQ_MASKS, wintr);
 		/* 
-		 * Only allow context switch here, while waiting. 
-		 */
+		* Only allow context switch here, while waiting. 
+		*/
 		rmsdio_wait_irq(wret, host->queue,
 				(MATCH_BITS(host->irqstat, 
-					    (wintr))),
+						(wintr))),
 				RMSDIO_TIMEOUT
-			);
+		);
 
-		if (wret <= 0)
+		if (wret <= 0 && !MATCH_BITS(rmsdio_read(RMSDIO_IRQ_STATUS), (wintr)))
 			goto bailout;
 		
 #ifdef DBG_BLOCKS		
@@ -682,6 +682,8 @@ bailout:
 	dev_err(host->dev, "Reading: Timed out waiting for interrupt bits\n");
 	decode_intr(host," flags want: ", wintr);
 	decode_intr(host," flags have: ", host->irqstat);
+	decode_intr(host," flags in reg: ", rmsdio_read(RMSDIO_IRQ_STATUS));
+
 	return wret;
 	
 }
@@ -970,7 +972,7 @@ static int rmsdio_probe(struct platform_device *pdev)
 	struct resource *r;
 	int ret, irq;
 	struct clk *clk;
-	struct device_node		*np = pdev->dev.of_node;
+//	struct device_node		*np = pdev->dev.of_node;
 
 	
 	printk(KERN_INFO "rmsdio: RC Module SD/SDIO/MMC driver (c) 2018\n");
@@ -1026,29 +1028,34 @@ static int rmsdio_probe(struct platform_device *pdev)
 	if (!host->base_clock)
 		return -EINVAL;
 
-
-	mmc->f_min = DIV_ROUND_UP(host->base_clock, 2*(RMSDIO_CLKDIV_MAX+1));
-	if (np) {
-		int val;
-		if(of_property_read_u32(np, "min-frequency", &val) == 0)
-		{
-			printk(KERN_INFO "rmsdio: limit min speed to %d Hz", val);		
-			mmc->f_min = val;
-		}
-	}
-
-	if (np) {
-		int val;
-		if(of_property_read_u32(np, "max-frequency", &val) == 0)
-		{
-			printk(KERN_INFO "rmsdio: limit max speed to %d Hz", val);		
-			mmc->f_max = val;
-		}
-	}
-	else
+	if(mmc_of_parse(mmc))
 	{
-		mmc->f_max = host->base_clock;
+		pr_err("%s: unable to parse mmc definition\n", DRIVER_NAME);
+		goto out;
 	}
+
+//	mmc->f_min = DIV_ROUND_UP(host->base_clock, 2*(RMSDIO_CLKDIV_MAX+1));
+//	if (np) {
+//		int val;
+//		if(of_property_read_u32(np, "min-frequency", &val) == 0)
+//		{
+//			printk(KERN_INFO "rmsdio: limit min speed to %d Hz", val);		
+//			mmc->f_min = val;
+//		}
+//	}
+
+//	if (np) {
+//		int val;
+//		if(of_property_read_u32(np, "max-frequency", &val) == 0)
+//		{
+//			printk(KERN_INFO "rmsdio: limit max speed to %d Hz", val);		
+//			mmc->f_max = val;
+//		}
+//	}
+//	else
+//	{
+//		mmc->f_max = host->base_clock;
+//	}
 
 	pr_debug("rmsdio: maximum clock is %d Hz minimum is %d Hz\n", mmc->f_max, mmc->f_min);
 	host->sdio_irq_enabled = 0;
@@ -1080,7 +1087,7 @@ static int rmsdio_probe(struct platform_device *pdev)
 	host->irq = irq;
 	pr_debug("rmsdio: Using irq %d\n", irq);
 
-/* There are not connection to card detect and RW on board for a while - comment it */
+/* card detect and write protect proceeded now by mmc_of_parse so following functionlaity not needed anymore */
 
 //	if (rmsd_data->gpio_card_detect) {
 //		ret = gpio_request(rmsd_data->gpio_card_detect, "carddetect-gpio"/*DRIVER_NAME " cd"*/);
@@ -1130,11 +1137,14 @@ static int rmsdio_probe(struct platform_device *pdev)
 
 	pr_notice("%s: %s driver initialized, ",
 		  mmc_hostname(mmc), DRIVER_NAME);
-	if (host->gpio_card_detect)
-		printk(KERN_INFO "using GPIO %d for card detection\n",
-		       host->gpio_card_detect);
-	else
-		printk(KERN_INFO "lacking card detect (fall back to polling)\n");
+
+/* card detect and write protect proceeded now by mmc_of_parse so following functionlaity not needed anymore */
+
+//	if (host->gpio_card_detect)
+//		printk(KERN_INFO "using GPIO %d for card detection\n",
+//		       host->gpio_card_detect);
+//	else
+//		printk(KERN_INFO "lacking card detect (fall back to polling)\n");
 	
 	host->dev->coherent_dma_mask=DMA_BIT_MASK(25);
 	printk(KERN_INFO "rmsdio becomes ready\n");
@@ -1144,12 +1154,13 @@ out:
 	if (host) {
 		if (host->irq)
 			free_irq(host->irq, host);
-		if (host->gpio_card_detect) {
-			free_irq(gpio_to_irq(host->gpio_card_detect), host);
-			gpio_free(host->gpio_card_detect);
-		}
-		if (host->gpio_write_protect)
-			gpio_free(host->gpio_write_protect);
+/* card detect and write protect proceeded now by mmc_of_parse so following functionlaity not needed anymore */
+//		if (host->gpio_card_detect) {
+//			free_irq(gpio_to_irq(host->gpio_card_detect), host);
+//			gpio_free(host->gpio_card_detect);
+//		}
+//		if (host->gpio_write_protect)
+//			gpio_free(host->gpio_write_protect);
 		if (host->base)
 			iounmap(host->base);
 	}
