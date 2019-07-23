@@ -505,6 +505,14 @@
 				reg = <0x38000000 0x1000>;
 			};
 			
+			watchdog: watchdog@0x38002000 {
+				compatible = "arm,sp805", "arm,primecell";
+				reg = <0x38002000 0x1000>;
+				clocks = <&pclk>,<&pclk>;
+				clock-names = "wdogclk", "apb_pclk";
+				status = "disabled";
+			};
+
 			crg_cpu: crg_cpu@0x38006000
 			{
 				compatible = "syscon";

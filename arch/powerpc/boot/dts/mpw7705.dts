@@ -83,6 +83,11 @@
 		};		
 		
 		apb0 {
+
+			watchdog: watchdog@0x38002000 {
+				status = "ok";
+			};
+
 			thermal: thermal@0x38003000 {
 				status = "ok";
 			};
