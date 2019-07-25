@@ -784,6 +784,15 @@ config CRYPTO_DEV_CCREE
 	  cryptographic operations on the system REE.
 	  If unsure say Y.
 
+config CRYPTO_RCM_RMACE
+	tristate "Support for RCM SoCs RMACE crypto block"
+	depends on PPC || COMPILE_TEST
+	depends on HAS_IOMEM
+	select MFD_SYSCON
+	select CRYPTO_ENGINE
+	help
+	  RCM SoCs RMACE crypto block driver.
+
 source "drivers/crypto/hisilicon/Kconfig"
 
 source "drivers/crypto/amlogic/Kconfig"

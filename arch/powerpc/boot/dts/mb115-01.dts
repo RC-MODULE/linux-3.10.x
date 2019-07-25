@@ -106,6 +106,12 @@
 			};
 		};
 
+		hsif {
+			rmace@0x3C024000 {
+				status = "ok";
+			};
+		};
+
 		mms {
 			vpu: vpu@0x38020000 {
 				status = "ok";
