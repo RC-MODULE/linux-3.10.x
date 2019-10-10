@@ -97,6 +97,54 @@
 			};
 		};
 
+		xhsif0 {
+			compatible = "ibm,apb";	 /* to check bus type */
+			#address-cells = <2>;
+			#size-cells = <2>;
+			ranges;
+
+			pcie0: pcie@1010000000 {
+				compatible = "rc-module,nwl-pcie-2.11";
+				status = "ok";
+				#address-cells = <3>;
+				#size-cells = <2>;
+				#interrupt-cells = <1>;
+				msi-controller;
+				device_type = "pci";
+				interrupt-parent = <&MPIC>;
+				interrupts = <86 4>, /* misc */
+						<87 4>,	/* DMA */
+						<85 4>,	/* legacy */
+						<84 4>,	/* MSI_1 [63...32] */
+						<83 4>;	/* MSI_0 [31...0] */
+				interrupt-names = "misc", "dummy", "intx",
+						"msi1", "msi0";
+				msi-parent = <&pcie0>;
+				reg = <0x010 0x10000000 0x0 0x1000>,	/* PCI0 */
+					<0x10 0x3c005000 0x0 0x1000>,		/* xhsif0 pci control */
+					<0x10 0x11000000 0x0 0x1000000>,	/* ecam */
+					<0x10 0x3cb00000 0x0 0x40000>,		/* serdes */
+					<0x10 0x3c000000 0x0 0x1000>;		/* control - ToDo move to parent */
+				reg-names = "breg", "pcireg", "cfg", "serdes", "control";
+
+//                        pci_space  < pci_addr          > < cpu_addr          > < size       >
+				ranges = <0x02000000 0x00000003 0x00000000 0x00000012 0x00000000 0x0 0x40000000
+						  0x01000000 0x00000003 0x40000000 0x00000012 0x40000000 0x0 0x00100000>;
+
+				bus-range = <0x00 0xff>;
+				interrupt-map-mask = <0x0 0x0 0x0 0x7>;
+				interrupt-map = <0x0 0x0 0x0 0x1 &pcie0_intc 0x1>,
+						<0x0 0x0 0x0 0x2 &pcie0_intc 0x2>,
+						<0x0 0x0 0x0 0x3 &pcie0_intc 0x3>,
+						<0x0 0x0 0x0 0x4 &pcie0_intc 0x4>;
+				pcie0_intc: legacy-interrupt-controller {
+					interrupt-controller;
+					#address-cells = <0>;
+					#interrupt-cells = <1>;
+				};
+			};
+		};
+
 		dspcores {
 			nmc3_0_core0: nmc3_0_core0@0x39000000 {
 				core-name = "K1879-nmc";
