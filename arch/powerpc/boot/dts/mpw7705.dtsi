@@ -97,6 +97,11 @@
 		clock-frequency = <250000000>;
 	};
 
+	apb_sys_pclk: apb_sys_pclk {
+		#clock-cells = <0>;
+		compatible = "fixed-clock";
+		clock-frequency = <100000000>;
+	};
 
 	MPIC: interrupt-controller {
 		compatible = "chrp,open-pic";
@@ -505,6 +510,16 @@
 				reg = <0x38000000 0x1000>;
 			};
 			
+			watchdog: watchdog@0x38002000 {
+				compatible = "arm,sp805", "arm,primecell";
+				reg = <0x38002000 0x1000>;
+				interrupt-parent = <&MPIC>;
+				interrupts = <36 0>; /* IRQ_TYPE_EDGE_RISING watchdog timer IRQ */
+				clocks = <&apb_sys_pclk>,<&apb_sys_pclk>;
+				clock-names = "wdogclk", "apb_pclk";
+				status = "disabled";
+			};
+
 			crg_cpu: crg_cpu@0x38006000
 			{
 				compatible = "syscon";
