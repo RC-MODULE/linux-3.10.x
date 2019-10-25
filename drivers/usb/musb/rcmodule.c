@@ -50,15 +50,6 @@ static irqreturn_t rcmodule_musb_interrupt(int irq, void *__hci)
 	musb->int_tx = musb_readw(musb->mregs, MUSB_INTRTX);
 	musb->int_rx = musb_readw(musb->mregs, MUSB_INTRRX);
 
-
-	if((musb->int_usb & MUSB_INTR_DISCONNECT) && (musb->port1_status & USB_PORT_STAT_C_RESET << 16))
-	{
-		// skip disconnect irq after reset
-		dev_dbg(musb->controller, "Skip disconnect irq after reset...");
-		spin_unlock_irqrestore(&musb->lock, flags);
-		return IRQ_HANDLED;
-	}
-
 	if (musb->int_usb || musb->int_tx || musb->int_rx)
 		retval = musb_interrupt(musb);
 
@@ -107,55 +98,6 @@ static int rcmodule_musb_exit(struct musb *musb)
 	musb->phy = NULL;
 	return 0;
 }
-
-/*
- * Load an endpoint's FIFO
- */
-static void __maybe_unused _write_fifo_8(struct musb_hw_ep *hw_ep, u16 len,
-				    const u8 *src)
-{
-	//struct musb *musb = hw_ep->musb;
-	void __iomem *fifo = hw_ep->fifo;
-
-#ifdef DEBUG
-	printk("%cX ep%d fifo %p count %d buf %p\n",
-			'T', hw_ep->epnum, fifo, len, src);
-
-	print_hex_dump(KERN_INFO, "TX: ", DUMP_PREFIX_OFFSET, 16, 1,
-			src, len, true);
-#endif
-	if (unlikely(len == 0))
-		return;
-
-	prefetch((u8 *)src);
-
-	iowrite8_rep(fifo, src, len);
-}
-
-/*
- * Unload an endpoint's FIFO
- */
-static void __maybe_unused _read_fifo_8(struct musb_hw_ep *hw_ep, u16 len, u8 *dst)
-{
-	//struct musb *musb = hw_ep->musb;
-	void __iomem *fifo = hw_ep->fifo;
-
-#ifdef DEBUG
-	printk("%cX ep%d fifo %p count %d buf %p\n",
-			'R', hw_ep->epnum, fifo, len, dst);
-#endif
-	if (unlikely(len == 0))
-		return;
-
-	/* byte aligned */
-	ioread8_rep(fifo, dst, len);
-
-#ifdef DEBUG
-	print_hex_dump(KERN_INFO, "RX: ", DUMP_PREFIX_OFFSET, 16, 1,
-			dst, len, true);
-#endif
-}
-
 
 static u16 _readw(const void __iomem *addr, unsigned offset)
 {
