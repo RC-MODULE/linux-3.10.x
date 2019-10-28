@@ -102,9 +102,10 @@
 			#address-cells = <2>;
 			#size-cells = <2>;
 			ranges;
+			//dma-ranges = <0x40000000 0x00000000 0x00000000 0x40000000>;
 
 			pcie0: pcie@1010000000 {
-				compatible = "rc-module,nwl-pcie-2.11";
+				compatible = "rcm,nwl-pcie-2.11";
 				status = "ok";
 				#address-cells = <3>;
 				#size-cells = <2>;
@@ -117,27 +118,78 @@
 						<85 4>,	/* legacy */
 						<84 4>,	/* MSI_1 [63...32] */
 						<83 4>;	/* MSI_0 [31...0] */
-				interrupt-names = "misc", "dummy", "intx",
+				interrupt-names = "misc", "dummy", "legacy",
 						"msi1", "msi0";
 				msi-parent = <&pcie0>;
-				reg = <0x010 0x10000000 0x0 0x1000>,	/* PCI0 */
-					<0x10 0x3c005000 0x0 0x1000>,		/* xhsif0 pci control */
+				reg = <0x010 0x10000000 0x0 0x1000000>,	/* PCI0 */
+					<0x10 0x3c000000 0x0 0x10000>,		/* xhsif0 pci control */
 					<0x10 0x11000000 0x0 0x1000000>,	/* ecam */
-					<0x10 0x3cb00000 0x0 0x40000>,		/* serdes */
-					<0x10 0x3c000000 0x0 0x1000>;		/* control - ToDo move to parent */
-				reg-names = "breg", "pcireg", "cfg", "serdes", "control";
+					<0x10 0x3cb00000 0x0 0x40000>;		/* serdes */
+				reg-names = "breg", "pcireg", "cfg", "serdes";
 
 //                        pci_space  < pci_addr          > < cpu_addr          > < size       >
-				ranges = <0x02000000 0x00000003 0x00000000 0x00000012 0x00000000 0x0 0x40000000
-						  0x01000000 0x00000003 0x40000000 0x00000012 0x40000000 0x0 0x00100000>;
+//				ranges = <0x02000000 0x00000000 0x12020000 0x00000010 0x12020000 0x0 0x00040000>;
+				ranges = <0x03000000 0x00000000 0x12020000 0x00000010 0x12020000 0x0 0x05FE0000>;
+//				dma-ranges = <0x03000000 0x1 0x0 0x0 0x00000000 0x1 0x0>;
 
-				bus-range = <0x00 0xff>;
+				bus-range = <0x00 0x0f>;
 				interrupt-map-mask = <0x0 0x0 0x0 0x7>;
 				interrupt-map = <0x0 0x0 0x0 0x1 &pcie0_intc 0x1>,
 						<0x0 0x0 0x0 0x2 &pcie0_intc 0x2>,
 						<0x0 0x0 0x0 0x3 &pcie0_intc 0x3>,
 						<0x0 0x0 0x0 0x4 &pcie0_intc 0x4>;
 				pcie0_intc: legacy-interrupt-controller {
+					interrupt-controller;
+					#address-cells = <0>;
+					#interrupt-cells = <1>;
+				};
+			};
+		};
+
+		xhsif1 {
+			compatible = "ibm,apb";	 /* to check bus type */
+			#address-cells = <2>;
+			#size-cells = <2>;
+			ranges;
+			//dma-ranges = <0x40000000 0x00000000 0x00000000 0x40000000>;
+
+			pcie1: pcie@1018000000 {
+				compatible = "rcm,nwl-pcie-2.11";
+				status = "disabled";
+				#address-cells = <3>;
+				#size-cells = <2>;
+				#interrupt-cells = <1>;
+				msi-controller;
+				device_type = "pci";
+				interrupt-parent = <&MPIC>;
+				interrupts = <94 4>, /* misc */
+						<95 4>,	/* DMA */
+						<93 4>,	/* legacy */
+						<92 4>,	/* MSI_1 [63...32] */
+						<91 4>;	/* MSI_0 [31...0] */
+				interrupt-names = "misc", "dummy", "legacy",
+						"msi1", "msi0";
+				msi-parent = <&pcie1>;
+				reg = <0x010 0x18000000 0x0 0x1000000>,	/* PCI0 */
+					  <0x10 0x3c010000 0x0 0x10000>,	/* xhsif1 pci control */
+					  <0x10 0x19000000 0x0 0x1000000>,	/* ecam */
+					  <0x10 0x3cb40000 0x0 0x40000>;	/* serdes */
+				reg-names = "breg", "pcireg", "cfg", "serdes";
+
+//                        pci_space  < pci_addr          > < cpu_addr          > < size       >			// https://elinux.org/Device_Tree_Usage#PCI_Host_Bridge
+				ranges = //<0x03000000 0x00000004 0x00000000 0x00000013 0x00000000 0x1 0x00000000>;
+//						  0x01000000 0x00000000 0x1a020000 0x00000010 0x1a020000 0x0 0x00020000
+						  <0x43000000 0x00000000 0x1a020000 0x00000010 0x1a020000 0x0 0x05FE0000>;
+
+				// dma-ranges = <0x03000000 0x1 0x0 0x0 0x00000000 0x1 0x0>;
+
+				bus-range = <0x00 0x0f>;
+				interrupt-map-mask = <0x0 0x0 0x0 0x7>;
+				interrupt-map = <0x0 0x0 0x0 0x1 &pcie1_intc 0x1>,
+						<0x0 0x0 0x0 0x2 &pcie1_intc 0x2>,
+						<0x0 0x0 0x0 0x3 &pcie1_intc 0x3>,
+						<0x0 0x0 0x0 0x4 &pcie1_intc 0x4>;
+				pcie1_intc: legacy-interrupt-controller {
 					interrupt-controller;
 					#address-cells = <0>;
 					#interrupt-cells = <1>;
