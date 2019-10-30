@@ -40,6 +40,12 @@
 #define E_ECAM_BASE_LO			0x00000230
 #define E_ECAM_BASE_HI			0x00000234
 
+#define	E_DREG_CAPABILITIES			(0x00000280 + 0x00)
+#define	E_DREG_STATUS				(0x00000280 + 0x04)
+#define	E_DREG_CONTROL				(0x00000280 + 0x08)
+#define	E_DREG_BASE_LO				(0x00000280 + 0x10)
+#define	E_DREG_BASE_HI				(0x00000280 + 0x14)
+
 /* Ingress - address translations */
 #define I_MSII_CAPABILITIES		0x00000300
 #define I_MSII_CONTROL			0x00000308
@@ -48,6 +54,9 @@
 
 #define I_ISUB_CONTROL			0x000003E8
 #define SET_ISUB_CONTROL		BIT(0)
+#define I_ESUB_CONTROL			0x000002E8
+#define SET_ESUB_CONTROL		BIT(0)
+
 /* Rxed msg fifo  - Interrupt status registers */
 #define MSGF_MISC_STATUS		0x00000400
 #define MSGF_MISC_MASK			0x00000404
@@ -312,18 +321,12 @@ static inline void nwl_bridge_writel(struct nwl_pcie *pcie, u32 val, u32 off)
 
 static void enable_write_to_xhsif_ctrl_registers (struct nwl_pcie *pcie) 
 {
-	printk("TRACE: enable_write_to_xhsif_ctrl_registers");
-
 	__pcie_writel(XHSIFCTRL_WRITE_ENABLE_MAGIC, pcie->pcireg_base, XHSIFCTRL_WRITE_ENABLE_OFFSET);
 }
 
 
 static int nwl_pcie_core_init(struct nwl_pcie *pcie)
 {
-    int err;
-
-	printk("TRACE: nwl_pcie_core_init");
-
     /* установка mgmt_cfg_constants */
 
     /* set Device ID and Vendor ID*/
@@ -383,8 +386,6 @@ static int nwl_pcie_core_init(struct nwl_pcie *pcie)
 static void inno_phy_soft_reset(struct nwl_pcie *pcie) 
 {
 
-	printk("TRACE: inno_phy_soft_reset");
-
     __pcie_writel((__pcie_readl(pcie->serdes_base, 0x00000 + PCI_INNO_SOFT_RST_OFFSET) & (~PCI_INNO_SOFT_RST_MASK)) | 
 		PCI_INNO_SOFT_RST_DEASSERT, pcie->serdes_base, 0x00000 + PCI_INNO_SOFT_RST_OFFSET);
     __pcie_writel((__pcie_readl(pcie->serdes_base, 0x10000 + PCI_INNO_SOFT_RST_OFFSET) & (~PCI_INNO_SOFT_RST_MASK)) | 
@@ -403,9 +404,7 @@ static void inno_phy_soft_reset(struct nwl_pcie *pcie)
 
 static void inno_phy_init(struct nwl_pcie *pcie)
 {
-	
-	printk("TRACE: inno_phy_init");
-    //***************************************************************
+	    //***************************************************************
     //  Initialize SERDES for PCIe mode
     //***************************************************************
     __pcie_writel(0x19, pcie->serdes_base, 0x00000 + 0x3028);  //  tx pll mult
@@ -428,7 +427,6 @@ static void inno_phy_init(struct nwl_pcie *pcie)
 
 static bool nwl_phy_link_up(struct nwl_pcie *pcie)
 {
-	//printk("TRACE: nwl_phy_link_up");
     if (__pcie_readl(pcie->pcireg_base, XHSIF_CTRL_PCIE_STATUS0_OFFSET) & PHY_RDY_LINKUP_BIT)
 		return true;
 	return false;
@@ -436,8 +434,6 @@ static bool nwl_phy_link_up(struct nwl_pcie *pcie)
 
 static bool nwl_pcie_link_up(struct nwl_pcie *pcie)
 {
-//	printk("TRACE: nwl_pcie_link_up");
-
    uint32_t pcie_status = __pcie_readl(pcie->pcireg_base,PCI_NWL_MGMT_PCIE_STATUS_DW_0x00);
     if ((pcie_status & PCI_NWL_PHY_LAYER_UP_MASK) && 
 		(pcie_status & PCI_NWL_DL_LAYER_UP_MASK) && 
@@ -451,7 +447,6 @@ static int nwl_wait_for_link(struct nwl_pcie *pcie)
 {
 	struct device *dev = pcie->dev;
 	int retries;
-	printk("TRACE: nwl_wait_for_link");
 
 	/* check if the link is up or not */
 	for (retries = 0; retries < LINK_WAIT_MAX_RETRIES; retries++) {
@@ -498,15 +493,12 @@ static void __iomem *nwl_pcie_map_bus(struct pci_bus *bus, unsigned int devfn,
 	struct pci_controller *hose = bus->sysdata;
 	struct nwl_pcie *pcie = hose->private_data;
 	int relbus;
-	printk("TRACE: nwl_pcie_map_bus bus:%x, fn:%x, where:%x", bus->number, devfn, where);
 
 	if (!nwl_pcie_valid_device(bus, devfn))
 		return NULL;
 
 	relbus = (bus->number << ECAM_BUS_LOC_SHIFT) |
 			(devfn << ECAM_DEV_LOC_SHIFT);
-
-//	printk(KERN_CONT ", offset:0x%08x", relbus + where);
 
 	return pcie->ecam_base + relbus + where;
 }
@@ -516,8 +508,6 @@ static int nwl_pcie_config_read(struct pci_bus *bus, unsigned int devfn,
 			    int where, int size, u32 *val)
 {
 	void __iomem *addr;
-
-//	printk("TRACE: nwl_pcie_config_read fn:%x, where:%x, size:%x", devfn, where, size);
 
 	addr = bus->ops->map_bus(bus, devfn, where);
 	if (!addr) {
@@ -532,8 +522,6 @@ static int nwl_pcie_config_read(struct pci_bus *bus, unsigned int devfn,
 	else
 		*val = (readl(addr));
 
-//	printk(KERN_CONT " => %x", *val);
-
 	return PCIBIOS_SUCCESSFUL;
 }
 
@@ -542,8 +530,6 @@ static int nwl_pcie_config_write(struct pci_bus *bus, unsigned int devfn,
 			     int where, int size, u32 val)
 {
 	void __iomem *addr;
-
-//	printk("TRACE: nwl_pcie_config_write fn:%x, where:%x, size:%x <= %x ", devfn, where, size, val);
 
 	addr = bus->ops->map_bus(bus, devfn, where);
 	if (!addr)
@@ -570,7 +556,6 @@ static struct pci_ops nwl_pcie_ops = {
 
 static irqreturn_t nwl_pcie_dummy_handler(int irq, void *data)
 {
-	printk("TRACE: nwl_pcie_dummy_handler");
 	return IRQ_HANDLED;
 }
 
@@ -580,8 +565,6 @@ static irqreturn_t nwl_pcie_misc_handler(int irq, void *data)
 	struct nwl_pcie *pcie = data;
 	struct device *dev = pcie->dev;
 	u32 misc_stat;
-
-	//printk("TRACE: nwl_pcie_misc_handler");
 
 	/* Checking for misc interrupts */
 	misc_stat = nwl_bridge_readl(pcie, MSGF_MISC_STATUS) &
@@ -648,8 +631,6 @@ static void nwl_pcie_leg_handler(struct irq_desc *desc)
 	u32 bit;
 	u32 virq;
 
-	printk("TRACE: nwl_pcie_leg_handler");
-
 	chained_irq_enter(chip, desc);
 	pcie = irq_desc_get_handler_data(desc);
 
@@ -672,8 +653,6 @@ static void nwl_pcie_handle_msi_irq(struct nwl_pcie *pcie, u32 status_reg)
 	u32 bit;
 	u32 virq;
 
-//	printk("TRACE: nwl_pcie_handle_msi_irq");
-
 	msi = &pcie->msi;
 
 	while ((status = nwl_bridge_readl(pcie, status_reg)) != 0) {
@@ -681,10 +660,7 @@ static void nwl_pcie_handle_msi_irq(struct nwl_pcie *pcie, u32 status_reg)
 			nwl_bridge_writel(pcie, 1 << bit, status_reg);
 			virq = irq_find_mapping(msi->dev_domain, bit);
 			if (virq)
-//			{
-//				printk(KERN_CONT " %d",virq);
 				generic_handle_irq(virq);
-//			}
 		}
 	}
 }
@@ -693,7 +669,6 @@ static void nwl_pcie_msi_handler_high(struct irq_desc *desc)
 {
 	struct irq_chip *chip = irq_desc_get_chip(desc);
 	struct nwl_pcie *pcie = irq_desc_get_handler_data(desc);
-//	printk("TRACE: nwl_pcie_msi_handler_high");
 
 	chained_irq_enter(chip, desc);
 	nwl_pcie_handle_msi_irq(pcie, MSGF_MSI_STATUS_HI);
@@ -704,7 +679,6 @@ static void nwl_pcie_msi_handler_low(struct irq_desc *desc)
 {
 	struct irq_chip *chip = irq_desc_get_chip(desc);
 	struct nwl_pcie *pcie = irq_desc_get_handler_data(desc);
-//	printk("TRACE: nwl_pcie_msi_handler_low");
 
 	chained_irq_enter(chip, desc);
 	nwl_pcie_handle_msi_irq(pcie, MSGF_MSI_STATUS_LO);
@@ -718,7 +692,6 @@ static void nwl_mask_leg_irq(struct irq_data *data)
 	unsigned long flags;
 	u32 mask;
 	u32 val;
-	printk("TRACE: nwl_mask_leg_irq");
 
 	pcie = irq_desc_get_chip_data(desc);
 	mask = 1 << (data->hwirq - 1);
@@ -735,7 +708,6 @@ static void nwl_unmask_leg_irq(struct irq_data *data)
 	unsigned long flags;
 	u32 mask;
 	u32 val;
-	printk("TRACE: nwl_unmask_leg_irq");
 
 	pcie = irq_desc_get_chip_data(desc);
 	mask = 1 << (data->hwirq - 1);
@@ -756,7 +728,6 @@ static struct irq_chip nwl_leg_irq_chip = {
 static int nwl_legacy_map(struct irq_domain *domain, unsigned int irq,
 			  irq_hw_number_t hwirq)
 {
-	printk("TRACE: nwl_legacy_map");
 	irq_set_chip_and_handler(irq, &nwl_leg_irq_chip, handle_level_irq);
 	irq_set_chip_data(irq, domain->host_data);
 	irq_set_status_flags(irq, IRQ_LEVEL);
@@ -790,7 +761,6 @@ static void nwl_compose_msi_msg(struct irq_data *data, struct msi_msg *msg)
 {
 	struct nwl_pcie *pcie = irq_data_get_irq_chip_data(data);
 	phys_addr_t msi_addr = pcie->phys_pcie_reg_base;
-	printk("TRACE: nwl_compose_msi_msg");
 
 	msg->address_lo = lower_32_bits(msi_addr);
 	msg->address_hi = 0 /*upper_32_bits(msi_addr)*/;
@@ -800,7 +770,6 @@ static void nwl_compose_msi_msg(struct irq_data *data, struct msi_msg *msg)
 static int nwl_msi_set_affinity(struct irq_data *irq_data,
 				const struct cpumask *mask, bool force)
 {
-	printk("TRACE: nwl_msi_set_affinity");
 	return -EINVAL;
 }
 
@@ -818,7 +787,6 @@ static int nwl_irq_domain_alloc(struct irq_domain *domain, unsigned int virq,
 	int bit;
 	int i;
 
-	printk("TRACE: nwl_irq_domain_alloc");
 	mutex_lock(&msi->lock);
 	bit = bitmap_find_next_zero_area(msi->bitmap, INT_PCI_MSI_NR, 0,
 					 nr_irqs, 0);
@@ -845,8 +813,6 @@ static void nwl_irq_domain_free(struct irq_domain *domain, unsigned int virq,
 	struct nwl_pcie *pcie = irq_data_get_irq_chip_data(data);
 	struct nwl_msi *msi = &pcie->msi;
 
-	printk("TRACE: nwl_irq_domain_free");
-
 	mutex_lock(&msi->lock);
 	bitmap_clear(msi->bitmap, data->hwirq, nr_irqs);
 	mutex_unlock(&msi->lock);
@@ -864,7 +830,6 @@ static int nwl_pcie_init_msi_irq_domain(struct nwl_pcie *pcie)
 	struct fwnode_handle *fwnode = of_node_to_fwnode(dev->of_node);
 	struct nwl_msi *msi = &pcie->msi;
 
-	printk("TRACE: nwl_pcie_init_msi_irq_domain");
 	msi->dev_domain = irq_domain_add_linear(NULL, INT_PCI_MSI_NR,
 						&dev_msi_domain_ops, pcie);
 	if (!msi->dev_domain) {
@@ -889,7 +854,6 @@ static int nwl_pcie_init_irq_domain(struct nwl_pcie *pcie)
 	struct device_node *node = dev->of_node;
 	struct device_node *legacy_intc_node;
 
-	printk("TRACE: nwl_pcie_init_irq_domain");
 	legacy_intc_node = of_get_next_child(node, NULL);
 	if (!legacy_intc_node) {
 		dev_err(dev, "No legacy intc node found\n");
@@ -919,7 +883,6 @@ static int nwl_pcie_enable_msi(struct nwl_pcie *pcie)
 	phys_addr_t base;
 	int ret;
 	int size = BITS_TO_LONGS(INT_PCI_MSI_NR) * sizeof(long);
-	printk("TRACE: nwl_pcie_enable_msi");
 
 	mutex_init(&msi->lock);
 
@@ -967,7 +930,6 @@ static int nwl_pcie_enable_msi(struct nwl_pcie *pcie)
 
 	/* setup AFI/FPCI range */
 	base = pcie->phys_pcie_reg_base;
-	printk("base: %llx, lo:%lx, hi:%lx", base, lower_32_bits(base), upper_32_bits(base));
 
 	nwl_bridge_writel(pcie, lower_32_bits(base), I_MSII_BASE_LO);
 	nwl_bridge_writel(pcie, 0 /*upper_32_bits(base)*/, I_MSII_BASE_HI);	// AXI mapping - toDo
@@ -1004,16 +966,22 @@ err:
 
 static int nwl_pcie_base_init(struct nwl_pcie *pcie)
 {
-	volatile int i;
-	printk("TRACE: nwl_pcie_base_init");
-
     enable_write_to_xhsif_ctrl_registers(pcie);
     nwl_pcie_core_init(pcie);
 	inno_phy_init(pcie);
 	inno_phy_soft_reset(pcie);
-
 	return 0;
 }
+
+
+#define	TRAN_EGRESS_0_BASE			0xc00
+#define	TRAN_EGRESS_1_BASE			0xc20
+#define	TRAN_EGRESS_2_BASE			0xc40
+#define	TRAN_EGRESS_3_BASE			0xc60
+#define	TRAN_EGRESS_4_BASE			0xc80
+#define	TRAN_EGRESS_5_BASE			0xca0
+#define	TRAN_EGRESS_6_BASE			0xcc0
+#define	TRAN_EGRESS_7_BASE			0xce0
 
 #define	TRAN_EGRESS_CAPABILITIES		0x00
 #define	TRAN_EGRESS_STATUS			0x04
@@ -1025,49 +993,64 @@ static int nwl_pcie_base_init(struct nwl_pcie *pcie)
 #define	TRAN_EGRESS_DST_BASE_LO			0x18
 #define	TRAN_EGRESS_DST_BASE_HI			0x1c
 
+#define	TRAN_INGRESS_0_BASE			0x800
+#define	TRAN_INGRESS_1_BASE			0x820
+#define	TRAN_INGRESS_2_BASE			0x840
+#define	TRAN_INGRESS_3_BASE			0x860
+#define	TRAN_INGRESS_4_BASE			0x880
+#define	TRAN_INGRESS_5_BASE			0x8a0
+#define	TRAN_INGRESS_6_BASE			0x8c0
+#define	TRAN_INGRESS_7_BASE			0x8e0
 
-static int bytes_to_nwl_addr_tran_size(uint32_t bytes) 
-{
-    //TODO: заменить на функцию
-    if(bytes <= 1024*4) 	return 0;
-    if(bytes <= 1024*8) 	return 1;
-    if(bytes <= 1024*16) 	return 2;
-    if(bytes <= 1024*32) 	return 3;
-    if(bytes <= 1024*64) 	return 4;
-    if(bytes <= 1024*128) 	return 5;
-    if(bytes <= 1024*256) 	return 6;
-    if(bytes <= 1024*512) 	return 7;
-    if(bytes <= 1024*1024*1) 	return 8;
-    if(bytes <= 1024*1024*2) 	return 9;
-    if(bytes <= 1024*1024*4) 	return 10;
-    if(bytes <= 1024*1024*8) 	return 11;
-    if(bytes <= 1024*1024*16) 	return 12;
-    if(bytes <= 1024*1024*32) 	return 13;
-    if(bytes <= 1024*1024*64) 	return 14;
-    if(bytes <= 1024*1024*128) 	return 15;
-    if(bytes <= 1024*1024*256) 	return 16;
-    if(bytes <= 1024*1024*512) 	return 17;
-    if(bytes <= 1024*1024*1024) return 18;
-    return 16;
-}
+#define	TRAN_INGRESS_CAPABILITIES	0x00
+#define	TRAN_INGRESS_STATUS			0x04
+#define	TRAN_INGRESS_CONTROL		0x08
+#define	TRAN_INGRESS_CTRL_SIZE_SHIFT 16
+#define	TRAN_INGRESS_CTRL_SIZE_LOC	0x001f0000
+#define	TRAN_INGRESS_SRC_BASE_LO	0x10
+#define	TRAN_INGRESS_SRC_BASE_HI	0x14
+#define	TRAN_INGRESS_DST_BASE_LO	0x18
+#define	TRAN_INGRESS_DST_BASE_HI	0x1c
 
 
 static void egress_translate(struct nwl_pcie *pcie, unsigned long long src_addr, unsigned long long dst_addr, uint32_t egress_base, uint32_t egress_size) {
 	uint32_t breg_val;
+	printk("TRACE: egress_translate: %x, %llx, %llx, %x, %x", 
+		nwl_bridge_readl(pcie, egress_base + TRAN_EGRESS_CAPABILITIES), 
+		src_addr, dst_addr, egress_base, egress_size);
+
+	nwl_bridge_writel(pcie, upper_32_bits(src_addr), egress_base + TRAN_EGRESS_SRC_BASE_HI);
+	nwl_bridge_writel(pcie, lower_32_bits(src_addr), egress_base + TRAN_EGRESS_SRC_BASE_LO);
 	
-	writel(upper_32_bits(src_addr), pcie->breg_base + egress_base + TRAN_EGRESS_SRC_BASE_HI);
-	writel(lower_32_bits(src_addr), pcie->breg_base + egress_base + TRAN_EGRESS_SRC_BASE_LO);
+	nwl_bridge_writel(pcie, upper_32_bits(dst_addr), egress_base + TRAN_EGRESS_DST_BASE_HI);
+	nwl_bridge_writel(pcie, lower_32_bits(dst_addr), egress_base + TRAN_EGRESS_DST_BASE_LO);
 	
-	writel(upper_32_bits(dst_addr), pcie->breg_base + egress_base + TRAN_EGRESS_DST_BASE_HI);
-	writel(lower_32_bits(dst_addr), pcie->breg_base + egress_base + TRAN_EGRESS_DST_BASE_LO);
-	
-	breg_val = readl(pcie->breg_base + egress_base + TRAN_EGRESS_CONTROL);
+	breg_val = nwl_bridge_readl(pcie, egress_base + TRAN_EGRESS_CONTROL);
 	breg_val |= 0x1;
 	breg_val = breg_val & (~TRAN_EGRESS_CTRL_SIZE_LOC);
 	breg_val = breg_val | (egress_size << TRAN_EGRESS_CTRL_SIZE_SHIFT);
-	writel(breg_val, pcie->breg_base + egress_base + TRAN_EGRESS_CONTROL);
+	nwl_bridge_writel(pcie, breg_val, egress_base + TRAN_EGRESS_CONTROL);
 }
 
+
+static void ingress_translate(struct nwl_pcie *pcie, unsigned long long src_addr, unsigned long long dst_addr, uint32_t ingress_base, uint32_t ingress_size) {
+	uint32_t breg_val;
+	printk("TRACE: ingress_translate: %x, %llx, %llx, %x, %x", 
+		nwl_bridge_readl(pcie, ingress_base + TRAN_INGRESS_CAPABILITIES), 
+		src_addr, dst_addr, ingress_base, ingress_size);
+
+	nwl_bridge_writel(pcie, upper_32_bits(src_addr), ingress_base + TRAN_INGRESS_SRC_BASE_HI);
+	nwl_bridge_writel(pcie, lower_32_bits(src_addr), ingress_base + TRAN_INGRESS_SRC_BASE_LO);
+	
+	nwl_bridge_writel(pcie, upper_32_bits(dst_addr), ingress_base + TRAN_INGRESS_DST_BASE_HI);
+	nwl_bridge_writel(pcie, lower_32_bits(dst_addr), ingress_base + TRAN_INGRESS_DST_BASE_LO);
+	
+	breg_val = nwl_bridge_readl(pcie, ingress_base + TRAN_INGRESS_CONTROL);
+	breg_val |= 0x1;
+	breg_val = breg_val & (~TRAN_INGRESS_CTRL_SIZE_LOC);
+	breg_val = breg_val | (ingress_size << TRAN_INGRESS_CTRL_SIZE_SHIFT);
+	nwl_bridge_writel(pcie, breg_val, ingress_base + TRAN_INGRESS_CONTROL);
+}
 
 static int nwl_pcie_bridge_init(struct nwl_pcie *pcie)
 {
@@ -1076,35 +1059,35 @@ static int nwl_pcie_bridge_init(struct nwl_pcie *pcie)
 	u32 breg_val, ecam_val, first_busno = 0;
 	int err;
 
-	printk("TRACE: nwl_pcie_bridge_init");
-
 	breg_val = nwl_bridge_readl(pcie, E_BREG_CAPABILITIES) & BREG_PRESENT;
 	if (!breg_val) {
 		dev_err(dev, "BREG is not present\n");
 		return breg_val;
 	}
 	/* Write bridge_off to breg base */
-	printk("pcie->phys_breg_base: %llx, lo:%lx, hi:%lx", pcie->phys_breg_base, lower_32_bits(pcie->phys_breg_base), upper_32_bits(pcie->phys_breg_base));
-
 	nwl_bridge_writel(pcie, lower_32_bits(pcie->phys_breg_base),
 			  E_BREG_BASE_LO);
 	nwl_bridge_writel(pcie, /* upper_32_bits(pcie->phys_breg_base) */ 0,		// AXI mapping ToDo
 			  E_BREG_BASE_HI);
 
-	//nwl_bridge_writel(pcie, 0x33, 0x4);
-	//nwl_bridge_writel(pcie, 0x22, 0x8);
+	nwl_bridge_writel(pcie, 0x33, 0x4);
+	nwl_bridge_writel(pcie, 0x22, 0x8);
 
 
 	/* Enable BREG */
-	nwl_bridge_writel(pcie, (~BREG_ENABLE_FORCE & BREG_ENABLE) | (3<<16),
+	nwl_bridge_writel(pcie, (~BREG_ENABLE_FORCE & BREG_ENABLE),
 			  E_BREG_CONTROL);
     
 	/* Disable DMA channel registers */
 	nwl_bridge_writel(pcie, nwl_bridge_readl(pcie, BRCFG_PCIE_RX0) |
 			  CFG_DMA_REG_BAR, BRCFG_PCIE_RX0);
 
-	/* Enable Ingress subtractive decode translation */
-	nwl_bridge_writel(pcie, SET_ISUB_CONTROL, I_ISUB_CONTROL);
+	/* Disable Ingress subtractive decode translation */
+	nwl_bridge_writel(pcie, 0 /*SET_ISUB_CONTROL*/, I_ISUB_CONTROL);
+
+	nwl_bridge_writel(pcie, SET_ESUB_CONTROL, I_ESUB_CONTROL);
+
+	// egress_translate(pcie, 0x1200000000, 0x300000000, TRAN_EGRESS_0_BASE, 20);
 
 	/* Enable msg filtering details */
 	nwl_bridge_writel(pcie, CFG_ENABLE_MSG_FILTER_MASK,
@@ -1128,8 +1111,6 @@ static int nwl_pcie_bridge_init(struct nwl_pcie *pcie)
 			  (pcie->ecam_value << E_ECAM_SIZE_SHIFT),
 			  E_ECAM_CONTROL);
 
-	printk("pcie->phys_ecam_base: %llx, lo:%lx, hi:%lx", pcie->phys_ecam_base, lower_32_bits(pcie->phys_ecam_base), upper_32_bits(pcie->phys_ecam_base));
-
 	nwl_bridge_writel(pcie, lower_32_bits(pcie->phys_ecam_base),
 			  E_ECAM_BASE_LO);
 	nwl_bridge_writel(pcie, /* upper_32_bits(pcie->phys_ecam_base) */ 0,		// AXI mapping todo
@@ -1143,18 +1124,6 @@ static int nwl_pcie_bridge_init(struct nwl_pcie *pcie)
 	ecam_val |= (first_busno + 1) << 8;
 	ecam_val |= (pcie->last_busno << E_ECAM_SIZE_SHIFT);
 	__pcie_writel(ecam_val, pcie->ecam_base, PCI_PRIMARY_BUS);
-	//writel(ecam_val, (pcie->ecam_base + PCI_PRIMARY_BUS));
-
-	/* io/memory enable, bus master enable */
-//	ecam_val = (
-//		PCIE_CFG_CMD_BUSM_EN
-//		| PCIE_CFG_CMD_MEM_EN 
-//		| PCIE_CFG_CMD_IO_EN 
-//		| PCIE_CFG_CMD_PARITY
-//		| PCIE_CFG_CMD_SERR_EN
-//	);
-
-//	__pcie_writel(__pcie_readl(pcie->ecam_base, PCI_COMMAND) | ecam_val, pcie->ecam_base, PCI_COMMAND);
 
 	if (nwl_pcie_link_up(pcie))
 		dev_info(dev, "Link is UP\n");
@@ -1207,14 +1176,93 @@ static int nwl_pcie_bridge_init(struct nwl_pcie *pcie)
 	nwl_bridge_writel(pcie, nwl_bridge_readl(pcie, BRCFG_INTERRUPT) |
 			  BRCFG_INTERRUPT_MASK, BRCFG_INTERRUPT);
 
+	return 0;
+}
 
 
-//	egress_translate(pcie, 0x300000000, 0x30000000, 0xc00, bytes_to_nwl_addr_tran_size(1024*1024*1024));
+static int nwl_pcie_apply_ingress_range(struct nwl_pcie *pcie,
+				    struct of_pci_range *range,
+				    int *index)
+{
+	u64 size;
+	u32 size_mask;
+	int idx = *index;
+	u32 ingress_base = TRAN_INGRESS_0_BASE + 0x20*idx;
+	u32 capabilities, size_max, size_offset;
 
+	if(idx > 7)
+	{
+		dev_err(pcie->dev, "ingress translation index %d out of range", idx);
+		return -EINVAL;		
+	}
 
+	capabilities = nwl_bridge_readl(pcie, ingress_base + TRAN_INGRESS_CAPABILITIES);
+
+	if(!(capabilities & BIT(0)))
+	{
+		dev_err(pcie->dev, "ingress translation module %d not found", idx);
+		return -EINVAL;		
+	}
+
+	size_max = (capabilities >> 24) & 0xFF;
+	size_offset = (capabilities >> 16) & 0xFF;
+
+	/*
+	 * If the size of the range is larger than the alignment of the start
+	 * address, we have to use multiple entries to perform the mapping.
+	 */
+	if (range->cpu_addr > 0) {
+		unsigned long nr_zeros = __ffs64(range->cpu_addr);
+		u64 alignment = 1ULL << nr_zeros;
+
+		size = min(range->size, alignment);
+	} else {
+		size = range->size;
+	}
+	/* Hardware supports max 4GiB inbound region */
+	size = min(size, 1ULL << 32);
+
+	size_mask = ilog2(size) - size_offset;
+	if(size_mask > size_max)
+	{
+		dev_err(pcie->dev, "size [%llx] for dma_regions too big, %x, %x", size, (unsigned int) (ilog2(size)), size_offset);
+		return -EINVAL;
+	}
+
+	ingress_translate(pcie, range->pci_addr, range->cpu_addr, ingress_base, size_mask);
+	*index = idx+1;
 
 	return 0;
 }
+
+
+static int nwl_pcie_parse_map_dma_ranges(struct nwl_pcie *pcie,
+					  struct device_node *np)
+{
+	struct of_pci_range range;
+	struct of_pci_range_parser parser;
+	int index = 0;
+	int err;
+
+	if (of_pci_dma_range_parser_init(&parser, np))
+		return -EINVAL;
+
+	/* Get the dma-ranges from DT */
+	for_each_of_pci_range(&parser, &range) {
+		u64 end = range.cpu_addr + range.size - 1;
+
+		dev_dbg(pcie->dev, "0x%08x 0x%016llx..0x%016llx -> 0x%016llx\n",
+			range.flags, range.cpu_addr, end, range.pci_addr);
+
+		err = nwl_pcie_apply_ingress_range(pcie, &range, &index);
+		if (err)
+			return err;
+	}
+
+	return 0;
+}
+
+
 
 static int nwl_pcie_parse_dt(struct nwl_pcie *pcie,
 			     struct platform_device *pdev)
@@ -1224,7 +1272,6 @@ static int nwl_pcie_parse_dt(struct nwl_pcie *pcie,
 	struct resource *res;
 	const char *type;
 
-	printk("TRACE: nwl_pcie_parse_dt");
 	/* Check for device type */
 	type = of_get_property(node, "device_type", NULL);
 	if (!type || strcmp(type, "pci")) {
@@ -1237,21 +1284,18 @@ static int nwl_pcie_parse_dt(struct nwl_pcie *pcie,
 	if (IS_ERR(pcie->breg_base))
 		return PTR_ERR(pcie->breg_base);
 	pcie->phys_breg_base = res->start;
-	printk("pcie->phys_breg_base: %llx", pcie->phys_breg_base);
 
 	res = platform_get_resource_byname(pdev, IORESOURCE_MEM, "pcireg");
 	pcie->pcireg_base = devm_ioremap_resource(dev, res);
 	if (IS_ERR(pcie->pcireg_base))
 		return PTR_ERR(pcie->pcireg_base);
 	pcie->phys_pcie_reg_base = res->start;
-	printk("pcie->phys_pcie_reg_base: %llx", pcie->phys_pcie_reg_base);
 
 	res = platform_get_resource_byname(pdev, IORESOURCE_MEM, "cfg");
 	pcie->ecam_base = devm_pci_remap_cfg_resource(dev, res);
 	if (IS_ERR(pcie->ecam_base))
 		return PTR_ERR(pcie->ecam_base);
 	pcie->phys_ecam_base = res->start;
-	printk("pcie->phys_ecam_base: %llx", pcie->phys_ecam_base);
 
 	res = platform_get_resource_byname(pdev, IORESOURCE_MEM, "serdes");
 	pcie->serdes_base = devm_ioremap_resource(dev, res);
@@ -1288,11 +1332,6 @@ static int nwl_pcie_probe(struct platform_device *pdev)
 	int err;
 	resource_size_t iobase = 0;
 	LIST_HEAD(res);
-	printk("TRACE: nwl_pcie_probe");
-
-	//printk("Test1: %x", dev->of_node);
-	//printk("Test2: %x", of_node_kobj(dev->of_node));
-	//printk("Test3: %x", of_node_kobj(dev->of_node)->sd);
 
 	bridge = devm_pci_alloc_host_bridge(dev, sizeof(*pcie));
 	if (!bridge)
@@ -1329,6 +1368,10 @@ static int nwl_pcie_probe(struct platform_device *pdev)
 	}
 
 	err = devm_request_pci_bus_resources(dev, &res);
+	if (err)
+		goto error;
+
+	err = nwl_pcie_parse_map_dma_ranges(pcie, dev->of_node);
 	if (err)
 		goto error;
 
