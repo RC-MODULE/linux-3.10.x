@@ -237,7 +237,8 @@ config RAVE_SP_WATCHDOG
 
 config ARM_SP805_WATCHDOG
 	tristate "ARM SP805 Watchdog"
-	depends on (ARM || ARM64 || COMPILE_TEST) && ARM_AMBA
+	depends on (PPC || ARM || ARM64 || COMPILE_TEST) && ARM_AMBA
+	depends on HAS_IOMEM
 	select WATCHDOG_CORE
 	help
 	  ARM Primecell SP805 Watchdog timer. This will reboot your system when
