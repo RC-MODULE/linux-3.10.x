@@ -133,84 +133,330 @@
 
 			lsif0_config: lsif0_config@0x3C03F000 {	
 				compatible = "syscon";
-				reg = <0x3C03F000 0x1000>;
+				reg = <0x3C03F000 0x30>;
 			};
 
-			mgpio1_0: mgpio0@0x3C041420 {
+			lsif0_ext_mem_mux: lsif0_ext_mem_mux@0x3C03F030 {
 				compatible = "pinctrl-single";
-				reg = <0x3C041420 1>;
-				pinctrl-single,register-width = <8>;
+				reg = <0x3C03F030 4>;
+				pinctrl-single,register-width = <32>;
+				pinctrl-single,function-mask = <0x3>;
+				#address-cells = <1>;
+				#size-cells = <0>;
+				#pinctrl-cells = <1>;
+
+				// SRAM_NOR
+				lsif0_ext_mem_mux_mode_0: lsif0_ext_mem_mux_mode_0 {
+					pinctrl-single,pins = <0 0>;
+				};
+
+				// NAND, GRETH_GBIT0, GRETH_GBIT1 (only if mii_mux_mode == 1)
+				lsif0_ext_mem_mux_mode_1: lsif0_ext_mem_mux_mode_1 {
+					pinctrl-single,pins = <0 1>;
+				};
+
+				// GRETH0, GRETH1, NAND
+				lsif0_ext_mem_mux_mode_2: lsif0_ext_mem_mux_mode_2 {
+					pinctrl-single,pins = <0 2>;
+				};
+			};
+
+			lsif0_mii_mux: lsif0_mii_mux@0x3C03F034 {
+				compatible = "pinctrl-single";
+				reg = <0x3C03F034 4>;
+				pinctrl-single,register-width = <32>;
+				pinctrl-single,function-mask = <0x1>;
+				#address-cells = <1>;
+				#size-cells = <0>;
+				#pinctrl-cells = <1>;
+
+				// GMII <- GRETH_GBIT1
+				lsif0_mii_mux_mode_0: lsif0_mii_mux_mode_0 {
+					pinctrl-single,pins = <0 0>;
+				};
+
+				// MII <- GRETH2
+				lsif0_mii_mux_mode_1: lsif0_mii_mux_mode_1 {
+					pinctrl-single,pins = <0 1>;
+				};
+			};
+
+			lsif0_mgpio0: lsif0_mgpio0@0x3C040420 {
+				compatible = "pinctrl-single";
+				reg = <0x3C040420 4>;
+				pinctrl-single,register-width = <32>;
 				pinctrl-single,function-mask = <0x1>;
 				#address-cells = <1>;
 				#size-cells = <0>;
 				#pinctrl-cells = <2>;
 				pinctrl-single,bit-per-mux;
 
-				greth1_0mux: greth1_0mux_pinmux {
-					pinctrl-single,bits = <0 0xF0 0xF0>;	
+				lsif0_mgpio0_greth_gbit0: lsif0_mgpio0_greth_gbit0 {
+					pinctrl-single,bits = <0 0xFF 0xFF>;
 				};
 
+				lsif0_mgpio0_greth1: lsif0_mgpio0_greth1 {
+					pinctrl-single,bits = <0 0x3A 0x3A>;
+				};
 			};
 
-			mgpio2_0: mgpio0@0x3C042420 {
+			lsif0_mgpio1: lsif0_mgpio1@0x3C041420 {
 				compatible = "pinctrl-single";
-				reg = <0x3C042420 1>;
-				pinctrl-single,register-width = <8>;
+				reg = <0x3C041420 4>;
+				pinctrl-single,register-width = <32>;
 				pinctrl-single,function-mask = <0x1>;
 				#address-cells = <1>;
 				#size-cells = <0>;
 				#pinctrl-cells = <2>;
 				pinctrl-single,bit-per-mux;
 
-				greth1_1mux: greth1_1mux_pinmux {
-					pinctrl-single,bits = <0 0xFF 0xFF>;	
+				lsif0_mgpio1_greth_gbit0: lsif0_mgpio1_greth_gbit0 {
+					pinctrl-single,bits = <0 0x0F 0x0F>;
+				};
+
+				lsif0_mgpio1_greth_gbit1: lsif0_mgpio1_greth_gbit1 {
+					pinctrl-single,bits = <0 0xF0 0xF0>;
+				};
+
+				lsif0_mgpio1_greth0: lsif0_mgpio1_greth0 {
+					pinctrl-single,bits = <0 0xA0 0xA0>;
 				};
 			};
 
-			mgpio6_0: mgpio0@0x3C046420 {
+			lsif0_mgpio2: lsif0_mgpio2@0x3C042420 {
 				compatible = "pinctrl-single";
-				reg = <0x3C046420 1>;
-				pinctrl-single,register-width = <8>;
+				reg = <0x3C042420 4>;
+				pinctrl-single,register-width = <32>;
 				pinctrl-single,function-mask = <0x1>;
 				#address-cells = <1>;
 				#size-cells = <0>;
 				#pinctrl-cells = <2>;
 				pinctrl-single,bit-per-mux;
 
-				greth1_2mux: greth1_2mux_pinmux {
-					pinctrl-single,bits = <0 0xFE 0xFE>;	
+				lsif0_mgpio2_greth_gbit1: lsif0_mgpio2_greth_gbit1 {
+					pinctrl-single,bits = <0 0xFF 0xFF>;
 				};
 
+				lsif0_mgpio2_greth0: lsif0_mgpio2_greth0 {
+					pinctrl-single,bits = <0 0x03 0x03>;
+				};
 			};
 
-			mgpio7_0: mgpio0@0x3C047420 {
+			lsif0_mgpio4: lsif0_mgpio4@0x3C044420 {
 				compatible = "pinctrl-single";
-				reg = <0x3C047420 1>;
-				pinctrl-single,register-width = <8>;
+				reg = <0x3C044420 4>;
+				pinctrl-single,register-width = <32>;
 				pinctrl-single,function-mask = <0x1>;
 				#address-cells = <1>;
 				#size-cells = <0>;
 				#pinctrl-cells = <2>;
 				pinctrl-single,bit-per-mux;
 
-				greth1_3mux: greth1_3mux_pinmux {
-					pinctrl-single,bits = <0 0x0F 0x0F>;	
+				lsif0_mgpio4_greth_gbit0: lsif0_mgpio4_greth_gbit0 {
+					pinctrl-single,bits = <0 0xE4 0xE4>;
 				};
 
+				lsif0_mgpio4_greth_gbit1: lsif0_mgpio4_greth_gbit1 {
+					pinctrl-single,bits = <0 0x08 0x08>;
+				};
+
+				lsif0_mgpio4_greth0: lsif0_mgpio4_greth0 {
+					pinctrl-single,bits = <0 0x08 0x08>;
+				};
+
+				lsif0_mgpio4_greth1: lsif0_mgpio4_greth1 {
+					pinctrl-single,bits = <0 0xC4 0xC4>;
+				};
 			};
 
-			greth1: greth1@0x3C034000 {
+			lsif0_mgpio5: lsif0_mgpio5@0x3C045420 {
+				compatible = "pinctrl-single";
+				reg = <0x3C045420 4>;
+				pinctrl-single,register-width = <32>;
+				pinctrl-single,function-mask = <0x1>;
+				#address-cells = <1>;
+				#size-cells = <0>;
+				#pinctrl-cells = <2>;
+				pinctrl-single,bit-per-mux;
+
+				lsif0_mgpio5_greth_gbit0: lsif0_mgpio5_greth_gbit0 {
+					pinctrl-single,bits = <0 0xFF 0xFF>;
+				};
+
+				lsif0_mgpio5_greth1: lsif0_mgpio5_greth1 {
+					pinctrl-single,bits = <0 0xC0 0xC0>;
+				};
+			};
+
+			lsif0_mgpio6: lsif0_mgpio6@0x3C046420 {
+				compatible = "pinctrl-single";
+				reg = <0x3C046420 4>;
+				pinctrl-single,register-width = <32>;
+				pinctrl-single,function-mask = <0x1>;
+				#address-cells = <1>;
+				#size-cells = <0>;
+				#pinctrl-cells = <2>;
+				pinctrl-single,bit-per-mux;
+
+				lsif0_mgpio6_greth_gbit1: lsif0_mgpio6_greth_gbit1 {
+					pinctrl-single,bits = <0 0xFE 0xFE>;
+				};
+
+				lsif0_mgpio6_greth0: lsif0_mgpio6_greth0 {
+					pinctrl-single,bits = <0 0x0C 0x0C>;
+				};
+			};
+
+			lsif0_mgpio7: lsif0_mgpio7@0x3C047420 {
+				compatible = "pinctrl-single";
+				reg = <0x3C047420 4>;
+				pinctrl-single,register-width = <32>;
+				pinctrl-single,function-mask = <0x1>;
+				#address-cells = <1>;
+				#size-cells = <0>;
+				#pinctrl-cells = <2>;
+				pinctrl-single,bit-per-mux;
+
+				lsif0_mgpio7_greth_gbit1: lsif0_mgpio7_greth_gbit1 {
+					pinctrl-single,bits = <0 0x0F 0x0F>;
+				};
+
+				lsif0_mgpio7_greth0: lsif0_mgpio7_greth0 {
+					pinctrl-single,bits = <0 0x0C 0x0C>;
+				};
+			};
+
+			lsif0_mgpio9: lsif0_mgpio9@0x3C049420 {
+				compatible = "pinctrl-single";
+				reg = <0x3C049420 4>;
+				pinctrl-single,register-width = <32>;
+				pinctrl-single,function-mask = <0x1>;
+				#address-cells = <1>;
+				#size-cells = <0>;
+				#pinctrl-cells = <2>;
+				pinctrl-single,bit-per-mux;
+
+				lsif0_mgpio9_greth_gbit1: lsif0_mgpio9_greth_gbit1 {
+					pinctrl-single,bits = <0 0xFF 0xFF>;
+				};
+
+				lsif0_mgpio9_greth2: lsif0_mgpio9_greth2 {
+					pinctrl-single,bits = <0 0x4E 0x4E>;
+				};
+			};
+
+			lsif0_mgpio10: lsif0_mgpio10@0x3C04A420 {
+				compatible = "pinctrl-single";
+				reg = <0x3C04A420 4>;
+				pinctrl-single,register-width = <32>;
+				pinctrl-single,function-mask = <0x1>;
+				#address-cells = <1>;
+				#size-cells = <0>;
+				#pinctrl-cells = <2>;
+				pinctrl-single,bit-per-mux;
+
+				lsif0_mgpio10_greth_gbit1: lsif0_mgpio10_greth_gbit1 {
+					pinctrl-single,bits = <0 0xFF 0xFF>;
+				};
+
+				lsif0_mgpio10_greth2: lsif0_mgpio10_greth2 {
+					pinctrl-single,bits = <0 0xCD 0xCD>;
+				};
+			};
+
+			// GRETH_GBIT0 -> EXT_MEM
+			greth_gbit0: greth_gbit0@0x3C033000 {
+				compatible = "rc-module,greth";
+				reg = <0x3C033000 0x1000>;
+				control = <&lsif0_config>;
+				interrupt-parent = <&MPIC>;
+				interrupts = <103 0>; // IRQ_TYPE_EDGE_RISING
+				pinctrl-names = "default";
+				pinctrl-0 = <&lsif0_ext_mem_mux_mode_1>,
+					<&lsif0_mgpio0_greth_gbit0>,
+					<&lsif0_mgpio1_greth_gbit0>,
+					<&lsif0_mgpio4_greth_gbit0>,
+					<&lsif0_mgpio5_greth_gbit0>;
+				status = "disabled";
+			};
+			
+			// GRETH_GBIT1 -> GMII
+			greth_gbit1: greth_gbit1@0x3C034000 {
 				compatible = "rc-module,greth";
 				reg = <0x3C034000 0x1000>;
 				control = <&lsif0_config>;
-
 				interrupt-parent = <&MPIC>;
-				interrupts = <108 0>;	// IRQ_TYPE_EDGE_RISING
+				interrupts = <108 0>; // IRQ_TYPE_EDGE_RISING
 				pinctrl-names = "default";
-				pinctrl-0 = <&greth1_0mux>, <&greth1_1mux>, <&greth1_2mux>, <&greth1_3mux>;
-                status = "disabled";
+				pinctrl-0 = <&lsif0_mii_mux_mode_0>,
+					<&lsif0_mgpio9_greth_gbit1>,
+					<&lsif0_mgpio10_greth_gbit1>;
+				status = "disabled";
 			};
 			
+			// GRETH_GBIT1 -> EXT_MEM
+			greth_gbit1_alt: greth_gbit1_alt@0x3C034000 {
+				compatible = "rc-module,greth";
+				reg = <0x3C034000 0x1000>;
+				control = <&lsif0_config>;
+				interrupt-parent = <&MPIC>;
+				interrupts = <108 0>; // IRQ_TYPE_EDGE_RISING
+				pinctrl-names = "default";
+				pinctrl-0 = <&lsif0_mii_mux_mode_1>,
+					<&lsif0_ext_mem_mux_mode_1>,
+					<&lsif0_mgpio1_greth_gbit1>,
+					<&lsif0_mgpio2_greth_gbit1>,
+					<&lsif0_mgpio4_greth_gbit1>,
+					<&lsif0_mgpio6_greth_gbit1>,
+					<&lsif0_mgpio7_greth_gbit1>;
+				status = "disabled";
+			};
+			
+			// GRETH0 -> EXT_MEM
+			greth0: greth0@0x3C035000 {
+				compatible = "rc-module,greth";
+				reg = <0x3C035000 0x1000>;
+				control = <&lsif0_config>;
+				interrupt-parent = <&MPIC>;
+				interrupts = <103 0>; // IRQ_TYPE_EDGE_RISING
+				pinctrl-names = "default";
+				pinctrl-0 = <&lsif0_ext_mem_mux_mode_2>,
+					<&lsif0_mgpio1_greth0>,
+					<&lsif0_mgpio2_greth0>,
+					<&lsif0_mgpio4_greth0>,
+					<&lsif0_mgpio6_greth0>,
+					<&lsif0_mgpio7_greth0>;
+				status = "disabled";
+			};
+
+			// GRETH1 -> EXT_MEM
+			greth1: greth1@0x3C036000 {
+				compatible = "rc-module,greth";
+				reg = <0x3C036000 0x1000>;
+				control = <&lsif0_config>;
+				interrupt-parent = <&MPIC>;
+				interrupts = <104 0>; // IRQ_TYPE_EDGE_RISING
+				pinctrl-names = "default";
+				pinctrl-0 = <&lsif0_ext_mem_mux_mode_2>,
+					<&lsif0_mgpio0_greth1>,
+					<&lsif0_mgpio4_greth1>,
+					<&lsif0_mgpio5_greth1>;
+				status = "disabled";
+			};
+
+			// GRETH2 -> RMII
+			greth2: greth2@0x3C037000 {
+				compatible = "rc-module,greth";
+				reg = <0x3C037000 0x1000>;
+				control = <&lsif0_config>;
+				interrupt-parent = <&MPIC>;
+				interrupts = <108 0>; // IRQ_TYPE_EDGE_RISING
+				pinctrl-names = "default";
+				pinctrl-0 = <&lsif0_mii_mux_mode_1>,
+					<&lsif0_mgpio9_greth2>,
+					<&lsif0_mgpio10_greth2>;
+				status = "disabled";
+			};
 		};
 
 		lsif1 {

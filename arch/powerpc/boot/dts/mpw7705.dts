@@ -23,10 +23,21 @@
 
 	plb {
 		lsif0 {
-			greth1: greth1@0x3C034000 {
+			greth_gbit0: greth_gbit0@0x3C033000 {
+				mac-address = [ EC 17 66 77 05 03 ];
+				status = "ok";
+			};
+
+			greth_gbit1_alt: greth_gbit1_alt@0x3C034000 {
 				mac-address = [ EC 17 66 77 05 02 ];
 				status = "ok";
 			};
+
+			// ???
+			// greth_gbit1: greth_gbit1@0x3C034000 {
+			// 	mac-address = [ EC 17 66 77 05 02 ];
+			// 	status = "ok";
+			// };
 			
 		};
 
