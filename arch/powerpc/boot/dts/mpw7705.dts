@@ -102,6 +102,18 @@
 			};
 		};
 
+		xhsif0 {
+			pcie0: pcie@1010000000 {
+				status = "ok";
+			};
+		};
+
+		xhsif1 {
+			pcie1: pcie@1018000000 {
+				status = "ok";
+			};
+		};
+
 		dspcores {
 			nmc3_0_core0: nmc3_0_core0@0x39000000 {
 				core-name = "K1879-nmc";

@@ -58,6 +58,17 @@ config PCIE_XILINX_NWL
 	 or End Point. The current option selection will only
 	 support root port enabling.
 
+config PCIE_RCMODULE_NWL
+	bool "RC-Module NWL PCIe Core"
+	depends on MPW7705 || COMPILE_TEST
+	depends on PCI_MSI_IRQ_DOMAIN
+	help
+	 Say 'Y' here if you want kernel support for RC Module
+	 NWL PCIe controller. The controller can act as Root Port
+	 or End Point. The current option selection will only
+	 support root port enabling.
+
+
 config PCI_FTPCI100
 	bool "Faraday Technology FTPCI100 PCI controller"
 	depends on OF
