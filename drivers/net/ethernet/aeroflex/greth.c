@@ -71,6 +71,11 @@ static int greth_edcl = 1;
 module_param(greth_edcl, int, 0);
 MODULE_PARM_DESC(greth_edcl, "GRETH EDCL usage indicator. Set to 1 if EDCL is used.");
 
+// EXT_MEM_MUX and MII_MUX data
+static spinlock_t mux_data_lock = __SPIN_LOCK_UNLOCKED(mux_data_lock);
+static int ext_mem_mux_counter = 0; // how times the mux was set (0 - it is free for setting), protected by mux_data_lock
+static int mii_mux_counter = 0; // how times the mux was set (0 - it is free for settting), protected by mux_data_lock
+
 static int greth_open(struct net_device *dev);
 static netdev_tx_t greth_start_xmit(struct sk_buff *skb,
 	   struct net_device *dev);
@@ -99,6 +104,9 @@ static void greth_set_multicast_list(struct net_device *dev);
 #define NEXT_TX(N)      (((N) + 1) & GRETH_TXBD_NUM_MASK)
 #define SKIP_TX(N, C)   (((N) + C) & GRETH_TXBD_NUM_MASK)
 #define NEXT_RX(N)      (((N) + 1) & GRETH_RXBD_NUM_MASK)
+
+#define CONTROL_REG_EXT_MEM_MUX 0x30
+#define CONTROL_REG_MII_MUX 0x34
 
 static void greth_print_rx_packet(void *addr, int len)
 {
@@ -362,7 +370,9 @@ static int greth_open(struct net_device *dev)
 		return err;
 	}
 
-	err = request_irq(greth->irq, greth_interrupt, 0, "eth", (void *) dev);
+	// original code:
+	//err = request_irq(greth->irq, greth_interrupt, 0, "eth", (void *) dev);
+	err = request_irq(greth->irq, greth_interrupt, IRQF_SHARED, "eth", (void *) dev);
 	if (err) {
 		if (netif_msg_ifup(greth))
 			dev_err(&dev->dev, "Could not allocate interrupt %d\n", dev->irq);
@@ -589,6 +599,16 @@ map_error:
 	dev_kfree_skb(skb);
 out:
 	return err;
+}
+
+static netdev_tx_t
+greth_start_xmit_common(struct sk_buff *skb, struct net_device *dev)
+{
+	struct greth_private *greth = netdev_priv(dev);
+	if (greth->gbit_mac)
+		return greth_start_xmit_gbit(skb, dev);
+
+	return greth_start_xmit(skb, dev);
 }
 
 static irqreturn_t greth_interrupt(int irq, void *dev_id)
@@ -1161,9 +1181,10 @@ static const struct ethtool_ops greth_ethtool_ops = {
 static struct net_device_ops greth_netdev_ops = {
 	.ndo_open		= greth_open,
 	.ndo_stop		= greth_close,
-	.ndo_start_xmit		= greth_start_xmit,
+	.ndo_start_xmit		= greth_start_xmit_common,
 	.ndo_set_mac_address	= greth_set_mac_add,
 	.ndo_validate_addr	= eth_validate_addr,
+	.ndo_set_rx_mode	= greth_set_multicast_list
 };
 
 static inline int wait_for_mdio(struct greth_private *greth)
@@ -1316,7 +1337,10 @@ static int greth_mdio_init(struct greth_private *greth)
 	}
 
 	greth->mdio->name = "greth-mdio";
-	snprintf(greth->mdio->id, MII_BUS_ID_SIZE, "%s-%d", greth->mdio->name, greth->irq);
+	// original code:
+	//snprintf(greth->mdio->id, MII_BUS_ID_SIZE, "%s-%d", greth->mdio->name, greth->irq);
+	// it has a problem: GRETH_GBIT1 and GRETH2 controllers have the same irq number
+	snprintf(greth->mdio->id, MII_BUS_ID_SIZE, "%s-%d", greth->mdio->name, (unsigned)greth->regs);
 	greth->mdio->read = greth_mdio_read;
 	greth->mdio->write = greth_mdio_write;
 	greth->mdio->priv = greth;
@@ -1355,6 +1379,106 @@ error:
 	return ret;
 }
 
+#ifdef CONFIG_PPC
+static void mux_free(struct greth_private *greth)
+{
+	spin_lock(&mux_data_lock);
+	if (greth->ext_mem_mux_lock)
+		--ext_mem_mux_counter;
+	if (greth->mii_mux_lock)
+		--mii_mux_counter;
+	spin_unlock(&mux_data_lock);
+}
+#endif
+
+#ifdef CONFIG_PPC
+static int mux_setup(struct greth_private *greth)
+{
+	int ret;
+	bool conflict;
+	u32 ext_mem_mux_mode_request;
+	u32 ext_mem_mux_mode_current;
+	u32 mii_mux_mode_request;
+	u32 mii_mux_mode_current;
+
+	ret = of_property_read_u32(greth->dev->of_node, "ext-mem-mux-mode", &ext_mem_mux_mode_request);
+	if (ret == 0) {
+		if (ext_mem_mux_mode_request > 2) {
+			dev_err(greth->dev, "The ext-mem-mux-mode param must be from 0 to 2\n");
+			mux_free(greth);
+			return -EINVAL;
+		}
+
+		ret = regmap_read(greth->control, CONTROL_REG_EXT_MEM_MUX, &ext_mem_mux_mode_current);
+		if (ret != 0) {
+			dev_err(greth->dev, "Read EXT_MEM_MUX register error %i\n", ret);
+			mux_free(greth);
+			return ret;
+		}
+
+		conflict = false;
+		spin_lock(&mux_data_lock);
+		if ((ext_mem_mux_counter == 0) || ((ext_mem_mux_mode_request & 0x3U) == (ext_mem_mux_mode_current & 0x3U)))
+			++ext_mem_mux_counter;
+		else
+			conflict = true;
+		spin_unlock(&mux_data_lock);
+
+		if (conflict) {
+			dev_err(greth->dev, "Setup EXT_MEM_MUX register error (conflict with other devices)\n");
+			mux_free(greth);
+			return -EFAULT;
+		}
+
+		ret = regmap_write(greth->control, CONTROL_REG_EXT_MEM_MUX, (ext_mem_mux_mode_current & ~3U) | ext_mem_mux_mode_request);
+		if (ret != 0) {
+			dev_err(greth->dev, "Write EXT_MEM_MUX register error %i\n", ret);
+			mux_free(greth);
+			return ret;
+		}
+	}
+
+	ret = of_property_read_u32(greth->dev->of_node, "mii-mux-mode", &mii_mux_mode_request);
+	if (ret == 0) {
+		if (mii_mux_mode_request > 1) {
+			dev_err(greth->dev, "The mii-mux-mode param must be from 0 to 1\n");
+			mux_free(greth);
+			return -EINVAL;
+		}
+
+		ret = regmap_read(greth->control, CONTROL_REG_MII_MUX, &mii_mux_mode_current);
+		if (ret != 0) {
+			dev_err(greth->dev, "Read MII_MUX register error %i\n", ret);
+			mux_free(greth);
+			return ret;
+		}
+
+		conflict = false;
+		spin_lock(&mux_data_lock);
+		if ((mii_mux_counter == 0) || ((mii_mux_mode_request & 0x1U) == (mii_mux_mode_current & 0x1U)))
+			++mii_mux_counter;
+		else
+			conflict = true;
+		spin_unlock(&mux_data_lock);
+
+		if (conflict) {
+			dev_err(greth->dev, "Setup MII_MUX register error (conflict with other devices)\n");
+			mux_free(greth);
+			return -EFAULT;
+		}
+
+		ret = regmap_write(greth->control, CONTROL_REG_MII_MUX, (mii_mux_mode_current & ~3U) | mii_mux_mode_request);
+		if (ret != 0) {
+			dev_err(greth->dev, "Write MII_MUX register error %i\n", ret);
+			mux_free(greth);
+			return ret;
+		}
+	}
+
+	return 0;
+}
+#endif
+
 /* Initialize the GRETH MAC */
 static int greth_of_probe(struct platform_device *ofdev)
 {
@@ -1390,12 +1514,11 @@ static int greth_of_probe(struct platform_device *ofdev)
 		tmp = of_parse_phandle(greth->dev->of_node, "control", 0);
 		if (!tmp) {
 			dev_err(greth->dev, "failed to find control register reference\n");
-			return -EINVAL;
+			err = -EINVAL;
+			goto error1;
 		}
 		greth->control = syscon_node_to_regmap(tmp);
-
 	}
-
 #else
 	greth->regs = of_ioremap(&ofdev->resource[0], 0,
 				 resource_size(&ofdev->resource[0]),
@@ -1418,6 +1541,12 @@ static int greth_of_probe(struct platform_device *ofdev)
 
 	dev_set_drvdata(greth->dev, dev);
 	SET_NETDEV_DEV(dev, greth->dev);
+
+#ifdef CONFIG_PPC
+	err = mux_setup(greth);
+	if (err != 0)
+		goto error1;
+#endif
 
 	if (netif_msg_probe(greth))
 		dev_dbg(greth->dev, "resetting controller.\n");
@@ -1527,11 +1656,9 @@ static int greth_of_probe(struct platform_device *ofdev)
 		dev->hw_features = NETIF_F_SG | NETIF_F_IP_CSUM |
 			NETIF_F_RXCSUM;
 		dev->features = dev->hw_features | NETIF_F_HIGHDMA;
-		greth_netdev_ops.ndo_start_xmit = greth_start_xmit_gbit;
 	}
 
 	if (greth->multicast) {
-		greth_netdev_ops.ndo_set_rx_mode = greth_set_multicast_list;
 		dev->flags |= IFF_MULTICAST;
 	} else {
 		dev->flags &= ~IFF_MULTICAST;
@@ -1561,6 +1688,7 @@ error3:
 error2:
 #ifdef CONFIG_PPC
 	devm_iounmap(greth->dev, greth->regs);
+	mux_free(greth);
 #else
 	of_iounmap(&ofdev->resource[0], greth->regs, resource_size(&ofdev->resource[0]));
 #endif
@@ -1588,6 +1716,7 @@ static int greth_of_remove(struct platform_device *of_dev)
 
 #ifdef CONFIG_PPC
 	devm_iounmap(greth->dev, greth->regs);
+	mux_free(greth);
 #else
 	of_iounmap(&of_dev->resource[0], greth->regs, resource_size(&of_dev->resource[0]));
 #endif

@@ -137,6 +137,9 @@ struct greth_private {
 	u8 gbit_mac;
 	u8 mdio_int_en;
 	u8 edcl;
+
+	bool ext_mem_mux_lock;
+	bool mii_mux_lock;
 };
 
 #endif
