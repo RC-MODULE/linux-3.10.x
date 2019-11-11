@@ -251,6 +251,12 @@ config MTD_LANTIQ
 	help
 	  Support for NOR flash attached to the Lantiq SoC's External Bus Unit.
 
+config MTD_RCM_NOR
+	tristate "RC-Module SoC NOR support"
+	depends on MPW7705
+	help
+	  Support for NOR flash attached to the 1888TX018 SoC's
+
 config MTD_L440GX
 	tristate "BIOS flash chip on Intel L440GX boards"
 	depends on X86 && MTD_JEDECPROBE

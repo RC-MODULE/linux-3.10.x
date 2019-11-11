@@ -27,6 +27,36 @@
 			 	mac-address = [ EC 17 66 77 05 02 ];
 			 	status = "ok";
 			};			
+
+			nor0: nor0@0x3C030000 {
+				nor-cs = <4>;
+			 	status = "ok";
+				
+				partition@0 {
+					label = "uboot_spl";
+					reg = <0x00000 0x40000>; /* 256 KB */
+				};
+
+				partition@40000 {
+					label = "uboot";
+					reg = <0x40000 0x1000000>; /* 16 MB */
+				};
+
+				partition@1040000 {
+					label = "uboot_env";
+					reg = <0x1040000 0x10000>; /* 64 KB */
+				};
+
+				partition@1050000 {
+					label = "linux";
+					reg = <0x1050000 0x1000000>; /* 16 MB */
+				};
+
+				partition@2050000 {
+					label = "rootfs";
+					reg = <0x2050000 0xDFB0000>;
+				};				 
+			};			
 		};
 
 		lsif1 {						
@@ -78,7 +108,7 @@
 			usb_otg_hs: usb_otg_hs@0x3C06D000 {
 				mode = <1>;			/* 1 - host, 2 - device */
 				status = "ok";
-			};			
+			};		
 		};		
 		
 		apb0 {
