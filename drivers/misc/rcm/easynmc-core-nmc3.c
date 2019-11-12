@@ -1,6 +1,6 @@
 /*
  * EasyNMC NMC3 core Driver
- * (c) RC Module 2014
+ * (c) RCM 2014
  *
  * This driver provides a simple interface to userspace apps and 
  * is designed to be as simple as possible. 
@@ -264,7 +264,7 @@ static int easynmc_remove (struct platform_device *pdev)
 }
 
 static const struct of_device_id easynmc_nmc3_of_match_table[] = {
-	{ .compatible = "rc-module,easynmc", },
+	{ .compatible = "rcm,easynmc", },
 	{ /* end of list */ }
 };
 MODULE_DEVICE_TABLE(of, easynmc_nmc3_of_match_table);

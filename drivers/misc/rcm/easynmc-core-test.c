@@ -1,6 +1,6 @@
 /*
  * EasyNMC Dummy Core Driver
- * (c) RC Module 2014
+ * (c) RCM 2014
  *
  * This driver provides a simple interface to userspace apps and 
  * is designed to be as simple as possible. 

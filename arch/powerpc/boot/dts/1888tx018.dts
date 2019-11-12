@@ -1,5 +1,5 @@
 /*
- * Device Tree Source for RC-Module TX011 platform
+ * Device Tree Source for RCM 1888TX018 platform
  *
  * Copyright © 2019 Alexey Spirkov <alexeis@astrosoft.ru>
  *
@@ -8,11 +8,11 @@
  * any warranty of any kind, whether express or implied.
  */
 
-/include/ "mpw7705.dtsi"
+/include/ "1888tx018.dtsi"
 
 / {
-	model = "rc-module,mpw7705";
-	compatible = "rc-module,mpw7705";
+	model = "rcm,1888tx018";
+	compatible = "rcm,1888tx018";
 
 	aliases {
 		serial0 = &uart0;

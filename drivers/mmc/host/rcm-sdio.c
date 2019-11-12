@@ -1,10 +1,10 @@
 /*
  * KeyASIC MMC/SD/SDIO driver
- * Designed for RC Module's Flavor of KeyASIC's MMC/SDIO and 
- * relies on a few extra regs added by RC Module to simplify things
+ * Designed for RCM's Flavor of KeyASIC's MMC/SDIO and 
+ * relies on a few extra regs added by RCM to simplify things
  *
  * Authors: Andrew Andrianov
- * Copyright (C) 2012 RC Module.
+ * Copyright (C) 2012 RCM.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License version 2 as
@@ -26,7 +26,7 @@
  * different interrupt bits, since any one of them missing is most likely to
  * indicate possible data loss (sic!)
  * 
- * Nice people at RC Module created a few extra registers to help poor 
+ * Nice people at RCM created a few extra registers to help poor 
  * programers out. They are actually additional interrupt mask registers
  * and a set of interrupt status registers. 
  * Card clock is also set up via the 'extra' registers.
@@ -62,7 +62,7 @@
 #include <linux/mmc/host.h>
 #include <linux/clk.h>
 
-#include "rcmodule-sdio.h"
+#include "rcm-sdio.h"
 
 
 #define DRIVER_NAME	"rmsdio"
@@ -1236,25 +1236,25 @@ module_init(rmsdio_init);
 module_exit(rmsdio_exit);
 */
 
-static const struct of_device_id mpw7705_mmc_of_match[] = {
-	{ .compatible = "rc-module,mmc-0.2", },
-	{ .compatible = "rc-module,mpw7705", },	
+static const struct of_device_id 1888tx018_mmc_of_match[] = {
+	{ .compatible = "rcm,mmc-0.2", },
+	{ .compatible = "rcm,1888tx018", },	
 	{}
 };
-MODULE_DEVICE_TABLE(of, mpw7705_mmc_of_match);
+MODULE_DEVICE_TABLE(of, 1888tx018_mmc_of_match);
 
-static struct platform_driver mpw7705_mmc_driver = {
+static struct platform_driver 1888tx018_mmc_driver = {
 	.probe		= rmsdio_probe,
 	.remove		= rmsdio_remove,
 	.driver		= {
 		.name = DRIVER_NAME,
-		.of_match_table = of_match_ptr(mpw7705_mmc_of_match),
+		.of_match_table = of_match_ptr(1888tx018_mmc_of_match),
 	},
 };
 
-module_platform_driver(mpw7705_mmc_driver);
+module_platform_driver(1888tx018_mmc_driver);
 
-MODULE_DESCRIPTION("MPW7705 SD/MMC driver");
+MODULE_DESCRIPTION("1888TX018 SD/MMC driver");
 MODULE_AUTHOR("Astrosoft <astrosoft@astrosoft.ru>");
 MODULE_LICENSE("GPL");
-//MODULE_ALIAS("platform:mmc-rcmodule");
+//MODULE_ALIAS("platform:mmc-rcm");

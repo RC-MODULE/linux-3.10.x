@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: GPL-2.0+
 /*
- * rcmodule-cpufreq.c - RC-Module PPC470 Core frequency driver.
+ * rcm-cpufreq.c - RCM PPC470 Core frequency driver.
  *
  * Copyright (C) 2019 by AstroSoft
  * Alexey Spirkov <alexeis@astrosoft.ru>
@@ -37,7 +37,7 @@
 #define CPUFREQ_WRLOCK_OFFSET 0x00C
 #define CPUFREQ_WRUNLOCK 0x1ACCE551
 
-struct rcmodule_freq_mode {
+struct rcm_freq_mode {
 	unsigned int freq_khz;
 	unsigned int fbdiv; // 8..511
 	unsigned int prediv; // 1..31
@@ -45,14 +45,14 @@ struct rcmodule_freq_mode {
 	unsigned int cpudiv; // 0 - 255; Fclk = Fpll/(cpudiv+1)
 };
 
-struct rcmodule_cpufreq_data {
+struct rcm_cpufreq_data {
 	struct regmap *control;
 	struct cpufreq_frequency_table *cpu_freqs;
-	struct rcmodule_freq_mode *cpu_modes;
+	struct rcm_freq_mode *cpu_modes;
 	int curr_mode;
 };
 
-static int rcmodule_switch_cpufreq(struct rcmodule_cpufreq_data *drv_data,
+static int rcm_switch_cpufreq(struct rcm_cpufreq_data *drv_data,
 				   unsigned int index)
 {
 	unsigned long flags;
@@ -124,49 +124,49 @@ static int rcmodule_switch_cpufreq(struct rcmodule_cpufreq_data *drv_data,
 	return retval;
 }
 
-static struct cpufreq_driver rcmodule_cpufreq_driver;
+static struct cpufreq_driver rcm_cpufreq_driver;
 
-static int rcmodule_cpufreq_target(struct cpufreq_policy *policy,
+static int rcm_cpufreq_target(struct cpufreq_policy *policy,
 				   unsigned int index)
 {
 	int res;
-	struct rcmodule_cpufreq_data *data =
-		rcmodule_cpufreq_driver.driver_data;
-	res = rcmodule_switch_cpufreq(data, data->cpu_freqs[index].driver_data);
+	struct rcm_cpufreq_data *data =
+		rcm_cpufreq_driver.driver_data;
+	res = rcm_switch_cpufreq(data, data->cpu_freqs[index].driver_data);
 	if (!res)
 		// just for get function...
 		data->curr_mode = index;
 	return res;
 }
 
-static int rcmodule_cpufreq_init(struct cpufreq_policy *policy)
+static int rcm_cpufreq_init(struct cpufreq_policy *policy)
 {
-	struct rcmodule_cpufreq_data *data =
-		rcmodule_cpufreq_driver.driver_data;
+	struct rcm_cpufreq_data *data =
+		rcm_cpufreq_driver.driver_data;
 	return cpufreq_generic_init(policy, data->cpu_freqs,
 				    12000); // to check latency
 }
 
-static unsigned int rcmodule_get_cpu_freq(unsigned int cpu)
+static unsigned int rcm_get_cpu_freq(unsigned int cpu)
 {
-	struct rcmodule_cpufreq_data *data =
-		rcmodule_cpufreq_driver.driver_data;
+	struct rcm_cpufreq_data *data =
+		rcm_cpufreq_driver.driver_data;
 	return data->cpu_modes[data->curr_mode].freq_khz;
 }
 
-static struct cpufreq_driver rcmodule_cpufreq_driver = {
-	.name = "rcmodule-cpufreq",
+static struct cpufreq_driver rcm_cpufreq_driver = {
+	.name = "rcm-cpufreq",
 	.flags = CPUFREQ_CONST_LOOPS,
-	.init = rcmodule_cpufreq_init,
+	.init = rcm_cpufreq_init,
 	.verify = cpufreq_generic_frequency_table_verify,
-	.target_index = rcmodule_cpufreq_target,
-	.get = rcmodule_get_cpu_freq,
+	.target_index = rcm_cpufreq_target,
+	.get = rcm_get_cpu_freq,
 	.attr = cpufreq_generic_attr,
 };
 
-static int rcmodule_cpufreq_probe(struct platform_device *pdev)
+static int rcm_cpufreq_probe(struct platform_device *pdev)
 {
-	struct rcmodule_cpufreq_data *data;
+	struct rcm_cpufreq_data *data;
 	struct device_node *cpunode, *tmp;
 	int rc = -ENODEV, index, i;
 	unsigned int min, max;
@@ -185,7 +185,7 @@ static int rcmodule_cpufreq_probe(struct platform_device *pdev)
 		pr_err("failed to find frequency table\n");
 		goto err0;
 	}
-	count = sz / sizeof(struct rcmodule_freq_mode);
+	count = sz / sizeof(struct rcm_freq_mode);
 
 	data->cpu_modes = devm_kzalloc(&pdev->dev, sz, GFP_KERNEL);
 	data->cpu_freqs = devm_kzalloc(
@@ -250,12 +250,12 @@ static int rcmodule_cpufreq_probe(struct platform_device *pdev)
 	pr_info("Low: %d Mhz, High: %d Mhz, Cur: %d MHz\n", min / 1000,
 		max / 1000, data->cpu_freqs[index].frequency / 1000);
 
-	rcmodule_switch_cpufreq(data, data->cpu_freqs[index].driver_data);
+	rcm_switch_cpufreq(data, data->cpu_freqs[index].driver_data);
 	data->curr_mode = index;
 
-	rcmodule_cpufreq_driver.driver_data = data;
+	rcm_cpufreq_driver.driver_data = data;
 
-	rc = cpufreq_register_driver(&rcmodule_cpufreq_driver);
+	rc = cpufreq_register_driver(&rcm_cpufreq_driver);
 
 	of_node_put(cpunode);
 
@@ -267,31 +267,31 @@ err0:
 	return rc;
 }
 
-static int rcmodule_cpufreq_remove(struct platform_device *pdev)
+static int rcm_cpufreq_remove(struct platform_device *pdev)
 {
-	cpufreq_unregister_driver(&rcmodule_cpufreq_driver);
+	cpufreq_unregister_driver(&rcm_cpufreq_driver);
 	return 0;
 }
 
-static const struct of_device_id rcmodule_cpufreq_of_match[] = {
+static const struct of_device_id rcm_cpufreq_of_match[] = {
 	{
 		.compatible = "rc-module,cpu-freq",
 	},
 	{}
 };
-MODULE_DEVICE_TABLE(of, rcmodule_cpufreq_of_match);
+MODULE_DEVICE_TABLE(of, rcm_cpufreq_of_match);
 
-static struct platform_driver rcmodule_cpufreq_platform_driver = {
+static struct platform_driver rcm_cpufreq_platform_driver = {
 	.driver =
 		{
-			.name = "rcmodule-cpufreq",
-			.of_match_table = rcmodule_cpufreq_of_match,
+			.name = "rcm-cpufreq",
+			.of_match_table = rcm_cpufreq_of_match,
 		},
-	.probe = rcmodule_cpufreq_probe,
-	.remove = rcmodule_cpufreq_remove,
+	.probe = rcm_cpufreq_probe,
+	.remove = rcm_cpufreq_remove,
 };
-module_platform_driver(rcmodule_cpufreq_platform_driver);
+module_platform_driver(rcm_cpufreq_platform_driver);
 
-MODULE_DESCRIPTION("RC-Module PPC 470 core frequency driver");
+MODULE_DESCRIPTION("RCM PPC 470 core frequency driver");
 MODULE_AUTHOR("Alexey Spirkov <alexeis@astrosoft.ru>");
 MODULE_LICENSE("GPL v2");

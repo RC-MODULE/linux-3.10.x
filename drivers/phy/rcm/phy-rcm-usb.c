@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: GPL-2.0+
 /*
- * phy-rcmodule-usb - USB PHY, talking to musb controller in RC Module PPC board.
+ * phy-rcm-usb - USB PHY, talking to musb controller in RCM PPC board.
  *
  * Copyright (C) 2018 by AstroSoft
  * Alexey Spirkov <alexeis@astrosoft.ru>
@@ -29,26 +29,26 @@
 #define USB_PHY_UTMI_RESET_MUSB  BIT(2)
 #define USB_PHY_UTMI_SESPENDM_EN BIT(3)
 
-struct rcmodule_usbphy {
+struct rcm_usbphy {
 	void __iomem		*phy_ctrl;
 	struct regmap 		*control;
 	struct usb_phy		phy;
 };
 
-static inline u32 rcmodule_usbphy_readl(void __iomem *base, u32 offset)
+static inline u32 rcm_usbphy_readl(void __iomem *base, u32 offset)
 {
 	return readl(base + offset);
 }
 
-static inline void rcmodule_usbphy_writel(void __iomem *base,
+static inline void rcm_usbphy_writel(void __iomem *base,
 					  u32 offset, u32 value)
 {
 	writel(value, base + offset);
 }
 
-static int phy_rcmodule_usb2_init(struct phy *phy)
+static int phy_rcm_usb2_init(struct phy *phy)
 {
-	struct rcmodule_usbphy *k_phy = phy_get_drvdata(phy);
+	struct rcm_usbphy *k_phy = phy_get_drvdata(phy);
 
 	dev_dbg(&phy->dev, "Initialize USB PHY");
 
@@ -71,9 +71,9 @@ static int phy_rcmodule_usb2_init(struct phy *phy)
 	return 0;
 }
 
-static int phy_rcmodule_usb2_exit(struct phy *phy)
+static int phy_rcm_usb2_exit(struct phy *phy)
 {
-	struct rcmodule_usbphy *k_phy = phy_get_drvdata(phy);
+	struct rcm_usbphy *k_phy = phy_get_drvdata(phy);
 
 	dev_dbg(&phy->dev, "Suspend USB PHY");
 	regmap_write(k_phy->control, USB_PHY_RESET_OFFSET, USB_PHY_POR_RESET|USB_PHY_UTMI_SESPENDM_EN);
@@ -82,14 +82,14 @@ static int phy_rcmodule_usb2_exit(struct phy *phy)
 }
 
 
-static const struct phy_ops phy_rcmodule_usb2_ops = {
-	.init		= phy_rcmodule_usb2_init,
-	.exit		= phy_rcmodule_usb2_exit,
+static const struct phy_ops phy_rcm_usb2_ops = {
+	.init		= phy_rcm_usb2_init,
+	.exit		= phy_rcm_usb2_exit,
 	.owner		= THIS_MODULE,
 };
 
 
-static int rcmodule_usb_set_host(struct usb_otg *otg, struct usb_bus *host)
+static int rcm_usb_set_host(struct usb_otg *otg, struct usb_bus *host)
 {
 	// ToDO switching. Possible not needed...
 
@@ -97,12 +97,12 @@ static int rcmodule_usb_set_host(struct usb_otg *otg, struct usb_bus *host)
 	if (!host)
 		otg->state = OTG_STATE_UNDEFINED;
 
-	printk("phy-rcmodule-usb: to HOST, %d", otg->state);
+	printk("phy-rcm-usb: to HOST, %d", otg->state);
 
 	return 0;
 }
 
-static int rcmodule_usb_set_peripheral(struct usb_otg *otg,
+static int rcm_usb_set_peripheral(struct usb_otg *otg,
 		struct usb_gadget *gadget)
 {
 	// ToDO switching. Possible not needed...
@@ -111,23 +111,23 @@ static int rcmodule_usb_set_peripheral(struct usb_otg *otg,
 	if (!gadget)
 		otg->state = OTG_STATE_UNDEFINED;
 
-	printk("phy-rcmodule-usb: to PEREPHERAL, %d", otg->state);
+	printk("phy-rcm-usb: to PEREPHERAL, %d", otg->state);
 
 
 	return 0;
 }
 
-static int rcmodule_usbphy2_probe(struct platform_device *pdev)
+static int rcm_usbphy2_probe(struct platform_device *pdev)
 {
 	struct device		*dev = &pdev->dev;
-	struct rcmodule_usbphy	*k_phy;
+	struct rcm_usbphy	*k_phy;
 	struct resource		*res;
 	struct phy *phy;
 	struct phy_provider *phy_provider;
 	struct usb_otg *otg;
 	struct device_node *tmp;
 
-	printk("rcmodule_usbphy2_probe");
+	printk("rcm_usbphy2_probe");
 
 	k_phy = devm_kzalloc(dev, sizeof(*k_phy), GFP_KERNEL);
 	if (!k_phy)
@@ -151,17 +151,17 @@ static int rcmodule_usbphy2_probe(struct platform_device *pdev)
 
 
 	k_phy->phy.dev = &pdev->dev;
-	k_phy->phy.label = "rcmodule-usbphy";
+	k_phy->phy.label = "rcm-usbphy";
 	k_phy->phy.otg		= otg;
 	k_phy->phy.type		= USB_PHY_TYPE_USB2;
 
-	otg->set_host		= rcmodule_usb_set_host;
-	otg->set_peripheral	= rcmodule_usb_set_peripheral;
+	otg->set_host		= rcm_usb_set_host;
+	otg->set_peripheral	= rcm_usb_set_peripheral;
 	otg->usb_phy		= &k_phy->phy;
 	otg->state			= OTG_STATE_UNDEFINED;
 
 
-	phy = devm_phy_create(&pdev->dev, NULL, &phy_rcmodule_usb2_ops);
+	phy = devm_phy_create(&pdev->dev, NULL, &phy_rcm_usb2_ops);
 	if (IS_ERR(phy)) {
 		dev_err(&pdev->dev, "failed to create PHY\n");
 		return PTR_ERR(phy);
@@ -177,22 +177,22 @@ static int rcmodule_usbphy2_probe(struct platform_device *pdev)
 	return PTR_ERR_OR_ZERO(phy_provider);
 }
 
-static const struct of_device_id rcmodule_usbphy2_ids[] = {
+static const struct of_device_id rcm_usbphy2_ids[] = {
 	{ .compatible = "rc-module,usbphy2" },
 	{ }
 };
-MODULE_DEVICE_TABLE(of, rcmodule_usbphy_ids);
+MODULE_DEVICE_TABLE(of, rcm_usbphy_ids);
 
-static struct platform_driver phy_rcmodule_usb2_driver = {
-	.probe          = rcmodule_usbphy2_probe,
+static struct platform_driver phy_rcm_usb2_driver = {
+	.probe          = rcm_usbphy2_probe,
 	.driver         = {
-		.name   = "rcmodule-usbphy2",
-		.of_match_table = rcmodule_usbphy2_ids,
+		.name   = "rcm-usbphy2",
+		.of_match_table = rcm_usbphy2_ids,
 	},
 };
 
-module_platform_driver(phy_rcmodule_usb2_driver);
+module_platform_driver(phy_rcm_usb2_driver);
 
 MODULE_AUTHOR("Alexey Spirkov <alexeis@astrosoft.ru>");
-MODULE_DESCRIPTION("RC Module USB2 phy driver");
+MODULE_DESCRIPTION("RCM USB2 phy driver");
 MODULE_LICENSE("GPL v2");
