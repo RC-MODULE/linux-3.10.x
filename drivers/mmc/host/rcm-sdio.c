@@ -1236,25 +1236,25 @@ module_init(rmsdio_init);
 module_exit(rmsdio_exit);
 */
 
-static const struct of_device_id 1888tx018_mmc_of_match[] = {
+static const struct of_device_id rcm_mmc_of_match[] = {
 	{ .compatible = "rcm,mmc-0.2", },
 	{ .compatible = "rcm,1888tx018", },	
 	{}
 };
-MODULE_DEVICE_TABLE(of, 1888tx018_mmc_of_match);
+MODULE_DEVICE_TABLE(of, rcm_mmc_of_match);
 
-static struct platform_driver 1888tx018_mmc_driver = {
+static struct platform_driver rcm_mmc_driver = {
 	.probe		= rmsdio_probe,
 	.remove		= rmsdio_remove,
 	.driver		= {
 		.name = DRIVER_NAME,
-		.of_match_table = of_match_ptr(1888tx018_mmc_of_match),
+		.of_match_table = of_match_ptr(rcm_mmc_of_match),
 	},
 };
 
-module_platform_driver(1888tx018_mmc_driver);
+module_platform_driver(rcm_mmc_driver);
 
-MODULE_DESCRIPTION("1888TX018 SD/MMC driver");
+MODULE_DESCRIPTION("RCM SD/MMC driver");
 MODULE_AUTHOR("Astrosoft <astrosoft@astrosoft.ru>");
 MODULE_LICENSE("GPL");
 //MODULE_ALIAS("platform:mmc-rcm");

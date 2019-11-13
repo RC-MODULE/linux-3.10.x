@@ -31,7 +31,7 @@
 #include <linux/mfd/syscon.h>
 #include <linux/regmap.h>
 
-struct rcmodule_glue {
+struct rcm_glue {
 	struct device		*dev;
 	struct platform_device	*musb;
 };
@@ -275,7 +275,7 @@ static int rcm_remove(struct platform_device *pdev)
 #ifdef CONFIG_OF
 static const struct of_device_id rcm_id_table[] = {
 	{
-		.compatible = "rc-module,musb"
+		.compatible = "rcm,musb"
 	},
 	{},
 };

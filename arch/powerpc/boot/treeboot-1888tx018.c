@@ -39,8 +39,8 @@ BSS_STACK(4096);
 #define MAX_RANKS	0x4
 #define DDR3_MR0CF	0x80050040U
 
-static unsigned long long 1888tx018_memsize;
-static unsigned long long 1888tx018_detect_memsize(void)
+static unsigned long long rcm_memsize;
+static unsigned long long rcm_detect_memsize(void)
 {
 	u32 reg;
 	unsigned i;
@@ -60,7 +60,7 @@ static unsigned long long 1888tx018_detect_memsize(void)
 	return memsize;
 }
 
-static void 1888tx018_fixups(void)
+static void rcm_fixups(void)
 {
 }
 
@@ -72,15 +72,15 @@ void platform_init(void)
 	int node, size;
 	const u32 *timebase;
 
-	1888tx018_memsize = 1888tx018_detect_memsize();
-	if (1888tx018_memsize >> 32)
+	rcm_memsize = rcm_detect_memsize();
+	if (rcm_memsize >> 32)
 		end_of_ram = ~0UL;
 	else
-		end_of_ram = 1888tx018_memsize;
+		end_of_ram = rcm_memsize;
 	avail_ram = end_of_ram - (unsigned long)_end;
 
 	simple_alloc_init(_end, avail_ram, 128, 64);
-	platform_ops.fixups = 1888tx018_fixups;
+	platform_ops.fixups = rcm_fixups;
 	platform_ops.exit = ibm44x_dbcr_reset;
 	pir_reg = mfspr(SPRN_PIR);
 
