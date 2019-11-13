@@ -22,15 +22,17 @@
 #include <linux/mfd/syscon.h>
 #include <linux/regmap.h>
 
-#define CONTROL_REG_CE_MANAGE   0x04
+// #define NOR_DEBUG
+
+#define CONTROL_REG_CE_MANAGE 0x04
 #define CONTROL_REG_EXT_MEM_MUX 0x30
-#define NORMC_ID_VAL            0x20524F4E
-#define NORMC_VERSION_VAL       0x00000201
-#define SRAMNOR__chip_num_i     0
-#define SRAMNOR__ce_mode_i      8
-#define SRAMNOR__addr_size_i    16
-#define SRAMNOR__ecc_mode_i     24
-#define SRAMNOR_TIMINGS         0x1f1f0808
+#define NORMC_ID_VAL 0x20524F4E
+#define NORMC_VERSION_VAL 0x00000201
+#define SRAMNOR__chip_num_i 0
+#define SRAMNOR__ce_mode_i 8
+#define SRAMNOR__addr_size_i 16
+#define SRAMNOR__ecc_mode_i 24
+#define SRAMNOR_TIMINGS 0x1f1f0808
 
 struct nor_regs {
 	u32 id;
@@ -45,10 +47,9 @@ struct nor_regs {
 	u32 data_ecc_read_mem;
 };
 
-
 struct rcm_mtd {
-    struct nor_regs *regs;
-    struct regmap   *control;    
+	struct nor_regs *regs;
+	struct regmap *control;
 	struct resource *res;
 	struct mtd_info *mtd;
 	struct map_info *map;
@@ -58,101 +59,152 @@ static const char rcm_map_name[] = "rcm_nor";
 
 static int rcm_controller_setup(struct platform_device *pdev)
 {
-    struct rcm_mtd *rcm_mtd = platform_get_drvdata(pdev);
-    struct nor_regs *regs = rcm_mtd->regs;
-    u32 ext_mem_mux_mode;
-    u32 cs;
+	struct rcm_mtd *rcm_mtd = platform_get_drvdata(pdev);
+	struct nor_regs *regs = rcm_mtd->regs;
+	u32 ext_mem_mux_mode;
+	u32 cs;
 	int ret;
-    u32 nor_timings;
+	u32 nor_timings;
 
-
-    // get mux mode, cs and timings
+	// get mux mode, cs and timings
 	ret = of_property_read_u32(pdev->dev.of_node, "nor-cs", &cs);
-    if (ret != 0) {
-        dev_err(&pdev->dev, "nor-cs must be defined\n");
-        return ret;
-    }
+	if (ret != 0) {
+		dev_err(&pdev->dev, "nor-cs must be defined\n");
+		return ret;
+	}
 
-    if(of_property_read_u32(pdev->dev.of_node, "nor-timings", &nor_timings))
-    {
-        dev_warn(&pdev->dev, "Setup default NOR timings\n");
-        nor_timings = SRAMNOR_TIMINGS;
-    }
+	if (of_property_read_u32(pdev->dev.of_node, "nor-timings",
+				 &nor_timings)) {
+		dev_warn(&pdev->dev, "Setup default NOR timings\n");
+		nor_timings = SRAMNOR_TIMINGS;
+	}
 
-	ret = of_property_read_u32(pdev->dev.of_node, "ext-mem-mux-mode", &ext_mem_mux_mode);
-    if (ret == 0) {
-        if(ext_mem_mux_mode < 0 || ext_mem_mux_mode > 2)
-        {
-            dev_err(&pdev->dev, "Illegal ext-mem-mux-mode shuld be between 0 and 2\n");
-            return -EINVAL;
-        }
-        // setup LSIF0 mux to SRAM_NOR
-        // todo - move to LSIF driver
-        ret = regmap_write(rcm_mtd->control, CONTROL_REG_EXT_MEM_MUX, ext_mem_mux_mode);
-        if (ret != 0) {
-            dev_err(&pdev->dev, "Write MII_MUX register error %i\n", ret);
-            return ret;
-        }
-    }
+	ret = of_property_read_u32(pdev->dev.of_node, "ext-mem-mux-mode",
+				   &ext_mem_mux_mode);
+	if (ret == 0) {
+		if (ext_mem_mux_mode < 0 || ext_mem_mux_mode > 2) {
+			dev_err(&pdev->dev,
+				"Illegal ext-mem-mux-mode shuld be between 0 and 2\n");
+			return -EINVAL;
+		}
+		// setup LSIF0 mux to SRAM_NOR
+		// todo - move to LSIF driver
+		ret = regmap_write(rcm_mtd->control, CONTROL_REG_EXT_MEM_MUX,
+				   ext_mem_mux_mode);
+		if (ret != 0) {
+			dev_err(&pdev->dev, "Write MII_MUX register error %i\n",
+				ret);
+			return ret;
+		}
+	}
 
-    // hardcode ce_manage to share ce4/ce5 between 2 controllers
-    // todo - move to LSIF driver
-    ret = regmap_write(rcm_mtd->control, CONTROL_REG_CE_MANAGE, 0);
-    if (ret != 0) {
-        dev_err(&pdev->dev, "Write MII_MUX register error %i\n", ret);
-        return ret;
-    }
+	// hardcode ce_manage to share ce4/ce5 between 2 controllers
+	// todo - move to LSIF driver
+	ret = regmap_write(rcm_mtd->control, CONTROL_REG_CE_MANAGE, 6);
+	if (ret != 0) {
+		dev_err(&pdev->dev, "Write MII_MUX register error %i\n", ret);
+		return ret;
+	}
 
-    {
-        // check id and version first
-        u32 id = readl(&regs->id);
-        u32 version = readl(&regs->version);
-        u32 config = readl(&regs->config);
+	{
+		// check id and version first
+		u32 id = readl(&regs->id);
+		u32 version = readl(&regs->version);
+		u32 config = readl(&regs->config);
+#ifdef NOR_DEBUG
+		printk("TRACE: rcm_controller_setup: id %x, ver %x, conf %x",
+		       id, version, config);
+#endif
+		if (id != NORMC_ID_VAL || version != NORMC_VERSION_VAL)
+			dev_warn(&pdev->dev,
+				 "Check chip ID (%x) and version (%x)\n", id,
+				 version);
 
-        if(id != NORMC_ID_VAL || version != NORMC_VERSION_VAL)
-            dev_warn(&pdev->dev, "Check chip ID (%x) and version (%x)\n", id, version);
+		// configure controller
+		config = ((1 << cs) << SRAMNOR__chip_num_i) // setup cs
+			 | (0b1 << SRAMNOR__ce_mode_i) // setup ce according cs
+			 | (26 << SRAMNOR__addr_size_i) // width of address
+			 | (0 << SRAMNOR__ecc_mode_i); // switch off ECC
 
-        // configure controller
-        config = ((1 << cs) << SRAMNOR__chip_num_i)    // setup cs 
-                | (0b1 << SRAMNOR__ce_mode_i)   // setup ce according cs
-                | (26 << SRAMNOR__addr_size_i)  // width of address
-                | (0  << SRAMNOR__ecc_mode_i);  // switch off ECC
-        writel(config, &regs->config);
+#ifdef NOR_DEBUG
+		printk("TRACE: rcm_controller_setup: write config %x", config);
+#endif
+		writel(config, &regs->config);
 
-        // setup timings
-        writel(nor_timings, &regs->timings);
-    }
+		// setup timings
+		writel(nor_timings, &regs->timings);
+	}
 
-    return 0;
+	return 0;
 }
 
-static map_word
-rcm_read32(struct map_info *map, unsigned long adr)
+#ifdef CONFIG_MTD_COMPLEX_MAPPINGS
+
+static map_word rcm_read32(struct map_info *map, unsigned long adr)
 {
 	unsigned long flags;
 	map_word temp;
 
-	temp.x[0] = readl(map->virt + adr);
-    printk("TRACE: rcm_read32 %08x -> %08x", adr, temp.x[0]);
+	temp.x[0] = *(u32 *)(map->virt + adr);
+#ifdef NOR_DEBUG
+	printk("TRACE: rcm_read32 %08x -> %08x", adr, temp.x[0]);
+#endif
 	return temp;
 }
 
-static void
-rcm_write32(struct map_info *map, map_word d, unsigned long adr)
+static void rcm_write32(struct map_info *map, map_word d, unsigned long adr)
 {
 	unsigned long flags;
-    printk("TRACE: rcm_write32 %08x <- %08x", adr, d.x[0]);
-	writel(d.x[0], map->virt + adr);
+#ifdef NOR_DEBUG
+	printk("TRACE: rcm_write32 %08x <- %08x", adr, d.x[0]);
+#endif
+	*(u32 *)(map->virt + adr) = d.x[0];
 }
 
+static void rcm_copy_from(struct map_info *map, void *to, unsigned long from,
+			  ssize_t len)
+{
+	unsigned char *f = (unsigned char *)map->virt + from;
+	unsigned char *t = (unsigned char *)to;
+	unsigned long flags;
+#ifdef NOR_DEBUG
+	ssize_t lenorig = len;
+#endif
 
-static int
-rcm_mtd_probe(struct platform_device *pdev)
+	while (len--)
+		*t++ = *f++;
+
+#ifdef NOR_DEBUG
+	printk("TRACE: rcm_copy_from %x", from);
+	print_hex_dump(KERN_INFO, "buffer: ", DUMP_PREFIX_OFFSET, 16, 1, to,
+		       lenorig, true);
+#endif
+}
+
+static void rcm_copy_to(struct map_info *map, unsigned long to,
+			const void *from, ssize_t len)
+{
+	unsigned char *f = (unsigned char *)from;
+	unsigned char *t = (unsigned char *)map->virt + to;
+	unsigned long flags;
+
+#ifdef NOR_DEBUG
+	printk("TRACE: rcm_copy_to %x", to);
+	print_hex_dump(KERN_INFO, "buffer: ", DUMP_PREFIX_OFFSET, 16, 1, to,
+		       len, true);
+#endif
+
+	while (len--)
+		*t++ = *f++;
+}
+#endif
+
+static int rcm_mtd_probe(struct platform_device *pdev)
 {
 	struct rcm_mtd *rcm_mtd;
 	struct cfi_private *cfi;
 	struct resource *ctrl;
-    struct device_node *tmp;
+	struct device_node *tmp;
 	int err;
 
 	rcm_mtd = devm_kzalloc(&pdev->dev, sizeof(struct rcm_mtd), GFP_KERNEL);
@@ -161,30 +213,32 @@ rcm_mtd_probe(struct platform_device *pdev)
 
 	platform_set_drvdata(pdev, rcm_mtd);
 
-    ctrl = platform_get_resource_byname(pdev, IORESOURCE_MEM, "ctrl");
+	ctrl = platform_get_resource_byname(pdev, IORESOURCE_MEM, "ctrl");
 	if (!ctrl) {
 		dev_err(&pdev->dev, "failed to get control resource\n");
 		return -ENOENT;
 	}
-    rcm_mtd->regs = devm_ioremap_resource(&pdev->dev, ctrl);
+	rcm_mtd->regs = devm_ioremap_resource(&pdev->dev, ctrl);
 	if (IS_ERR(rcm_mtd->regs))
 		return PTR_ERR(rcm_mtd->regs);
 
-	rcm_mtd->res = platform_get_resource_byname(pdev, IORESOURCE_MEM, "map");
+	rcm_mtd->res =
+		platform_get_resource_byname(pdev, IORESOURCE_MEM, "map");
 	if (!rcm_mtd->res) {
 		dev_err(&pdev->dev, "failed to get memory resource\n");
 		return -ENOENT;
 	}
 
-    tmp = of_parse_phandle(pdev->dev.of_node, "control", 0);
-    if (!tmp) {
-        dev_err(&pdev->dev, "failed to find control register reference\n");
+	tmp = of_parse_phandle(pdev->dev.of_node, "control", 0);
+	if (!tmp) {
+		dev_err(&pdev->dev,
+			"failed to find control register reference\n");
 		return -ENOENT;
-    }
-    rcm_mtd->control = syscon_node_to_regmap(tmp);
+	}
+	rcm_mtd->control = syscon_node_to_regmap(tmp);
 
-	rcm_mtd->map = devm_kzalloc(&pdev->dev, sizeof(struct map_info),
-				    GFP_KERNEL);
+	rcm_mtd->map =
+		devm_kzalloc(&pdev->dev, sizeof(struct map_info), GFP_KERNEL);
 	if (!rcm_mtd->map)
 		return -ENOMEM;
 
@@ -197,21 +251,17 @@ rcm_mtd_probe(struct platform_device *pdev)
 	rcm_mtd->map->name = rcm_map_name;
 	rcm_mtd->map->bankwidth = 4;
 
-    if(rcm_controller_setup(pdev))
-    {
+	if (rcm_controller_setup(pdev)) {
 		dev_err(&pdev->dev, "hw setup failed\n");
 		return -ENXIO;
-    }
-
+	}
+#ifdef CONFIG_MTD_COMPLEX_MAPPINGS
 	rcm_mtd->map->read = rcm_read32;
 	rcm_mtd->map->write = rcm_write32;
-	//rcm_mtd->map->copy_from = ltq_copy_from;
-	//rcm_mtd->map->copy_to = ltq_copy_to;
-
-	//rcm_mtd->map->map_priv_1 = LTQ_NOR_PROBING;
+	rcm_mtd->map->copy_from = rcm_copy_from;
+	rcm_mtd->map->copy_to = rcm_copy_to;
+#endif
 	rcm_mtd->mtd = do_map_probe("cfi_probe", rcm_mtd->map);
-	//rcm_mtd->map->map_priv_1 = LTQ_NOR_NORMAL;
-
 	if (!rcm_mtd->mtd) {
 		dev_err(&pdev->dev, "probing failed\n");
 		return -ENXIO;
@@ -221,8 +271,6 @@ rcm_mtd_probe(struct platform_device *pdev)
 	mtd_set_of_node(rcm_mtd->mtd, pdev->dev.of_node);
 
 	cfi = rcm_mtd->map->fldrv_priv;
-	cfi->addr_unlock1 ^= 1;
-	cfi->addr_unlock2 ^= 1;
 
 	err = mtd_device_register(rcm_mtd->mtd, NULL, 0);
 	if (err) {
@@ -237,12 +285,7 @@ err_destroy:
 	return err;
 }
 
-
-
-
-
-static int
-rcm_mtd_remove(struct platform_device *pdev)
+static int rcm_mtd_remove(struct platform_device *pdev)
 {
 	struct rcm_mtd *rcm_mtd = platform_get_drvdata(pdev);
 
@@ -253,7 +296,6 @@ rcm_mtd_remove(struct platform_device *pdev)
 	return 0;
 }
 
-
 static const struct of_device_id rcm_mtd_match[] = {
 	{ .compatible = "rcm,nor" },
 	{},
@@ -263,10 +305,11 @@ MODULE_DEVICE_TABLE(of, rcm_mtd_match);
 static struct platform_driver rcm_mtd_driver = {
 	.probe = rcm_mtd_probe,
 	.remove = rcm_mtd_remove,
-	.driver = {
-		.name = "rcm-nor",
-		.of_match_table = rcm_mtd_match,
-	},
+	.driver =
+		{
+			.name = "rcm-nor",
+			.of_match_table = rcm_mtd_match,
+		},
 };
 
 module_platform_driver(rcm_mtd_driver);

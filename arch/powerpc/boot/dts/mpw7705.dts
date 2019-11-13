@@ -44,17 +44,17 @@
 
 				partition@1040000 {
 					label = "uboot_env";
-					reg = <0x1040000 0x10000>; /* 64 KB */
+					reg = <0x1040000 0x40000>; /* 256 KB */
 				};
 
 				partition@1050000 {
 					label = "linux";
-					reg = <0x1050000 0x1000000>; /* 16 MB */
+					reg = <0x1080000 0x1000000>; /* 16 MB */
 				};
 
 				partition@2050000 {
 					label = "rootfs";
-					reg = <0x2050000 0xDFB0000>;
+					reg = <0x2080000 0xDF80000>;
 				};				 
 			};			
 		};
