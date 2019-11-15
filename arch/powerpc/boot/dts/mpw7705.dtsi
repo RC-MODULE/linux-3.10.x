@@ -120,26 +120,77 @@
 		dma-ranges;
 		clock-frequency = <250000000>; // 250Mhz
 
-		lsif0 {
-			compatible = "arm,amba-bus", "ibm,plb6";
+		sram_nor_arbiter {
+			compatible = "rcm,sram-nor-arbiter";
+			sctl = <&sctl>;			
+		    control = <&lsif0_config>;
+			pinctrl-names = "default";
+			pinctrl-0 =
+				<&lsif0_mgpio0_sram_nor>,
+				<&lsif0_mgpio1_sram_nor>,
+				<&lsif0_mgpio2_sram_nor>,
+				<&lsif0_mgpio3_sram_nor>,
+				<&lsif0_mgpio4_sram_nor>,
+				<&lsif0_mgpio5_sram_nor>,
+				<&lsif0_mgpio6_sram_nor>,
+				<&lsif0_mgpio7_sram_nor>,
+				<&lsif0_mgpio8_sram_nor>;
+			status = "disabled";
+		};
+
+		sram_plb_nor0: sram_plb_nor0@0x80170000 {
+			compatible = "rcm,sram-nor","simple-bus";
 			#address-cells = <1>;
 			#size-cells = <1>;
+			dcr-reg = <0x80170000 0x1000>;
+			ranges = <0x00000000 0x4 0x00000000 0x10000000>;
+			cs-mode = <0>;  /* 0 - cs in address, 1 - cs in reg */
+			addr-size = <22>; /* min 10 max 26 bit */
+			timings = <0x1f1f0808>;
+			// interrupt-parent = <&MPIC>;
+			// interrupts = <104 0>; // IRQ_TYPE_EDGE_RISING
+			status = "disabled";
+		};
 
-			ranges = <0x3c030000 			/* from */
-					  0x010 0x3c030000 		/* to */
-					  0x0001B000>,			/* size */
-					  <0x20000000 0x10 0x20000000 0x10000000>;
+		sram_plb_nor1: sram_plb_nor1@0x80190000 {
+			compatible = "rcm,sram-nor","simple-bus";
+			#address-cells = <1>;
+			#size-cells = <1>;
+			dcr-reg = <0x80190000 0x1000>;
+			ranges = <0x00000000 0x6 0x00000000 0x20000000>;
+			cs-mode = <0>;  /* 0 - cs in address, 1 - cs in reg */
+			addr-size = <26>; /* min 10 max 26 bit */
+			timings = <0x1f1f0808>;
+			// interrupt-parent = <&MPIC>;
+			// interrupts = <104 0>; // IRQ_TYPE_EDGE_RISING
+			status = "disabled";
+		};
 
-			dma-ranges = <0x40000000 0x00000000 0x00000000 0x40000000>;
+		lsif0 {
+			compatible = "arm,amba-bus", "ibm,plb6";
+			#address-cells = <2>;
+			#size-cells = <2>;
+
+//			ranges = <0x3c030000 			/* from */
+//					  0x010 0x3c030000 		/* to */
+//					  0x0001B000>,			/* size */
+//					  <0x20000000 0x10 0x20000000 0x10000000>;
+
+			ranges = <0x10 0x3c030000 0x10 0x3c030000 0x0 0x0001B000
+					  0x10 0x20000000 0x10 0x20000000 0x0 0x10000000
+					  0x10 0x30000000 0x10 0x30000000 0x0 0x08000000
+					  >;
+
+			dma-ranges = <0x0 0x40000000 0x00000000 0x00000000 0x0 0x40000000>;
 
 			lsif0_config: lsif0_config@0x3C03F000 {
 				compatible = "syscon";
-				reg = <0x3C03F000 0x1000>;
+				reg = <0x10 0x3C03F000 0x0 0x1000>;
 			};
 
 			lsif0_mgpio0: lsif0_mgpio0@0x3C040420 {
 				compatible = "pinctrl-single";
-				reg = <0x3C040420 4>;
+				reg = <0x10 0x3C040420 0x0 4>;
 				pinctrl-single,register-width = <32>;
 				pinctrl-single,function-mask = <0x1>;
 				#address-cells = <1>;
@@ -163,7 +214,7 @@
 
 			lsif0_mgpio1: lsif0_mgpio1@0x3C041420 {
 				compatible = "pinctrl-single";
-				reg = <0x3C041420 4>;
+				reg = <0x10 0x3C041420 0x0 4>;
 				pinctrl-single,register-width = <32>;
 				pinctrl-single,function-mask = <0x1>;
 				#address-cells = <1>;
@@ -190,7 +241,7 @@
 
 			lsif0_mgpio2: lsif0_mgpio2@0x3C042420 {
 				compatible = "pinctrl-single";
-				reg = <0x3C042420 4>;
+				reg = <0x10 0x3C042420 0x0 4>;
 				pinctrl-single,register-width = <32>;
 				pinctrl-single,function-mask = <0x1>;
 				#address-cells = <1>;
@@ -213,7 +264,7 @@
 
 			lsif0_mgpio3: lsif0_mgpio3@0x3C043420 {
 				compatible = "pinctrl-single";
-				reg = <0x3C043420 4>;
+				reg = <0x10 0x3C043420 0x0 4>;
 				pinctrl-single,register-width = <32>;
 				pinctrl-single,function-mask = <0x1>;
 				#address-cells = <1>;
@@ -228,7 +279,7 @@
 
 			lsif0_mgpio4: lsif0_mgpio4@0x3C044420 {
 				compatible = "pinctrl-single";
-				reg = <0x3C044420 4>;
+				reg = <0x10 0x3C044420 0x0 4>;
 				pinctrl-single,register-width = <32>;
 				pinctrl-single,function-mask = <0x1>;
 				#address-cells = <1>;
@@ -259,7 +310,7 @@
 
 			lsif0_mgpio5: lsif0_mgpio5@0x3C045420 {
 				compatible = "pinctrl-single";
-				reg = <0x3C045420 4>;
+				reg = <0x10 0x3C045420 0x0 4>;
 				pinctrl-single,register-width = <32>;
 				pinctrl-single,function-mask = <0x1>;
 				#address-cells = <1>;
@@ -282,7 +333,7 @@
 
 			lsif0_mgpio6: lsif0_mgpio6@0x3C046420 {
 				compatible = "pinctrl-single";
-				reg = <0x3C046420 4>;
+				reg = <0x10 0x3C046420 0x0 4>;
 				pinctrl-single,register-width = <32>;
 				pinctrl-single,function-mask = <0x1>;
 				#address-cells = <1>;
@@ -305,7 +356,7 @@
 
 			lsif0_mgpio7: lsif0_mgpio7@0x3C047420 {
 				compatible = "pinctrl-single";
-				reg = <0x3C047420 4>;
+				reg = <0x10 0x3C047420 0x0 4>;
 				pinctrl-single,register-width = <32>;
 				pinctrl-single,function-mask = <0x1>;
 				#address-cells = <1>;
@@ -328,7 +379,7 @@
 
 			lsif0_mgpio8: lsif0_mgpio8@0x3C048420 {
 				compatible = "pinctrl-single";
-				reg = <0x3C048420 4>;
+				reg = <0x10 0x3C048420 0x0 4>;
 				pinctrl-single,register-width = <32>;
 				pinctrl-single,function-mask = <0x1>;
 				#address-cells = <1>;
@@ -343,7 +394,7 @@
 
 			lsif0_mgpio9: lsif0_mgpio9@0x3C049420 {
 				compatible = "pinctrl-single";
-				reg = <0x3C049420 4>;
+				reg = <0x10 0x3C049420 0x0 4>;
 				pinctrl-single,register-width = <32>;
 				pinctrl-single,function-mask = <0x1>;
 				#address-cells = <1>;
@@ -362,7 +413,7 @@
 
 			lsif0_mgpio10: lsif0_mgpio10@0x3C04A420 {
 				compatible = "pinctrl-single";
-				reg = <0x3C04A420 4>;
+				reg = <0x10 0x3C04A420 0x0 4>;
 				pinctrl-single,register-width = <32>;
 				pinctrl-single,function-mask = <0x1>;
 				#address-cells = <1>;
@@ -382,7 +433,7 @@
 			// GRETH_GBIT0 -> EXT_MEM
 			greth_gbit0: greth_gbit0@0x3C033000 {
 				compatible = "rc-module,greth";
-				reg = <0x3C033000 0x1000>;
+				reg = <0x10 0x3C033000 0x0 0x1000>;
 				control = <&lsif0_config>;
 				interrupt-parent = <&MPIC>;
 				interrupts = <103 0>; // IRQ_TYPE_EDGE_RISING
@@ -399,7 +450,7 @@
 			// GRETH_GBIT1 -> GMII
 			greth_gbit1: greth_gbit1@0x3C034000 {
 				compatible = "rc-module,greth";
-				reg = <0x3C034000 0x1000>;
+				reg = <0x10 0x3C034000 0x0 0x1000>;
 				control = <&lsif0_config>;
 				interrupt-parent = <&MPIC>;
 				interrupts = <108 0>; // IRQ_TYPE_EDGE_RISING
@@ -414,7 +465,7 @@
 			// GRETH_GBIT1 -> EXT_MEM
 			greth_gbit1_alt: greth_gbit1_alt@0x3C034000 {
 				compatible = "rc-module,greth";
-				reg = <0x3C034000 0x1000>;
+				reg = <0x10 0x3C034000 0x0 0x1000>;
 				control = <&lsif0_config>;
 				interrupt-parent = <&MPIC>;
 				interrupts = <108 0>; // IRQ_TYPE_EDGE_RISING
@@ -433,7 +484,7 @@
 			// GRETH0 -> EXT_MEM
 			greth0: greth0@0x3C035000 {
 				compatible = "rc-module,greth";
-				reg = <0x3C035000 0x1000>;
+				reg = <0x10 0x3C035000 0x0 0x1000>;
 				control = <&lsif0_config>;
 				interrupt-parent = <&MPIC>;
 				interrupts = <103 0>; // IRQ_TYPE_EDGE_RISING
@@ -451,7 +502,7 @@
 			// GRETH1 -> EXT_MEM
 			greth1: greth1@0x3C036000 {
 				compatible = "rc-module,greth";
-				reg = <0x3C036000 0x1000>;
+				reg = <0x10 0x3C036000 0x0 0x1000>;
 				control = <&lsif0_config>;
 				interrupt-parent = <&MPIC>;
 				interrupts = <104 0>; // IRQ_TYPE_EDGE_RISING
@@ -467,7 +518,7 @@
 			// GRETH2 -> RMII
 			greth2: greth2@0x3C037000 {
 				compatible = "rc-module,greth";
-				reg = <0x3C037000 0x1000>;
+				reg = <0x10 0x3C037000 0x0 0x1000>;
 				control = <&lsif0_config>;
 				interrupt-parent = <&MPIC>;
 				interrupts = <108 0>; // IRQ_TYPE_EDGE_RISING
@@ -479,34 +530,33 @@
 				status = "disabled";
 			};
 
-			// NOR -> EXTMEM
-			nor0: nor0@0x3C030000 {
-				compatible = "rcm,nor";
+			sram_nor0: sram_nor0@0x3C030000 {
+				compatible = "rcm,sram-nor","simple-bus";
 				#address-cells = <1>;
 				#size-cells = <1>;
-
-				reg = <0x3C030000 0x1000>,
-					  <0x20000000 0x10000000>;
-
-				reg-names = "ctrl", "map";
-				control = <&lsif0_config>;
-				ext-mem-mux-mode = <0>;
-				nor-timings = <0x1f1f0808>;
-				interrupt-parent = <&MPIC>;
-				interrupts = <104 0>; // IRQ_TYPE_EDGE_RISING
-				pinctrl-names = "default";
-				pinctrl-0 =
-					<&lsif0_mgpio0_sram_nor>,
-					<&lsif0_mgpio1_sram_nor>,
-					<&lsif0_mgpio2_sram_nor>,
-					<&lsif0_mgpio3_sram_nor>,
-					<&lsif0_mgpio4_sram_nor>,
-					<&lsif0_mgpio5_sram_nor>,
-					<&lsif0_mgpio6_sram_nor>,
-					<&lsif0_mgpio7_sram_nor>,
-					<&lsif0_mgpio8_sram_nor>;
+				reg = <0x10 0x3C030000 0x0 0x1000>;
+				ranges = <0x00000000 0x10 0x20000000 0x10000000>;
+				cs-mode = <1>;  /* 0 - cs in address, 1 - cs in reg */
+				addr-size = <22>; /* min 10 max 26 bit */
+				timings = <0x1f1f0808>;
+				// interrupt-parent = <&MPIC>;
+				// interrupts = <104 0>; // IRQ_TYPE_EDGE_RISING
 				status = "disabled";
-			};			
+			};
+
+			sram_nor1: sram_nor1@0x3C040000 {
+				compatible = "rcm,sram-nor","simple-bus";
+				#address-cells = <1>;
+				#size-cells = <1>;
+				reg = <0x10 0x3C040000 0x0 0x1000>;
+				ranges = <0x00000000 0x10 0x30000000 0x08000000>;
+				cs-mode = <1>;  /* 0 - cs in address, 1 - cs in reg */
+				addr-size = <26>; /* min 10 max 26 bit */
+				timings = <0x1f1f0808>;
+				// interrupt-parent = <&MPIC>;
+				// interrupts = <104 0>; // IRQ_TYPE_EDGE_RISING
+				status = "disabled";
+			};
 		};
 
 		lsif1 {

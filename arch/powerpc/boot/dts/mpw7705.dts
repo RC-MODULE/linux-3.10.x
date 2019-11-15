@@ -22,16 +22,44 @@
 	};
 
 	plb {
-		lsif0 {
-			greth_gbit1: greth_gbit1@0x3C034000 {
-			 	mac-address = [ EC 17 66 77 05 02 ];
-			 	status = "ok";
-			};			
 
-			nor0: nor0@0x3C030000 {
-				nor-cs = <4>;
-			 	status = "ok";
-				
+		sram_nor_arbiter {
+			sram-nor-mux = <1>;			// 0 to route extmem wires to LSIF0, 1 - to MCIF
+			/* in case of LSIF0 following lines will be needed */
+			// ext-mem-mux-mode = <0>;
+			ce-manage = <2>; //0
+			status = "ok";
+		};
+
+		sram_plb_nor0: sram_plb_nor0@0x80170000 {
+			chip-num = <15>;	/* bitmask */
+			status = "ok";
+			sram: sram@0 {
+				compatible = "mmio-sram";
+				#address-cells = <1>;
+				#size-cells = <1>;
+				reg = <0x00000000 0x10000000>;
+				ranges = <0 0x0 0x10000000>;
+
+				exported@0 {
+					reg = <0x0 0x10000000>;
+					export;
+				};				
+			};
+		};
+
+		sram_plb_nor1: sram_plb_nor1@0x80190000 {
+			chip-num = <3>;	/* bitmask */
+			status = "ok";
+
+			nor_flash0: nor_flash0@0 {
+				compatible = "cfi-flash";
+				reg = <0x00000000 0x10000000>;
+				bank-width = <4>;
+				#size-cells = <1>;
+				#address-cells = <1>;
+				little-endian;
+
 				partition@0 {
 					label = "uboot_spl";
 					reg = <0x00000 0x40000>; /* 256 KB */
@@ -56,6 +84,27 @@
 					label = "rootfs";
 					reg = <0x2080000 0xDF80000>;
 				};				 
+			};
+
+			nor_flash1: nor_flash1@10000000 {
+				compatible = "cfi-flash";
+				reg = <0x10000000 0x10000000>;
+				bank-width = <4>;
+				#size-cells = <1>;
+				#address-cells = <1>;
+				little-endian;
+
+				partition@10000000 {
+					label = "data";
+					reg = <0x00000 0x10000000>; /* 256 Mb */
+				};
+			};
+		};
+
+		lsif0 {
+			greth_gbit1: greth_gbit1@0x3C034000 {
+			 	mac-address = [ EC 17 66 77 05 02 ];
+			 	status = "ok";
 			};			
 		};
 
