@@ -1,5 +1,5 @@
 /*
- *  Copyright (C) 2012 RC Module, All Rights Reserved.
+ *  Copyright (C) 2012 RCM, All Rights Reserved.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License version 2 as

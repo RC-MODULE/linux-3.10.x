@@ -200,8 +200,8 @@ config CURRITUCK
 	help
 	  This option enables support for the IBM Currituck (476fpe) evaluation board
 
-config MPW7705
-	bool "RC-Module MPW7705 (470s) Support"
+config 1888TX018
+	bool "RCM 1888TX018 (470s) Support"
 	depends on PPC_47x
 	default n
 	select SWIOTLB

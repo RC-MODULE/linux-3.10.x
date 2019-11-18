@@ -1732,7 +1732,7 @@ static const struct of_device_id greth_of_match[] = {
 	 .name = "01_01d",
 	 },
 	{
-		.compatible	= "rc-module,greth",
+		.compatible	= "rcm,greth",
 	},	 
 	{},
 };

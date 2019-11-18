@@ -23,4 +23,4 @@ obj-y					+= broadcom/	\
 					   samsung/	\
 					   st/		\
 					   ti/		\
-					   rcmodule/	\
+					   rcm/	\

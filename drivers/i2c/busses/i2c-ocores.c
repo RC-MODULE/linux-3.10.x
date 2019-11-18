@@ -76,7 +76,7 @@ struct ocores_i2c {
 
 #define TYPE_OCORES		0
 #define TYPE_GRLIB		1
-#define TYPE_RCMODULE	2
+#define TYPE_RCM	2
 
 static void oc_setreg_8(struct ocores_i2c *i2c, int reg, u8 value)
 {
@@ -291,8 +291,8 @@ static const struct of_device_id ocores_i2c_match[] = {
 		.data = (void *)TYPE_GRLIB,
 	},
 	{
-		.compatible = "rc-module,i2cmst",
-		.data = (void *)TYPE_RCMODULE,
+		.compatible = "rcm,i2cmst",
+		.data = (void *)TYPE_RCM,
 	},
 	{},
 };
@@ -333,11 +333,11 @@ static void oc_setreg_grlib(struct ocores_i2c *i2c, int reg, u8 value)
 	iowrite32be(wr, i2c->base + (rreg << i2c->reg_shift));
 }
 
-/* Read and write functions for the RC Module port of the controller. Registers are
+/* Read and write functions for the RCM port of the controller. Registers are
  * 32-bit little endian and the PRELOW and PREHIGH registers are merged into one
  * register. The subsequent registers has their offset decreased accordingly. */
 
-static u8 oc_getreg_rcmodule(struct ocores_i2c *i2c, int reg)
+static u8 oc_getreg_rcm(struct ocores_i2c *i2c, int reg)
 {
 	u32 rd;
 	int rreg = reg;
@@ -350,7 +350,7 @@ static u8 oc_getreg_rcmodule(struct ocores_i2c *i2c, int reg)
 		return (u8)rd;
 }
 
-static void oc_setreg_rcmodule(struct ocores_i2c *i2c, int reg, u8 value)
+static void oc_setreg_rcm(struct ocores_i2c *i2c, int reg, u8 value)
 {
 	u32 curr, wr;
 	int rreg = reg;
@@ -439,10 +439,10 @@ static int ocores_i2c_of_probe(struct platform_device *pdev,
 		i2c->setreg = oc_setreg_grlib;
 		i2c->getreg = oc_getreg_grlib;
 	}
-	else if (match && (long)match->data == TYPE_RCMODULE) {
-		dev_dbg(&pdev->dev, "RC Module variant of i2c-ocores\n");
-		i2c->setreg = oc_setreg_rcmodule;
-		i2c->getreg = oc_getreg_rcmodule;
+	else if (match && (long)match->data == TYPE_RCM) {
+		dev_dbg(&pdev->dev, "RCM variant of i2c-ocores\n");
+		i2c->setreg = oc_setreg_rcm;
+		i2c->getreg = oc_getreg_rcm;
 	}
 
 	return 0;

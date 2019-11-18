@@ -1,6 +1,6 @@
 /*
  * EasyNMC Framework driver
- * (c) RC Module 2014
+ * (c) RCM 2014
  *
  * This driver provides a simple interface to userspace apps and 
  * is designed to be as simple as possible. 
@@ -992,7 +992,7 @@ static const struct file_operations proc_fops = {
 
 static int __init easynmc_init(void)
 {
-	printk("EasyNMC Unified DSP Framework. (c) RC Module 2018\n");
+	printk("EasyNMC Unified DSP Framework. (c) RCM 2018\n");
 	nmc_proc_entry = proc_create("nmc", 0644, NULL, &proc_fops);
 	if (nmc_proc_entry == NULL) { 
 //		remove_proc_entry("nmc", &proc_root);
