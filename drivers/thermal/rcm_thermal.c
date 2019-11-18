@@ -260,7 +260,7 @@ static int rcm_thermal_remove(struct platform_device *pdev)
 }
 
 static struct of_device_id rcm_thermal_id_table[] = {
-	{ .compatible = "rc-module,thermal" },
+	{ .compatible = "rcm,thermal" },
 	{},
 };
 

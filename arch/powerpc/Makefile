@@ -241,9 +241,8 @@ KBUILD_CFLAGS		+= -mno-sched-epilog
 endif
 
 
-ifeq ($(CONFIG_MPW7705),y)
+ifeq ($(CONFIG_1888TX018),y)
 CFLAGS-y += $(call cc-option,-mcpu=476fp)
-# cpu-as-$(CONFIG_4xx)		+= -Wa,
 else
 cpu-as-$(CONFIG_4xx)		+= -Wa,-m405
 endif

@@ -178,7 +178,7 @@ static int rcm_usbphy2_probe(struct platform_device *pdev)
 }
 
 static const struct of_device_id rcm_usbphy2_ids[] = {
-	{ .compatible = "rc-module,usbphy2" },
+	{ .compatible = "rcm,usbphy2" },
 	{ }
 };
 MODULE_DEVICE_TABLE(of, rcm_usbphy_ids);

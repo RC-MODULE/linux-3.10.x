@@ -253,7 +253,7 @@ config MTD_LANTIQ
 
 config MTD_RCM_NOR
 	tristate "RC-Module SoC NOR support"
-	depends on MPW7705
+	depends on 1888TX018
 	help
 	  Support for NOR flash attached to the 1888TX018 SoC's
 

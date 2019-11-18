@@ -275,7 +275,7 @@ static int rcm_cpufreq_remove(struct platform_device *pdev)
 
 static const struct of_device_id rcm_cpufreq_of_match[] = {
 	{
-		.compatible = "rc-module,cpu-freq",
+		.compatible = "rcm,cpu-freq",
 	},
 	{}
 };

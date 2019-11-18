@@ -1,2 +1,2 @@
-obj-$(CONFIG_PHY_RCMODULE_USB)		+= phy-rcm-usb.o
+obj-$(CONFIG_PHY_RCM_USB)		+= phy-rcm-usb.o
 

@@ -212,7 +212,7 @@ config 1888TX018
 	select DEFAULT_UIMAGE
 	select PPC_UDBG_PL011
 	help
-	  This option enables support for the RC-Module MPW7705 (470s) evaluation board
+	  This option enables support for the RC-Module M115.01 (1888tx018) evaluation board
 
 config FSP2
 	bool "IBM FSP2 (476fpe) Support"
