@@ -1,5 +1,5 @@
 /*
- * RC-Module temperature thermal.
+ * RCM temperature thermal.
  *
  * Copyright (c) 2018, AstroSoft.  All rights reserved.
  *
@@ -51,7 +51,7 @@ struct termal_regs {
 #define read_term_reg(X) le32_to_cpu(__raw_readl(&(X)))
 #define write_term_reg(Y, X) __raw_writel(cpu_to_le32(Y), &(X))
 
-struct rcmodule_therm_info {
+struct rcm_therm_info {
 	struct device			*dev;
 	struct termal_regs		*regs;
 	struct thermal_zone_device	*tz_device;
@@ -100,7 +100,7 @@ static const int temp_table[] = {
 
 
 /**
- * rcmodule_thermal_read_temp: Read temperatue.
+ * rcm_thermal_read_temp: Read temperatue.
  * @data:	Device specific data.
  * temp:	Temperature in millidegrees Celsius
  *
@@ -109,9 +109,9 @@ static const int temp_table[] = {
 
 #undef TABLE_METHOD
 
-static int rcmodule_thermal_read_temp(void *data, int *temp)
+static int rcm_thermal_read_temp(void *data, int *temp)
 {
-	struct rcmodule_therm_info *therminfo = data;
+	struct rcm_therm_info *therminfo = data;
 	unsigned int val, val0;
 
 	val0 = read_term_reg(therminfo->regs->tavg);
@@ -161,13 +161,13 @@ static int rcmodule_thermal_read_temp(void *data, int *temp)
 	return 0;
 }
 
-static const struct thermal_zone_of_device_ops rcmodule_thermal_ops = {
-	.get_temp = rcmodule_thermal_read_temp,
+static const struct thermal_zone_of_device_ops rcm_thermal_ops = {
+	.get_temp = rcm_thermal_read_temp,
 };
 
-static irqreturn_t rcmodule_thermal_irq(int irq, void *data)
+static irqreturn_t rcm_thermal_irq(int irq, void *data)
 {
-	struct rcmodule_therm_info *therminfo = data;
+	struct rcm_therm_info *therminfo = data;
 
 	thermal_zone_device_update(therminfo->tz_device,
 				   THERMAL_EVENT_UNSPECIFIED);
@@ -175,9 +175,9 @@ static irqreturn_t rcmodule_thermal_irq(int irq, void *data)
 	return IRQ_HANDLED;
 }
 
-static int rcmodule_thermal_probe(struct platform_device *pdev)
+static int rcm_thermal_probe(struct platform_device *pdev)
 {
-	struct rcmodule_therm_info *therminfo;
+	struct rcm_therm_info *therminfo;
 	int ret;
 
 	therminfo = devm_kzalloc(&pdev->dev, sizeof(*therminfo), GFP_KERNEL);
@@ -201,13 +201,13 @@ static int rcmodule_thermal_probe(struct platform_device *pdev)
 	therminfo->temp_irq = platform_get_irq(pdev, 0);
 	therminfo->voltage_irq = platform_get_irq(pdev, 1);
 
-	if(request_irq(therminfo->temp_irq, rcmodule_thermal_irq, 0, "rcmodule-thermal", therminfo))
+	if(request_irq(therminfo->temp_irq, rcm_thermal_irq, 0, "rcm-thermal", therminfo))
 	{
 		dev_err(&pdev->dev, "Unable to request thermal IRQ\n");
 		goto errMemMapped;
 	}
 
-	if(request_irq(therminfo->voltage_irq, rcmodule_thermal_irq, 0, "rcmodule-voltage", therminfo))
+	if(request_irq(therminfo->voltage_irq, rcm_thermal_irq, 0, "rcm-voltage", therminfo))
 	{
 		dev_err(&pdev->dev, "Unable to request voltage IRQ\n");
 		goto errIrq0Requested;
@@ -226,7 +226,7 @@ static int rcmodule_thermal_probe(struct platform_device *pdev)
 	// write_term_reg(0x0, therminfo->regs->tint_mask);
 
 	therminfo->tz_device = devm_thermal_zone_of_sensor_register(&pdev->dev, 0,
-				therminfo, &rcmodule_thermal_ops);
+				therminfo, &rcm_thermal_ops);
 
 	if (IS_ERR(therminfo->tz_device)) {
 		ret = PTR_ERR(therminfo->tz_device);
@@ -248,9 +248,9 @@ errMemMapped:
 	return -EINVAL;
 }
 
-static int rcmodule_thermal_remove(struct platform_device *pdev)
+static int rcm_thermal_remove(struct platform_device *pdev)
 {
-	struct rcmodule_therm_info *therminfo = platform_get_drvdata(pdev);
+	struct rcm_therm_info *therminfo = platform_get_drvdata(pdev);
 
 	free_irq(therminfo->voltage_irq, (void *)therminfo->dev);
 	free_irq(therminfo->temp_irq, (void *)therminfo->dev);
@@ -259,24 +259,24 @@ static int rcmodule_thermal_remove(struct platform_device *pdev)
 	return 0;	
 }
 
-static struct of_device_id rcmodule_thermal_id_table[] = {
+static struct of_device_id rcm_thermal_id_table[] = {
 	{ .compatible = "rc-module,thermal" },
 	{},
 };
 
-MODULE_DEVICE_TABLE(of, rcmodule_thermal_id_table);
+MODULE_DEVICE_TABLE(of, rcm_thermal_id_table);
 
-static struct platform_driver rcmodule_thermal_driver = {
+static struct platform_driver rcm_thermal_driver = {
 	.driver = {
-		.name = "rcmodule-thermal",
-		.of_match_table = rcmodule_thermal_id_table,
+		.name = "rcm-thermal",
+		.of_match_table = rcm_thermal_id_table,
 	},
-	.probe = rcmodule_thermal_probe,
-	.remove = rcmodule_thermal_remove,
+	.probe = rcm_thermal_probe,
+	.remove = rcm_thermal_remove,
 };
 
-module_platform_driver(rcmodule_thermal_driver);
+module_platform_driver(rcm_thermal_driver);
 
-MODULE_DESCRIPTION("RC-Module temperature Thermal driver");
+MODULE_DESCRIPTION("RCM temperature Thermal driver");
 MODULE_AUTHOR("Alexey Spirkov <alexeis@astrosoft.ru>");
 MODULE_LICENSE("GPL v2");

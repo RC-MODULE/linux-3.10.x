@@ -861,7 +861,7 @@ static int nwl_msi_set_affinity(struct irq_data *irq_data,
 }
 
 static struct irq_chip nwl_irq_chip = {
-	.name = "RC-Module MSI",
+	.name = "RCM MSI",
 	.irq_compose_msi_msg = nwl_compose_msi_msg,
 	.irq_set_affinity = nwl_msi_set_affinity,
 };

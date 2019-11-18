@@ -176,7 +176,7 @@ static int smp_ppc47x_kick_cpu(int cpu)
 		return 1;
 	}
 
-#ifndef CONFIG_MPW7705
+#ifndef CONFIG_1888TX018
 	/* Assume it's mapped as part of the linear mapping. This is a bit
 	 * fishy but will work fine for now
 	 *
@@ -193,7 +193,7 @@ static int smp_ppc47x_kick_cpu(int cpu)
 	spin_table[1] = __pa(start_secondary_47x);
 	mb();
 
-#ifdef CONFIG_MPW7705
+#ifdef CONFIG_1888TX018
 	iounmap(spin_table);
 #endif
 	return 0;
@@ -235,7 +235,7 @@ static int __init ppc47x_get_board_rev(void)
 	u8 *fpga;
 	struct device_node *np = NULL;
 
-	if(of_machine_is_compatible("rc-module,mpw7705"))
+	if(of_machine_is_compatible("rcm,1888tx018"))
 	{
 		/* AstroSoft ToDo: get revision of board*/
 		pr_info("%s: Found board revision %d\n", __func__, 0);
@@ -298,7 +298,7 @@ static int __init ppc47x_probe(void)
 		return 1;
 	}
 
-	if (of_machine_is_compatible("rc-module,mpw7705"))
+	if (of_machine_is_compatible("rcm,1888tx018"))
 		return 1;
 
 	return 0;

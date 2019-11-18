@@ -1,0 +1,10 @@
+#
+# Phy drivers for RC Module platforms
+#
+config PHY_RCM_USB
+	tristate "RCM USB PHY driver"
+	depends on PPC
+	select GENERIC_PHY
+	select USB_PHY
+	help
+	  Support for USB PHY found on RCM PPC SoCs.

@@ -1,5 +1,5 @@
 /*
- * Device Tree Source for RC-Module TX011 platform
+ * Device Tree Source for RCM 1888TX018 platform
  *
  * Copyright © 2019 Alexey Spirkov <alexeis@astrosoft.ru>
  *
@@ -432,7 +432,7 @@
 
 			// GRETH_GBIT0 -> EXT_MEM
 			greth_gbit0: greth_gbit0@0x3C033000 {
-				compatible = "rc-module,greth";
+				compatible = "rcm,greth";
 				reg = <0x10 0x3C033000 0x0 0x1000>;
 				control = <&lsif0_config>;
 				interrupt-parent = <&MPIC>;
@@ -449,7 +449,7 @@
 
 			// GRETH_GBIT1 -> GMII
 			greth_gbit1: greth_gbit1@0x3C034000 {
-				compatible = "rc-module,greth";
+				compatible = "rcm,greth";
 				reg = <0x10 0x3C034000 0x0 0x1000>;
 				control = <&lsif0_config>;
 				interrupt-parent = <&MPIC>;
@@ -464,7 +464,7 @@
 
 			// GRETH_GBIT1 -> EXT_MEM
 			greth_gbit1_alt: greth_gbit1_alt@0x3C034000 {
-				compatible = "rc-module,greth";
+				compatible = "rcm,greth";
 				reg = <0x10 0x3C034000 0x0 0x1000>;
 				control = <&lsif0_config>;
 				interrupt-parent = <&MPIC>;
@@ -483,7 +483,7 @@
 
 			// GRETH0 -> EXT_MEM
 			greth0: greth0@0x3C035000 {
-				compatible = "rc-module,greth";
+				compatible = "rcm,greth";
 				reg = <0x10 0x3C035000 0x0 0x1000>;
 				control = <&lsif0_config>;
 				interrupt-parent = <&MPIC>;
@@ -501,7 +501,7 @@
 
 			// GRETH1 -> EXT_MEM
 			greth1: greth1@0x3C036000 {
-				compatible = "rc-module,greth";
+				compatible = "rcm,greth";
 				reg = <0x10 0x3C036000 0x0 0x1000>;
 				control = <&lsif0_config>;
 				interrupt-parent = <&MPIC>;
@@ -517,7 +517,7 @@
 
 			// GRETH2 -> RMII
 			greth2: greth2@0x3C037000 {
-				compatible = "rc-module,greth";
+				compatible = "rcm,greth";
 				reg = <0x10 0x3C037000 0x0 0x1000>;
 				control = <&lsif0_config>;
 				interrupt-parent = <&MPIC>;
@@ -661,7 +661,7 @@
 			
 			
 			i2c0: i2c@0x3C05A000 {
-				compatible = "rc-module,i2cmst";
+				compatible = "rcm,i2cmst";
 				#address-cells = <1>;
 				#size-cells = <0>;
 				reg = <0x3C05A000 0x1000>;
@@ -674,7 +674,7 @@
 			};						
 
 			i2c1: i2c@0x3C05B000 {
-				compatible = "rc-module,i2cmst";
+				compatible = "rcm,i2cmst";
 				#address-cells = <1>;
 				#size-cells = <0>;
 				reg = <0x3C05B000 0x1000>;
@@ -687,7 +687,7 @@
 			};						
 
 			i2c2: i2c@0x3C05C000 {
-				compatible = "rc-module,i2cmst";
+				compatible = "rcm,i2cmst";
 				#address-cells = <1>;
 				#size-cells = <0>;
 				reg = <0x3C05C000 0x1000>;
@@ -769,7 +769,7 @@
 			};			
 
 			mmc0: mmc0@0x3C064000 {
-				compatible = "rc-module,mpw7705", "rc-module,mmc-0.2";
+				compatible = "rcm,1888tx018", "rcm,mmc-0.2";
 				reg = <0x3C064000 0x1000>;
 				interrupt-parent = <&MPIC>;
 				interrupts = <67 0>;	// IRQ_TYPE_EDGE_RISING
@@ -812,7 +812,7 @@
 
 			usb2_phy: usb2_phy@0x3C06C000
 			{
-				compatible = "rc-module,usbphy2";
+				compatible = "rcm,usbphy2";
 				reg = <0x3C06C000 0x1000>;
 				control = <&lsif1_config>;
 				#phy-cells = <0>;
@@ -820,7 +820,7 @@
 			};			
 
 			usb_otg_hs: usb_otg_hs@0x3C06D000 {
-				compatible = "rc-module,musb";
+				compatible = "rcm,musb";
 				reg = <0x3C06D000 0x7ff>;
 				interrupt-parent = <&MPIC>;
 				interrupts = <69 0>, <70 0>;
@@ -879,7 +879,7 @@
 			};
 
 			thermal: thermal@0x38003000 {
-				compatible = "rc-module,thermal";
+				compatible = "rcm,thermal";
 				reg = <0x38003000 0x1000>;
 				#thermal-sensor-cells = <0>;
 
@@ -890,7 +890,7 @@
 			};
 
 			cpufreq: cpufreq@0x38006000 {
-				compatible = "rc-module,cpu-freq";
+				compatible = "rcm,cpu-freq";
 				control = <&crg_cpu>;
 				status = "disabled";
 			};
@@ -1013,7 +1013,7 @@
 
 
 			nmc3_0_core0: nmc3_0_core0@0x39000000 {
-				compatible = "rc-module,easynmc";
+				compatible = "rcm,easynmc";
 				core-name = "K1879-nmc";
 				core-type = "nmc3";
 				device-id = <0>;
@@ -1041,7 +1041,7 @@
                 status = "disabled";
 			};
 			nmc3_0_core1: nmc3_0_core1@0x39020000 {
-				compatible = "rc-module,easynmc";
+				compatible = "rcm,easynmc";
 				core-name = "K1879-nmc";
 				core-type = "nmc3";
 				device-id = <1>;
@@ -1067,7 +1067,7 @@
                 status = "disabled";
 			};
 			nmc3_1_core0: nmc3_1_core0@0x39040000 {
-				compatible = "rc-module,easynmc";
+				compatible = "rcm,easynmc";
 				core-name = "K1879-nmc";
 				core-type = "nmc3";
 				device-id = <2>;
@@ -1093,7 +1093,7 @@
                 status = "disabled";
 			};
 			nmc3_1_core1: nmc3_1_core1@0x39060000 {
-				compatible = "rc-module,easynmc";
+				compatible = "rcm,easynmc";
 				core-name = "K1879-nmc";
 				core-type = "nmc3";
 				device-id = <3>;

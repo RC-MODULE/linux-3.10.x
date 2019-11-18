@@ -31,14 +31,14 @@
 #include <linux/mfd/syscon.h>
 #include <linux/regmap.h>
 
-struct rcmodule_glue {
+struct rcm_glue {
 	struct device		*dev;
 	struct platform_device	*musb;
 };
 #define glue_to_musb(g)		platform_get_drvdata(g->musb)
 
 
-static irqreturn_t rcmodule_musb_interrupt(int irq, void *__hci)
+static irqreturn_t rcm_musb_interrupt(int irq, void *__hci)
 {
 	unsigned long   flags;
 	irqreturn_t     retval = IRQ_NONE;
@@ -58,7 +58,7 @@ static irqreturn_t rcmodule_musb_interrupt(int irq, void *__hci)
 	return retval;
 }
 
-static int rcmodule_musb_init(struct musb *musb)
+static int rcm_musb_init(struct musb *musb)
 {
 	int status = 0;
 	struct device *dev = musb->controller;
@@ -83,7 +83,7 @@ static int rcmodule_musb_init(struct musb *musb)
 		dev_err(dev, "HS USB OTG: no PHY configured\n");
 		return PTR_ERR(musb->phy);
 	}
-	musb->isr = rcmodule_musb_interrupt;
+	musb->isr = rcm_musb_interrupt;
 
 	phy_init(musb->phy);
 	phy_power_on(musb->phy);
@@ -91,7 +91,7 @@ static int rcmodule_musb_init(struct musb *musb)
 	return 0;
 }
 
-static int rcmodule_musb_exit(struct musb *musb)
+static int rcm_musb_exit(struct musb *musb)
 {
 	phy_power_off(musb->phy);
 	phy_exit(musb->phy);
@@ -110,27 +110,27 @@ static void _writew(void __iomem *addr, unsigned offset, u16 data)
 	__raw_writew(cpu_to_le16(data), addr + offset);
 }
 
-static const struct musb_platform_ops rcmodule_ops = {
+static const struct musb_platform_ops rcm_ops = {
 	.quirks		= MUSB_DMA_INVENTRA,
 #ifdef CONFIG_USB_INVENTRA_DMA
 	.dma_init	= musbhs_dma_controller_create,
 	.dma_exit	= musbhs_dma_controller_destroy,
 #endif
-	.init		= rcmodule_musb_init,
-	.exit		= rcmodule_musb_exit,
+	.init		= rcm_musb_init,
+	.exit		= rcm_musb_exit,
     .readw 		= _readw,
 	.writew 	= _writew,
 	.fifo_mode  = 4
 };
 
-static u64 rcmodule_dmamask = DMA_BIT_MASK(25); // use only first Gb
+static u64 rcm_dmamask = DMA_BIT_MASK(25); // use only first Gb
 
-static int rcmodule_probe(struct platform_device *pdev)
+static int rcm_probe(struct platform_device *pdev)
 {
 	struct resource			musb_resources[3];
 	struct musb_hdrc_platform_data	*pdata = dev_get_platdata(&pdev->dev);
 	struct platform_device		*musb;
-	struct rcmodule_glue		*glue;
+	struct rcm_glue		*glue;
 	struct device_node		*np = pdev->dev.of_node;
 	struct musb_hdrc_config		*config;
 	int				ret = -ENOMEM, val;
@@ -146,8 +146,8 @@ static int rcmodule_probe(struct platform_device *pdev)
 	}
 
 	musb->dev.parent		= &pdev->dev;
-	musb->dev.dma_mask		= &rcmodule_dmamask;
-	musb->dev.coherent_dma_mask	= rcmodule_dmamask;
+	musb->dev.dma_mask		= &rcm_dmamask;
+	musb->dev.coherent_dma_mask	= rcm_dmamask;
 	musb->dev.dma_pfn_offset = pdev->dev.dma_pfn_offset;
 
 	glue->dev			= &pdev->dev;
@@ -207,7 +207,7 @@ static int rcmodule_probe(struct platform_device *pdev)
 			}
 		}
 	}
-	pdata->platform_ops		= &rcmodule_ops;
+	pdata->platform_ops		= &rcm_ops;
 
 	platform_set_drvdata(pdev, glue);
 
@@ -262,9 +262,9 @@ err0:
 	return ret;
 }
 
-static int rcmodule_remove(struct platform_device *pdev)
+static int rcm_remove(struct platform_device *pdev)
 {
-	struct rcmodule_glue *glue = platform_get_drvdata(pdev);
+	struct rcm_glue *glue = platform_get_drvdata(pdev);
 
 	platform_device_unregister(glue->musb);
 	pm_runtime_disable(glue->dev);
@@ -273,26 +273,26 @@ static int rcmodule_remove(struct platform_device *pdev)
 }
 
 #ifdef CONFIG_OF
-static const struct of_device_id rcmodule_id_table[] = {
+static const struct of_device_id rcm_id_table[] = {
 	{
-		.compatible = "rc-module,musb"
+		.compatible = "rcm,musb"
 	},
 	{},
 };
-MODULE_DEVICE_TABLE(of, rcmodule_id_table);
+MODULE_DEVICE_TABLE(of, rcm_id_table);
 #endif
 
-static struct platform_driver rcmodule_driver = {
-	.probe		= rcmodule_probe,
-	.remove		= rcmodule_remove,
+static struct platform_driver rcm_driver = {
+	.probe		= rcm_probe,
+	.remove		= rcm_remove,
 	.driver		= {
-		.name	= "musb-rcmodule",
-		.of_match_table = of_match_ptr(rcmodule_id_table),
+		.name	= "musb-rcm",
+		.of_match_table = of_match_ptr(rcm_id_table),
 	},
 };
 
-module_platform_driver(rcmodule_driver);
+module_platform_driver(rcm_driver);
 
-MODULE_DESCRIPTION("RC-Module MUSB Glue Layer");
+MODULE_DESCRIPTION("RCM MUSB Glue Layer");
 MODULE_AUTHOR("Alexey Spirkov <alexeis@astrosoft.ru>");
 MODULE_LICENSE("GPL v2");

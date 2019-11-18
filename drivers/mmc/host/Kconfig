@@ -44,8 +44,8 @@ config MMC_PXA
 
 	  If unsure, say N.
 
-config MMC_RCMODULE
-	tristate "MMC/SD/SDIO host support for RC Module's SoCs"
+config MMC_RCM
+	tristate "MMC/SD/SDIO host support for RCM's SoCs"
 	help
 	  This selects the SDHCI support for RC Module System-on-Chip devices.
 
