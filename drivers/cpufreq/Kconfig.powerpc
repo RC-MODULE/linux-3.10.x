@@ -23,7 +23,7 @@ config CPU_FREQ_MAPLE
 	  This adds support for frequency switching on Maple 970FX
 	  Evaluation Board and compatible boards (IBM JS2x blades).
 
-config CPU_FREQ_MODULE_1888TX018
+config CPU_FREQ_RCM_1888TX018
 	bool "Support for RCM 1888TX018 Evaluation Board"
 	depends on 1888TX018
 	help
