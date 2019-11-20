@@ -836,7 +836,38 @@
                 status = "disabled";
 			};			
 
-		};		
+		};
+
+		mms {
+			compatible = "simple-bus";
+			#address-cells = <1>;
+			#size-cells = <1>;
+			ranges = <0x38010000 0x010 0x38010000 0x00024000
+					  0x39080000 0x010 0x39080000 0x00002000>; 
+
+			i2s: i2s@0x39080000 {
+				compatible = "rcm,i2s";
+				reg = <0x39080000 0x1000>;
+				interrupt-parent = <&MPIC>;
+				interrupts = <125 4>;
+				dma = <&audio_dma>;
+			};
+			
+			spdif: spdif@0x39080000 {
+				compatible = "rcm,spdif";
+				reg = <0x39081000 0x1000>;
+				interrupt-parent = <&MPIC>;
+				interrupts = <126 4>;
+				dma = <&audio_dma>;
+			};
+
+			audio_dma: audio_dma@0x38017000 {
+				compatible = "rcm,audio-dma";
+				reg = <0x38017000 0x1000>;
+				interrupt-parent = <&MPIC>;
+				interrupts = <127 4>;
+			};
+		};
 		
 		apb0 {
 			compatible = "ibm,apb";
