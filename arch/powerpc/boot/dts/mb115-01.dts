@@ -60,27 +60,27 @@
 				#address-cells = <1>;
 				little-endian;
 
-				partition@0 {
+				partition@0 {					// SPL — загрузчик U-Boot
 					label = "uboot_spl";
 					reg = <0x00000 0x40000>; /* 256 KB */
 				};
 
-				partition@40000 {
+				partition@40000 {				// сам uboot
 					label = "uboot";
 					reg = <0x40000 0x1000000>; /* 16 MB */
 				};
 
-				partition@1040000 {
+				partition@1040000 {				// переменные среды uboot
 					label = "uboot_env";
 					reg = <0x1040000 0x40000>; /* 256 KB */
 				};
 
-				partition@1050000 {
+				partition@1050000 {				// ось
 					label = "linux";
 					reg = <0x1080000 0x1000000>; /* 16 MB */
 				};
 
-				partition@2050000 {
+				partition@2050000 {				// файловая
 					label = "rootfs";
 					reg = <0x2080000 0xDF80000>;
 				};				 

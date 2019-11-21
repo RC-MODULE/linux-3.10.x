@@ -415,4 +415,11 @@ config MTD_LATCH_ADDR
 
           If compiled as a module, it will be called latch-addr-flash.
 
+config MTD_RCM_NAND
+    tristate "RC-Module SoC NAND support"
+    depends on 1888TX018
+    help
+        Support for NAND flash attached to the 1888TX018 SoC's
+
+
 endmenu
