@@ -1113,6 +1113,19 @@
 				interrupt-names = "lp", "hp";		
                 status = "disabled";
 			};
+			nand: nand@0x3C032000 {										// NAND-0x3C032000 – 0x3C032FFF
+				compatible = "rcm,nand","simple-bus";					// compatible = «simple-bus» способствует простой адресации памяти шины для не специфического обработчика или драйвера
+				#address-cells = <1>;									// #address-cells сколько диапазонов адресов
+				#size-cells = <1>;										// #size-cells сколько (в 32 битах) размер каждого
+				reg = <0x3C032000 0x1000>;								// базовый + размер памяти управляющих регистров
+				ranges = <0x00000000 0x20000000 0x10000000>;			// базовый на шине - базовый на шине предка (куда ему адресовываться),размер,тут второй адрес-адрес на шине amba для lsif0 (выше)
+// tADL_min	tALH_min tALS_min tCH_min-tCLH_min tCLS_min tCS_min tDH_min-tDS_min tWC_min tWH_min tWP_min-tWW_min tAR_min tCLR_min
+// tCOH_min tIR_min tRC_min tREH_min-tRHOH_min tRHW_min tRLOH_min tRP_min-tRR_min tWHR_min tCEA_max tCHZ_max-tREA_max tRHZ_max tWB_max
+				timings = <200 20 50 20 20 50 70 20 40 100 30 50 100 25 20 0 10 100 30 0 200 0 50 40 120 100 100 40 200 200>;
+				// interrupt-parent = <&MPIC>;
+				// interrupts = <104 0>; // IRQ_TYPE_EDGE_RISING
+				status = "disabled";
+			};
 		};
 	};
 };
