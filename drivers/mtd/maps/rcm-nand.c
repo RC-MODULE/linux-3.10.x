@@ -355,10 +355,10 @@ void mnand_reset_grabber(void)
     rcm_nand_set(0x8008, 0xffffffff);*/ 
 }
 
-static irqreturn_t interrupt_handler(int irq, void* data) 
+static irqreturn_t rcm_nand_interrupt_handler(int irq, void* data) 
 { 
     if( init_flag==0 ) {
-        NAND_DBG_PRINT_ERR( "interrupt_handler: init_flag=0" ) 
+        NAND_DBG_PRINT_ERR( "rcm_nand_interrupt_handler: init_flag=0" ) 
         return IRQ_NONE;
     }
 
@@ -370,36 +370,36 @@ static irqreturn_t interrupt_handler(int irq, void* data)
     switch( g_chip.state ) {
         case MNAND_READ:
             if( g_chip.status1 & IRQ_READ_FINISH ) {
-                NAND_DBG_PRINT_INF( "interrupt_handler: IRQ_READ_FINISH" )
+                NAND_DBG_PRINT_INF( "rcm_nand_interrupt_handler: IRQ_READ_FINISH" )
                 g_chip.state = MNAND_IDLE;
             }
             break;
         case MNAND_READID: 
             if( g_chip.status1 & IRQ_READID ) {
-                NAND_DBG_PRINT_INF( "interrupt_handler: IRQ_READID" )
+                NAND_DBG_PRINT_INF( "rcm_nand_interrupt_handler: IRQ_READID" )
                 g_chip.state = MNAND_IDLE; 
             }
             break; 
         case MNAND_WRITE: 
             if( g_chip.status1 & IRQ_PROGRAM_FINISH ) {
-                NAND_DBG_PRINT_INF( "interrupt_handler: IRQ_PROGRAM_FINISH" )
+                NAND_DBG_PRINT_INF( "rcm_nand_interrupt_handler: IRQ_PROGRAM_FINISH" )
                 g_chip.state = MNAND_IDLE; 
             } 
             break; 
         case MNAND_ERASE: 
             if( g_chip.status1 & IRQ_ERASE ) {
-                NAND_DBG_PRINT_INF( "interrupt_handler: IRQ_ERASE" )
+                NAND_DBG_PRINT_INF( "rcm_nand_interrupt_handler: IRQ_ERASE" )
                 g_chip.state = MNAND_IDLE; 
             }
             break; 
         case MNAND_RESET:
             if( g_chip.status1 & IRQ_RESET ) {
-                NAND_DBG_PRINT_INF( "interrupt_handler: IRQ_RESET" )
+                NAND_DBG_PRINT_INF( "rcm_nand_interrupt_handler: IRQ_RESET" )
                 g_chip.state = MNAND_IDLE; 
             }
             break;
         default:
-            NAND_DBG_PRINT_ERR( "interrupt_handler: interrupt, but idle state " )
+            NAND_DBG_PRINT_ERR( "rcm_nand_interrupt_handler: interrupt, but idle state " )
             return IRQ_NONE; 
     } 
 
@@ -407,7 +407,7 @@ static irqreturn_t interrupt_handler(int irq, void* data)
         complete_all(&g_completion);
     }
     else {  // пока так, сюда попадем при ошибках шины и некорректируемых
-        NAND_DBG_PRINT_ERR( " interrupt_handler: error state %u", g_chip.state )
+        NAND_DBG_PRINT_ERR( " rcm_nand_interrupt_handler: error state %u", g_chip.state )
         NAND_DBG_PRINT_ERR( "   IRQ_READ_FINISH=%u", (bool)( g_chip.status1 & IRQ_READ_FINISH ) )
         NAND_DBG_PRINT_ERR( "        IRQ_READID=%u", (bool)( g_chip.status1 & IRQ_READID ) )
         NAND_DBG_PRINT_ERR( "IRQ_PROGRAM_FINISH=%u", (bool)( g_chip.status1 & IRQ_PROGRAM_FINISH ) )
@@ -1753,7 +1753,7 @@ int mnand_calculate_ecc(struct mtd_info *mtd, const unsigned char *buf, unsigned
          return err; 
  } 
 
-static int set_lsif0_config( struct device_node *of_node )
+static int rcm_nand_lsif0_config( struct device_node *of_node )
 {
     struct device_node* tmp_of_node;
    	struct regmap* lsif0_config;
@@ -1783,7 +1783,7 @@ static int set_lsif0_config( struct device_node *of_node )
     return 0;
 }
 
-static int get_nand_timings( struct device_node *of_node, uint32_t* timings, uint32_t* freq )
+static int rcm_nand_get_timings( struct device_node *of_node, uint32_t* timings, uint32_t* freq )
 {
     struct device_node* tmp_of_node;
     int ret;
@@ -1809,117 +1809,102 @@ static struct of_device_id of_platform_nand_table[];
 
 static int of_rcm_nand_probe(struct platform_device* ofdev) 
 {
-    const struct of_device_id *match; 
-    struct device_node *of_node = ofdev->dev.of_node; 
-    const char *part_probes[] = { "cmdlinepart", NULL, };
-    uint32_t freq, timings[30];
-    int err; 
+        const struct of_device_id *match; 
+        struct device_node *of_node = ofdev->dev.of_node; 
+        const char *part_probes[] = { "cmdlinepart", NULL, };
+        uint32_t freq, timings[30];
+        int err; 
 
-    match = of_match_device( of_platform_nand_table, &ofdev->dev ); 
-    if( !match ) {
-        NAND_DBG_PRINT_ERR( "of_match_device: failed" )
-        return -EINVAL; 
-    }
+        match = of_match_device( of_platform_nand_table, &ofdev->dev ); 
+        if( !match ) {
+                NAND_DBG_PRINT_ERR( "rcm_nand: of_match_device: failed" )
+                return -EINVAL; 
+        }
 
-    memset( &g_chip, 0, sizeof(g_chip) ); 
+        memset( &g_chip, 0, sizeof(g_chip) ); 
 
-    g_chip.dev = ofdev; 
-    g_chip.active_page = -1; 
+        g_chip.dev = ofdev; 
+        g_chip.active_page = -1; 
+        g_chip.regs.io = of_iomap( of_node, 0 ); 
+        if ( WARN_ON( !g_chip.regs.io ) ) {
+                NAND_DBG_PRINT_ERR( "rcm_nand: of_iomap: failed" )
+                return -EIO;
+        }
 
-    g_chip.regs.io = of_iomap( of_node, 0 ); 
-    if ( WARN_ON( !g_chip.regs.io ) ) {
-        NAND_DBG_PRINT_ERR( "of_iomap: failed" )
-        return -EIO;
-    }
+        if( ( err = rcm_nand_lsif0_config( of_node ) ) != 0 )
+        {
+                return -EIO;
+        }
 
-    if( ( err = set_lsif0_config( of_node ) ) != 0 )
-    {
-        //goto error_dma;
-        return -EIO;
-    }
+        g_chip.irq = irq_of_parse_and_map( of_node, 0 ); 
+        NAND_DBG_PRINT_INF( "rcm_nand: irq_of_parse_and_map: return %u", g_chip.irq )
+        if( ( err = request_irq( g_chip.irq, rcm_nand_interrupt_handler, IRQF_SHARED, DRIVER_NAME, &g_chip ) ) ) {
+                NAND_DBG_PRINT_ERR( "rcm_nand: failed to set handler on irq #%d (code: %d)\n", g_chip.irq, err ); 
+                goto error_irq; 
+        }
 
-    g_chip.irq = irq_of_parse_and_map( of_node, 0 ); 
-    NAND_DBG_PRINT_INF( "irq_of_parse_and_map: return %u", g_chip.irq )
-    if( ( err = request_irq( g_chip.irq, interrupt_handler, IRQF_SHARED, DRIVER_NAME, &g_chip ) ) ) {
-        NAND_DBG_PRINT_ERR( "failed to set handler on irq #%d (code: %d)\n", g_chip.irq, err ); 
-        goto error_irq; 
-    } 
+        g_chip.dev->dev.coherent_dma_mask = DMA_BIT_MASK( 32 ); 
+        g_chip.dma_area = dma_alloc_coherent( &g_chip.dev->dev, 4096, &g_chip.dma_handle, GFP_KERNEL | GFP_DMA ); 
+        if( !g_chip.dma_area ) { 
+                NAND_DBG_PRINT_ERR( "rcm_nand: failed to request DMA area\n" ) 
+                err = -ENOMEM; 
+                goto error_dma; 
+        }
 
-    g_chip.dev->dev.coherent_dma_mask = DMA_BIT_MASK( 32 ); 
-    g_chip.dma_area = dma_alloc_coherent( &g_chip.dev->dev,
-                                          4096,
-                                          &g_chip.dma_handle,
-                                          GFP_KERNEL | GFP_DMA ); 
-    if( !g_chip.dma_area ) { 
-        NAND_DBG_PRINT_ERR( "failed to request DMA area\n" ) 
-        err = -ENOMEM; 
-        goto error_dma; 
-    } 
+        memset( g_chip.dma_area, 0xFF, 4096 );
 
-    memset( g_chip.dma_area, 0xFF, 4096 );
+        sema_init( &g_mutex, 1 ); 
+        down( &g_mutex );
 
-    sema_init( &g_mutex, 1 ); 
-    down( &g_mutex );
+        if( ( err = rcm_nand_get_timings( of_node, timings, &freq ) ) != 0 ) {
+                goto error_dma;
+        }
 
-    if( ( err = get_nand_timings( of_node, timings, &freq ) ) != 0 ) {
-        goto error_dma;
-    }
+        if( ( err = rcm_nand_hw_init( timings, freq ) ) != 0 ) {
+                goto error_dma;
+        }
 
-    if( ( err = rcm_nand_hw_init( timings, freq ) ) != 0 ) {
-        goto error_dma;
-    }
+        // mnand_reset_grabber(); 
+        rcm_nand_core_reset( 0 );
+        rcm_nand_core_reset( 1 );
 
-//  mnand_reset_grabber(); 
-    rcm_nand_core_reset( 0 );
-    rcm_nand_core_reset( 1 );
+        g_chip.mtd.name = DRIVER_NAME;
+        g_chip.mtd.size = 0; 
+        g_chip.chip_size[0] = 0; 
+        g_chip.chip_size[1] = 0; 
 
-    g_chip.mtd.name = DRIVER_NAME;
-    g_chip.mtd.size = 0; 
-    g_chip.chip_size[0] = 0; 
-    g_chip.chip_size[1] = 0; 
+        err = rcm_nand_read_id(0); 
+        err = rcm_nand_read_id(1);
 
-    err = rcm_nand_read_id(0); 
-    err = rcm_nand_read_id(1);
+        up( &g_mutex ); 
 
-    NAND_DBG_PRINT_INF( "continue(%u,%u,%u)", freq, timings[0], timings[29-3] )
-    return -EIO;
+        g_chip.mtd.owner = THIS_MODULE; 
+        g_chip.mtd.type = MTD_NANDFLASH; 
+        g_chip.mtd.flags = MTD_WRITEABLE; 
+        g_chip.mtd._erase = mnand_erase; 
+        g_chip.mtd._read = mnand_read; 
+        g_chip.mtd._write = mnand_write; 
+        g_chip.mtd._block_isbad = mnand_isbad; 
+        g_chip.mtd._block_markbad = mnand_markbad; 
+        g_chip.mtd._read_oob = mnand_read_oob; 
+        g_chip.mtd._write_oob = mnand_write_oob; 
+        //g_chip.mtd.ecclayout = &g_ecclayout; 
+        g_chip.mtd.dev.parent = &ofdev->dev; 
 
-    up(&g_mutex); 
- 
- 
-         g_chip.mtd.owner = THIS_MODULE; 
-         g_chip.mtd.type = MTD_NANDFLASH; 
-         g_chip.mtd.flags = MTD_WRITEABLE; 
-         g_chip.mtd._erase = mnand_erase; 
-         g_chip.mtd._read = mnand_read; 
-         g_chip.mtd._write = mnand_write; 
-         g_chip.mtd._block_isbad = mnand_isbad; 
-         g_chip.mtd._block_markbad = mnand_markbad; 
-         g_chip.mtd._read_oob = mnand_read_oob; 
-         g_chip.mtd._write_oob = mnand_write_oob; 
-         //g_chip.mtd.ecclayout = &g_ecclayout; 
- 
- 
-         g_chip.mtd.dev.parent = &ofdev->dev; 
- 
- 
-         printk("mnand: Detected %llu bytes of NAND\n", g_chip.mtd.size); 
- 
- 
-         err = mtd_device_parse_register(&g_chip.mtd, part_probes, 0, NULL, 0); 
-         if (err) { 
-                 printk(KERN_ERR "Failed add mtd device (code: %d)\n", err); 
-                 goto error_dma; 
-         } 
-         return 0; 
- 
- 
+        NAND_DBG_PRINT_INF( "rcm_nand: detected %llu bytes of NAND\n", g_chip.mtd.size ); 
+
+        err = mtd_device_parse_register( &g_chip.mtd, part_probes, 0, NULL, 0 ); 
+        if( err ) { 
+                NAND_DBG_PRINT_ERR( "rcm_nand: failed add mtd device (code: %d)\n", err );
+                goto error_dma; 
+        } 
+        return 0; 
+  
  error_dma: 
          dma_free_coherent(&g_chip.dev->dev, 4096, g_chip.dma_area, g_chip.dma_handle);
-
  error_irq: 
-         //free_irq(g_chip.irq, &g_chip); 
-         //g_chip.irq = 0; 
+         free_irq(g_chip.irq, &g_chip); 
+         g_chip.irq = 0; 
          return err; 
  } 
  
