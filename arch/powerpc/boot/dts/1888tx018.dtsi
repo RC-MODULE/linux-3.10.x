@@ -85,6 +85,12 @@
 		>;  
 	};
 
+	lsif0clock: lsif0clock@100M {
+		#clock-cells = <0>;
+		compatible = "fixed-clock";
+		clock-frequency = <100000000>;
+	};
+
 	lsif1clock: lsif1clock@100M {
 		#clock-cells = <0>;
 		compatible = "fixed-clock";
@@ -125,7 +131,7 @@
 			sctl = <&sctl>;			
 		    control = <&lsif0_config>;
 			pinctrl-names = "default";
-			pinctrl-0 =
+			/*pinctrl-0 =
 				<&lsif0_mgpio0_sram_nor>,
 				<&lsif0_mgpio1_sram_nor>,
 				<&lsif0_mgpio2_sram_nor>,
@@ -134,7 +140,12 @@
 				<&lsif0_mgpio5_sram_nor>,
 				<&lsif0_mgpio6_sram_nor>,
 				<&lsif0_mgpio7_sram_nor>,
-				<&lsif0_mgpio8_sram_nor>;
+				<&lsif0_mgpio8_sram_nor>;*/
+			pinctrl-0 = 							// nand
+				<&lsif0_mgpio3_nand>,
+				<&lsif0_mgpio4_nand>,
+				<&lsif0_mgpio7_nand>,
+				<&lsif0_mgpio8_nand>;
 			status = "disabled";
 		};
 
@@ -204,7 +215,6 @@
 				lsif0_mgpio0_sram_nor: lsif0_mgpio0_sram_nor {
 					pinctrl-single,bits = <0 0xFF 0xFF>;
 				};
-
 			};
 
 			lsif0_mgpio1: lsif0_mgpio1@0x3C041420 {
@@ -270,6 +280,10 @@
 				lsif0_mgpio3_sram_nor: lsif0_mgpio3_sram_nor {
 					pinctrl-single,bits = <0 0xFF 0xFF>;
 				};
+
+				lsif0_mgpio3_nand: lsif0_mgpio3_nand {		// d7..d0
+					pinctrl-single,bits = <0 0xFF 0xFF>;
+				};
 			};
 
 			lsif0_mgpio4: lsif0_mgpio4@0x3C044420 {
@@ -301,6 +315,11 @@
 				lsif0_mgpio4_sram_nor: lsif0_mgpio4_sram_nor {
 					pinctrl-single,bits = <0 0xFF 0xFF>;
 				};
+
+				lsif0_mgpio4_nand: lsif0_mgpio4_nand {		// ready2n,ready1n
+					pinctrl-single,bits = <0 0x03 0x03>;
+				};
+
 			};
 
 			lsif0_mgpio5: lsif0_mgpio5@0x3C045420 {
@@ -370,6 +389,10 @@
 				lsif0_mgpio7_sram_nor: lsif0_mgpio7_sram_nor {
 					pinctrl-single,bits = <0 0xFF 0xFF>;
 				};
+
+				lsif0_mgpio7_nand: lsif0_mgpio7_nand {		// ce1n, ce2n, cle, ren
+					pinctrl-single,bits = <0 0xF0 0xF0>;
+				};
 			};
 
 			lsif0_mgpio8: lsif0_mgpio8@0x3C048420 {
@@ -384,6 +407,10 @@
 
 				lsif0_mgpio8_sram_nor: lsif0_mgpio8_sram_nor {
 					pinctrl-single,bits = <0 0xFF 0xFF>;
+				};
+
+				lsif0_mgpio8_nand: lsif0_mgpio8_nand {
+					pinctrl-single,bits = <0 0x83 0x83>;	// wpn, wen, ale
 				};
 			};
 
@@ -552,7 +579,24 @@
 				// interrupts = <104 0>; // IRQ_TYPE_EDGE_RISING
 				status = "disabled";
 			};
-		};
+
+			nand: nand@0x3C032000 {										// NAND-0x3C032000 – 0x3C032FFF
+				compatible = "rcm,nand","simple-bus";					// compatible = «simple-bus» способствует простой адресации памяти шины для не специфического обработчика или драйвера
+				#address-cells = <1>;									// #address-cells сколько диапазонов адресов
+				#size-cells = <1>;										// #size-cells сколько (в 32 битах) размер каждого
+				reg = <0x3C032000 0x1000>;								// базовый + размер памяти управляющих регистров
+				ranges = <0x00000000 0x20000000 0x20000000>;			// базовый на шине - базовый на шине предка (куда ему адресовываться),размер,тут второй адрес-адрес на шине amba для lsif0 (выше)
+																		// 256 Мбит(32Мб,0x2000000),512 Мбит(64Мб,0x4000000),1 Гбит(128Мб,0x8000000)
+				clocks = <&lsif0clock>;
+				config = <&lsif0_config>;
+// tADL_min	tALH_min tALS_min tCH_min-tCLH_min tCLS_min tCS_min tDH_min-tDS_min tWC_min tWH_min tWP_min-tWW_min tAR_min tCLR_min
+// tCOH_min tIR_min tRC_min tREH_min-tRHOH_min tRHW_min tRLOH_min tRP_min-tRR_min tWHR_min tCEA_max tCHZ_max-tREA_max tRHZ_max tWB_max
+				timings = <200 20 50 20 20 50 70 20 40 100 30 50 100 25 20 0 10 100 30 0 200 0 50 40 120 100 100 40 200 200>;
+				interrupt-parent = <&MPIC>;
+				interrupts = <109 0>; 									// IRQ_TYPE_EDGE_RISING
+				status = "disabled";
+			};
+		};	// lsif0
 
 		lsif1 {
 			compatible = "arm,amba-bus", "ibm,plb6";
@@ -1112,19 +1156,6 @@
 				interrupts = <44 0>, <46 0>;
 				interrupt-names = "lp", "hp";		
                 status = "disabled";
-			};
-			nand: nand@0x3C032000 {										// NAND-0x3C032000 – 0x3C032FFF
-				compatible = "rcm,nand","simple-bus";					// compatible = «simple-bus» способствует простой адресации памяти шины для не специфического обработчика или драйвера
-				#address-cells = <1>;									// #address-cells сколько диапазонов адресов
-				#size-cells = <1>;										// #size-cells сколько (в 32 битах) размер каждого
-				reg = <0x3C032000 0x1000>;								// базовый + размер памяти управляющих регистров
-				ranges = <0x00000000 0x20000000 0x10000000>;			// базовый на шине - базовый на шине предка (куда ему адресовываться),размер,тут второй адрес-адрес на шине amba для lsif0 (выше)
-// tADL_min	tALH_min tALS_min tCH_min-tCLH_min tCLS_min tCS_min tDH_min-tDS_min tWC_min tWH_min tWP_min-tWW_min tAR_min tCLR_min
-// tCOH_min tIR_min tRC_min tREH_min-tRHOH_min tRHW_min tRLOH_min tRP_min-tRR_min tWHR_min tCEA_max tCHZ_max-tREA_max tRHZ_max tWB_max
-				timings = <200 20 50 20 20 50 70 20 40 100 30 50 100 25 20 0 10 100 30 0 200 0 50 40 120 100 100 40 200 200>;
-				// interrupt-parent = <&MPIC>;
-				// interrupts = <104 0>; // IRQ_TYPE_EDGE_RISING
-				status = "disabled";
 			};
 		};
 	};

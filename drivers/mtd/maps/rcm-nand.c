@@ -1,37 +1,29 @@
 #include <linux/types.h>
-#include <linux/compiler_types.h>
-#include <linux/err.h>
-#include <linux/module.h>
-#include <linux/kernel.h>
-#include <linux/io.h>
-#include <linux/slab.h>
-#include <linux/mtd/mtd.h>
-#include <linux/mtd/map.h>
-#include <linux/mtd/rawnand.h>
-#include <linux/mtd/partitions.h>
-#include <linux/dmaengine.h>
-#include <linux/mtd/cfi.h>
-#include <linux/platform_device.h>
-#include <linux/mtd/physmap.h>
-#include <linux/of.h>
-#include <linux/mfd/syscon.h>
+#include <linux/module.h> 
+#include <linux/init.h> 
+#include <linux/platform_device.h> 
+#include <linux/io.h> 
+#include <linux/interrupt.h> 
 #include <linux/regmap.h>
-#include <linux/export.h>
-#include <linux/irqreturn.h>
+#include <linux/mtd/mtd.h> 
+#include <linux/mtd/nand.h> 
+#include <linux/mtd/partitions.h>
+#include <linux/mtd/rawnand.h>
+#include <linux/mfd/syscon.h>
+#include <linux/mtd/physmap.h>
+#include <linux/semaphore.h> 
+#include <linux/completion.h> 
+#include <linux/dma-mapping.h> 
+#include <linux/delay.h> 
+#include <linux/of_address.h> 
+#include <linux/of_irq.h> 
+#include <linux/of_platform.h> 
 
-#define DRIVER_NAME "rcm-nand"              // hisi504_nand
-
-#define NAND_DBG_PRINT
-
-#ifdef NAND_DBG_PRINT
-    #define NAND_DBG_PRINT_INF(...) printk("RCM_NAND[INFO] " __VA_ARGS__);
-    #define NAND_DBG_PRINT_WRN(...) printk("RCM_NAND[WARN] " __VA_ARGS__);
-    #define NAND_DBG_PRINT_ERR(...) printk("RCM_NAND[ERR] " __VA_ARGS__);
-#else
-    #define NAND_DBG_PRINT_INF(...) while(0);
-    #define NAND_DBG_PRINT_WRN(...) while(0);
-    #define NAND_DBG_PRINT_ERR(...) while(0);
-#endif
+#include <linux/mtd/mtd.h>
+#include <linux/mtd/nand.h>
+//#include <linux/mtd/mnand.h>
+#include <linux/unistd.h>
+#include "rcm-nandids.h"
 
 #define NAND_REG_status                 0x00
 #define NAND_REG_control                0x04
@@ -86,190 +78,348 @@
 #define NAND_REG_timing_5               0xcc
 #define NAND_REG_timing_6               0xd0
 #define NAND_REG_timing_7               0xd4
-// NAND_REG_control-сдвиг битов
-#define OP_BEGIN_SHIFT                  0           // 0-флаг начала операции (1-начать)
-#define PAGE_SIZE_SHIFT                 1           // 3..1-размер страницы (0-512..7-65536)
-#define NUM_ADR_BYTES_SHIFT             4           // 6..4-количество байтов (циклов) адреса в текущей команде
-#define ECC_MODE_SHIFT                  7           // 8..7-режим коррекции ошибок
-#define CE_SHIFT                        9           // 9-номер кристалла для текущей операции
-#define	HWP_SHIFT                       11          // 11-аппаратная защита от записи(0-запись разрешена?)
-#define OOB_ECC_SHIFT                   12          // 12-разрешение оценки кодов коррекции ошибок для данных в поле OOB(рекомендуется 1)
-#define OOB_SIZE_SHIFT                  13          // 23..13-команда
-#define	FCMD_SHIFT                      24          // 31..24-первая команда для отправки во флэш память
-// NAND_REG_cntrl_dma_w-сдвиг битов
-#define SEGM_SIZE_SHIFT                 5           // 28..5-размер сегмента (байты–1),по достижению конца сгенерируется прерывания
-#define START_ADDR_GEN                  (1<<31)     // 31-после задания значения начать генерировать адреса с начального по конечный
-// NAND_REG_irq_mask_nand-биты (Таблица 1.829)
-#define IRQ_READ_FINISH                 (1 << 0)    // прерывание по завершении выполнения команды чтения
-#define IRQ_READID                      (1 << 1)    // прерывание по завершении выполнения команды считывания идентификационного номера
-#define IRQ_PROGRAM_FINISH              (1 << 2)    // прерывание по завершении выполнения команды программирования
-#define IRQ_ERASE                       (1 << 3)    // прерывание по завершении выполнения команды стирания блока
-#define IRQ_RESET                       (1 << 4)    // прерывание по завершении выполнения команды сброса флэш-памяти NAND
-#define IRQ_UNCORR_ERROR                (1 << 5)    // прерывание при возникновении некорректируемой ошибки
-//#define IRQ_AXI_WRITE                  (1 << 6)  // ошибка? nand_impl.c
-#define IRQ_AXIW_ERROR                  (1 << 6)    // прерывание при возникновении ошибочной транзакции по интерфейсу записи AXI (неверное значение BRESP)
-//???????????????????
-#define IRQ_LAST_ADR_AXIW               (1 << 7)    // прерывание по достижению последнего адреса ведущего интерфейса записи AXI
-#define IRQ_LAST_SEGM_AXIW              (1 << 8)    // прерывание по достижению последнего сегмента адреса ведущего интерфейса записи AXI
-#define IRQ_AXIR_ERROR                  (1 << 9)    // прерывание при возникновении ошибочной транзакции по шине чтения AXI(неверное значение RRESP)
-#define IRQ_LAST_ADR_AXIR               (1 << 10)   // прерывание по достижению последнего адреса ведущего интерфейса чтения AXI
-#define IRQ_LAST_SEGM_AXIR              (1 << 11)   // прерывание по достижению последнего сегмента адреса ведущего интерфейса чтения
+// NAND_REG_status
+#define STATUS_REG_NAND_FAIL            0x00000100      // возникновение некорректируемой ошибки
+#define STATUS_REG_CONT_READY           0x00000200      // контроллер NAND готов к приему команды
+#define STATUS_REG_NAND_READY           0x00000400      // флэш-память готова к выполнению операций
+// NAND_REG_control
+#define OP_BEGIN_SHIFT                  0               // 0-флаг начала операции (1-начать)
+#define PAGE_SIZE_SHIFT                 1               // 3..1-размер страницы (0-512..7-65536)
+#define NUM_ADR_BYTES_SHIFT             4               // 6..4-количество байтов (циклов) адреса в текущей команде
+#define ECC_MODE_SHIFT                  7               // 8..7-режим коррекции ошибок
+#define CE_SHIFT                        9               // 9-номер кристалла для текущей операции
+#define	HWP_SHIFT                       11              // 11-аппаратная защита от записи(0-запись разрешена?)
+#define OOB_ECC_SHIFT                   12              // 12-разрешение оценки кодов коррекции ошибок для данных в поле OOB(рекомендуется 1)
+#define OOB_SIZE_SHIFT                  13              // 23..13-команда
+#define	FCMD_SHIFT                      24              // 31..24-первая команда для отправки во флэш память
 // NAND_REG_command - команды
-#define CMD_CONTROL_READ                    0x01        // чтение NAND
-#define CMD_CONTROL_READ_ID                 0x03        // чтение идентификатора
-#define CMD_PROGRAM_TO_NAND	                0x04        // программирование NAND
-#define CMD_ERASE_BLOCK		                0x06        // стирание блока
-#define CMD_CONTROL_RESET                   0x07        // сброс флэш памяти NAND
-// команды ONFI FLASH (см.стандарт)
-#define CMD_FLASH_PAGE_READ                 0x00
-#define CMD_FLASH_BLOCK_ERASE               0x60
-#define CMD_FLASH_PROGRAM_PAGE              0x80
-#define CMD_FLASH_READ_ID                   0x90
-#define CMD_NAND_ONFI                       0xEC        // Read Parameter Page
-// NAND_REG_status-биты
-#define STATUS_CONT_READY                   0x00000200  // статус: 1-контроллер NAND готов к приему команды
-#define STATUS_NAND_READY                   0x00000400  // статус: 1-флэш-память готова к выполнению операций
+#define CMD_CONTROL_READ                0x01            // чтение NAND
+#define CMD_CONTROL_READ_ID             0x03            // чтение идентификатора
+#define CMD_PROGRAM_TO_NAND	            0x04            // программирование NAND
+#define CMD_ERASE_BLOCK		            0x06            // стирание блока
+#define CMD_CONTROL_RESET               0x07            // сброс флэш памяти NAND
+// NAND_REG_irq_mask_nand (Таблица 1.829)
+#define IRQ_READ_FINISH                 (1 << 0)        // прерывание по завершении выполнения команды чтения
+#define IRQ_READID                      (1 << 1)        // прерывание по завершении выполнения команды считывания идентификационного номера
+#define IRQ_PROGRAM_FINISH              (1 << 2)        // прерывание по завершении выполнения команды программирования
+#define IRQ_ERASE                       (1 << 3)        // прерывание по завершении выполнения команды стирания блока
+#define IRQ_RESET                       (1 << 4)        // прерывание по завершении выполнения команды сброса флэш-памяти NAND
+#define IRQ_UNCORR_ERROR0               (1 << 5)        // прерывание при возникновении некорректируемой ошибки
+//#define IRQ_AXI_WRITE                  (1 << 6)  // ошибка? nand_impl.c
+#define IRQ_AXIW_ERROR                  (1 << 6)        // прерывание при возникновении ошибочной транзакции по интерфейсу записи AXI (неверное значение BRESP)
+//???????????????????
+#define IRQ_LAST_ADR_AXIW               (1 << 7)        // прерывание по достижению последнего адреса ведущего интерфейса записи AXI
+#define IRQ_LAST_SEGM_AXIW              (1 << 8)        // прерывание по достижению последнего сегмента адреса ведущего интерфейса записи AXI
+#define IRQ_AXIR_ERROR                  (1 << 9)        // прерывание при возникновении ошибочной транзакции по шине чтения AXI(неверное значение RRESP)
+#define IRQ_LAST_ADR_AXIR               (1 << 10)       // прерывание по достижению последнего адреса ведущего интерфейса чтения AXI
+#define IRQ_LAST_SEGM_AXIR              (1 << 11)       // прерывание по достижению последнего сегмента адреса ведущего интерфейса чтения
+#define IRQ_UNCORR_ERROR1               (1 << 12)       // прерывание при возникновении некорректируемой ошибки
+#define IRQ_STATUS_EMPTY                (1 << 13)       // состояние «читаемая страница пуста»
+#define IRQ_RCM_NAND_MASK               0x1FFF
 // разное
-#define NAND_TIMEOUT                        10000
-#define NAND_RESET_TIMEOUT                  8000
-#define NAND_ONFI_SIZE                      128
-#define NAND_PAGE_SIZE_BASE                 512
-#define NAND_DEFAULT_CHIP                   0
-// идентификаторы
-#define READ_ID_JEDEC_ADDR                  0x00        // стандартизацией технологий компьютерной памяти занимается комитет JEDEC, образованный при ассоциации EIA
-#define READ_ID_ONFI_ADDR                   0x20        // но существует сторонняя организация – Open NAND Flash Interface Working Group (ONFI) – деятельность которой сосредоточена на разработке открытых стандартов низкоуровневых интерфейсов
+#define NAND_DEFAULT_CHIP               0
+// таймауты
+#define NAND_READY_TIMEOUT              10000
 // макросы для расчета таймингов
-#define NAND_DIV_ROUND_UP(x, y) (1 + (((x) - 1) / (y)))
-#define NAND_TIMING_TO_CLOCKS(t,f) ((NAND_DIV_ROUND_UP((t+1)*f, 1000))  & 0xff)
-// тайминги по умолчанию
-#define  TADL_MIN_DEF   200
-#define  TALH_MIN_DEF   20
-#define  TALS_MIN_DEF   50
-#define  TCH_MIN_DEF    20
-#define  TCLH_MIN_DEF   20
-#define  TCLS_MIN_DEF   50
-#define  TCS_MIN_DEF    70
-#define  TDH_MIN_DEF    20
-#define  TDS_MIN_DEF    40
-#define  TWC_MIN_DEF    100
-#define  TWH_MIN_DEF    30
-#define  TWP_MIN_DEF    50
-#define  TWW_MIN_DEF    100
-#define  TAR_MIN_DEF    25
-#define  TCLR_MIN_DEF   20
-#define  TCOH_MIN_DEF   0
-#define  TIR_MIN_DEF    10
-#define  TRC_MIN_DEF    100
-#define  TREH_MIN_DEF   30
-#define  TRHOH_MIN_DEF  0
-#define  TRHW_MIN_DEF   200
-#define  TRLOH_MIN_DEF  0
-#define  TRP_MIN_DEF    50
-#define  TRR_MIN_DEF    40
-#define  TWHR_MIN_DEF   120
-#define  TCEA_MAX_DEF   100
-#define  TCHZ_MAX_DEF   100
-#define  TREA_MAX_DEF   40
-#define  TRHZ_MAX_DEF   200
-#define  TWB_MAX_DEF    200
+#define RCM_NAND_DIV_ROUND_UP(x, y) (1 + (((x) - 1) / (y)))
+#define RCM_NAND_TIMING_TO_CLOCKS(t,f) ((RCM_NAND_DIV_ROUND_UP((t+1)*f, 1000))  & 0xff)
 // режим коррекции ошибок
 #define NAND_ECC_MODE_UNDEFINED (-1)
 #define NAND_ECC_MODE_NO_ECC    0
 #define NAND_ECC_MODE_4BITS     1
 #define NAND_ECC_MODE_24BITS    2
+// LSIF0_CTRL
+#define NAND_RADDR_EXTEND 0x24 // Расширение адреса для 36-разрядной адресации канала NAND памяти:
+#define NAND_WADDR_EXTEND 0x28 // Биты [3:0] - соответствуют 4 старшим разряда адреса
+
+#define DRIVER_NAME "rcm-nand" 
+
+#define NAND_DBG_PRINTK
+
+#if defined NAND_DBG_PRINTK
+    #define NAND_DBG_PRINT_INF(...) printk("RCM_NAND[INF] " __VA_ARGS__);
+    #define NAND_DBG_PRINT_WRN(...) printk("RCM_NAND[WRN] " __VA_ARGS__);
+    #define NAND_DBG_PRINT_ERR(...) printk("RCM_NAND[ERR] " __VA_ARGS__);
+#else
+    #define NAND_DBG_PRINT_INF(...) while(0);
+    #define NAND_DBG_PRINT_WRN(...) while(0);
+    #define NAND_DBG_PRINT_ERR(...) while(0);
+#endif
+
+#define MNAND_DECLARE_PARAM(name, def) \
+    static int g_mnand_##name = def; \
+    module_param_named(name, g_mnand_##name, int, 0);
+
+    MNAND_DECLARE_PARAM(debug, 0);
+
+#define TRACE(level, format, ... ) \
+    do { \
+        if(g_mnand_debug) { \
+        printk(level DRIVER_NAME "/%s:%d: " format, __func__, __LINE__, ##__VA_ARGS__); \
+        } \
+    } while(0); 
+
+    struct mem_resource { 
+        struct resource* res; 
+        void __iomem* io; 
+    }; 
+
+//FixMe: Dirty Hack 
+static volatile int init_flag=0; 
+
+static void release_mem_resource(struct mem_resource* ret) 
+{ 
+    iounmap(ret->io); 
+    TRACE(KERN_DEBUG,"releasing mem region(0x%08X,0x%08X)\n", 
+    (uint32_t)ret->res->start, (uint32_t)(ret->res->end - ret->res->start+1)); 
+    release_mem_region(ret->res->start, ret->res->end - ret->res->start + 1); 
+}
+
+enum {
+    MNAND_IDLE = 0, 
+    MNAND_WRITE, 
+    MNAND_READ, 
+    MNAND_ERASE, 
+    MNAND_READID, 
+    MNAND_RESET 
+}; 
+
+struct mnand_chip {
+    struct platform_device* dev;
+    struct mem_resource regs;
+    int irq;
+
+    uint32_t state; 
+
+    dma_addr_t dma_handle; 
+    size_t dma_size; 
+    void* dma_area; 
+
+    uint64_t active_page; 
+    struct mtd_info mtd; 
+
+    uint32_t status1; 
+    uint32_t status2; 
+
+    uint32_t ecc_corrected; 
+    uint32_t ecc_failed; 
+    uint64_t chip_size[2]; 
+} static g_chip; 
 
 
-// уточнить CMD address
-//#define READ_ID_JEDEC_ADDR	0x00
-//#define READ_ID_ONFI_ADDR	0x20
+struct write_info { 
+    uint32_t address; 
+    uint32_t value; 
+    }; 
 
-//#define NAND_IRQ_RESET                      0x00000010  // завершение выполнения команды сброса
-//#define NAND_IRQ_END_READ                   0x00000001  // завершение выполнения команды чтения
-//#define NAND_IRQ_END_READ_ID                0x00000002  // завершение выполнения команды считывания идентификационного номера
-//#define NAND_IRQ_LAST_BUF_ADDR              0x00000080  // последний адрес состояния ведущего интерфейса записи AXI
-//#define NAND_IRQ_LAST_ADDR_AXI_W            0x00000100  // последний сегмент адреса состояния ведущего интерфейса записи AXI 
+struct write_info g_write_buffer[1024]; 
+int g_write_pos = 0; 
 
-//#define NAND_DMA_CONT_READ                  0x80000000  // 0xC00001E0 //size of buf's seg  = 16 -1 = 15 [25:5],   [31:30] - init bits
-
-
-//#define NAND_CI_CELLTYPE_MSK                0xC rawnand.h
-//#define NAND_MFR_SAMSUNG                    0xEC
-//#define NAND_MFR_AMD                        0x01
-
-//#define NAND_CONTROL_START                  0x01        // start
-//#define NAND_CONTROL_C_B_ADDR_5             0x5
-
-struct nand_info{
-    u32 page_size_code;                 // код размера страницы
-    u32 pagesize;                       // размер страницы в байтах
-    u32 ecc_mode;                       // режим коррекции ошибок
-    u32 sparesize;                      // дополнительная область для корректирующих кодов и метаданных
-    u32 blocksize;                      // страниц на блок
-    bool oob_ecc_enabled;               // разрешение сохранения/проверки кодов ecc for OOB
-	u32 oob_size;                       // размер OOB
-	u8 manufacturer[12];
-    u32 timings[30];
+struct page_log { 
+    uint32_t address; 
+    uint8_t data[2048+64]; 
 };
 
-struct rcm_nand_host
-{
-    struct device* dev;
-    void* iobase;
-    struct mtd_info mtd_info;           // структура для регистрации
-    struct nand_info nand_info;         // параметры микросхемы памяти
+struct page_log g_write_page_log[100]; 
+int g_write_page_pos = 0; 
+
+struct page_log g_read_page_log[100]; 
+int g_read_page_pos = 0; 
+
+#define MNAND_STATUS_ECC_ERROR 0x100 
+#define MNAND_ECC_BLOCKSIZE 256 
+#define MNAND_ECC_BYTESPERBLOCK 3 
+
+struct nand_ecclayout {
+    __u32 eccbytes;
+    __u32 eccpos[32];
+    struct nand_oobfree oobfree[1];                     // 8?
+    __u32 oobavail;
 };
 
-static u32 lsif_reg_readl( void *base, u32 offset )
+static struct nand_ecclayout g_ecclayout = {            // struct mtd_info' has no member named 'ecclayout'
+    .eccbytes = 24,                                     // используем глобальную переменную
+    .eccpos = { 
+        1, 2, 3, 4, 5, 6, 7, 8, 
+        9, 10, 11, 12, 13, 14, 15, 16, 
+        17, 18, 19, 20, 21, 22, 23, 24 
+    }, 
+    .oobfree = { 
+        { 
+        .offset = 25, 
+        .length = 39 
+        } 
+    }, 
+    .oobavail = 39 
+};
+
+static DEFINE_SEMAPHORE(g_mutex); 
+static DECLARE_COMPLETION(g_completion); 
+
+void rcm_nand_set(uint32_t addr, uint32_t val) 
 {
-    struct rcm_nand_host* rcm_nand_host = (struct rcm_nand_host*)base;
-    return readl( rcm_nand_host->iobase + offset );
+    struct write_info wi = { addr, val }; 
+
+    if(g_write_pos == 1024)
+        g_write_pos = 0; 
+
+    g_write_buffer[g_write_pos++] = wi; 
+
+    //TRACE(KERN_DEBUG, "set(0x%08X, 0x%08X)\n", addr, val); 
+    iowrite32(val, g_chip.regs.io + addr); 
 }
 
-static void lsif_reg_writel( void *base, u32 offset, u32 val )
-{
-    struct rcm_nand_host* rcm_nand_host = (struct rcm_nand_host*)base;
-    writel( val, rcm_nand_host->iobase + offset );
+uint32_t rcm_nand_get(uint32_t addr) 
+{ 
+    uint32_t r = ioread32(g_chip.regs.io + addr); 
+    //TRACE(KERN_DEBUG, "0x%08X = get(0x%08X)\n", r, addr); 
+    return r; 
 }
 
-static bool rcm_nand_wait_int( void* base, u32 mask )
+static inline char* rcm_nand_get_read_ecc(size_t i) 
+{ 
+    return g_chip.dma_area + g_chip.mtd.writesize + g_ecclayout.eccpos[MNAND_ECC_BYTESPERBLOCK * i]; 
+} 
+
+static inline char* rcm_nand_get_calculated_ecc(size_t i) 
+{ 
+    static int data; 
+    char* cdata = (char*)&data; 
+    char c; 
+    data = rcm_nand_get(0xD8+i*sizeof(uint32_t)); 
+    c = cdata[0]; 
+    cdata[0] = cdata[2]; 
+    cdata[2] = c; 
+    return cdata; 
+}
+
+void mnand_cs(int cs)  
 {
-    u32 timeout = NAND_TIMEOUT;
-    while( --timeout )
-    {
-        if( lsif_reg_readl( base, NAND_REG_irq_status )  & mask ) return true;
+    uint32_t tmp; 
+    BUG_ON(cs>1); 
+    tmp = rcm_nand_get(0x4); 
+    tmp &= ~(1 << 26); 
+    tmp |= cs << 26; 
+    rcm_nand_set(0x4, tmp); 
+}
+
+off_t mnand_chip_offset(off_t size)
+{
+    int cs = 0; 
+    if (size >= g_chip.chip_size[0]) {
+        cs++;
+        size-=g_chip.chip_size[0];
     }
-    return false;
+    mnand_cs(cs); 
+    return size; 
 }
 
-static inline bool rcm_nand_is_ready( void* base )
-{
-    return lsif_reg_readl( base,
-                           NAND_REG_status ) & ( STATUS_CONT_READY | STATUS_NAND_READY ) ? true : false;
+void mnand_reset_grabber(void) 
+{ 
+/*  rcm_nand_set(0x1008,0x8); 
+    rcm_nand_set(0x100C, 1); 
+    rcm_nand_set(0x100C, 0); 
+
+    rcm_nand_set(0x2008, 0xffffffff); 
+    rcm_nand_set(0x200C, 1); 
+    rcm_nand_set(0x200C, 0); 
+
+    rcm_nand_set(0x3008, 0xffffffff); 
+    rcm_nand_set(0x300C, 1); 
+    rcm_nand_set(0x300C, 0); 
+
+    rcm_nand_set(0x400C, 1); 
+    rcm_nand_set(0x400C, 0); 
+
+    rcm_nand_set(0x500C, 1); 
+    rcm_nand_set(0x500C, 0); 
+
+    rcm_nand_set(0x800C, 1); 
+    rcm_nand_set(0x800C, 0); 
+    rcm_nand_set(0x8008, 0xffffffff);*/ 
 }
 
-static bool rcm_nand_wait_ready( void* base )
-{
-    u32 timeout = NAND_TIMEOUT;
-    while( --timeout )
-    {
-        if( rcm_nand_is_ready( base ) ) return true;
+static irqreturn_t interrupt_handler(int irq, void* data) 
+{ 
+    if( init_flag==0 ) {
+        NAND_DBG_PRINT_ERR( "interrupt_handler: init_flag=0" ) 
+        return IRQ_NONE;
     }
-    return false;
-}
 
-inline void rcm_nand_update_control( void* base,
-                                     u32 page_size,
-                                     u32 oob_size,
-                                     u32 op_begin,
-                                     u32 num_adr_bytes, 
-                                     u32 ecc_mode, 
-                                     u32 hw_w_protect,
-                                     u32 oob_ecc,
-                                     u32 command )
+    g_chip.status1 = rcm_nand_get( NAND_REG_irq_status );
+
+    if( !( g_chip.status1 & IRQ_RCM_NAND_MASK ) )
+        return IRQ_NONE;
+
+    switch( g_chip.state ) {
+        case MNAND_READ:
+            if( g_chip.status1 & IRQ_READ_FINISH ) {
+                NAND_DBG_PRINT_INF( "interrupt_handler: IRQ_READ_FINISH" )
+                g_chip.state = MNAND_IDLE;
+            }
+            break;
+        case MNAND_READID: 
+            if( g_chip.status1 & IRQ_READID ) {
+                NAND_DBG_PRINT_INF( "interrupt_handler: IRQ_READID" )
+                g_chip.state = MNAND_IDLE; 
+            }
+            break; 
+        case MNAND_WRITE: 
+            if( g_chip.status1 & IRQ_PROGRAM_FINISH ) {
+                NAND_DBG_PRINT_INF( "interrupt_handler: IRQ_PROGRAM_FINISH" )
+                g_chip.state = MNAND_IDLE; 
+            } 
+            break; 
+        case MNAND_ERASE: 
+            if( g_chip.status1 & IRQ_ERASE ) {
+                NAND_DBG_PRINT_INF( "interrupt_handler: IRQ_ERASE" )
+                g_chip.state = MNAND_IDLE; 
+            }
+            break; 
+        case MNAND_RESET:
+            if( g_chip.status1 & IRQ_RESET ) {
+                NAND_DBG_PRINT_INF( "interrupt_handler: IRQ_RESET" )
+                g_chip.state = MNAND_IDLE; 
+            }
+            break;
+        default:
+            NAND_DBG_PRINT_ERR( "interrupt_handler: interrupt, but idle state " )
+            return IRQ_NONE; 
+    } 
+
+    if( g_chip.state == MNAND_IDLE ) {
+        complete_all(&g_completion);
+    }
+    else {  // пока так, сюда попадем при ошибках шины и некорректируемых
+        NAND_DBG_PRINT_ERR( " interrupt_handler: error state %u", g_chip.state )
+        NAND_DBG_PRINT_ERR( "   IRQ_READ_FINISH=%u", (bool)( g_chip.status1 & IRQ_READ_FINISH ) )
+        NAND_DBG_PRINT_ERR( "        IRQ_READID=%u", (bool)( g_chip.status1 & IRQ_READID ) )
+        NAND_DBG_PRINT_ERR( "IRQ_PROGRAM_FINISH=%u", (bool)( g_chip.status1 & IRQ_PROGRAM_FINISH ) )
+        NAND_DBG_PRINT_ERR( "         IRQ_ERASE=%u", (bool)( g_chip.status1 & IRQ_ERASE ) )
+        NAND_DBG_PRINT_ERR( "         IRQ_RESET=%u", (bool)( g_chip.status1 & IRQ_RESET ) )
+        NAND_DBG_PRINT_ERR( " IRQ_UNCORR_ERROR0=%u", (bool)( g_chip.status1 & IRQ_UNCORR_ERROR0 ) )
+        NAND_DBG_PRINT_ERR( "    IRQ_AXIW_ERROR=%u", (bool)( g_chip.status1 & IRQ_AXIW_ERROR ) )
+        NAND_DBG_PRINT_ERR( " IRQ_LAST_ADR_AXIW=%u", (bool)( g_chip.status1 & IRQ_LAST_ADR_AXIW ) )
+        NAND_DBG_PRINT_ERR( "IRQ_LAST_SEGM_AXIW=%u", (bool)( g_chip.status1 & IRQ_LAST_SEGM_AXIW ) )
+        NAND_DBG_PRINT_ERR( "    IRQ_AXIR_ERROR=%u", (bool)( g_chip.status1 & IRQ_AXIR_ERROR ) )
+        NAND_DBG_PRINT_ERR( " IRQ_LAST_ADR_AXIR=%u", (bool)( g_chip.status1 & IRQ_LAST_ADR_AXIR ) )
+        NAND_DBG_PRINT_ERR( "IRQ_LAST_SEGM_AXIR=%u", (bool)( g_chip.status1 & IRQ_LAST_SEGM_AXIR ) )
+        NAND_DBG_PRINT_ERR( " IRQ_UNCORR_ERROR1=%u", (bool)( g_chip.status1 & IRQ_UNCORR_ERROR1 ) )
+        NAND_DBG_PRINT_ERR( "  IRQ_STATUS_EMPTY=%u", (bool)( g_chip.status1 & IRQ_STATUS_EMPTY ) )
+    }
+    return IRQ_HANDLED; 
+} 
+
+void rcm_nand_update_control( uint32_t page_size,
+                              uint32_t oob_size,  // команды в отношении страницы – размер OOB,остальные команды–количество читаемых байтов данных
+                              uint32_t op_begin,
+                              uint32_t num_adr_bytes, 
+                              uint32_t ecc_mode, 
+                              uint32_t hw_w_protect,
+                              uint32_t oob_ecc,
+                              uint32_t command )
 {
-    lsif_reg_writel( base,
-                     NAND_REG_control,
-                    ( ( op_begin << OP_BEGIN_SHIFT ) |
+    uint32_t wr_reg = ( op_begin << OP_BEGIN_SHIFT ) |
                       ( page_size << PAGE_SIZE_SHIFT ) |
                       ( num_adr_bytes << NUM_ADR_BYTES_SHIFT ) |
                       ( ecc_mode << ECC_MODE_SHIFT ) |
@@ -277,420 +427,1490 @@ inline void rcm_nand_update_control( void* base,
                       ( hw_w_protect << HWP_SHIFT ) |
                       ( oob_ecc << OOB_ECC_SHIFT ) |
                       ( oob_size << OOB_SIZE_SHIFT ) |
-                      ( command << FCMD_SHIFT ) ) );
+                      ( command << FCMD_SHIFT ), rd_reg;
+    rcm_nand_set( NAND_REG_control, wr_reg );
+    rd_reg = rcm_nand_get( NAND_REG_control );
+    NAND_DBG_PRINT_INF( "rcm_nand_update_control: control wr=%08x,rd=%08x", wr_reg, rd_reg )
 }
 
-static bool rcm_nand_flash_reset( void* base )
+static int rcm_nand_wait_ready( void )
 {
-    lsif_reg_writel( base, NAND_REG_irq_mask_nand, IRQ_RESET );
-    lsif_reg_writel( base, NAND_REG_command, CMD_CONTROL_RESET );
-    rcm_nand_update_control( base,
-                             0,                                     // размер страницы
-                             0,                                     // размер запасной области
-                             1,                                     // начать операцию сразу
-                             0,                                     // количество адресных циклов
-                             NAND_ECC_MODE_NO_ECC,                  // режим коррекции ошибок
-                             0,                                     // защита от записи
-                             0,                                     // разрешение оценки кодов коррекции
-                             0 );                                   // первая отправляемая  во флэш команда
-    if( !rcm_nand_wait_int( base, IRQ_RESET ) ) return false;
-    return rcm_nand_wait_ready( base );
-}
+    int ret = -1;
+    uint32_t status, timeout = NAND_READY_TIMEOUT;
 
-static void rcm_nand_dma_config( void* base, u32 start_addr, u32 end_addr, u32 segment_size, int write )
-{
-    lsif_reg_writel( base, NAND_REG_awlen_max, 0xF );               // рекомендуемое значение: 0xF (таблица 1.845)
-    lsif_reg_writel( base, NAND_REG_msb_lsbw, 0x0 );                // порядок следования байтов ведущего интерфейса записи AXI (1-big_endian,0-little endian)
-    if( write )
-    {                                                               // запись
-        lsif_reg_writel( base, NAND_REG_start_dma_w, (u32)start_addr );
-        lsif_reg_writel( base, NAND_REG_end_dma_w, end_addr );
-        lsif_reg_writel( base,                                      // 28..5-размер сегмента-1, 31-генерация адресов
-                         NAND_REG_cntrl_dma_w,
-                         START_ADDR_GEN | ( segment_size << SEGM_SIZE_SHIFT ) );
-	}
-    else
-    {                                                               // чтение
-        lsif_reg_writel( base, NAND_REG_start_dma_r, (u32)start_addr );
-        lsif_reg_writel( base, NAND_REG_end_dma_r, end_addr );
-        lsif_reg_writel( base,                                      // 28..5-размер сегмента-1, 30-чтение регистра current_dma_r, 31-генерация адресов
-                         NAND_REG_cntrl_dma_r,
-                         START_ADDR_GEN | ( segment_size << SEGM_SIZE_SHIFT ) );
+    while( --timeout )
+    {
+        status = rcm_nand_get( NAND_REG_status );
+        if( status & STATUS_REG_NAND_FAIL )
+            break;
+        if( status & ( STATUS_REG_CONT_READY | STATUS_REG_NAND_READY ) ) {
+           ret = 0;
+           break;
+        }
     }
+    NAND_DBG_PRINT_INF( "rcm_nand_wait_ready: return %d (status=%08x,timeout=%u)", ret, status, timeout )
+    return ret;
 }
 
-static bool rcm_nand_readid( void* base, u8 cmd_addr, u8* buffer )  // 4-х байтовый идентификатор JEDECID/ONFI
-{                                                                   // cmd_addr равен 0x00 для JEDEC, 0x20 для ONFI
-    rcm_nand_dma_config( base, (u32)buffer, (u32)buffer + 256, 64, true );
-    lsif_reg_writel( base, NAND_REG_irq_mask_nand, IRQ_READID );
-    lsif_reg_writel( base, NAND_REG_command, CMD_FLASH_READ_ID );
-    lsif_reg_writel( base, NAND_REG_col_addr, cmd_addr );           // адрес для считывания идентификационного номера
-    rcm_nand_update_control( base,
-                             0,                                     // размер страницы
-                             0,                                     // размер запасной области
-                             1,                                     // начать операцию сразу
-                             1,                                     // количество адресных циклов
-                             NAND_ECC_MODE_NO_ECC,                  // режим коррекции ошибок
-                             0,                                     // защита от записи
-                             0,                                     // разрешение оценки кодов коррекции
-                             CMD_CONTROL_READ_ID );                 // первая отправляемая во флэш команда
-    return rcm_nand_wait_int( base, IRQ_READID );
-}
-
-static bool rcm_nand_read_page( void* base, struct nand_info* dev_info, u16 column_address, u16 row_address, u8 block_address, u32* buffer )
-{
-    u8 ecc_size_per_512 = ( dev_info->ecc_mode == NAND_ECC_MODE_24BITS ) ? 21 :
-                          ( dev_info->ecc_mode == NAND_ECC_MODE_4BITS ) ? 7 : 0;            // размер ecc области на базовую страницу
-    u32 ecc_size =	ecc_size_per_512 * (dev_info->pagesize/ 512);                           // полный размер ecc области
-
-    if( !rcm_nand_wait_ready( base ) ) return false;
-    lsif_reg_writel( base, NAND_REG_irq_mask_nand, IRQ_LAST_ADR_AXIW );                     // было IRQ_AXI_WRITE(/tests/src/lib/nand),видимо,ошибка
-    rcm_nand_dma_config( base,
-                         (u32)buffer,                                                       // стартовый адрес
-                         (u32)buffer + dev_info->pagesize + dev_info->sparesize - ecc_size, // конечный адрес
-                         0,                                                                 // размер сегмента-1,почему 0?
-                         true );                                                            // запись (в DMA буфер)
-    lsif_reg_writel( base, NAND_REG_command, CMD_CONTROL_READ );                            // чтение (из flash)
-    lsif_reg_writel( base, NAND_REG_col_addr, column_address );                             // адрес столбца
-    lsif_reg_writel( base,
-                     NAND_REG_row_addr_read_d,
-                     (block_address << 16) | (row_address << 0) );                          // адреса блока и ряда
-    rcm_nand_update_control( base,
-                             dev_info->page_size_code,                                      // размер страницы
-                             dev_info->oob_size,                                            // размер запасной области
-                             1,                                                             // начать операцию сразу
-                             5,                                                             // 5 байтов (циклов) адреса в текущей команде
-                             dev_info->ecc_mode,                                            // режим ecc
-                             1,                                                             // hw write protect enabled (почему?)
-                             dev_info->oob_ecc_enabled,                                     // oob_ecc enabled
-                             CMD_FLASH_PAGE_READ );                                         // команда для flash
-    return rcm_nand_wait_int( base, IRQ_LAST_ADR_AXIW );
-}
-
-static bool rcm_nand_program_page( void* base, struct nand_info* dev_info, u16 column_address, u16 row_address, u8 block_address, u32* buffer)
-{
-    u8 ecc_size_per_512 = ( dev_info->ecc_mode == NAND_ECC_MODE_24BITS ) ? 21 :
-                          ( dev_info->ecc_mode == NAND_ECC_MODE_4BITS ) ? 7 : 0;            // размер ecc области на базовую страницу
-    u32 ecc_size =	ecc_size_per_512 * (dev_info->pagesize/ 512);                           // полный размер ecc области
-
-    if( !rcm_nand_wait_ready( base ) ) return false;
-    lsif_reg_writel( base, NAND_REG_irq_mask_nand, IRQ_PROGRAM_FINISH );
-    lsif_reg_writel( base, NAND_REG_cdb_buffer_type, 1 );                                   // при обработке последнего адреса производится остановка ведущего интерфейса чтения AXI
-    rcm_nand_dma_config( base,
-                         (u32)buffer,                                                       // стартовый адрес
-                         (u32)buffer + dev_info->pagesize + dev_info->sparesize - ecc_size, // конечный адрес
-                         0,                                                                 // размер сегмента-1,почему 0?
-                         false );                                                           // чтение (из DMA буфера)
-    lsif_reg_writel( base, NAND_REG_command,CMD_PROGRAM_TO_NAND );                          // программирование (flash)
-    lsif_reg_writel( base, NAND_REG_col_addr, column_address );                             // адрес столбца
-   	lsif_reg_writel( base,
-                     NAND_REG_row_addr_read_d,
-                     (block_address << 16) | (row_address << 0) );                          // адреса блока и ряда
-    rcm_nand_update_control( base,
-                             dev_info->page_size_code,                                      // размер страницы
-                             dev_info->oob_size,                                            // размер запасной области
-                             1,                                                             // начать операцию сразу
-                             5,                                                             // 5 байтов (циклов) адреса в текущей команде
-                             dev_info->ecc_mode,                                            // режим ecc
-                             0,                                                             // no write protect at write
-                             dev_info->oob_ecc_enabled,                                     // oob_ecc enabled
-                             CMD_FLASH_PROGRAM_PAGE );                                      // команда для flash
-    return rcm_nand_wait_int( base, IRQ_PROGRAM_FINISH );
-}
-
-static bool rcm_nand_erase_block( void* base, struct nand_info* dev_info, u32 block_address )
-{
-    if( !rcm_nand_wait_ready( base ) ) return false;
-    lsif_reg_writel( base, NAND_REG_irq_mask_nand, IRQ_ERASE );
-    lsif_reg_writel( base, NAND_REG_command, CMD_ERASE_BLOCK );                             // задаем код команды контроллеру
-    lsif_reg_writel( base, NAND_REG_row_addr_read_d, block_address );                       // адрес строки + адрес блока
-    rcm_nand_update_control( base,
-                             0x0,                                                           // размер страницы
-                             dev_info->oob_size,                                            // размер запасной области
-                             1,                                                             // начать операцию сразу
-                             5,                                                             // 5 байтов (циклов) адреса в текущей команде
-                             NAND_ECC_MODE_NO_ECC,                                          // режим ecc
-                             0,                                                             // disable wprotect
-                             0,                                                             // disable ecc for OOB
-                             CMD_FLASH_BLOCK_ERASE );                                       // было 0x0 в файле nand_impl,ошибка?
-    return rcm_nand_wait_int( base, IRQ_ERASE );
-}
-
-static void rcm_nand_set_timing( void* base, u32 offset, u32* timings, unsigned cnt, u32 freq )
+static void rcm_nand_set_timing( uint32_t offset, const uint32_t* timings, unsigned cnt, uint32_t freq )
 {
     unsigned i;
-    u32 timing_reg = 0, n = 0;
+    uint32_t timing_reg_wr = 0, timing_reg_rd, n = 0;
     for( i=0; i<cnt; i++ )
     {
-        timing_reg |= ( NAND_TIMING_TO_CLOCKS( timings[i], freq ) << n );
+        timing_reg_wr |= ( RCM_NAND_TIMING_TO_CLOCKS( timings[i], freq ) << n );
         n += 8;
     }
-    lsif_reg_writel( base, offset, timing_reg );
-    NAND_DBG_PRINT_INF( "rcm_nand_set_timing: reg=%02x,data=%08x", offset, timing_reg )
+    rcm_nand_set( offset, timing_reg_wr );
+    timing_reg_rd = rcm_nand_get( offset );
+    NAND_DBG_PRINT_INF( "rcm_nand_set_timing: reg=%02x,wr=%08x,rd=%08x(%u,%u,%u,%u)",
+                        offset, timing_reg_wr, timing_reg_rd,
+                        (timing_reg_rd>>24)&0xff, (timing_reg_rd>>16)&0xff, (timing_reg_rd>>8)&0xff, (timing_reg_rd>>0)&0xff )
 }
 
-static void rcm_nand_set_timings( void* base, u32* timings, u32 freq )
+static void rcm_nand_set_timings( uint32_t* timings, uint32_t freq )
 {
-    rcm_nand_set_timing( base, NAND_REG_timing_0, timings+0, 4, freq );         // tADL_min, tALH_min, tALS_min, tCH_min
-    rcm_nand_set_timing( base, NAND_REG_timing_1, timings+4, 4, freq );         // tCLH_min, tCLS_min, tCS_min, tDH_min
-    rcm_nand_set_timing( base, NAND_REG_timing_2, timings+8, 4, freq );         // tDS_min, tWC_min, tWH_min, tWP_min
-    rcm_nand_set_timing( base, NAND_REG_timing_3, timings+12, 3, freq );        // tWW_min, tAR_min, tCLR_min
-    rcm_nand_set_timing( base, NAND_REG_timing_4, timings+15, 4, freq );        // tCOH_min, tIR_min, tRC_min, tREH_min
-    rcm_nand_set_timing( base, NAND_REG_timing_5, timings+19, 4, freq );        // tRHOH_min, tRHW_min, tRLOH_min, tRP_min
+    NAND_DBG_PRINT_INF( "rcm_nand_set_timings: freq=%u", freq )
+    rcm_nand_set_timing( NAND_REG_timing_0, timings+0, 4, freq );         // tADL_min, tALH_min, tALS_min, tCH_min
+    rcm_nand_set_timing( NAND_REG_timing_1, timings+4, 4, freq );         // tCLH_min, tCLS_min, tCS_min, tDH_min
+    rcm_nand_set_timing( NAND_REG_timing_2, timings+8, 4, freq );         // tDS_min, tWC_min, tWH_min, tWP_min
+    rcm_nand_set_timing( NAND_REG_timing_3, timings+12, 3, freq );        // tWW_min, tAR_min, tCLR_min
+    rcm_nand_set_timing( NAND_REG_timing_4, timings+15, 4, freq );        // tCOH_min, tIR_min, tRC_min, tREH_min
+    rcm_nand_set_timing( NAND_REG_timing_5, timings+19, 4, freq );        // tRHOH_min, tRHW_min, tRLOH_min, tRP_min
     timings[25] += 2;
-    rcm_nand_set_timing( base, NAND_REG_timing_6, timings+23, 4, freq );        // tRR_min, tWHR_min, tCEA_max+2, tCHZ_max
+    rcm_nand_set_timing( NAND_REG_timing_6, timings+23, 4, freq );        // tRR_min, tWHR_min, tCEA_max+2, tCHZ_max
     timings[27] += 2;
     timings[29] += 2;
-    rcm_nand_set_timing( base, NAND_REG_timing_7, timings+27, 3, freq );        // tREA_max+2, tRHZ_max, tWB_max+2
+    rcm_nand_set_timing( NAND_REG_timing_7, timings+27, 3, freq );        // tREA_max+2, tRHZ_max, tWB_max+2
 }
 
-static u32 get_pagesize_code( u32 size )
+int rcm_nand_hw_init( uint32_t* timings, uint32_t freq ) 
 {
-    switch( size )
-    {
-    case 512: return 0;
-    case 1024: return 1;
-    case 2048: return 2;
-    case 4096: return 3;
-    case 8192: return 4;
-    case 16384: return 5;
-    case 32768: return 6;
-    case 65536: return 7;
-    default:
-        NAND_DBG_PRINT_ERR( "get_pagesize_code: code size error (%u)", size )
-        return 0;
-    }
-}
+    uint32_t ctrl_id = rcm_nand_get( NAND_REG_id ),                 // 0x444E414E
+             ctrl_ver = rcm_nand_get( NAND_REG_version );           // 0x000008B4
 
-static bool rcm_nand_soft_reset( void* base )
-{
-    lsif_reg_writel( base, NAND_REG_cntrl_sw_rst, 0x0);                  // запись 0 в данный регистр инициирует программный сброс контроллера
-    lsif_reg_writel( base, NAND_REG_sw_rst, 0x0 );                       // запись 0,затем 1 в данный регистр инициирует
-    lsif_reg_writel( base, NAND_REG_sw_rst, 0x1 );                       // программный сброс ведущего интерфейса записи AXI 
-    lsif_reg_writel( base, NAND_REG_sw_rstn_r, 0x1 );                    // программный сброс ведущего интерфейса чтения AXI, автоматически обнуляется
-    return rcm_nand_wait_ready( base );
-}
+    NAND_DBG_PRINT_INF( "rcm_nand_init: id %08x,version %08x", ctrl_id, ctrl_ver )
 
-static bool rcm_nand_get_dev_info( void* base, struct nand_info * dev_info )
-{
-    u8 nand_onfi[256];                                                  // ONFI buffer
+    rcm_nand_set( NAND_REG_cntrl_sw_rst, 0x0);                      // запись 0 в данный регистр инициирует программный сброс контроллера
+    rcm_nand_set( NAND_REG_sw_rst, 0x0 );                           // запись 0,затем 1 в данный регистр инициирует
+    rcm_nand_set( NAND_REG_sw_rst, 0x1 );                           // программный сброс ведущего интерфейса записи AXI 
+    rcm_nand_set( NAND_REG_sw_rstn_r, 0x1 );                        // программный сброс ведущего интерфейса чтения AXI, автоматически обнуляется
 
-    if( rcm_nand_readid( base, READ_ID_ONFI_ADDR, nand_onfi ) == false )
-    {
-        NAND_DBG_PRINT_ERR( "rcm_nand_get_dev_info: cannot read nand onfi id\n" )
-        return false;
-    }
+    if( rcm_nand_wait_ready() ) return -EIO;
 
-    if( nand_onfi[0] == 'O' && nand_onfi[1] == 'N' && nand_onfi[2] == 'F' && nand_onfi[3] == 'I' )
-    {
-        dev_info->pagesize = ( nand_onfi[83] << 24 | nand_onfi[82] << 16 | nand_onfi[81] << 8 | nand_onfi[80] );    // размер страницы
-        dev_info->page_size_code = get_pagesize_code( dev_info->pagesize );                                         // код размера страницы
-        dev_info->blocksize = ( nand_onfi[95] << 24 | nand_onfi[94] << 16 | nand_onfi[93] << 8 | nand_onfi[92] );   // размер блока
-        dev_info->sparesize = ( nand_onfi[85] << 8 | nand_onfi[84] );                                               // размер дополнительной области
-        dev_info->ecc_mode = ( nand_onfi[112] == 24 ) ? NAND_ECC_MODE_24BITS :                                      // режим коррекции ошибок
-                             ( nand_onfi[112] == 4 ) ? NAND_ECC_MODE_4BITS :
-                             ( nand_onfi[112] == 0 ) ? NAND_ECC_MODE_NO_ECC : NAND_ECC_MODE_UNDEFINED;
-        dev_info->manufacturer[0] = nand_onfi[32];
-        dev_info->manufacturer[1] = nand_onfi[33];
-        dev_info->manufacturer[2] = nand_onfi[34];
-        dev_info->manufacturer[3] = nand_onfi[35];
-        dev_info->manufacturer[4] = nand_onfi[36];
-        dev_info->manufacturer[5] = nand_onfi[37];
-        dev_info->manufacturer[6] = nand_onfi[38];
-        dev_info->manufacturer[7] = nand_onfi[39];
-        dev_info->manufacturer[8] = nand_onfi[40];
-        dev_info->manufacturer[9] = nand_onfi[41];
-        dev_info->manufacturer[10] = nand_onfi[42];
-        dev_info->manufacturer[11] = nand_onfi[43];
+    rcm_nand_set_timings( timings, freq/1000000 );
 
-        NAND_DBG_PRINT_INF( "Flash: pagesize=%u,page_size_code=%u,blocksize=%u,sparesize=%u,ecc_mode=%u",
-                            dev_info->pagesize,
-                            dev_info->page_size_code,
-                            dev_info->blocksize,
-                            dev_info->sparesize,
-                            dev_info->ecc_mode )
-        NAND_DBG_PRINT_INF( "Flash: manufacturer=%c%c%c%c%c%c%c%c%c%c%c%c",
-                            dev_info->manufacturer[0], dev_info->manufacturer[1], dev_info->manufacturer[2], dev_info->manufacturer[3],
-                            dev_info->manufacturer[4], dev_info->manufacturer[5], dev_info->manufacturer[6], dev_info->manufacturer[7],
-                            dev_info->manufacturer[8], dev_info->manufacturer[9], dev_info->manufacturer[10], dev_info->manufacturer[11] );
-    }
-    else
-    {
-        NAND_DBG_PRINT_ERR( "rcm_nand_get_dev_info: non onfi id")
-        return false;
-    }
-    dev_info->oob_ecc_enabled = true;                               // non-onfi параметры...вопрос
-    dev_info->oob_size = 0;                                         // Filesystem and other...
-    return true;
-}
-
-int rcm_nand_init( void* base, struct nand_info * dev_info, u32* timings, u32 freq )
-{
-    if( !rcm_nand_soft_reset( base ) )              // сброс контроллера
-    {
-        NAND_DBG_PRINT_ERR( "rcm_nand_soft_reset: ERROR" )
-        return EIO;
-    }
-    rcm_nand_set_timings( base, timings, freq );
-    if( !rcm_nand_flash_reset( base ) )             // сброс микросхемы
-    {
-        NAND_DBG_PRINT_ERR( "rcm_nand_flash_reset: ERROR");
-        return EIO;
-    }
-    if( !rcm_nand_wait_ready( base ) )              // ожидание готовности
-    {
-		NAND_DBG_PRINT_ERR( "rcm_nand_wait_ready: NAND not ready" );
-        return EIO;
-    }
-    if( !rcm_nand_get_dev_info( base, dev_info ) )  // чтение параметров микросхемы
-    {
-        NAND_DBG_PRINT_ERR( "nand_get_dev_info: ERROR" );
-        return EIO;
-    }
     return 0;
 }
 
-int rcm_nand_read( struct mtd_info *mtd, loff_t from, size_t len, size_t *retlen, u_char *buf )
-{   // предполагается, что loff_t это смещение относительно начала памяти микросхемы
+static void mnand_prepare_dma_read(size_t bytes) 
+{
+    TRACE(KERN_DEBUG, "bytes %d\n", bytes);
+
+    rcm_nand_set(0x88, g_chip.dma_handle);
+    rcm_nand_set(0x8C, g_chip.dma_handle + bytes - 1);
+    rcm_nand_set(0x90, 0x80004000);
+
+    while(rcm_nand_get(0x90) & 0x80000000);
+}
+
+static void mnand_prepare_dma_write(size_t bytes) 
+{
+    TRACE(KERN_DEBUG, "bytes %d\n", bytes);
+
+    rcm_nand_set(0x40, g_chip.dma_handle);
+    rcm_nand_set(0x44, g_chip.dma_handle + bytes - 1);
+    rcm_nand_set(0x48, 0x80001000);
+    rcm_nand_set(0x4C, 0x2000);
+
+    while(rcm_nand_get(0x48) & 0x80000000); 
+
+    rcm_nand_set(0x18, 0x40000001); 
+}
+
+int mnand_ready(void) 
+{ 
+    return (rcm_nand_get(0) & 0x200) != 0; 
+}
 /*
-    struct rcm_nand_host* rcm_nand_host = (struct rcm_nand_host*)mtd->priv;
-    struct nand_info* nand = &rcm_nand_host->nand_info;
+static bool rcm_nand_wait_int( u32 mask )
+{
+    bool ret = false;
+    u32 irq_status;
+    u32 timeout = NAND_READY_TIMEOUT;
+    while( --timeout )
+    {
+        irq_status = rcm_nand_get(  NAND_REG_irq_status );
+        if( irq_status & mask )
+        {
+            ret = true;
+            break;
+        }
+    }
 
-    unsigned start_page = 1;
-    unsigned num_page = 1;
-    unsigned cur_page = 0;
-    unsigned block;
+    NAND_DBG_PRINT_INF( "rcm_nand_wait_int %s (irq_status=%08x,timeout=%u)", ret ? "Ok" : "Error", irq_status, timeout )
+    NAND_DBG_PRINT_INF( "   IRQ_READ_FINISH=%u", (bool)( irq_status & IRQ_READ_FINISH ) )
+    NAND_DBG_PRINT_INF( "        IRQ_READID=%u", (bool)( irq_status & IRQ_READID ) )
+    NAND_DBG_PRINT_INF( "IRQ_PROGRAM_FINISH=%u", (bool)( irq_status & IRQ_PROGRAM_FINISH ) )
+    NAND_DBG_PRINT_INF( "         IRQ_ERASE=%u", (bool)( irq_status & IRQ_ERASE ) )
+    NAND_DBG_PRINT_INF( "         IRQ_RESET=%u", (bool)( irq_status & IRQ_RESET ) )
+    NAND_DBG_PRINT_INF( " IRQ_UNCORR_ERROR0=%u", (bool)( irq_status & IRQ_UNCORR_ERROR0 ) )
+    NAND_DBG_PRINT_INF( "    IRQ_AXIW_ERROR=%u", (bool)( irq_status & IRQ_AXIW_ERROR ) )
+    NAND_DBG_PRINT_INF( " IRQ_LAST_ADR_AXIW=%u", (bool)( irq_status & IRQ_LAST_ADR_AXIW ) )
+    NAND_DBG_PRINT_INF( "IRQ_LAST_SEGM_AXIW=%u", (bool)( irq_status & IRQ_LAST_SEGM_AXIW ) )
+    NAND_DBG_PRINT_INF( "    IRQ_AXIR_ERROR=%u", (bool)( irq_status & IRQ_AXIR_ERROR ) )
+    NAND_DBG_PRINT_INF( " IRQ_LAST_ADR_AXIR=%u", (bool)( irq_status & IRQ_LAST_ADR_AXIR ) )
+    NAND_DBG_PRINT_INF( "IRQ_LAST_SEGM_AXIR=%u", (bool)( irq_status & IRQ_LAST_SEGM_AXIR ) )
+    NAND_DBG_PRINT_INF( " IRQ_UNCORR_ERROR1=%u", (bool)( irq_status & IRQ_UNCORR_ERROR1 ) )
+    NAND_DBG_PRINT_INF( "  IRQ_STATUS_EMPTY=%u", (bool)( irq_status & IRQ_STATUS_EMPTY ) )
+    return ret;
+}
+*/
+static int rcm_nand_core_reset(void) 
+{
+    init_completion(&g_completion); 
+    init_flag=1; 
+    g_chip.state = MNAND_RESET;
 
-    while( nand->pagesize * start_page <= from ) start_page++;
-    while( nand->pagesize * num_page < len ) num_page++;
+    rcm_nand_set( NAND_REG_irq_mask_nand, IRQ_RESET );
+    rcm_nand_set( NAND_REG_command, CMD_CONTROL_RESET );
+    rcm_nand_update_control( 0,                     // код размера страницы
+                             256,                   // размер запасной области/количество считываемых байтов
+                             1,                     // начать операцию сразу
+                             0,                     // количество адресных циклов
+                             NAND_ECC_MODE_NO_ECC,  // режим коррекции ошибок
+                             0,                     // защита от записи
+                             0,                     // разрешение оценки кодов коррекции
+                             0 );                   // первая отправляемая во флэш команда
+    wait_for_completion_io(&g_completion);
 
+    //BUG_ON(!mnand_ready()); 
+    g_chip.state = MNAND_IDLE;
+    return 0; 
+} 
+
+static int mnand_core_erase(loff_t off) 
+{
+    BUG_ON(g_chip.state != MNAND_IDLE); 
+    BUG_ON(!mnand_ready()); 
+
+    off = mnand_chip_offset(off);
+    
+    mnand_reset_grabber(); 
+
+    init_completion(&g_completion);
+    g_chip.state = MNAND_ERASE;
  
-    for ( cur_page = start_page; cur_page < start_page + num_page; cur_page++ )
-    {
-        if( !rcm_nand_read_page( rcm_nand_host,
-                                 nand,
-                                 0,
-                                 cur_page,
-                                 0,
-                                 buf ) ) return -1;
-        *retlen += nand->pagesize;
-    }
-    return 0;*/
+    rcm_nand_set(0x8, 0x2b);
+    rcm_nand_set(0xc, (off >> g_chip.mtd.erasesize_shift) << (ffs(g_chip.mtd.erasesize))); 
+    wait_for_completion_io(&g_completion); 
+    BUG_ON(!mnand_ready()); 
+    g_chip.state = MNAND_IDLE; 
+    return (rcm_nand_get(0) & NAND_STATUS_FAIL) ? -EIO : 0;
+} 
+
+static void mnand_core_read_id(size_t bytes) 
+{
+    mnand_reset_grabber(); 
+
+    BUG_ON(g_chip.state != MNAND_IDLE); 
+    BUG_ON(!mnand_ready()); 
+
+    mnand_prepare_dma_read(bytes); 
+
+    init_completion(&g_completion); 
+
+    g_chip.state = MNAND_READID; 
+
+    rcm_nand_set(0x08, 0x25); 
+    rcm_nand_set(0x0C, bytes << 8); 
+    wait_for_completion_io(&g_completion); 
+
+    BUG_ON(!mnand_ready()); 
+    g_chip.state = MNAND_IDLE; 
 }
 
-int rcm_nand_write( struct mtd_info *mtd, loff_t to, size_t len, size_t *retlen, const u_char *buf )
-{
-    struct rcm_nand_host* rcm_nand_host = (struct rcm_nand_host*)mtd->priv;
-    if( rcm_nand_host ) return 0;
-    return 0;
+/* 
+* invparity is a 256 byte table that contains the odd parity 
+* for each byte. So if the number of bits in a byte is even, 
+* the array element is 1, and when the number of bits is odd 
+* the array eleemnt is 0. 
+ */ 
+static const char invparity[256] = { 
+    1, 0, 0, 1, 0, 1, 1, 0, 0, 1, 1, 0, 1, 0, 0, 1, 
+    0, 1, 1, 0, 1, 0, 0, 1, 1, 0, 0, 1, 0, 1, 1, 0, 
+    0, 1, 1, 0, 1, 0, 0, 1, 1, 0, 0, 1, 0, 1, 1, 0, 
+    1, 0, 0, 1, 0, 1, 1, 0, 0, 1, 1, 0, 1, 0, 0, 1, 
+    0, 1, 1, 0, 1, 0, 0, 1, 1, 0, 0, 1, 0, 1, 1, 0, 
+    1, 0, 0, 1, 0, 1, 1, 0, 0, 1, 1, 0, 1, 0, 0, 1, 
+    1, 0, 0, 1, 0, 1, 1, 0, 0, 1, 1, 0, 1, 0, 0, 1, 
+    0, 1, 1, 0, 1, 0, 0, 1, 1, 0, 0, 1, 0, 1, 1, 0, 
+    0, 1, 1, 0, 1, 0, 0, 1, 1, 0, 0, 1, 0, 1, 1, 0, 
+    1, 0, 0, 1, 0, 1, 1, 0, 0, 1, 1, 0, 1, 0, 0, 1, 
+    1, 0, 0, 1, 0, 1, 1, 0, 0, 1, 1, 0, 1, 0, 0, 1, 
+    0, 1, 1, 0, 1, 0, 0, 1, 1, 0, 0, 1, 0, 1, 1, 0, 
+    1, 0, 0, 1, 0, 1, 1, 0, 0, 1, 1, 0, 1, 0, 0, 1, 
+    0, 1, 1, 0, 1, 0, 0, 1, 1, 0, 0, 1, 0, 1, 1, 0, 
+    0, 1, 1, 0, 1, 0, 0, 1, 1, 0, 0, 1, 0, 1, 1, 0, 
+    1, 0, 0, 1, 0, 1, 1, 0, 0, 1, 1, 0, 1, 0, 0, 1 
+};
+
+static const char addressbits[256] = {
+    0x00, 0x00, 0x01, 0x01, 0x00, 0x00, 0x01, 0x01, 
+    0x02, 0x02, 0x03, 0x03, 0x02, 0x02, 0x03, 0x03, 
+    0x00, 0x00, 0x01, 0x01, 0x00, 0x00, 0x01, 0x01, 
+    0x02, 0x02, 0x03, 0x03, 0x02, 0x02, 0x03, 0x03, 
+    0x04, 0x04, 0x05, 0x05, 0x04, 0x04, 0x05, 0x05, 
+    0x06, 0x06, 0x07, 0x07, 0x06, 0x06, 0x07, 0x07, 
+    0x04, 0x04, 0x05, 0x05, 0x04, 0x04, 0x05, 0x05, 
+    0x06, 0x06, 0x07, 0x07, 0x06, 0x06, 0x07, 0x07, 
+    0x00, 0x00, 0x01, 0x01, 0x00, 0x00, 0x01, 0x01, 
+    0x02, 0x02, 0x03, 0x03, 0x02, 0x02, 0x03, 0x03, 
+    0x00, 0x00, 0x01, 0x01, 0x00, 0x00, 0x01, 0x01, 
+    0x02, 0x02, 0x03, 0x03, 0x02, 0x02, 0x03, 0x03, 
+    0x04, 0x04, 0x05, 0x05, 0x04, 0x04, 0x05, 0x05, 
+    0x06, 0x06, 0x07, 0x07, 0x06, 0x06, 0x07, 0x07, 
+    0x04, 0x04, 0x05, 0x05, 0x04, 0x04, 0x05, 0x05, 
+    0x06, 0x06, 0x07, 0x07, 0x06, 0x06, 0x07, 0x07, 
+    0x08, 0x08, 0x09, 0x09, 0x08, 0x08, 0x09, 0x09, 
+    0x0a, 0x0a, 0x0b, 0x0b, 0x0a, 0x0a, 0x0b, 0x0b, 
+    0x08, 0x08, 0x09, 0x09, 0x08, 0x08, 0x09, 0x09, 
+    0x0a, 0x0a, 0x0b, 0x0b, 0x0a, 0x0a, 0x0b, 0x0b, 
+    0x0c, 0x0c, 0x0d, 0x0d, 0x0c, 0x0c, 0x0d, 0x0d, 
+    0x0e, 0x0e, 0x0f, 0x0f, 0x0e, 0x0e, 0x0f, 0x0f, 
+    0x0c, 0x0c, 0x0d, 0x0d, 0x0c, 0x0c, 0x0d, 0x0d, 
+    0x0e, 0x0e, 0x0f, 0x0f, 0x0e, 0x0e, 0x0f, 0x0f, 
+    0x08, 0x08, 0x09, 0x09, 0x08, 0x08, 0x09, 0x09, 
+    0x0a, 0x0a, 0x0b, 0x0b, 0x0a, 0x0a, 0x0b, 0x0b, 
+    0x08, 0x08, 0x09, 0x09, 0x08, 0x08, 0x09, 0x09, 
+    0x0a, 0x0a, 0x0b, 0x0b, 0x0a, 0x0a, 0x0b, 0x0b, 
+    0x0c, 0x0c, 0x0d, 0x0d, 0x0c, 0x0c, 0x0d, 0x0d, 
+    0x0e, 0x0e, 0x0f, 0x0f, 0x0e, 0x0e, 0x0f, 0x0f, 
+    0x0c, 0x0c, 0x0d, 0x0d, 0x0c, 0x0c, 0x0d, 0x0d, 
+    0x0e, 0x0e, 0x0f, 0x0f, 0x0e, 0x0e, 0x0f, 0x0f 
+}; 
+
+static const char bitsperbyte[256] = { 
+    0, 1, 1, 2, 1, 2, 2, 3, 1, 2, 2, 3, 2, 3, 3, 4, 
+    1, 2, 2, 3, 2, 3, 3, 4, 2, 3, 3, 4, 3, 4, 4, 5, 
+    1, 2, 2, 3, 2, 3, 3, 4, 2, 3, 3, 4, 3, 4, 4, 5, 
+    2, 3, 3, 4, 3, 4, 4, 5, 3, 4, 4, 5, 4, 5, 5, 6, 
+    1, 2, 2, 3, 2, 3, 3, 4, 2, 3, 3, 4, 3, 4, 4, 5, 
+    2, 3, 3, 4, 3, 4, 4, 5, 3, 4, 4, 5, 4, 5, 5, 6, 
+    2, 3, 3, 4, 3, 4, 4, 5, 3, 4, 4, 5, 4, 5, 5, 6, 
+    3, 4, 4, 5, 4, 5, 5, 6, 4, 5, 5, 6, 5, 6, 6, 7, 
+    1, 2, 2, 3, 2, 3, 3, 4, 2, 3, 3, 4, 3, 4, 4, 5, 
+    2, 3, 3, 4, 3, 4, 4, 5, 3, 4, 4, 5, 4, 5, 5, 6, 
+    2, 3, 3, 4, 3, 4, 4, 5, 3, 4, 4, 5, 4, 5, 5, 6, 
+    3, 4, 4, 5, 4, 5, 5, 6, 4, 5, 5, 6, 5, 6, 6, 7, 
+    2, 3, 3, 4, 3, 4, 4, 5, 3, 4, 4, 5, 4, 5, 5, 6, 
+    3, 4, 4, 5, 4, 5, 5, 6, 4, 5, 5, 6, 5, 6, 6, 7, 
+    3, 4, 4, 5, 4, 5, 5, 6, 4, 5, 5, 6, 5, 6, 6, 7, 
+    4, 5, 5, 6, 5, 6, 6, 7, 5, 6, 6, 7, 6, 7, 7, 8, 
+}; 
+
+static int mnand_correct_data(struct mtd_info *mtd, unsigned char *buf, 
+                          unsigned char *read_ecc, unsigned char *calc_ecc) 
+{ 
+    unsigned char b0, b1, b2; 
+    unsigned char byte_addr, bit_addr; 
+    /* 256 or 512 bytes/ecc  */ 
+    const uint32_t eccsize_mult = 1; 
+ 
+/* 
+    * b0 to b2 indicate which bit is faulty (if any) 
+    * we might need the xor result  more than once, 
+    * so keep them in a local var 
+    */ 
+    #ifdef CONFIG_MTD_NAND_ECC_SMC 
+        b0 = read_ecc[0] ^ calc_ecc[0]; 
+        b1 = read_ecc[1] ^ calc_ecc[1]; 
+    #else 
+        b0 = read_ecc[1] ^ calc_ecc[1]; 
+        b1 = read_ecc[0] ^ calc_ecc[0]; 
+    #endif 
+        b2 = read_ecc[2] ^ calc_ecc[2]; 
+ 
+ /* check if there are any bitfaults */ 
+
+    /* repeated if statements are slightly more efficient than switch ... */ 
+    /* ordered in order of likelihood */ 
+    if ((b0 | b1 | b2) == 0) 
+        return 0;	/* no error */ 
+
+    if ((((b0 ^ (b0 >> 1)) & 0x55) == 0x55) && 
+        (((b1 ^ (b1 >> 1)) & 0x55) == 0x55) && 
+        ((eccsize_mult == 1 && ((b2 ^ (b2 >> 1)) & 0x54) == 0x54) || 
+         (eccsize_mult == 2 && ((b2 ^ (b2 >> 1)) & 0x55) == 0x55))) { 
+                 /* single bit error */ 
+                 /* 
+                  * rp17/rp15/13/11/9/7/5/3/1 indicate which byte is the faulty 
+                  * byte, cp 5/3/1 indicate the faulty bit. 
+                  * A lookup table (called addressbits) is used to filter 
+                  * the bits from the byte they are in. 
+                  * A marginal optimisation is possible by having three 
+                  * different lookup tables. 
+                  * One as we have now (for b0), one for b2 
+                  * (that would avoid the >> 1), and one for b1 (with all values 
+                  * << 4). However it was felt that introducing two more tables 
+                  * hardly justify the gain. 
+                  * 
+                  * The b2 shift is there to get rid of the lowest two bits. 
+                  * We could also do addressbits[b2] >> 1 but for the 
+                  * performace it does not make any difference 
+                  */ 
+                 if (eccsize_mult == 1) 
+                         byte_addr = (addressbits[b1] << 4) + addressbits[b0]; 
+                 else 
+                         byte_addr = (addressbits[b2 & 0x3] << 8) + 
+                                     (addressbits[b1] << 4) + addressbits[b0]; 
+                    bit_addr = addressbits[b2 >> 2]; 
+                  /* flip the bit */ 
+                    buf[byte_addr] ^= (1 << bit_addr); 
+                    return 1; 
+         } 
+/* count nr of bits; use table lookup, faster than calculating it */ 
+        if ((bitsperbyte[b0] + bitsperbyte[b1] + bitsperbyte[b2]) == 1) 
+            return 1;	/* error in ecc data; no action needed */ 
+        printk(KERN_ERR "uncorrectable error : \n"); 
+        return -1; 
 }
 
-int rcm_nand_erase( struct mtd_info *mtd, struct erase_info *instr )
+int mnand_calculate_ecc(struct mtd_info *mtd, const unsigned char *buf, unsigned char *code) 
 {
-    struct rcm_nand_host* rcm_nand_host = (struct rcm_nand_host*)mtd->priv;
-    if( rcm_nand_host ) return 0;
-    return 0;
-}
+    int i; 
+    const uint32_t *bp = (uint32_t *)buf; 
+    /* 256 or 512 bytes/ecc  */ 
+    const uint32_t eccsize_mult = 1; 
 
-static int rcm_nand_probe( struct platform_device *pdev )
+    uint32_t cur;		/* current value in buffer */ 
+    /* rp0..rp15..rp17 are the various accumulated parities (per byte) */ 
+    uint32_t rp0, rp1, rp2, rp3, rp4, rp5, rp6, rp7; 
+    uint32_t rp8, rp9, rp10, rp11, rp12, rp13, rp14, rp15, rp16; 
+    uint32_t uninitialized_var(rp17);	/* to make compiler happy */ 
+    uint32_t par;		/* the cumulative parity for all data */ 
+    uint32_t tmppar;	/* the cumulative parity for this iteration; 
+                           for rp12, rp14 and rp16 at the end of the 
+                           loop */ 
+
+    par = 0; 
+    rp4 = 0; 
+    rp6 = 0; 
+    rp8 = 0; 
+    rp10 = 0; 
+    rp12 = 0; 
+    rp14 = 0; 
+    rp16 = 0; 
+
+    /* 
+     * The loop is unrolled a number of times; 
+     * This avoids if statements to decide on which rp value to update 
+     * Also we process the data by longwords. 
+     * Note: passing unaligned data might give a performance penalty. 
+     * It is assumed that the buffers are aligned. 
+     * tmppar is the cumulative sum of this iteration. 
+     * needed for calculating rp12, rp14, rp16 and par 
+     * also used as a performance improvement for rp6, rp8 and rp10 
+     */ 
+    for (i = 0; i < eccsize_mult << 2; i++) { 
+            cur = *bp++; 
+            tmppar = cur; 
+            rp4 ^= cur; 
+            cur = *bp++; 
+            tmppar ^= cur; 
+            rp6 ^= tmppar; 
+            cur = *bp++; 
+            tmppar ^= cur; 
+            rp4 ^= cur; 
+            cur = *bp++; 
+            tmppar ^= cur; 
+            rp8 ^= tmppar; 
+
+            cur = *bp++; 
+            tmppar ^= cur; 
+            rp4 ^= cur; 
+            rp6 ^= cur; 
+            cur = *bp++; 
+            tmppar ^= cur; 
+            rp6 ^= cur; 
+            cur = *bp++; 
+            tmppar ^= cur; 
+            rp4 ^= cur; 
+            cur = *bp++; 
+            tmppar ^= cur; 
+            rp10 ^= tmppar; 
+
+            cur = *bp++; 
+            tmppar ^= cur; 
+            rp4 ^= cur; 
+            rp6 ^= cur; 
+            rp8 ^= cur; 
+            cur = *bp++; 
+            tmppar ^= cur; 
+            rp6 ^= cur; 
+            rp8 ^= cur; 
+            cur = *bp++; 
+            tmppar ^= cur; 
+            rp4 ^= cur; 
+            rp8 ^= cur; 
+            cur = *bp++; 
+            tmppar ^= cur; 
+            rp8 ^= cur; 
+
+            cur = *bp++; 
+            tmppar ^= cur; 
+            rp4 ^= cur; 
+            rp6 ^= cur; 
+            cur = *bp++; 
+            tmppar ^= cur; 
+            rp6 ^= cur; 
+            cur = *bp++; 
+            tmppar ^= cur; 
+            rp4 ^= cur; 
+            cur = *bp++; 
+            tmppar ^= cur; 
+
+            par ^= tmppar; 
+            if ((i & 0x1) == 0) 
+                    rp12 ^= tmppar; 
+            if ((i & 0x2) == 0) 
+                    rp14 ^= tmppar; 
+            if (eccsize_mult == 2 && (i & 0x4) == 0) 
+                    rp16 ^= tmppar; 
+}
+/* 
+          * handle the fact that we use longword operations 
+          * we'll bring rp4..rp14..rp16 back to single byte entities by 
+          * shifting and xoring first fold the upper and lower 16 bits, 
+          * then the upper and lower 8 bits. 
+          */ 
+         rp4 ^= (rp4 >> 16); 
+         rp4 ^= (rp4 >> 8); 
+         rp4 &= 0xff; 
+         rp6 ^= (rp6 >> 16); 
+         rp6 ^= (rp6 >> 8); 
+         rp6 &= 0xff; 
+         rp8 ^= (rp8 >> 16); 
+         rp8 ^= (rp8 >> 8); 
+         rp8 &= 0xff; 
+         rp10 ^= (rp10 >> 16); 
+         rp10 ^= (rp10 >> 8); 
+         rp10 &= 0xff; 
+         rp12 ^= (rp12 >> 16); 
+         rp12 ^= (rp12 >> 8); 
+         rp12 &= 0xff; 
+         rp14 ^= (rp14 >> 16); 
+         rp14 ^= (rp14 >> 8); 
+         rp14 &= 0xff; 
+         if (eccsize_mult == 2) { 
+                 rp16 ^= (rp16 >> 16); 
+                 rp16 ^= (rp16 >> 8); 
+                 rp16 &= 0xff; 
+         } 
+ 
+ 
+         /* 
+          * we also need to calculate the row parity for rp0..rp3 
+          * This is present in par, because par is now 
+          * rp3 rp3 rp2 rp2 in little endian and 
+          * rp2 rp2 rp3 rp3 in big endian 
+          * as well as 
+          * rp1 rp0 rp1 rp0 in little endian and 
+          * rp0 rp1 rp0 rp1 in big endian 
+          * First calculate rp2 and rp3 
+          */ 
+ #ifdef __BIG_ENDIAN 
+         rp2 = (par >> 16); 
+         rp2 ^= (rp2 >> 8); 
+         rp2 &= 0xff; 
+         rp3 = par & 0xffff; 
+         rp3 ^= (rp3 >> 8); 
+         rp3 &= 0xff; 
+ #else 
+         rp3 = (par >> 16); 
+         rp3 ^= (rp3 >> 8); 
+         rp3 &= 0xff; 
+         rp2 = par & 0xffff; 
+         rp2 ^= (rp2 >> 8); 
+         rp2 &= 0xff; 
+ #endif 
+ 
+ 
+         /* reduce par to 16 bits then calculate rp1 and rp0 */ 
+         par ^= (par >> 16); 
+ #ifdef __BIG_ENDIAN 
+         rp0 = (par >> 8) & 0xff; 
+         rp1 = (par & 0xff); 
+ #else 
+         rp1 = (par >> 8) & 0xff; 
+         rp0 = (par & 0xff); 
+ #endif 
+ 
+ 
+         /* finally reduce par to 8 bits */ 
+         par ^= (par >> 8); 
+         par &= 0xff; 
+ 
+ 
+         /* 
+          * and calculate rp5..rp15..rp17 
+          * note that par = rp4 ^ rp5 and due to the commutative property 
+          * of the ^ operator we can say: 
+          * rp5 = (par ^ rp4); 
+          * The & 0xff seems superfluous, but benchmarking learned that 
+          * leaving it out gives slightly worse results. No idea why, probably 
+          * it has to do with the way the pipeline in pentium is organized. 
+          */ 
+         rp5 = (par ^ rp4) & 0xff; 
+         rp7 = (par ^ rp6) & 0xff; 
+         rp9 = (par ^ rp8) & 0xff; 
+         rp11 = (par ^ rp10) & 0xff; 
+         rp13 = (par ^ rp12) & 0xff; 
+         rp15 = (par ^ rp14) & 0xff; 
+         if (eccsize_mult == 2) 
+                 rp17 = (par ^ rp16) & 0xff; 
+ 
+ 
+         /* 
+          * Finally calculate the ecc bits. 
+          * Again here it might seem that there are performance optimisations 
+          * possible, but benchmarks showed that on the system this is developed 
+          * the code below is the fastest 
+          */ 
+ #ifdef CONFIG_MTD_NAND_ECC_SMC 
+         code[0] = 
+                 (invparity[rp7] << 7) | 
+                 (invparity[rp6] << 6) | 
+                 (invparity[rp5] << 5) | 
+                 (invparity[rp4] << 4) | 
+                 (invparity[rp3] << 3) | 
+                 (invparity[rp2] << 2) | 
+                 (invparity[rp1] << 1) | 
+                 (invparity[rp0]); 
+         code[1] = 
+                 (invparity[rp15] << 7) | 
+                 (invparity[rp14] << 6) | 
+                 (invparity[rp13] << 5) | 
+                 (invparity[rp12] << 4) | 
+                 (invparity[rp11] << 3) | 
+                 (invparity[rp10] << 2) | 
+                 (invparity[rp9] << 1)  | 
+                 (invparity[rp8]); 
+ #else 
+         code[1] = 
+                 (invparity[rp7] << 7) | 
+                 (invparity[rp6] << 6) | 
+                 (invparity[rp5] << 5) | 
+                 (invparity[rp4] << 4) | 
+                 (invparity[rp3] << 3) | 
+                 (invparity[rp2] << 2) | 
+                 (invparity[rp1] << 1) | 
+                 (invparity[rp0]); 
+         code[0] = 
+                 (invparity[rp15] << 7) | 
+                 (invparity[rp14] << 6) | 
+                 (invparity[rp13] << 5) | 
+                 (invparity[rp12] << 4) | 
+                 (invparity[rp11] << 3) | 
+                 (invparity[rp10] << 2) | 
+                 (invparity[rp9] << 1)  | 
+                 (invparity[rp8]); 
+ #endif 
+         if (eccsize_mult == 1) 
+                 code[2] = 
+                         (invparity[par & 0xf0] << 7) | 
+                         (invparity[par & 0x0f] << 6) | 
+                         (invparity[par & 0xcc] << 5) | 
+                         (invparity[par & 0x33] << 4) | 
+                         (invparity[par & 0xaa] << 3) | 
+                         (invparity[par & 0x55] << 2) | 
+                         3; 
+         else 
+                 code[2] = 
+                         (invparity[par & 0xf0] << 7) | 
+                         (invparity[par & 0x0f] << 6) | 
+                         (invparity[par & 0xcc] << 5) | 
+                         (invparity[par & 0x33] << 4) | 
+                         (invparity[par & 0xaa] << 3) | 
+                         (invparity[par & 0x55] << 2) | 
+                         (invparity[rp17] << 1) | 
+                         (invparity[rp16] << 0); 
+         return 0; 
+ } 
+ 
+ 
+ static int mnand_core_read(loff_t off) 
+ { 
+         loff_t page;   
+         size_t corrected = 0; 
+         size_t failed = 0; 
+ 
+ 
+         off = mnand_chip_offset(off); 
+         page = off & (~(g_chip.mtd.writesize-1)); 
+ 
+ 
+         BUG_ON(g_chip.state != MNAND_IDLE); 
+         BUG_ON(!mnand_ready()); 
+ 
+ 
+         mnand_reset_grabber(); 
+ 
+ 
+         //    printk(KERN_DEBUG "core_read %08llX %08llX\n", off, page); 
+ 
+ 
+         if(g_chip.active_page != page) { 
+                 g_chip.active_page = -1; 
+ 
+ 
+                 mnand_prepare_dma_read(g_chip.mtd.writesize + g_chip.mtd.oobsize); 
+ 
+ 
+                 init_completion(&g_completion); 
+                 g_chip.state = MNAND_READ; 
+ 
+ 
+                 rcm_nand_set(0x08, 0x20); 
+                 rcm_nand_set(0x0C, (off >> g_chip.mtd.writesize_shift) << 12); 
+ 
+ 
+                 wait_for_completion_io(&g_completion); 
+ 
+ 
+                 BUG_ON(!mnand_ready()); 
+                 g_chip.state = MNAND_IDLE; 
+ 
+ 
+                 g_read_page_log[g_read_page_pos].address = page; 
+                 memcpy(g_read_page_log[g_read_page_pos].data, g_chip.dma_area, 2048+64); 
+ 
+ 
+                 ++g_read_page_pos; 
+ 
+ 
+                 if(g_read_page_pos == sizeof(g_read_page_log) / sizeof(g_read_page_log[0])) 
+                         g_read_page_pos = 0; 
+ 
+ 
+                 if(/*rcm_nand_get(0) & MNAND_STATUS_ECC_ERROR*/1) { 
+                         size_t i; 
+                         /*Check if we had a bad block*/ 
+                         if(*((char*)(g_chip.dma_area + g_chip.mtd.writesize)) == 0xFF) { 
+                                 for(i = 0; i < g_chip.mtd.writesize/MNAND_ECC_BLOCKSIZE; ++i) { 
+                                         char ecc[3]; 
+                                         mnand_calculate_ecc(&g_chip.mtd, g_chip.dma_area + i * MNAND_ECC_BLOCKSIZE, ecc); 
+                                         if(memcmp(rcm_nand_get_calculated_ecc(i),ecc,3)!=0) { 
+                                                 printk("\n\necc mismatch %02X %02X %02X - %02x %02X %02X \n\n", 
+                                                        ecc[0], ecc[1], ecc[2], 
+                                                        rcm_nand_get_calculated_ecc(i)[0], 
+                                                        rcm_nand_get_calculated_ecc(i)[1], 
+                                                        rcm_nand_get_calculated_ecc(i)[2]); 
+ 
+ 
+                                                 BUG_ON(1); 
+                                         } 
+                                         if(memcmp(rcm_nand_get_read_ecc(i), rcm_nand_get_calculated_ecc(i), MNAND_ECC_BYTESPERBLOCK)) { 
+                                                 int stat = mnand_correct_data(&g_chip.mtd, 
+                                                                               g_chip.dma_area + i * MNAND_ECC_BLOCKSIZE, 
+                                                                               rcm_nand_get_read_ecc(i), 
+                                                                               rcm_nand_get_calculated_ecc(i)); 
+                                                 if( stat < 0 ) { 
+                                                         ++failed; 
+                                                 } else { 
+                                                         ++corrected; 
+                                                 } 
+                                         } 
+                                 } 
+                         } 
+                 } 
+ 
+ 
+                 g_chip.ecc_corrected += corrected; 
+                 g_chip.ecc_failed += failed; 
+ 
+ 
+                 /*if(!failed) 
+                   g_chip.active_page = page;*/ 
+         } 
+ 
+ 
+         return 0; 
+ } 
+ 
+ 
+ static int mnand_core_write(loff_t off) 
+ { 
+         BUG_ON(!mnand_ready()); 
+         BUG_ON(g_chip.state != MNAND_IDLE); 
+      
+         off = mnand_chip_offset(off); 
+ 
+ 
+         mnand_reset_grabber(); 
+ 
+ 
+         g_chip.active_page = -1; 
+ 
+ 
+         mnand_prepare_dma_write(g_chip.mtd.writesize + g_chip.mtd.oobsize); 
+ 
+ 
+         init_completion(&g_completion); 
+ 
+ 
+         g_chip.state = MNAND_WRITE; 
+ 
+ 
+         g_write_page_log[g_write_page_pos].address = off; 
+         memcpy(g_write_page_log[g_write_page_pos].data, g_chip.dma_area, 2048+64); 
+ 
+ 
+         ++g_write_page_pos; 
+ 
+ 
+         if((g_write_page_pos) == sizeof(g_write_page_log)/sizeof(g_write_page_log[0])) 
+                 g_write_page_pos = 0; 
+ 
+ 
+         rcm_nand_set(0x08, 0x27); 
+         rcm_nand_set(0x0C, (u32)((off >> g_chip.mtd.writesize_shift) << 12)); 
+         BUG_ON(rcm_nand_get(0x0C) != (u32)((off >> g_chip.mtd.writesize_shift) << 12)); 
+ 
+ 
+         wait_for_completion_io(&g_completion); 
+ 
+ 
+         BUG_ON(!mnand_ready()); 
+         g_chip.state = MNAND_IDLE; 
+ 
+ 
+         return (rcm_nand_get(0) & NAND_STATUS_FAIL) ? -EIO : 0; 
+ } 
+ 
+ 
+ static int mnand_read_id(int cs) 
+ { 
+         struct nand_flash_dev* type = 0; 
+         int i; 
+         int retries=5; 
+         char* vendor = "unknown"; 
+         mnand_cs(cs); 
+ 
+ 
+         /* hw weirdness: sometimes after an unlucky reset or incomplete 
+          * powerdown a bad id may be read. 
+          */ 
+ 
+ 
+         for (i=0; i<retries; i++) { 
+                 mnand_core_read_id(2); 
+                 if (*(((uint8_t*)g_chip.dma_area)+1)!=0x00) 
+                         break; 
+         } 
+ 
+ 
+         if (i==retries) { 
+                 printk("mnand: Bad chip id or no chip at CS%d\n", cs); 
+                 return -ENODEV; 
+         } 
+ 
+ 
+         /* Lookup the flash vendor */ 
+         for (i = 0; nand_manuf_ids[i].name != NULL; i++) { 
+                 if (((uint8_t*)g_chip.dma_area)[0] == nand_manuf_ids[i].id) { 
+                         vendor =  nand_manuf_ids[i].name; 
+                         break; 
+                 } 
+         } 
+ 
+ 
+         /* Lookup the flash id */ 
+         for (i = 0; nand_flash_ids[i].name != NULL; i++) { 
+                 if (((uint8_t*)g_chip.dma_area)[1] == nand_flash_ids[i].dev_id && 
+                         nand_flash_ids[i].mfr_id == 0) { 
+                         type = &nand_flash_ids[i]; 
+                         break; 
+                 } 
+         } 
+ 
+ 
+         if (!type) 
+                 return -ENODEV; 
+ 
+ 
+ 
+ 
+ 
+ 
+ /* We're not likely work if erase/write/oob sizes on different CS 
+  *  differ. 
+  */ 
+ 
+ 
+ #define NBUG(a,b) \
+        { if (cs && (a!=b)) goto inconsistent; } 
+ 
+ 
+         if(!type->pagesize) { 
+                 uint8_t extid; 
+                 u_long tmp; 
+ 
+ 
+                 mnand_core_read_id(5); 
+ 
+ 
+                 extid = ((uint8_t*)g_chip.dma_area)[3]; 
+                 printk(KERN_DEBUG "flash ext_id 0x%02X\n", extid); 
+ 
+ 
+                 tmp = 1024 << (extid & 0x3); 
+                 NBUG(g_chip.mtd.writesize, tmp); 
+                 g_chip.mtd.writesize = tmp; 
+ 
+ 
+                 extid >>= 2; 
+ 
+ 
+                 tmp = (8 << (extid & 0x01)) * (g_chip.mtd.writesize >> 9); 
+                 NBUG(g_chip.mtd.oobsize, tmp); 
+                 g_chip.mtd.oobsize = tmp; 
+ 
+ 
+                 extid >>= 2; 
+                 tmp = (64 * 1024) << (extid & 0x03); 
+                 NBUG(g_chip.mtd.erasesize, tmp); 
+                 g_chip.mtd.erasesize = tmp; 
+ 
+ 
+         } else { 
+                 g_chip.mtd.erasesize = type->erasesize; 
+                 g_chip.mtd.writesize = type->pagesize; 
+                 g_chip.mtd.oobsize = g_chip.mtd.writesize / 32; 
+         } 
+ 
+ 
+         g_chip.mtd.writebufsize = g_chip.mtd.writesize; 
+         g_chip.mtd.size += (uint64_t) type->chipsize << 20; 
+         g_chip.chip_size[cs] = (uint64_t) type->chipsize << 20; 
+   
+         printk("%s CS%d %s size(%u) writesize(%u) oobsize(%u) erasesize(%u)\n", 
+                g_chip.mtd.name, cs, vendor, type->chipsize, g_chip.mtd.writesize, 
+                g_chip.mtd.oobsize, g_chip.mtd.erasesize); 
+ 
+ 
+         return 0; 
+ 
+ 
+ inconsistent: 
+         printk("mnand: Chip configurations differ, ignoring CS1\n"); 
+         return -EIO; 
+ } 
+ 
+ 
+ static int mnand_erase(struct mtd_info* mtd, struct erase_info* instr) 
+ { 
+         int err; 
+ 
+ 
+         TRACE(KERN_DEBUG, "addr=0x%08llX, len=%lld\n", instr->addr, instr->len); 
+      
+         if(instr->addr >= g_chip.mtd.size || 
+             instr->addr + instr->len > g_chip.mtd.size  || 
+             instr->len != g_chip.mtd.erasesize) 
+                 return -EINVAL; 
+ 
+ 
+         down(&g_mutex); 
+ 
+ 
+         err = mnand_core_erase(instr->addr); 
+ 
+ 
+         up(&g_mutex); 
+ 
+ 
+         if(err) { 
+                 printk(KERN_ERR "erase failed with %d at 0x%08llx\n", err, instr->addr); 
+                 //instr->state = MTD_ERASE_FAILED; 
+                 instr->fail_addr = instr->addr; 
+         } else { 
+                 //instr->state = MTD_ERASE_DONE; 
+         } 
+ 
+ 
+         //mtd_erase_callback(instr);  // implicit declaration of function 'mtd_erase_callback
+ 
+ 
+         return 0; 
+ } 
+ 
+// #define PAGE_ALIGNED(x) (((x) & (g_chip.mtd.writesize-1)) ==0) 
+ 
+ 
+ static uint8_t* mnand_fill_oob(uint8_t *oob, struct mtd_oob_ops *ops) 
+ { 
+         size_t len = ops->ooblen; 
+ 
+ 
+         switch(ops->mode) { 
+         case MTD_OPS_PLACE_OOB: 
+         case MTD_OPS_RAW: 
+                 memcpy(g_chip.dma_area + g_chip.mtd.writesize + ops->ooboffs, oob, len); 
+                 return oob + len; 
+         case MTD_OPS_AUTO_OOB: { 
+                 struct nand_oobfree *free = g_ecclayout.oobfree;       // g_chip.mtd.ecclayout->oobfree; 
+                 uint32_t boffs = 0, woffs = ops->ooboffs; 
+                 size_t bytes = 0; 
+ 
+ 
+                 for(; free->length && len; free++, len -= bytes) { 
+                         /* Write request not from offset 0 ? */ 
+                         if (unlikely(woffs)) { 
+                                 if (woffs >= free->length) { 
+                                         woffs -= free->length; 
+                                         continue; 
+                                 } 
+                                 boffs = free->offset + woffs; 
+                                 bytes = min_t(size_t, len, 
+                                               (free->length - woffs)); 
+                                 woffs = 0; 
+                         } else { 
+                                 bytes = min_t(size_t, len, free->length); 
+                                 boffs = free->offset; 
+                         } 
+                         memcpy(g_chip.dma_area + g_chip.mtd.writesize + boffs, oob, bytes); 
+                         oob += bytes; 
+                 } 
+                 return oob; 
+         } 
+         default: 
+                 BUG(); 
+         } 
+         return NULL; 
+ } 
+ 
+ 
+ static uint8_t* mnand_transfer_oob(uint8_t *oob, struct mtd_oob_ops *ops, size_t len) 
+ { 
+         switch(ops->mode) { 
+ 
+ 
+         case MTD_OPS_PLACE_OOB: 
+         case MTD_OPS_RAW: 
+                 TRACE(KERN_DEBUG, "raw transfer\n"); 
+                 memcpy(oob, g_chip.dma_area + g_chip.mtd.writesize + ops->ooboffs, len); 
+                 return oob + len; 
+ 
+ 
+         case MTD_OPS_AUTO_OOB: { 
+                 struct nand_oobfree *free = g_ecclayout.oobfree; // g_chip.mtd.ecclayout->oobfree; 
+                 uint32_t boffs = 0, roffs = ops->ooboffs; 
+                 size_t bytes = 0; 
+ 
+ 
+                 for(; free->length && len; free++, len -= bytes) { 
+                         /* Read request not from offset 0 ? */ 
+                         if (unlikely(roffs)) { 
+                                 if (roffs >= free->length) { 
+                                         roffs -= free->length; 
+                                         continue; 
+                                 } 
+                                 boffs = free->offset + roffs; 
+                                 bytes = min_t(size_t, len, 
+                                               (free->length - roffs)); 
+                                 roffs = 0; 
+                         } else { 
+                                 bytes = min_t(size_t, len, free->length); 
+                                 boffs = free->offset; 
+                         } 
+                         memcpy(oob, g_chip.dma_area + g_chip.mtd.writesize + boffs, bytes); 
+                         oob += bytes; 
+                 } 
+                 return oob; 
+         } 
+         default: 
+                 BUG(); 
+         } 
+         return NULL; 
+ } 
+ 
+ 
+ static int mnand_write_oob(struct mtd_info* mtd, loff_t to, struct mtd_oob_ops* ops) 
+ { 
+         uint8_t* data = ops->datbuf; 
+         uint8_t* dataend = data ? data + ops->len : 0; 
+         uint8_t* oob = ops->oobbuf; 
+         uint8_t* oobend = oob ? oob + ops->ooblen : 0; 
+ 
+ 
+         int err; 
+ 
+ 
+         TRACE(KERN_DEBUG, "to=0x%08llX, ops.mode=%d, ops.len=%d, ops.ooblen=%d ops.ooboffs=0x%08X\n", 
+               to, ops->mode, ops->len, ops->ooblen, ops->ooboffs); 
+ 
+ 
+         ops->retlen = 0; 
+         ops->oobretlen = 0; 
+ 
+ 
+         if(to >= g_chip.mtd.size || !PAGE_ALIGNED(to) || !PAGE_ALIGNED(dataend - data)) { 
+                 printk(KERN_DEBUG "writing non page aligned data to 0x%08llx 0x%08x\n", to, ops->len); 
+                 return -EINVAL; 
+         } 
+ 
+ 
+         if(ops->ooboffs > mtd->oobsize) { 
+                 printk(KERN_ERR "oob > mtd->oobsize" ); 
+                 return -EINVAL; 
+         } 
+ 
+ 
+         err = down_killable(&g_mutex); 
+ 
+ 
+         if(0 == err) { 
+                 for(; (data !=dataend) || (oob !=oobend);) { 
+                         memset(g_chip.dma_area, 0xFF, g_chip.mtd.writesize + g_chip.mtd.oobsize); 
+ 
+ 
+                         if(data != dataend) { 
+                                 memcpy(g_chip.dma_area, data, g_chip.mtd.writesize); 
+                                 data += g_chip.mtd.writesize; 
+                         } 
+ 
+ 
+                         if(oob != oobend) { 
+                                 oob = mnand_fill_oob(oob, ops); 
+                                 if(!oob) { 
+                                         err = -EINVAL; 
+                                         printk(KERN_ERR "oob einval\n"); 
+                                         break; 
+                                 } 
+                         } 
+ 
+ 
+                         err = mnand_core_write(to); 
+ 
+ 
+                         if(err) 
+                                 break; 
+ 
+ 
+                         to += g_chip.mtd.writesize; 
+                 } 
+ 
+ 
+                 up(&g_mutex); 
+         } 
+ 
+ 
+         if(err) { 
+                 printk(KERN_ERR "core write returned error at 0x%08llx\n", to); 
+                 return err; 
+         } 
+ 
+ 
+         ops->retlen = ops->len; 
+         ops->oobretlen = ops->ooblen; 
+ 
+ 
+         return err; 
+ } 
+ 
+ 
+ static int mnand_read_oob(struct mtd_info* mtd, loff_t from, struct mtd_oob_ops* ops) 
+ { 
+         uint8_t* data = ops->datbuf; 
+         uint8_t* oob = ops->oobbuf; 
+         int err; 
+ 
+ 
+         uint8_t* dataend = data + ops->len; 
+         uint8_t* oobend = oob ? oob + ops->ooblen : 0; 
+ 
+ 
+         TRACE(KERN_DEBUG, 
+               "from=0x%08llX, ops.mode=%d, ops.len=%d, ops.ooblen=%d ops.ooboffs=0x%08X data=%p\n", 
+               from, ops->mode, ops->len, ops->ooblen, ops->ooboffs, data); 
+ 
+ 
+         TRACE(KERN_DEBUG, "oob %p, oobend %p\n", oob, oobend); 
+ 
+ 
+         if(ops->len != 0 && data == 0) { 
+                 ops->len = 0; 
+                 dataend = 0; 
+         } 
+ 
+ 
+         ops->retlen = 0; 
+         ops->oobretlen = 0; 
+ 
+ 
+         err = down_killable(&g_mutex); 
+ 
+ 
+         if(0 == err) { 
+                 for(;;) { 
+                         err = mnand_core_read(from); 
+ 
+ 
+                         if(err != 0) { 
+                                 break; 
+                         } 
+ 
+ 
+                         if(data != dataend) { 
+                                 size_t shift = (from & (mtd->writesize -1)); 
+                                 size_t bytes = min_t(size_t,dataend-data, mtd->writesize-shift); 
+ 
+ 
+                                 TRACE(KERN_DEBUG, "data %p dataend %p shift 0x%X bytes 0x%X\n", 
+                                       data, dataend, shift, bytes); 
+ 
+ 
+                                 memcpy(data, g_chip.dma_area + shift, bytes); 
+                                 data += bytes; 
+                         } 
+ 
+ 
+                         if(oob != oobend) { 
+                                 TRACE(KERN_DEBUG, "oob %p, oobend %p\n", oob, oobend); 
+ 
+ 
+                                 oob = mnand_transfer_oob(oob, ops, oobend-oob); 
+                                 if(!oob) { 
+                                         err = -EINVAL; 
+                                         break; 
+                                 } 
+                         } 
+ 
+ 
+                         if(data == dataend && oob == oobend) 
+                                 break; 
+ 
+ 
+                         from &= ~((1 << mtd->writesize_shift)-1); 
+                         from += mtd->writesize; 
+                 } 
+ 
+ 
+                 if(data) { 
+                         if(g_chip.mtd.ecc_stats.failed != g_chip.ecc_failed) { 
+                                 g_chip.mtd.ecc_stats.failed = g_chip.ecc_failed; 
+                                 g_chip.mtd.ecc_stats.corrected = g_chip.ecc_corrected; 
+                                 err = -EBADMSG; 
+                         } else if(g_chip.mtd.ecc_stats.corrected != g_chip.ecc_corrected) { 
+                                 g_chip.mtd.ecc_stats.failed = g_chip.ecc_failed; 
+                                 g_chip.mtd.ecc_stats.corrected = g_chip.ecc_corrected; 
+                                 err = -EUCLEAN; 
+                         } 
+                 } 
+ 
+ 
+                 up(&g_mutex); 
+         } 
+ 
+ 
+     if(err==0 || err == -EUCLEAN) { 
+         ops->retlen = ops->len; 
+         ops->oobretlen = ops->ooblen; 
+     } 
+ 
+ 
+     return err; 
+ } 
+ 
+ 
+ static int mnand_isbad(struct mtd_info* mtd, loff_t off) 
+ { 
+         uint8_t f=0; 
+         int err; 
+         struct mtd_oob_ops ops = { 
+                 .mode = MTD_OPS_RAW, 
+                 .ooblen = 1, 
+                 .oobbuf = &f, 
+                 .ooboffs = 0 
+         }; 
+ 
+ 
+         TRACE(KERN_DEBUG, "off 0x%08llX\n", off); 
+ 
+ 
+         err = mnand_read_oob(mtd, off, &ops); 
+ 
+ 
+         TRACE(KERN_DEBUG,"err %d, f=%0x02X\n", err, f); 
+ 
+ 
+         return (err == 0 && f == 0xFF) ? 0 : 1; 
+ } 
+ 
+ 
+ static int mnand_markbad(struct mtd_info* mtd, loff_t off) 
+ { 
+         uint8_t f=0; 
+         struct mtd_oob_ops ops = { 
+                 .mode = MTD_OPS_RAW, 
+                 .ooblen = 1, 
+                 .oobbuf = &f, 
+                 .ooboffs = 0 
+         }; 
+ 
+ 
+         TRACE(KERN_DEBUG, "off 0x%08llX\n", off); 
+ 
+ 
+         return mnand_write_oob(mtd, off, &ops); 
+ } 
+ 
+ 
+ static int mnand_write(struct mtd_info* mtd, loff_t off, size_t len, size_t* retlen, const u_char* buf) 
+ { 
+         struct mtd_oob_ops ops = { 
+                 .datbuf = (uint8_t*)buf, 
+                 .len = len 
+         }; 
+         int err; 
+ 
+ 
+         TRACE(KERN_DEBUG, "off=0x%08llX, len=%d\n", off, len); 
+ 
+ 
+         err = mnand_write_oob(mtd, off, &ops); 
+         *retlen = ops.retlen; 
+         return err; 
+ } 
+ 
+ 
+ static int mnand_read(struct mtd_info* mtd, loff_t off, size_t len, size_t* retlen, u_char* buf) 
+ { 
+         struct mtd_oob_ops ops = { 
+                 .datbuf = buf, 
+                 .len = len, 
+         }; 
+         int err; 
+         //int i; 
+ 
+ 
+         TRACE(KERN_DEBUG, "off=0x%08llX, len=%d\n", off, len); 
+ 
+ 
+         if(buf == 0) 
+                 return -EINVAL; 
+ 
+ 
+         err = mnand_read_oob(mtd, off, &ops); 
+         *retlen = ops.retlen; 
+         return err; 
+ } 
+
+static int set_lsif0_config( struct device_node *of_node )
 {
-    int freq = 1000;        // где???????????????/
+    struct device_node* tmp_of_node;
+   	struct regmap* lsif0_config;
     int ret;
-    struct device* dev = &pdev->dev;
-	struct rcm_nand_host* host;
-    struct nand_info* nand;                     // параметры микросхемы
-	struct mtd_info* mtd;                       // регистрационная структура
-	struct resource* iobase;                    // запрошенный ресурс для управления
+    //uint32_t reg[2] = { 0 };
 
-    host = kzalloc( sizeof( struct rcm_nand_host ), GFP_KERNEL );
-    if( !host )
-    {
-        NAND_DBG_PRINT_ERR( "rcm_nand_probe: failed to allocate device structure.\n" )
-        return -ENOMEM;
+    if( ( tmp_of_node = of_parse_phandle( of_node, "config", 0 ) ) == NULL ) {
+        NAND_DBG_PRINT_ERR( "of_parse_phandle(config): error" )
+        return -ENOENT;
     }
-    host->dev = dev;
-    mtd = &host->mtd_info;
-    mtd->priv = host;
-    nand = &host->nand_info;
+    lsif0_config = syscon_node_to_regmap( tmp_of_node );
 
-    platform_set_drvdata( pdev, host );
-//
-    iobase = platform_get_resource( pdev, IORESOURCE_MEM, 0 );
-    host->iobase = devm_ioremap_resource( dev, iobase );
-    if( IS_ERR( host->iobase ) )
-    {
-        return PTR_ERR( host->iobase );
-    }
-
-    ret = of_property_read_u32_array( pdev->dev.of_node,   // ассоциированный узел дерева
-                                      "timings",
-                                      nand->timings,
-                                      30 );
-    if( ret )
-    {
-        NAND_DBG_PRINT_ERR( "of_property_read_u32_array: timigs read error" )
+    if( ( ret = regmap_write( lsif0_config, NAND_RADDR_EXTEND, 1 ) ) != 0 ) {
+        NAND_DBG_PRINT_ERR( "regmap_write(NAND_RADDR_EXTEND): error %d", ret )
         return ret;
     }
 
-    ret = rcm_nand_init( host, nand, nand->timings, freq );         // todo потом...оптимально как-то
-    if( ret )
-    {
-        NAND_DBG_PRINT_ERR( "rcm_controller_setup failed\n" )
-        kfree( host );
+    if( ( ret = regmap_write( lsif0_config, NAND_WADDR_EXTEND, 1 ) ) != 0 ) {
+        NAND_DBG_PRINT_ERR( "regmap_write(NAND_WADDR_EXTEND): error %d", ret )
         return ret;
     }
 
-    mtd->type = MTD_NANDFLASH;
-    mtd->flags = MTD_CAP_NANDFLASH;
-    mtd->size = nand->blocksize * ( nand->pagesize + nand->oob_size );  // полный размер (с учетом OOB????)
-    mtd->erasesize = nand->blocksize * nand->pagesize;                  // стирание блоками
-    mtd->writebufsize = mtd->writesize =  nand->pagesize;               // запись страницами
-    mtd->oobsize = nand->oob_size;                                      // размер Out-of-band (OOB) области
-    mtd->_erase = rcm_nand_erase;
-    mtd->_read = rcm_nand_read;
-    mtd->_write = rcm_nand_write;
-    mtd->name = DRIVER_NAME;
-    mtd->dev.parent = &pdev->dev;
-
-    ret = mtd_device_register( mtd, NULL, 0 );
-    if( ret )
-    {
-        NAND_DBG_PRINT_ERR(  "mtd_device_register failed(%d)\n", ret )
-        kfree( host );
-        return ret;
-	}
-	return 0;
-}
-
-static int rcm_nand_remove( struct platform_device *pdev )
-{
-    NAND_DBG_PRINT_INF( "rcm_nand_remove" )
+    //if( !regmap_read( lsif0_config, NAND_RADDR_EXTEND, &reg[0] ) && 
+    //    !regmap_read( lsif0_config, NAND_WADDR_EXTEND, &reg[1] ) ) {
+    //    NAND_DBG_PRINT_INF( "lsif0_config: RADDR %08x,WADDR %08x", reg[0], reg[1] )
+    //}
     return 0;
 }
 
-//-------------------------------------------------------------
+static int get_nand_timings( struct device_node *of_node, uint32_t* timings, uint32_t* freq )
+{
+    struct device_node* tmp_of_node;
+    int ret;
 
-static const struct of_device_id rcm_nand_match[] = {                                // типы поддерживаемых устройств
-	{ .compatible = "rcm,nand" },
-	{},
-};
-MODULE_DEVICE_TABLE(of, rcm_nand_match);
+    if( ( tmp_of_node = of_parse_phandle( of_node, "clocks", 0 ) ) == NULL ) {
+        NAND_DBG_PRINT_ERR( "of_parse_phandle(clocks): error" )
+        return -ENOENT;
+    }
 
-static struct platform_driver rcm_nand_driver = {
-	.probe = rcm_nand_probe,
-	.remove = rcm_nand_remove,
-	.driver =
-		{
-			.name = DRIVER_NAME,
-            .owner = THIS_MODULE,
-			.of_match_table = rcm_nand_match,
-		},
-};
+    if( ( ret = of_property_read_u32( tmp_of_node, "clock-frequency", freq ) ) != 0 ) {
+        NAND_DBG_PRINT_ERR( "of_property_read_u32(%s): clock-frequency read error", tmp_of_node->name )
+        return ret;
+    }
 
-module_platform_driver(rcm_nand_driver);
+    if( ( ret = of_property_read_u32_array( of_node, "timings", timings, 30 ) ) != 0 ) {
+        NAND_DBG_PRINT_ERR( "of_property_read_u32_array: timings read error" )
+        return ret;
+    }
+    return 0;
+}
 
-MODULE_LICENSE("GPL");
-MODULE_AUTHOR("Vladimir Shalyt <Vladimir.Shalyt@astrosoft.ru>");
-MODULE_DESCRIPTION("RCM SoC NAND controller driver");
+static struct of_device_id of_platform_nand_table[];
 
+static int of_rcm_nand_probe(struct platform_device* ofdev) 
+{
+    const struct of_device_id *match; 
+    struct device_node *of_node = ofdev->dev.of_node; 
+    const char *part_probes[] = { "cmdlinepart", NULL, };
+    uint32_t freq, timings[30];
+    int err; 
+
+    match = of_match_device( of_platform_nand_table, &ofdev->dev ); 
+    if( !match ) {
+        NAND_DBG_PRINT_ERR( "of_match_device: failed" )
+        return -EINVAL; 
+    }
+
+    memset( &g_chip, 0, sizeof(g_chip) ); 
+
+    g_chip.dev = ofdev; 
+    g_chip.active_page = -1; 
+
+    g_chip.regs.io = of_iomap( of_node, 0 ); 
+    if ( WARN_ON( !g_chip.regs.io ) ) {
+        NAND_DBG_PRINT_ERR( "of_iomap: failed" )
+        return -EIO;
+    }
+
+    if( ( err = set_lsif0_config( of_node ) ) != 0 )
+    {
+        //goto error_dma;
+        return -EIO;
+    }
+
+    g_chip.irq = irq_of_parse_and_map( of_node, 0 ); 
+    NAND_DBG_PRINT_INF( "irq_of_parse_and_map: return %u", g_chip.irq )
+    if( ( err = request_irq( g_chip.irq, interrupt_handler, IRQF_SHARED, DRIVER_NAME, &g_chip ) ) ) {
+        NAND_DBG_PRINT_ERR( "failed to set handler on irq #%d (code: %d)\n", g_chip.irq, err ); 
+        goto error_irq; 
+    } 
+
+    g_chip.dev->dev.coherent_dma_mask = DMA_BIT_MASK( 32 ); 
+    g_chip.dma_area = dma_alloc_coherent( &g_chip.dev->dev,
+                                          4096,
+                                          &g_chip.dma_handle,
+                                          GFP_KERNEL | GFP_DMA ); 
+    if( !g_chip.dma_area ) { 
+        NAND_DBG_PRINT_ERR( "failed to request DMA area\n" ) 
+        err = -ENOMEM; 
+        goto error_dma; 
+    } 
+
+    memset( g_chip.dma_area, 0xFF, 4096 );
+
+    sema_init( &g_mutex, 1 ); 
+    down( &g_mutex );
+
+    if( ( err = get_nand_timings( of_node, timings, &freq ) ) != 0 ) {
+        goto error_dma;
+    }
+
+    if( ( err = rcm_nand_hw_init( timings, freq ) ) != 0 ) {
+        goto error_dma;
+    }
+
+//  mnand_reset_grabber(); 
+    rcm_nand_core_reset();
+
+    NAND_DBG_PRINT_INF( "continue(%u,%u,%u)", freq, timings[0], timings[29-3] ) return -EIO;
+
+    return -1;
+    
+         g_chip.mtd.name = DRIVER_NAME;//"mnand"; 
+         g_chip.mtd.size = 0; 
+         g_chip.chip_size[0] = 0; 
+         g_chip.chip_size[1] = 0; 
+ 
+ 
+         err = mnand_read_id(0); 
+         err = mnand_read_id(1); 
+ 
+ 
+         up(&g_mutex); 
+ 
+ 
+         g_chip.mtd.owner = THIS_MODULE; 
+         g_chip.mtd.type = MTD_NANDFLASH; 
+         g_chip.mtd.flags = MTD_WRITEABLE; 
+         g_chip.mtd._erase = mnand_erase; 
+         g_chip.mtd._read = mnand_read; 
+         g_chip.mtd._write = mnand_write; 
+         g_chip.mtd._block_isbad = mnand_isbad; 
+         g_chip.mtd._block_markbad = mnand_markbad; 
+         g_chip.mtd._read_oob = mnand_read_oob; 
+         g_chip.mtd._write_oob = mnand_write_oob; 
+         //g_chip.mtd.ecclayout = &g_ecclayout; 
+ 
+ 
+         g_chip.mtd.dev.parent = &ofdev->dev; 
+ 
+ 
+         printk("mnand: Detected %llu bytes of NAND\n", g_chip.mtd.size); 
+ 
+ 
+         err = mtd_device_parse_register(&g_chip.mtd, part_probes, 0, NULL, 0); 
+         if (err) { 
+                 printk(KERN_ERR "Failed add mtd device (code: %d)\n", err); 
+                 goto error_dma; 
+         } 
+         return 0; 
+ 
+ 
+ error_dma: 
+         dma_free_coherent(&g_chip.dev->dev, 4096, g_chip.dma_area, g_chip.dma_handle);
+
+ error_irq: 
+         //free_irq(g_chip.irq, &g_chip); 
+         //g_chip.irq = 0; 
+         return err; 
+ } 
+ 
+ 
+ static int of_rcm_nand_remove(struct platform_device* ofdev) 
+ { 
+         mtd_device_unregister(&g_chip.mtd); 
+         dma_free_coherent(&g_chip.dev->dev, 4096, g_chip.dma_area, g_chip.dma_handle); 
+         free_irq(g_chip.irq, &g_chip); 
+         release_mem_resource(&g_chip.regs); 
+         return 0; 
+ } 
+ 
+ 
+ static struct of_device_id of_platform_nand_table[] = { 
+         { .compatible = "rcm,nand" }, 
+         { /* end of list */ }, 
+ }; 
+ 
+ 
+ static struct platform_driver of_platform_mnand_driver = { 
+         .driver = { 
+                 .name = DRIVER_NAME, 
+                 .owner = THIS_MODULE, 
+                 .of_match_table = of_platform_nand_table, 
+         }, 
+         .probe = of_rcm_nand_probe, 
+         .remove = of_rcm_nand_remove 
+ }; 
+ 
+ 
+ module_platform_driver(of_platform_mnand_driver); 
+ 
+ 
+ MODULE_LICENSE("GPL"); 
+ MODULE_AUTHOR("Shalyt Vladimir Vladimir.Shalyt@astrosoft.ru"); 
+ MODULE_DESCRIPTION("RCM SoC NAND controller driver"); 
 

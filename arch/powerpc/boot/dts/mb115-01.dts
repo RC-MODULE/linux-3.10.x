@@ -24,9 +24,9 @@
 	plb {
 
 		sram_nor_arbiter {
-			sram-nor-mux = <1>;			// 0 to route extmem wires to LSIF0, 1 - to MCIF
+			sram-nor-mux = <0>;	/*1*/		// 0 to route extmem wires to LSIF0, 1 - to MCIF
 			/* in case of LSIF0 following lines will be needed */
-			// ext-mem-mux-mode = <0>;
+			ext-mem-mux-mode = <1>; /*//*/
 			ce-manage = <2>; //0
 			status = "ok";
 		};
@@ -105,7 +105,10 @@
 			greth_gbit1: greth_gbit1@0x3C034000 {
 			 	mac-address = [ EC 17 66 77 05 02 ];
 			 	status = "ok";
-			};			
+			};
+			nand: nand@0x3C032000 {
+				status = "ok";
+			};	
 		};
 
 		lsif1 {						
