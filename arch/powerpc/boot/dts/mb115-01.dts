@@ -21,6 +21,10 @@
 		mmc0 = &mmc0;
 	};
 
+	/* ??? hdmi-out0 {
+		status = "ok";
+	};*/
+
 	plb {
 
 		sram_nor_arbiter {
@@ -111,9 +115,17 @@
 		lsif1 {						
 			i2c0: i2c@0x3C05A000 {
 				status = "ok";
+
 				rtc@68 {
 					compatible = "dallas,ds1338";
 					reg = <0x68>;
+				};
+
+				adv7513_0: adv7513@3D {
+					status = "ok";
+				};
+				adv7513_1: adv7513@39 {
+					status = "ok";
 				};
 			};						
 
@@ -158,8 +170,14 @@
 				mode = <1>;			/* 1 - host, 2 - device */
 				status = "ok";
 			};		
-		};		
+		};
 		
+		mms {
+			vdu0: vdu@0x38011000 {
+				status = "ok";
+			};
+		};
+
 		apb0 {
 
 			watchdog: watchdog@0x38002000 {
