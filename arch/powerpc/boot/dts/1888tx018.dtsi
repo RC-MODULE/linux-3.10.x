@@ -686,71 +686,19 @@
 				interrupts = <99 0>;	// IRQ_TYPE_EDGE_RISING
 				status = "disabled";
 
-				adv7513_0: adv7513@3D {
-					compatible = "rcm,adv7513";
-					reg = <0x3D>;
-					status = "disabled";
-				};
-				adv7513_1: adv7513@39 {
+				// HDMI channel 0
+				adv7513_0: adv7513@39 {
 					compatible = "rcm,adv7513";
 					reg = <0x39>;
 					status = "disabled";
 				};
-				// ???
-				// adv7513_0: adv7513@39 {
-				// 	compatible = "adi,adv7513";
-				// 	/*
-				// 	* The EDID page will be accessible on address 0x66 on the I2C
-				// 	* bus. All other maps continue to use their default addresses.
-				// 	*/
-				// 	reg = <0x39>; // ??? , <0x66>;
-				// 	reg-names = "main"; // ??? , "edid";
-				// 	/* ??? interrupt-parent = <&gpio3>;
-				// 	interrupts = <29 IRQ_TYPE_EDGE_FALLING>;
-				// 	clocks = <&cec_clock>;
-				// 	clock-names = "cec";*/
 
-				// 	adi,input-depth = <8>;
-				// 	adi,input-colorspace = "yuv444";
-				// 	adi,input-clock = "1x";
-				// 	adi,input-style = <1>;
-				// 	adi,input-justification = "evenly";
-
-				// 	status = "disabled";
-
-				// 	ports {
-				// 		#address-cells = <1>;
-				// 		#size-cells = <0>;
-
- 				// 		port@0 {
-				// 			reg = <0>;
-				// 			adv7513_0_in: endpoint {
-				// 				remote-endpoint = <&vdu_0_out>;
-				// 			};
-				// 		};
-
-				// 		port@1 {
-				// 			reg = <1>;
-				// 			adv7513_0_out: endpoint {
-				// 				remote-endpoint = <&hdmi_con0>;
-				// 			};
-				// 		};
-
-				// 		port@1 {
-				// 			reg = <1>;
-				// 			adv7511_out: endpoint {
-				// 				remote-endpoint = <&hdmi_connector_in>;
-				// 			};
-				// 		};
-
-				// 		port@2 {
-				// 			reg = <2>;
-				// 			codec_endpoint: endpoint {
-				// 				remote-endpoint = <&i2s0_cpu_endpoint>;
-				// 			};
-				// 		};
-				// 	};
-				// };
+				// HDMI channel 1
+				adv7513_1: adv7513@3D {
+					compatible = "rcm,adv7513";
+					reg = <0x3D>;
+					status = "disabled";
+				};
 			};						
 
 			i2c1: i2c@0x3C05B000 {
@@ -931,42 +879,40 @@
 				  0x39080000 0x010 0x39080000 0x00002000
 				  0x7A000000 0x000 0x3A000000 0x06000000>; // ???
 
-			vdu0: vdu@0x38011000 {
+			// HDMI channel 0 (actually VDU index 1)
+			vdu0: vdu@0x38013000 {
 				compatible = "rcm,vdu";
-				reg = <0x38011000 0x1000>; // ???
-				// ??? interrupts = <10>; // ???
+				reg = <0x38013000 0x1000>; // ???
 				interrupt-parent = <&MPIC>;
-				interrupts = <117 2>; // active high level-sensitive
+				interrupts = <120 2>; // active high level-sensitive
 				control = <&crg_vdu>;
-				// ??? interrupt-parent = <&vic1>; // ???
 				supported_modes = <0x7FFE>; // ???
 				default_mode = <0x4>; // ???
 				output_flags = <0x200>; // ???
 				axi_osd_param = <0x0f310000>; // ???
 				axi_mvl_param = <0x0f310000>; // ???
-				// ???? vdubuffer = <0xc0000000 0x2000000>; // ??? 32MB  EM1
 				memory-region = <&frame_buffer_0>; // ???
-				vdubuffer = <0x7E000000 0x02000000>; // ??? 32MB  EM1
+				vdubuffer = <0x7E000000 0x02000000>; // ???
 				status = "disabled";
-
-				/* ??? ports {
-					#address-cells = <1>;
-					#size-cells = <0>;
-
- 					port@0 {
-						reg = <0>;
-						vdu_0_out: endpoint {
-							remote-endpoint = <&adv7513_0_in>;
-						};
-					};
-				};*/
 			};
 
-			vdu1: vdu@0x38013000 {
+			// HDMI channel 1 (actually VDU index 0)
+			vdu1: vdu@0x38011000 {
+				compatible = "rcm,vdu";
+				reg = <0x38011000 0x1000>; // ???
+				interrupt-parent = <&MPIC>;
+				interrupts = <117 2>; // active high level-sensitive
+				control = <&crg_vdu>;
+				supported_modes = <0x7FFE>; // ???
+				default_mode = <0x4>; // ???
+				output_flags = <0x200>; // ???
+				axi_osd_param = <0x0f310000>; // ???
+				axi_mvl_param = <0x0f310000>; // ???
+				memory-region = <&frame_buffer_0>; // ???
+				vdubuffer = <0x7E000000 0x02000000>; // ???
 				status = "disabled";
 			};
 		};
-
 		
 		apb0 {
 			compatible = "ibm,apb";

@@ -121,13 +121,14 @@
 					reg = <0x68>;
 				};
 
-				adv7513_0: adv7513@3D {
+				adv7513_0: adv7513@39 {
 					status = "ok";
 				};
-				adv7513_1: adv7513@39 {
+
+				/* ??? adv7513_1: adv7513@3D {
 					status = "ok";
-				};
-			};						
+				};*/
+			};
 
 			uart0: uart0@3C05D000 {
 				status = "ok";
@@ -173,7 +174,7 @@
 		};
 		
 		mms {
-			vdu0: vdu@0x38011000 {
+			vdu0: vdu@0x38013000 {
 				status = "ok";
 			};
 		};
