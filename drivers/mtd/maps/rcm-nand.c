@@ -145,6 +145,7 @@
 
 #define DRIVER_NAME "rcm-nand" 
 
+//#define NAND_DBG_INIT_ERASE
 #define NAND_DBG_PRINTK
 
 #if defined NAND_DBG_PRINTK
@@ -433,7 +434,7 @@ static irqreturn_t rcm_nand_interrupt_handler(int irq, void* data)
         NAND_DBG_PRINT_ERR( "IRQ_LAST_SEGM_AXIR=%u\n", (bool)( g_chip.status1 & IRQ_LAST_SEGM_AXIR ) )
         NAND_DBG_PRINT_ERR( " IRQ_UNCORR_ERROR1=%u\n", (bool)( g_chip.status1 & IRQ_UNCORR_ERROR1 ) )
         NAND_DBG_PRINT_ERR( "  IRQ_STATUS_EMPTY=%u\n", (bool)( g_chip.status1 & IRQ_STATUS_EMPTY ) )
-        // ?complete_all(&g_completion);
+        complete_all(&g_completion);
     }
     return IRQ_HANDLED; 
 } 
@@ -534,7 +535,7 @@ int rcm_nand_hw_init( uint32_t* timings, uint32_t freq )
 
 static void rcm_nand_prepare_dma_read( size_t bytes )                   // чтение ИЗ флэш
 {
-    rcm_nand_set( NAND_REG_awlen_max, 0xF );                            // AXI burst size рекомендуемое значение: 0xF(16*4) (таблица 1.845)
+    rcm_nand_set( NAND_REG_awlen_max, 0);//0xF );                            // AXI burst size рекомендуемое значение: 0xF(16*4) (таблица 1.845)
     rcm_nand_set( NAND_REG_msb_lsbw, 0x1 );                             // 1-big_endian,0-little endian
     rcm_nand_set( NAND_REG_start_dma_w, g_chip.dma_handle );
     rcm_nand_set( NAND_REG_end_dma_w, g_chip.dma_handle+bytes-1 );
@@ -556,7 +557,7 @@ int mnand_ready(void)
 { 
     return (rcm_nand_get(0) & 0x200) != 0; 
 }
-
+/* только для отладки
 static bool rcm_nand_wait_int( u32 mask )
 {
     bool ret = false;
@@ -589,7 +590,7 @@ static bool rcm_nand_wait_int( u32 mask )
     NAND_DBG_PRINT_INF( "  IRQ_STATUS_EMPTY=%u\n", (bool)( irq_status & IRQ_STATUS_EMPTY ) )
     return ret;
 }
-
+*/
 static int rcm_nand_core_reset( uint32_t chip_select ) 
 {
         if( rcm_nand_wait_ready() )
@@ -644,7 +645,7 @@ static int mnand_core_erase(loff_t off)
                                  5,                                                             // 5 байтов (циклов) адреса в текущей команде
                                  NAND_ECC_MODE_NO_ECC,                                          // режим ecc (пока без коррекции)
                                  0,                                                             // hw write protect enabled (почему?)
-                                 0,                                                             // запретить проверку коррекции ошибок
+                                 0,                                                             // 0-запретить проверку коррекции ошибок
                                  FLASH_CMD_BLOCK_ERASE );                                       // команда для flash
         wait_for_completion_io( &g_completion );
         //BUG_ON(!mnand_ready());
@@ -1124,9 +1125,9 @@ int mnand_calculate_ecc(struct mtd_info *mtd, const unsigned char *buf, unsigned
                                          g_chip.mtd.oobsize,                                            // размер запасной области
                                          1,                                                             // начать операцию сразу
                                          5,                                                             // 5 байтов (циклов) адреса в текущей команде
-                                         NAND_ECC_MODE_4BITS,/*NAND_ECC_MODE_NO_ECC,*/                  // режим ecc (пока без коррекции)
+                                         /*NAND_ECC_MODE_4BITS*/NAND_ECC_MODE_NO_ECC,                   // режим ecc (пока без коррекции)
                                          1,                                                             // hw write protect enabled (почему?)
-                                         0,                                                             // запретить проверку коррекции ошибок
+                                         0,                                                             // 0-запретить проверку коррекции ошибок
                                          FLASH_CMD_PAGE_READ );                                         // команда для flash
                 wait_for_completion_io( &g_completion );
                 PRINT_BUF_256( ((uint8_t*)g_chip.dma_area), 0 )
@@ -1203,7 +1204,7 @@ int mnand_calculate_ecc(struct mtd_info *mtd, const unsigned char *buf, unsigned
         NAND_DBG_PRINT_INF( "mnand_core_write: off=0x%08llX,status=%08x\n", off, status )
         cs = rcm_nand_chip_offset( &off ); 
         g_chip.active_page = -1;
-        rcm_nand_prepare_dma_write( g_chip.mtd.writesize  + g_chip.mtd.oobsize ); 
+        rcm_nand_prepare_dma_write( g_chip.mtd.writesize + g_chip.mtd.oobsize ); 
         init_completion(&g_completion); 
         g_chip.state = MNAND_WRITE;
 
@@ -1217,9 +1218,9 @@ int mnand_calculate_ecc(struct mtd_info *mtd, const unsigned char *buf, unsigned
                                  g_chip.mtd.oobsize,                                            // размер запасной области
                                  1,                                                             // начать операцию сразу
                                  5,                                                             // 5 байтов (циклов) адреса в текущей команде
-                                 NAND_ECC_MODE_4BITS,/*NAND_ECC_MODE_NO_ECC*/                   // режим ecc (пока без коррекции)
-                                 0,                                                             // hw write protect enabled (почему?)
-                                 0,                                                             // запретить проверку коррекции ошибок
+                                 /*NAND_ECC_MODE_4BITS*/NAND_ECC_MODE_NO_ECC,                   // режим ecc (пока без коррекции)
+                                 0,                                                             // 1-hw write protect enabled (почему?)
+                                 0,                                                             // 0-запретить проверку коррекции ошибок
                                  FLASH_CMD_PROGRAM_PAGE );                                      // команда для flash
         rcm_nand_set( NAND_REG_cdb_buffer_enable, 0x1 );
         wait_for_completion_io(&g_completion);
@@ -1769,13 +1770,14 @@ static struct of_device_id of_platform_nand_table[];
 
 static int rcm_nand_probe(struct platform_device* ofdev) 
 {
-        struct erase_info instr = { 0, 1, 0 };
         const struct of_device_id *match;
         struct device_node *of_node = ofdev->dev.of_node;
         const char *part_probes[] = { "cmdlinepart", NULL, };
         uint32_t freq, timings[30];
         int err;
-
+#ifdef NAND_DBG_INIT_ERASE
+        struct erase_info instr = { 0, 0, 0 };
+#endif // NAND_DBG_INIT_ERASE
         match = of_match_device( of_platform_nand_table, &ofdev->dev );
         if( !match ) {
                 NAND_DBG_PRINT_ERR( "rcm_nand_probe: of_match_device: failed\n" )
@@ -1852,10 +1854,10 @@ static int rcm_nand_probe(struct platform_device* ofdev)
         g_chip.mtd.dev.parent = &ofdev->dev;
 
         NAND_DBG_PRINT_INF( "rcm_nand_probe: detected %llu bytes of NAND memory\n", g_chip.mtd.size )
-
+#ifdef NAND_DBG_INIT_ERASE
         instr.len = g_chip.mtd.erasesize;
         mnand_erase( &g_chip.mtd, &instr );
-
+#endif // NAND_DBG_INIT_ERASE
         err = mtd_device_parse_register( &g_chip.mtd, part_probes, 0, NULL, 0 );
         if( err ) { 
                 NAND_DBG_PRINT_ERR( "rcm_nand_probe: failed add mtd device (code: %d)\n", err );
