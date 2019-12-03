@@ -111,6 +111,13 @@
 		lsif1 {						
 			i2c0: i2c@0x3C05A000 {
 				status = "ok";
+
+				cs4384: cs4384@18 {
+					compatible = "cirrus,cs4384";
+					#sound-dai-cells = <0>;
+					reg = <0x18>;
+				};
+				
 				rtc@68 {
 					compatible = "dallas,ds1338";
 					reg = <0x68>;
@@ -158,7 +165,55 @@
 				mode = <1>;			/* 1 - host, 2 - device */
 				status = "ok";
 			};		
-		};		
+		};
+
+		mms {
+			i2s: i2s@0x39080000 {
+				status = "ok";
+			};
+			spdif: spdif@0x39080000 {
+				status = "ok";
+			};
+			audio_dma: audio_dma@0x38017000 {
+				status = "ok";
+			};
+
+			sound {
+				compatible = "simple-audio-card";
+				simple-audio-card,name = "RCM Audio";
+				#address-cells = <1>;
+				#size-cells = <0>;
+				#sound-dai-cells = <1>;
+				status = "ok";
+
+				simple-audio-card,dai-link@0 {		/* I2S - cs4384 */
+					reg = <0>;
+					format = "i2s";
+					cpu {
+						sound-dai = <&i2s>;
+					};
+					codec {
+						sound-dai = <&cs4384>;
+					};
+				};
+
+				//simple-audio-card,dai-link@1 {		/* I2S - cs4384 */
+				//	reg = <1>;
+				//	cpu {
+				//		sound-dai = <&spdif>;
+				//	};
+				//	codec {
+				//		sound-dai = <&spdif_out>;
+				//	};
+				//};
+			};
+
+			spdif_out: spdif-out {
+				#sound-dai-cells = <0>;
+				compatible = "linux,spdif-dit";
+			};
+
+		};
 		
 		apb0 {
 

@@ -845,28 +845,49 @@
 			ranges = <0x38010000 0x010 0x38010000 0x00024000
 					  0x39080000 0x010 0x39080000 0x00002000>; 
 
-			i2s: i2s@0x39080000 {
+			dma-ranges = <0x40000000 0x00000000 0x00000000 0x40000000>;
+
+
+			i2s: i2s@0x39080000 {			
 				compatible = "rcm,i2s";
+				#sound-dai-cells = <0>;
 				reg = <0x39080000 0x1000>;
 				interrupt-parent = <&MPIC>;
 				interrupts = <125 4>;
-				dma = <&audio_dma>;
+				dmas = <&audio_dma 0>, <&audio_dma 1>, <&audio_dma 2>, <&audio_dma 3>;
+				dma-names = "rx", "rx", "rx", "rx";
+				status = "disabled";
 			};
 			
 			spdif: spdif@0x39080000 {
 				compatible = "rcm,spdif";
+				#sound-dai-cells = <0>;
 				reg = <0x39081000 0x1000>;
 				interrupt-parent = <&MPIC>;
 				interrupts = <126 4>;
-				dma = <&audio_dma>;
+				dmas = <&audio_dma 0>;
+				dma-names = "rx";
+				status = "disabled";
 			};
 
 			audio_dma: audio_dma@0x38017000 {
 				compatible = "rcm,audio-dma";
 				reg = <0x38017000 0x1000>;
+				#dma-cells = <1>;
 				interrupt-parent = <&MPIC>;
 				interrupts = <127 4>;
+				status = "disabled";
 			};
+
+//			sound {
+//				compatible = "rcm,legacy-audio";
+//				interrupt-parent = <&MPIC>;
+//				interrupts = <127 4>;
+//				maudio,dmac = <&audio_dma>;
+//				maudio,i2s = <&i2s>;
+//				maudio,spdif = <&spdif>;
+//				status = "disabled";
+//			};
 		};
 		
 		apb0 {

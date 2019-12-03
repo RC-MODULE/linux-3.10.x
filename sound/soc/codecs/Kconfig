@@ -535,6 +535,12 @@ config SND_SOC_CS4349
 	tristate "Cirrus Logic CS4349 CODEC"
 	depends on I2C
 
+config SND_SOC_CS4384
+	tristate "Cirrus Logic CS4384 CODEC"
+	depends on I2C
+	help
+	  I2C Driver for CS4384 DAC Support.	
+
 config SND_SOC_CS47L24
 	tristate
 
