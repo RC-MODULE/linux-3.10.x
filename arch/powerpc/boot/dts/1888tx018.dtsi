@@ -581,7 +581,7 @@
 			};
 
 			nand: nand@0x3C032000 {										// NAND-0x3C032000 – 0x3C032FFF
-				compatible = "rcm,nand","simple-bus";					// compatible = «simple-bus» способствует простой адресации памяти шины для не специфического обработчика или драйвера
+				compatible = "rcm,nand";
 				#address-cells = <1>;									// #address-cells сколько диапазонов адресов
 				#size-cells = <1>;										// #size-cells сколько (в 32 битах) размер каждого
 				reg = <0x3C032000 0x1000>;								// базовый + размер памяти управляющих регистров
