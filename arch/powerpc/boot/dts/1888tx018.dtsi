@@ -589,9 +589,36 @@
 																		// 256 Мбит(32Мб,0x2000000),512 Мбит(64Мб,0x4000000),1 Гбит(128Мб,0x8000000)
 				clocks = <&lsif0clock>;
 				config = <&lsif0_config>;
-// tADL_min	tALH_min tALS_min tCH_min-tCLH_min tCLS_min tCS_min tDH_min-tDS_min tWC_min tWH_min tWP_min-tWW_min tAR_min tCLR_min
-// tCOH_min tIR_min tRC_min tREH_min-tRHOH_min tRHW_min tRLOH_min tRP_min-tRR_min tWHR_min tCEA_max tCHZ_max-tREA_max tRHZ_max tWB_max
-				timings = <200 20 50 20 20 50 70 20 40 100 30 50 100 25 20 0 10 100 30 0 200 0 50 40 120 100 100 40 200 200>;
+				timings = < 200		/* tADL_min (ONFI_2_0_Gold.pdf,page 47)*/
+							20		/* tALH_min */
+							50		/* tALS_min */
+							20		/* tCH_min */
+							20		/* tCLH_min */
+							50		/* tCLS_min */
+							70		/* tCS_min */
+							20		/* tDH_min */
+							40		/* tDS_min */
+							100		/* tWC_min */
+							30		/* tWH_min */
+							50		/* tWP_min */
+							100		/* tWW_min */
+							25		/* tAR_min */
+							20		/* tCLR_min */
+							0		/* tCOH_min */
+							10		/* tIR_min */
+							100		/* tRC_min  не видать,как влияет*/
+							30		/* tREH_min не видать,как влияет*/
+							0		/* tRHOH_min */
+							200		/* tRHW_min */
+							0		/* tRLOH_min не видать,как влияет*/
+							50		/* tRP_min */
+							40		/* tRR_min */
+							120		/* tWHR_min */
+							100		/* tCEA_max */
+							100		/* tCHZ_max */
+							40		/* tREA_max */
+							200		/* tRHZ_max */
+							200 >;  /* tWB_max */
 				interrupt-parent = <&MPIC>;
 				interrupts = <109 0>; 									// IRQ_TYPE_EDGE_RISING
 				status = "disabled";
