@@ -77,10 +77,17 @@
 					alignment = <0 0x1000000>;
 			};
 
-			frame_buffer_0: frame_buffer@0x3A000000 {
-				reg = <0x0 0x3A000000 0x0 0x04000000>;
+			frame_buffer_0: frame_buffer@0x37C00000 {
+				reg = <0x0 0x37C00000 0x0 0x02200000>;
 			};
-			video_buffer_0: video_buffer@0x3E000000 {
+			video_buffer_0: video_buffer@0x39E00000 {
+				reg = <0x0 0x39E00000 0x0 0x02000000>;
+			};
+
+			frame_buffer_1: frame_buffer@0x3BE00000 {
+				reg = <0x0 0x3BE00000 0x0 0x02200000>;
+			};
+			video_buffer_1: video_buffer@0x3E000000 {
 				reg = <0x0 0x3E000000 0x0 0x02000000>;
 			};
 	};
@@ -91,18 +98,6 @@
 		
 		>;  
 	};
-
-	/* ??? hdmi-out0 {
-		compatible = "hdmi-connector";
-		type = "a";
-		status = "disabled";
-
-		port {
-			hdmi_con0: endpoint {
-				remote-endpoint = <&adv7513_0_out>;
-			};
-		};
-	};*/
 
 	lsif1clock: lsif1clock@100M {
 		#clock-cells = <0>;
@@ -877,39 +872,42 @@
 			#size-cells = <1>;
 			ranges = <0x38010000 0x010 0x38010000 0x00024000
 				  0x39080000 0x010 0x39080000 0x00002000
-				  0x7A000000 0x000 0x3A000000 0x06000000>; // ???
+				  0x37C00000 0x000 0x37C00000 0x08400000>;
+			dma-ranges = <0x40000000 0x000 0x00000000 0x40000000>;
 
 			// HDMI channel 0 (actually VDU index 1)
 			vdu0: vdu@0x38013000 {
 				compatible = "rcm,vdu";
-				reg = <0x38013000 0x1000>; // ???
+				reg = <0x38013000 0x1000>;
 				interrupt-parent = <&MPIC>;
 				interrupts = <120 2>; // active high level-sensitive
-				control = <&crg_vdu>;
-				supported_modes = <0x7FFE>; // ???
-				default_mode = <0x4>; // ???
-				output_flags = <0x200>; // ???
-				axi_osd_param = <0x0f310000>; // ???
-				axi_mvl_param = <0x0f310000>; // ???
-				memory-region = <&frame_buffer_0>; // ???
-				vdubuffer = <0x7E000000 0x02000000>; // ???
+				vdu-index = <1>;
+				crg-control = <&crg_vdu>;
+				supported_modes = <0x7FFE>;
+				default_mode = <0x4>;
+				output_flags = <0x200>;
+				axi_osd_param = <0x0f310000>;
+				axi_mvl_param = <0x0f310000>;
+				memory-region = <&frame_buffer_1>;
+				vdubuffer = <0x3E000000 0x02000000>;
 				status = "disabled";
 			};
 
 			// HDMI channel 1 (actually VDU index 0)
 			vdu1: vdu@0x38011000 {
 				compatible = "rcm,vdu";
-				reg = <0x38011000 0x1000>; // ???
+				reg = <0x38011000 0x1000>;
 				interrupt-parent = <&MPIC>;
 				interrupts = <117 2>; // active high level-sensitive
-				control = <&crg_vdu>;
-				supported_modes = <0x7FFE>; // ???
-				default_mode = <0x4>; // ???
-				output_flags = <0x200>; // ???
-				axi_osd_param = <0x0f310000>; // ???
-				axi_mvl_param = <0x0f310000>; // ???
-				memory-region = <&frame_buffer_0>; // ???
-				vdubuffer = <0x7E000000 0x02000000>; // ???
+				vdu-index = <0>;
+				crg-control = <&crg_vdu>;
+				supported_modes = <0x7FFE>;
+				default_mode = <0x4>;
+				output_flags = <0x200>;
+				axi_osd_param = <0x0f310000>;
+				axi_mvl_param = <0x0f310000>;
+				memory-region = <&frame_buffer_0>;
+				vdubuffer = <0x39E00000 0x02000000>;
 				status = "disabled";
 			};
 		};

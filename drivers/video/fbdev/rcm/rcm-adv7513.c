@@ -1,22 +1,26 @@
-// ????
+/*
+ *  This program is free software; you can redistribute it and/or modify it
+ *  under the terms of the GNU General Public License version 2 as published
+ *  by the Free Software Foundation.
+ *
+ *  Copyright (C) 2019 Mikhail Petrov <Mikhail.Petrov@astrosoft.ru>
+ */
 
 #include <linux/kernel.h>
 #include <linux/module.h>
 #include <linux/init.h>
 #include <linux/i2c.h>
-// ??? #include <linux/wait.h>
-// ??? #include <linux/kthread.h>
-// ??? #include <linux/sched.h>
 #include <linux/of_platform.h>
 #include <linux/regmap.h>
 
 #define MAIN_REG_CHIP_REVISION 0x00
 #define MAIN_REG_I2C_FREQ_ID_CFG 0x15
-#define MAIN_REG_VIDEO_INPUT_CFG1 0x16
-#define MAIN_REG_VIDEO_INPUT_CFG2 0x17
-#define MAIN_REG_CSC_UPPER 0x18 // ??? name
+#define MAIN_REG_VIDEO_INPUT_CFG_1 0x16
+#define MAIN_REG_VIDEO_INPUT_CFG_2 0x17
+#define MAIN_REG_CSC_UPPER 0x18
 #define MAIN_REG_POWER 0x41
 #define MAIN_REG_STATUS 0x42
+#define MAIN_REG_AVI_INFOFRAME_0 0x55
 #define MAIN_REG_INT_0 0x96
 #define MAIN_REG_FIXED_98 0x98
 #define MAIN_REG_FIXED_9A 0x9A
@@ -43,12 +47,6 @@ struct adv7513_common
 	struct delayed_work test_HPD_work;
 	bool initialized;
 	bool active;
-
-
-	//
-	// ???
-	//
-
 };
 
 static const struct regmap_config reg_regmap_config = {
@@ -145,26 +143,26 @@ static int power_on(struct adv7513_common *adv7513)
 	if (ret != 0)
 		return ret;
 	data &= ~0x0F;
-	data |= 0x00; // 24 bit RGB 4:4:4 or YCbCr 4:4:4 (separate syncs)
+	data |= 0x01; // 16, 20, 24 bit YCbCr 4:2:2 (separate syncs)
 	ret = regmap_write(adv7513->regmap_main, MAIN_REG_I2C_FREQ_ID_CFG, data);
 	if (ret != 0)
 		return ret;
 
-	ret = regmap_read(adv7513->regmap_main, MAIN_REG_VIDEO_INPUT_CFG1, &data);
+	ret = regmap_read(adv7513->regmap_main, MAIN_REG_VIDEO_INPUT_CFG_1, &data);
 	if (ret != 0)
 		return ret;
 	data &= ~0xBD;
-	data |= 0x35; // 4:4:4, 8 bit, style 1, black image YCbCr
-	ret = regmap_write(adv7513->regmap_main, MAIN_REG_VIDEO_INPUT_CFG1, data);
+	data |= 0xB9; // 4:2:2, 8 bit, style 1, black image YCbCr
+	ret = regmap_write(adv7513->regmap_main, MAIN_REG_VIDEO_INPUT_CFG_1, data);
 	if (ret != 0)
 		return ret;
 
-	ret = regmap_read(adv7513->regmap_main, MAIN_REG_VIDEO_INPUT_CFG2, &data);
+	ret = regmap_read(adv7513->regmap_main, MAIN_REG_VIDEO_INPUT_CFG_2, &data);
 	if (ret != 0)
 		return ret;
 	data &= ~0x02;
 	data |= 0x00; // 16:9 Aspect Ratio
-	ret = regmap_write(adv7513->regmap_main, MAIN_REG_VIDEO_INPUT_CFG2, data);
+	ret = regmap_write(adv7513->regmap_main, MAIN_REG_VIDEO_INPUT_CFG_2, data);
 	if (ret != 0)
 		return ret;
 
@@ -186,9 +184,14 @@ static int power_on(struct adv7513_common *adv7513)
 	if (ret != 0)
 		return ret;
 
-	//
-	// ???
-	//
+	ret = regmap_read(adv7513->regmap_main, MAIN_REG_AVI_INFOFRAME_0, &data);
+	if (ret != 0)
+		return ret;
+	data &= ~0x60;
+	data |= 0x20; // 01 = YCbCr 4:2:2
+	ret = regmap_write(adv7513->regmap_main, MAIN_REG_AVI_INFOFRAME_0, data);
+	if (ret != 0)
+		return ret;
 
 	dev_info(&adv7513->i2c_main->dev, "successfully activated\n");
 
@@ -267,10 +270,11 @@ static int probe_internal(struct adv7513_common *adv7513)
 
 static int free_internal(struct adv7513_common *adv7513)
 {
+	if (adv7513->initialized)
+		cancel_delayed_work_sync(&adv7513->test_HPD_work);
+
 	if (adv7513->active)
 		power_off(adv7513);
-	// ??? if (adv7513->initialized)
-	// ???	del_timer_sync(&adv7513->test_HPD_timer);
 
 	return 0;
 }
@@ -344,8 +348,6 @@ static void __exit rcm_adv7513_exit(void)
 module_init(rcm_adv7513_init);
 module_exit(rcm_adv7513_exit);
 
-MODULE_AUTHOR("????");
-MODULE_DESCRIPTION("ADV7513 HDMI transmitter driver ????");
+MODULE_AUTHOR("Mikhail Petrov <Mikhail.Petrov@astrosoft.ru>");
+MODULE_DESCRIPTION("ADV7513 HDMI transmitter driver");
 MODULE_LICENSE("GPL");
-
-// ????
