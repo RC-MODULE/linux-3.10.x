@@ -178,7 +178,7 @@
 #define PRINT_BUF_64(b,n) PRINT_BUF_16(b,n) PRINT_BUF_16(b,n+16) PRINT_BUF_16(b,n+32) PRINT_BUF_16(b,n+48)
 #define PRINT_BUF_256(b,n) PRINT_BUF_64(b,n) PRINT_BUF_64(b,n+64) PRINT_BUF_64(b,n+128) PRINT_BUF_64(b,n+192)
 #define PRINT_BUF_512(b) PRINT_BUF_256(b,0) PRINT_BUF_256(b,256)
-#define PRINT_OOB(b) printk( "%*ph", 20, b );
+#define PRINT_BUF(s,b,n) printk( "%s:%*ph\n", s, n, b );
 
 /*
 #define MNAND_DECLARE_PARAM(name, def) \
@@ -413,24 +413,24 @@ static irqreturn_t rcm_nand_interrupt_handler( int irq, void* data )
     }
     
     g_chip.err = g_chip.status_irq & ( IRQ_UNCORR_ERROR0 | IRQ_AXIW_ERROR | IRQ_AXIR_ERROR | IRQ_UNCORR_ERROR1 ) ? -1 : 0;
- 
+
     if( g_chip.err )
     {
-        NAND_DBG_PRINT_ERR( " rcm_nand_interrupt_handler(status=%08x):\n", g_chip.status )
-        NAND_DBG_PRINT_ERR( "   IRQ_READ_FINISH=%u\n", (bool)( g_chip.status_irq & IRQ_READ_FINISH ) )
-        NAND_DBG_PRINT_ERR( "        IRQ_READID=%u\n", (bool)( g_chip.status_irq & IRQ_READID ) )
-        NAND_DBG_PRINT_ERR( "IRQ_PROGRAM_FINISH=%u\n", (bool)( g_chip.status_irq & IRQ_PROGRAM_FINISH ) )
-        NAND_DBG_PRINT_ERR( "         IRQ_ERASE=%u\n", (bool)( g_chip.status_irq & IRQ_ERASE ) )
-        NAND_DBG_PRINT_ERR( "         IRQ_RESET=%u\n", (bool)( g_chip.status_irq & IRQ_RESET ) )
+        //NAND_DBG_PRINT_ERR( " rcm_nand_interrupt_handler(status=%08x):\n", g_chip.status )
+        //NAND_DBG_PRINT_ERR( "   IRQ_READ_FINISH=%u\n", (bool)( g_chip.status_irq & IRQ_READ_FINISH ) )
+        //NAND_DBG_PRINT_ERR( "        IRQ_READID=%u\n", (bool)( g_chip.status_irq & IRQ_READID ) )
+        //NAND_DBG_PRINT_ERR( "IRQ_PROGRAM_FINISH=%u\n", (bool)( g_chip.status_irq & IRQ_PROGRAM_FINISH ) )
+        //NAND_DBG_PRINT_ERR( "         IRQ_ERASE=%u\n", (bool)( g_chip.status_irq & IRQ_ERASE ) )
+        //NAND_DBG_PRINT_ERR( "         IRQ_RESET=%u\n", (bool)( g_chip.status_irq & IRQ_RESET ) )
         NAND_DBG_PRINT_ERR( " IRQ_UNCORR_ERROR0=%u\n", (bool)( g_chip.status_irq & IRQ_UNCORR_ERROR0 ) )
-        NAND_DBG_PRINT_ERR( "    IRQ_AXIW_ERROR=%u\n", (bool)( g_chip.status_irq & IRQ_AXIW_ERROR ) )
-        NAND_DBG_PRINT_ERR( " IRQ_LAST_ADR_AXIW=%u\n", (bool)( g_chip.status_irq & IRQ_LAST_ADR_AXIW ) )
-        NAND_DBG_PRINT_ERR( "IRQ_LAST_SEGM_AXIW=%u\n", (bool)( g_chip.status_irq & IRQ_LAST_SEGM_AXIW ) )
-        NAND_DBG_PRINT_ERR( "    IRQ_AXIR_ERROR=%u\n", (bool)( g_chip.status_irq & IRQ_AXIR_ERROR ) )
-        NAND_DBG_PRINT_ERR( " IRQ_LAST_ADR_AXIR=%u\n", (bool)( g_chip.status_irq & IRQ_LAST_ADR_AXIR ) )
-        NAND_DBG_PRINT_ERR( "IRQ_LAST_SEGM_AXIR=%u\n", (bool)( g_chip.status_irq & IRQ_LAST_SEGM_AXIR ) )
+        //NAND_DBG_PRINT_ERR( "    IRQ_AXIW_ERROR=%u\n", (bool)( g_chip.status_irq & IRQ_AXIW_ERROR ) )
+        //NAND_DBG_PRINT_ERR( " IRQ_LAST_ADR_AXIW=%u\n", (bool)( g_chip.status_irq & IRQ_LAST_ADR_AXIW ) )
+        //NAND_DBG_PRINT_ERR( "IRQ_LAST_SEGM_AXIW=%u\n", (bool)( g_chip.status_irq & IRQ_LAST_SEGM_AXIW ) )
+        //NAND_DBG_PRINT_ERR( "    IRQ_AXIR_ERROR=%u\n", (bool)( g_chip.status_irq & IRQ_AXIR_ERROR ) )
+        //NAND_DBG_PRINT_ERR( " IRQ_LAST_ADR_AXIR=%u\n", (bool)( g_chip.status_irq & IRQ_LAST_ADR_AXIR ) )
+        //NAND_DBG_PRINT_ERR( "IRQ_LAST_SEGM_AXIR=%u\n", (bool)( g_chip.status_irq & IRQ_LAST_SEGM_AXIR ) )
         NAND_DBG_PRINT_ERR( " IRQ_UNCORR_ERROR1=%u\n", (bool)( g_chip.status_irq & IRQ_UNCORR_ERROR1 ) )
-        NAND_DBG_PRINT_ERR( "  IRQ_STATUS_EMPTY=%u\n", (bool)( g_chip.status_irq & IRQ_STATUS_EMPTY ) )
+        //NAND_DBG_PRINT_ERR( "  IRQ_STATUS_EMPTY=%u\n", (bool)( g_chip.status_irq & IRQ_STATUS_EMPTY ) )
         //complete_all(&g_completion);
     }
     return IRQ_HANDLED; 
@@ -1106,8 +1106,8 @@ int mnand_calculate_ecc(struct mtd_info *mtd, const unsigned char *buf, unsigned
  
         //BUG_ON(g_chip.state != MNAND_IDLE); 
         //BUG_ON(!rcm_nand_ready()); 
- 
-       //NAND_DBG_PRINT_INF( "rcm_nand_core_read: cs=%u,off=%08llX,page=%08llX,status=%08x\n", cs, off, page, status )
+
+        NAND_DBG_PRINT_INF( "rcm_nand_core_read: cs=%u,off=%08llX,page=%08llX\n", cs, off, page )
  
         if( g_chip.active_page != page ) { 
                 g_chip.active_page = -1;
@@ -1429,7 +1429,8 @@ ret:
         NAND_DBG_PRINT_INF( "rcm_nand_erase: err=%d,addr=0x%08llx,fail_addr=0x%08llx\n", err, instr->addr, instr->fail_addr )
          //mtd_erase_callback(instr);  // implicit declaration of function 'mtd_erase_callback
          return err; 
- } 
+ }
+
 #if 0
  static uint8_t* mnand_fill_oob(uint8_t *oob, struct mtd_oob_ops *ops) 
  { 
@@ -1472,7 +1473,6 @@ ret:
          } 
          return NULL; 
  } 
- 
  
  static uint8_t* mnand_transfer_oob(uint8_t *oob, struct mtd_oob_ops *ops, size_t len) 
  { 
@@ -1520,15 +1520,15 @@ ret:
  #endif // 0
 
 static int rcm_nand_write_oob( struct mtd_info* mtd, loff_t to, struct mtd_oob_ops* ops )
-{       // грубо обрублено все связанное с oob,хотя 20 байт есть,сделаем
+{
         uint8_t* data = ops->datbuf;
         uint8_t* dataend = data ? data + ops->len : 0;
         uint8_t* oob = ops->oobbuf;
         uint8_t* oobend = oob ? oob + ops->ooblen : 0;
         int err; 
 
-        //NAND_DBG_PRINT_INF( "rcm_nand_write_oob: to=0x%08llX, ops.mode=%d, ops.len=0x%X, ops.ooblen=%d ops.ooboffs=0x%08X\n",
-        //                    to, ops->mode, ops->len, ops->ooblen, ops->ooboffs);
+        NAND_DBG_PRINT_INF( "rcm_nand_write_oob: to=0x%08llX, ops.mode=%d, ops.len=0x%X, ops.ooblen=%d ops.ooboffs=0x%08X\n",
+                             to, ops->mode, ops->len, ops->ooblen, ops->ooboffs )
 
          ops->retlen = 0;
          ops->oobretlen = 0;
@@ -1552,18 +1552,38 @@ static int rcm_nand_write_oob( struct mtd_info* mtd, loff_t to, struct mtd_oob_o
                         if( data != dataend ) { 
                                 memcpy( g_chip.dma_area, data, g_chip.mtd.writesize ); 
                                 data += g_chip.mtd.writesize;
-                                memcpy( (uint8_t*)g_chip.dma_area + g_chip.mtd.writesize, "abcdefghijklmnopqrstuvwx", g_chip.mtd.oobavail );       // доступное oob
+                                //memcpy( (uint8_t*)g_chip.dma_area + g_chip.mtd.writesize, "abcdefghijklmnopqrstuvwx", g_chip.mtd.oobavail );       // доступное oob
                         } 
-/*
-                         if(oob != oobend) { 
-                                 oob = mnand_fill_oob(oob, ops); 
-                                 if(!oob) { 
-                                         err = -EINVAL; 
-                                         printk(KERN_ERR "oob einval\n"); 
-                                         break; 
-                                 } 
+
+                        if( oob != oobend ) { 
+                                switch( ops->mode ) {
+                                default:
+                                case MTD_OPS_PLACE_OOB:                 // OOB data are placed at the given offset (default)
+                                case MTD_OPS_RAW:                       // OOB data are transferred as-is, with no error correction,this mode implies MTD_OPS_PLACE_OOB
+                                        NAND_DBG_PRINT_ERR( "rcm_nand_write_oob: bad parameters for write oob mode=%u\n", ops->mode )
+                                        err =  -EINVAL;
+                                        break;                          // часть OOB используется корректором ошибок контроллера
+                                case MTD_OPS_AUTO_OOB:                  // OOB data are automatically placed at the free areas which are defined by the internal ecclayout
+                                        if( ( ops->ooblen > g_chip.mtd.oobavail ) || ( ops->ooboffs + ops->ooblen > g_chip.mtd.oobavail ) ) { // доступная область у нас с 0 смещения
+                                                NAND_DBG_PRINT_ERR( "rcm_nand_write_oob: bad parameters for write oob len=%u off=%u avl=%u\n", ops->ooblen, ops->ooboffs, g_chip.mtd.oobavail )
+                                                err = -EINVAL;
+                                        }
+                                        else {
+                                                PRINT_BUF( "rcm_nand_write_oob", oob, ops->ooblen )
+                                                memcpy( g_chip.dma_area + g_chip.mtd.writesize + ops->ooboffs, oob, ops->ooblen ); 
+                                                oob = oobend;
+                                        }
+                                        break;
+                                }
+                                 //oob = mnand_fill_oob(oob, ops); 
+                                 //if(!oob) { 
+                                 //         err = -EINVAL; 
+                                 //        printk(KERN_ERR "oob einval\n"); 
+                                 //        break; 
+                                 //} 
                          } 
-*/
+                         if( err )
+                                break;
                          err = rcm_nand_core_write(to); 
                          if( err )
                                 break; 
@@ -1588,17 +1608,16 @@ static int rcm_nand_read_oob( struct mtd_info* mtd, loff_t from, struct mtd_oob_
         size_t shift;
         size_t bytes;
         uint8_t* data = ops->datbuf;
-        //uint8_t* oob = ops->oobbuf;
+        uint8_t* oob = ops->oobbuf;
         int err;
         uint8_t* dataend = data + ops->len;
-        //uint8_t* oobend = oob ? oob + ops->ooblen : 0;
+        uint8_t* oobend = oob ? oob + ops->ooblen : 0;
+
+        NAND_DBG_PRINT_INF( "rcm_nand_read_oob: from=0x%08llX ops.mode=%d ops.len=%d ops.ooblen=%d ops ooboffs=0x%08X data=%p\n",
+                            from, ops->mode, ops->len, ops->ooblen, ops->ooboffs, data );
 /*
-        TRACE( KERN_DEBUG,
-               "from=0x%08llX, ops.mode=%d, ops.len=%d, ops.ooblen=%d ops.ooboffs=0x%08X data=%p\n",
-               from, ops->mode, ops->len, ops->ooblen, ops->ooboffs, data);
         TRACE(KERN_DEBUG, "oob %p, oobend %p\n", oob, oobend);
 */
-
          if( ops->len != 0 && data == 0 ) { 
                  ops->len = 0;
                  dataend = 0;
@@ -1627,18 +1646,40 @@ static int rcm_nand_read_oob( struct mtd_info* mtd, loff_t from, struct mtd_oob_
                                 memcpy( data, g_chip.dma_area + shift, bytes ); 
                                 data += bytes;
                          } 
-/*
-                         if(oob != oobend) {
-                                 TRACE(KERN_DEBUG, "oob %p, oobend %p\n", oob, oobend);
-                                 oob = mnand_transfer_oob(oob, ops, oobend-oob);
-                                 if(!oob) {
-                                         err = -EINVAL;
-                                         break;
-                                 }
+
+                         if( oob != oobend ) {
+                                switch( ops->mode ) {
+                                default:
+                                case MTD_OPS_PLACE_OOB:                 // OOB data are placed at the given offset (default)
+                                case MTD_OPS_RAW:                       // OOB data are transferred as-is, with no error correction,this mode implies MTD_OPS_PLACE_OOB
+                                        NAND_DBG_PRINT_ERR( "rcm_nand_read_oob: bad parameters for write oob mode=%u\n", ops->mode )
+                                        err =  -EINVAL;
+                                        break;                          // часть OOB используется корректором ошибок контроллера
+                                case MTD_OPS_AUTO_OOB:                  // OOB data are automatically placed at the free areas which are defined by the internal ecclayout
+                                        if( ( ops->ooblen > g_chip.mtd.oobavail ) || ( ops->ooboffs + ops->ooblen > g_chip.mtd.oobavail ) ) { // доступная область у нас с 0 смещения
+                                                NAND_DBG_PRINT_ERR( "rcm_nand_read_oob: bad parameters for write oob len=%u off=%u avl=%u\n", ops->ooblen, ops->ooboffs, g_chip.mtd.oobavail )
+                                                err = -EINVAL;
+                                        }
+                                        else {
+                                                PRINT_BUF( "rcm_nand_read_oob", oob, ops->ooblen )
+                                                memcpy( oob, g_chip.dma_area + g_chip.mtd.writesize + ops->ooboffs, ops->ooblen ); 
+                                                oob = oobend;
+                                        }
+                                        break;
+                                }
+                                 //TRACE(KERN_DEBUG, "oob %p, oobend %p\n", oob, oobend);
+                                 //oob = mnand_transfer_oob(oob, ops, oobend-oob);
+                                 //if(!oob) {
+                                 //        err = -EINVAL;
+                                 //        break;
+                                 //}
                          }
-*/
-                         if( data == dataend )//&& oob == oobend)
-                                 break;
+
+                         if( err )
+                                break;
+
+                        if( ( data == dataend ) &&  ( oob == oobend ) )
+                                break;
 
                          from &= ~((1 << mtd->writesize_shift)-1);
                          from += mtd->writesize;
@@ -1869,8 +1910,8 @@ static int rcm_nand_probe(struct platform_device* ofdev)
         g_chip.mtd._write = rcm_nand_write;
         //g_chip.mtd._block_isbad = mnand_isbad;
         //g_chip.mtd._block_markbad = mnand_markbad;
-        //g_chip.mtd._read_oob = rcm_nand_read_oob;       // грубо обрублено все связанное с oob...
-        //g_chip.mtd._write_oob = rcm_nand_write_oob;
+        g_chip.mtd._read_oob = rcm_nand_read_oob;
+        g_chip.mtd._write_oob = rcm_nand_write_oob;
         //g_chip.mtd.ecclayout = &g_ecclayout;
         g_chip.mtd.dev.parent = &ofdev->dev;
         g_chip.mtd.oobavail = g_chip.mtd.oobsize - ECC_OOB_CTRL_USED - 4; // байты 16..19 мне не прочитать!!!
