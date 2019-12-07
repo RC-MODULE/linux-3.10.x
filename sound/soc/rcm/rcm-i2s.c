@@ -16,145 +16,194 @@
 #include <sound/pcm_params.h>
 #include <sound/soc.h>
 #include <sound/dmaengine_pcm.h>
+#include <linux/of_device.h>
+#include <linux/of_platform.h>
+#include "rcm-i2s.h"
 
-#define RCM_I2S_REG_CTRL0	0x00
-#define RCM_I2S_REG_CTRL1	0x08
-#define RCM_I2S_REG_STAT0	0x10
-#define RCM_I2S_REG_STAT1	0x18
-#define RCM_I2S_REG_FIFO0	0x20
-#define RCM_I2S_REG_FIFO1	0x28
-#define RCM_I2S_REG_FIFO2	0x30
-#define RCM_I2S_REG_FIFO3	0x38
+static int g_i2s_debug = 1;
 
+module_param_named(debug, g_i2s_debug, int, 0);
+
+#define TRACE(format, ...)                                                     \
+	do {                                                                   \
+		if (g_i2s_debug) {                                             \
+			printk("TRACE: rcm-i2s/%s:%d: " format "\n", __func__, \
+			       __LINE__, ##__VA_ARGS__);                       \
+		}                                                              \
+	} while (0)
 
 struct rcm_i2s {
-	struct regmap *regmap;
+	struct device *dev;
+	struct rcm_i2s_control *ctrl;
 	struct snd_soc_dai_driver dai_driver;
-
 	struct snd_dmaengine_dai_dma_data playback_dma_data;
+	int id;
+	char dai_name[16];
 };
-
-static const struct regmap_config rcm_i2s_regmap_config = {
-	.reg_bits = 32,
-	.reg_stride = 8,
-	.val_bits = 32,
-	.max_register = RCM_I2S_REG_FIFO3,
-};
-
-
-static int rcm_i2s_reset(struct rcm_i2s *i2s)
-{
-	unsigned int status;
-	regmap_update_bits(i2s->regmap, RCM_I2S_REG_CTRL0, 1, 1);
-	return regmap_read_poll_timeout(i2s->regmap, RCM_I2S_REG_CTRL0, status, (status&1) == 0, 100, 10000);
-}
-
 
 static int rcm_i2s_dai_probe(struct snd_soc_dai *dai)
 {
 	struct rcm_i2s *i2s = snd_soc_dai_get_drvdata(dai);
 
-	printk("TRACE: rcm_i2s_dai_probe");
+	TRACE("%d", i2s->id);
 
-	snd_soc_dai_init_dma_data(dai, &i2s->playback_dma_data,
-		0);
+	snd_soc_dai_init_dma_data(dai, &i2s->playback_dma_data, 0);
 
 	return 0;
 }
 
 static int rcm_i2s_startup(struct snd_pcm_substream *substream,
-	struct snd_soc_dai *dai)
+			   struct snd_soc_dai *dai)
 {
 	struct rcm_i2s *i2s = snd_soc_dai_get_drvdata(dai);
-	int ret;
-	printk("TRACE: rcm_i2s_startup");
+	struct rcm_i2s_control *i2s_ctrl = i2s->ctrl;
+	struct snd_pcm_runtime *runtime = substream->runtime;
+	unsigned long flags;
 
-	ret = rcm_i2s_reset(i2s);
-	if(ret)
-		return ret;
+	runtime->private_data = (void *)(uintptr_t)i2s_ctrl;
 
-    return 0;
+	if (i2s_ctrl->opened_count == 0)
+		i2s_ctrl->rcm_i2s_reset(i2s_ctrl);
+
+	spin_lock_irqsave(&i2s_ctrl->lock, flags);
+	i2s_ctrl->opened_count++;
+	spin_unlock_irqrestore(&i2s_ctrl->lock, flags);
+
+	TRACE("%d, %d", i2s->id, i2s_ctrl->opened_count);
+	return 0;
 }
 
-
 static void rcm_i2s_shutdown(struct snd_pcm_substream *substream,
-	struct snd_soc_dai *dai)
+			     struct snd_soc_dai *dai)
 {
 	struct rcm_i2s *i2s = snd_soc_dai_get_drvdata(dai);
-	
-	rcm_i2s_reset(i2s);
+	struct rcm_i2s_control *i2s_ctrl = i2s->ctrl;
+	unsigned long flags;
 
-	printk("TRACE: rcm_i2s_shutdown");
+	spin_lock_irqsave(&i2s_ctrl->lock, flags);
+	i2s_ctrl->opened_count--;
+	spin_unlock_irqrestore(&i2s_ctrl->lock, flags);
 
+	if (i2s_ctrl->opened_count == 0)
+		i2s_ctrl->rcm_i2s_reset(i2s_ctrl);
+
+	TRACE("%d %d", i2s->id, i2s_ctrl->opened_count);
 }
 
 static int rcm_i2s_trigger(struct snd_pcm_substream *substream, int cmd,
-	struct snd_soc_dai *dai)
+			   struct snd_soc_dai *dai)
 {
 	struct rcm_i2s *i2s = snd_soc_dai_get_drvdata(dai);
+	struct rcm_i2s_control *i2s_ctrl = i2s->ctrl;
+	unsigned long flags;
+
 	int ret = 0;
 
-	printk("TRACE: rcm_i2s_trigger, %d", cmd);
+	TRACE("%d, %d, %d, %d", i2s->id, cmd, i2s_ctrl->opened_count,
+	      i2s_ctrl->started_count);
+
+	spin_lock_irqsave(&i2s_ctrl->lock, flags);
 
 	switch (cmd) {
 	case SNDRV_PCM_TRIGGER_START:
 	case SNDRV_PCM_TRIGGER_RESUME:
 	case SNDRV_PCM_TRIGGER_PAUSE_RELEASE:
-		ret = regmap_update_bits(i2s->regmap, RCM_I2S_REG_CTRL1, 0x200, 0x200);
+		i2s_ctrl->started_count++;
+		if (i2s_ctrl->started_count ==
+		    i2s_ctrl->opened_count) // sync start
+		{
+			ret = regmap_update_bits(i2s_ctrl->regmap,
+						 RCM_I2S_REG_CTRL1, 0x200,
+						 0x200);
+			TRACE("on");
+		}
 		break;
 	case SNDRV_PCM_TRIGGER_STOP:
 	case SNDRV_PCM_TRIGGER_SUSPEND:
 	case SNDRV_PCM_TRIGGER_PAUSE_PUSH:
-		ret = regmap_update_bits(i2s->regmap, RCM_I2S_REG_CTRL1, 0x200, 0x0);
+		i2s_ctrl->started_count--;
+		if (i2s_ctrl->started_count ==
+		    0) // don't need sync stop to use channels separately
+		{
+			ret = regmap_update_bits(i2s_ctrl->regmap,
+						 RCM_I2S_REG_CTRL1, 0x200, 0x0);
+			TRACE("off");
+		}
 		break;
 	default:
 		return -EINVAL;
 	}
 
-    return ret;
+	spin_unlock_irqrestore(&i2s_ctrl->lock, flags);
+
+	//	snd_pcm_group_for_each_entry(s, substream) {
+	//		if (snd_pcm_substream_chip(s) == chip) {
+	//			snd_pcm_trigger_done(s, substream);
+	//		}
+	//	}
+
+	return ret;
 }
 
 static int rcm_i2s_hw_params(struct snd_pcm_substream *substream,
-	struct snd_pcm_hw_params *params, struct snd_soc_dai *dai)
+			     struct snd_pcm_hw_params *params,
+			     struct snd_soc_dai *dai)
 {
 	struct rcm_i2s *i2s = snd_soc_dai_get_drvdata(dai);
+	struct rcm_i2s_control *i2s_ctrl = i2s->ctrl;
 	int width = snd_pcm_format_width(params_format(params));
 	int rate = params_rate(params);
 	int is_big_endian = snd_pcm_format_big_endian(params_format(params));
 	int div_value = 24576 / (rate / 1000) / width / 4;
 	int ctrl0 = 0;
-	switch(width)
-	{
-		case 16:
-			ctrl0 |= 0xF0008;
-			break;
-		case 20:
-			ctrl0 |= 0x130000;
-			break;
-		case 24:
-			ctrl0 |= 0x170000;
-			break;
-		case 32:
-			ctrl0 |= 0x1F0000;
-			break;
-		default:
-			return -EINVAL;
+	unsigned long flags;
+	switch (width) {
+	case 16:
+		ctrl0 |= 0xF0008;
+		break;
+	case 20:
+		ctrl0 |= 0x130000;
+		break;
+	case 24:
+		ctrl0 |= 0x170000;
+		break;
+	case 32:
+		ctrl0 |= 0x1F0000;
+		break;
+	default:
+		return -EINVAL;
 	}
 
 	// allow interrupts
 	ctrl0 |= 0xFF0;
 
-	if(is_big_endian)
+	if (is_big_endian)
 		ctrl0 |= 0x4;
 
-	printk("TRACE: rcm_i2s_hw_params %d, %d, %d", params_channels(params), params_rate(params), params_format(params));
+	TRACE("%d, %d, %d", params_channels(params), params_rate(params),
+	      params_format(params));
 
-	regmap_write(i2s->regmap, RCM_I2S_REG_CTRL0, ctrl0);
-	regmap_write(i2s->regmap, RCM_I2S_REG_CTRL1, div_value);
+	if((i2s_ctrl->hw_params[0] == 0) 
+		|| ((i2s_ctrl->hw_params[0] == ctrl0) &&
+		   (i2s_ctrl->hw_params[1] == div_value)))
+	{
+		spin_lock_irqsave(&i2s_ctrl->lock, flags);
 
-    return 0;
+		i2s_ctrl->hw_params[0] = ctrl0; 
+		i2s_ctrl->hw_params[1] = div_value;
+
+		regmap_write(i2s_ctrl->regmap, RCM_I2S_REG_CTRL0, ctrl0);
+		regmap_write(i2s_ctrl->regmap, RCM_I2S_REG_CTRL1, div_value);
+
+		spin_unlock_irqrestore(&i2s_ctrl->lock, flags);
+		return 0;
+	}
+	else
+	{
+		dev_err(i2s->dev, "requested conflict i2s parameters");
+		return -EBUSY;
+	}
 }
-
 
 static const struct snd_soc_dai_ops rcm_i2s_dai_ops = {
 	.startup = rcm_i2s_startup,
@@ -163,169 +212,102 @@ static const struct snd_soc_dai_ops rcm_i2s_dai_ops = {
 	.hw_params = rcm_i2s_hw_params,
 };
 
-#define RCM_I2S_FORMATS (SNDRV_PCM_FMTBIT_S16_LE | SNDRV_PCM_FMTBIT_S16_BE |\
-			SNDRV_PCM_FMTBIT_S20_LE | SNDRV_PCM_FMTBIT_S20_BE |\
-			SNDRV_PCM_FMTBIT_S24_LE | SNDRV_PCM_FMTBIT_S24_BE |\
-			SNDRV_PCM_FMTBIT_S32_LE | SNDRV_PCM_FMTBIT_S32_BE)
+#define RCM_I2S_FORMATS                                                        \
+	(SNDRV_PCM_FMTBIT_S16_LE | SNDRV_PCM_FMTBIT_S16_BE |                   \
+	 SNDRV_PCM_FMTBIT_S32_LE | SNDRV_PCM_FMTBIT_S32_BE)
 
+// do not support theese modes because it seems kernel unable to organize samples 
+// per words
+/*	 SNDRV_PCM_FMTBIT_S20_LE | SNDRV_PCM_FMTBIT_S20_BE |                   \
+	 SNDRV_PCM_FMTBIT_S24_LE | SNDRV_PCM_FMTBIT_S24_BE |                   \
+*/
 
-static struct snd_soc_dai_driver rcm_i2s_dai = {
-	.probe = rcm_i2s_dai_probe,
-	.playback = {
-		.channels_min = 2,
-		.channels_max = 8,
-		.rates = SNDRV_PCM_RATE_32000 | SNDRV_PCM_RATE_48000 | SNDRV_PCM_RATE_96000 | SNDRV_PCM_RATE_192000, // SNDRV_PCM_RATE_8000_192000,
-		.formats = RCM_I2S_FORMATS,
-	},
-	.ops = &rcm_i2s_dai_ops,
-	.symmetric_rates = 1,
-};
-
-
-static int i2s_pcm_channel_info(struct snd_pcm_substream *stream,
-				struct snd_pcm_channel_info *info)
-{
-	struct snd_pcm_runtime *runtime = stream->runtime;
-	size_t size = frames_to_bytes(runtime,
-	                              runtime->buffer_size) / 
-	                              (runtime->channels / 2);
-	size_t width = snd_pcm_format_physical_width(runtime->format);
-
-	info->offset = 0;
-	info->first =
-	    (info->channel / 2) * size * 8 + (info->channel % 2) * width;
-	info->step = width * 2;
-
-	printk("TRACE: i2s_pcm_channel_info channel %d offset %lu first %d step %d",
-	      info->channel, info->offset, info->first, info->step);
-
-	return 0;
-}
-
-static int i2s_pcm_ioctl(struct snd_pcm_substream *stream,
-			 unsigned int cmd, void *arg)
-{
-//	printk("TRACE: i2s_pcm_ioctl %d", cmd);
-
-	switch (cmd) {
-	case SNDRV_PCM_IOCTL1_CHANNEL_INFO:
-		return i2s_pcm_channel_info(stream, arg);
-	default:
-		return snd_pcm_lib_ioctl(stream, cmd, arg);
-	}
-}
-
-
-static const struct snd_pcm_ops rcm_i2s_pcm_ops = {
-	.ioctl		= i2s_pcm_ioctl,
+struct snd_soc_pcm_stream i2s_playback = {
+	.channels_min = 2,
+	.channels_max = 2,
+	.rates = SNDRV_PCM_RATE_8000_192000,
+	.formats = RCM_I2S_FORMATS,
 };
 
 static const struct snd_soc_component_driver rcm_i2s_component = {
 	.name = "rcm-i2s",
-	.ops		= &rcm_i2s_pcm_ops,
 };
 
-static irqreturn_t i2s_interrupt_handler(int irq, void *data)
-{
-	struct rcm_i2s *i2s = (struct rcm_i2s *)data;
-	unsigned int stat0;
-	unsigned int stat1;
-	regmap_read(i2s->regmap, RCM_I2S_REG_STAT0, &stat0);
-	regmap_read(i2s->regmap, RCM_I2S_REG_STAT1, &stat1);
-
-	printk("TRACE: i2s_interrupt_handler: %08X, %08X", stat0, stat1);
-
-	return IRQ_HANDLED;
-}
-
-
-int rcm_dmaengine_pcm_prepare_slave_config(struct snd_pcm_substream *substream,
-	struct snd_pcm_hw_params *params, struct dma_slave_config *slave_config)
-{
-	int ret = snd_dmaengine_pcm_prepare_slave_config(substream, params, slave_config);
-	printk("TRACE: rcm_dmaengine_pcm_prepare_slave_config replace dst_maxburst from %d to %d", slave_config->dst_maxburst, params_channels(params)/2);
-
-	// use dst_maxburst to indicate number of channels to be used
-	slave_config->dst_maxburst = params_channels(params)/2;
-	
-	return ret;
-}
-
-static const struct snd_pcm_hardware i2s_playback_hw =
-{
-	.info =			(SNDRV_PCM_INFO_MMAP |
-				SNDRV_PCM_INFO_COMPLEX |
-				SNDRV_PCM_INFO_MMAP_VALID),
-	.formats =		RCM_I2S_FORMATS,
-	.rates =		SNDRV_PCM_RATE_8000_192000,
-	.rate_min =		8000,
-	.rate_max =		192000,
-	.channels_min =		2,
-	.channels_max =		8,
-	.buffer_bytes_max	= SIZE_MAX,
-	.period_bytes_min	= 256,
-	.period_bytes_max	= SIZE_MAX,
-	.periods_min =		2,
-	.periods_max =		2,	// number of DMA descriptors
+static const struct snd_pcm_hardware i2s_playback_hw = {
+	.info = (SNDRV_PCM_INFO_MMAP | SNDRV_PCM_INFO_INTERLEAVED |
+		 SNDRV_PCM_INFO_MMAP_VALID | SNDRV_PCM_INFO_SYNC_START),
+	.formats = RCM_I2S_FORMATS,
+	.rates = SNDRV_PCM_RATE_8000_192000,
+	.rate_min = 8000,
+	.rate_max = 192000,
+	.channels_min = 2,
+	.channels_max = 2,
+	.buffer_bytes_max = SIZE_MAX,
+	.period_bytes_min = 256,
+	.period_bytes_max = SIZE_MAX,
+	.periods_min = 2,
+	.periods_max = 2, // number of DMA descriptors
 };
 
 static const struct snd_dmaengine_pcm_config pcm_conf = {
 	.chan_names[SNDRV_PCM_STREAM_PLAYBACK] = "rx",
-	.prepare_slave_config = rcm_dmaengine_pcm_prepare_slave_config,
+	.prepare_slave_config = snd_dmaengine_pcm_prepare_slave_config,
 	.pcm_hardware = &i2s_playback_hw
 };
-
 
 static int rcm_i2s_probe(struct platform_device *pdev)
 {
 	struct rcm_i2s *i2s;
-	void __iomem *base;
-    int ret, irq;
-	struct resource *res;
+	int ret, id;
+	struct platform_device *i2s_ctrl_pdev;
+	struct of_phandle_args args;
+	struct rcm_i2s_control *ctrl;
+	struct snd_soc_dai_driver *i2s_dai;
 
-	printk("TRACE: rcm_i2s_probe");
+	TRACE("");
+
+	if (of_parse_phandle_with_args(pdev->dev.of_node, "ctrl", "#i2s-cells",
+				       0, &args)) {
+		dev_err(&pdev->dev, "unable to find i2s control hardware");
+		return -ENODEV;
+	}
+	i2s_ctrl_pdev = of_find_device_by_node(args.np);
+	id = args.args[0];
+	of_node_put(args.np);
+
+	ctrl = platform_get_drvdata(i2s_ctrl_pdev);
+	if (!ctrl)
+		return -ENODEV;
 
 	i2s = devm_kzalloc(&pdev->dev, sizeof(*i2s), GFP_KERNEL);
 	if (!i2s)
 		return -ENOMEM;
 
+	i2s_dai = devm_kzalloc(&pdev->dev, sizeof(*i2s_dai), GFP_KERNEL);
+	if (!i2s_dai)
+		return -ENOMEM;
+
 	platform_set_drvdata(pdev, i2s);
 
-	res = platform_get_resource(pdev, IORESOURCE_MEM, 0);
-	base = devm_ioremap_resource(&pdev->dev, res);
-	if (IS_ERR(base))
-		return PTR_ERR(base);
+	i2s->ctrl = ctrl;
+	i2s->id = id;
+	i2s->dev = &pdev->dev;
 
-	i2s->regmap = devm_regmap_init_mmio(&pdev->dev, base,
-		&rcm_i2s_regmap_config);
-	if (IS_ERR(i2s->regmap))
-		return PTR_ERR(i2s->regmap);
-
-	if(rcm_i2s_reset(i2s))
-	{
-        dev_err(&pdev->dev, "unable to find i2s hardware");
-		return -ENODEV;
-	}
-
-	irq = platform_get_irq(pdev, 0);
-	if (irq < 0) {
-        dev_err(&pdev->dev, "unable to get interrupt property");
-		return -ENODEV;
-    }
-	ret = devm_request_irq(&pdev->dev, irq, i2s_interrupt_handler, 0,
-			       pdev->name, i2s);
-	if (ret) {
-		dev_err(&pdev->dev, "Cannot claim IRQ\n");
-		return  -ENODEV;
-	};
-
-	i2s->playback_dma_data.addr = res->start + RCM_I2S_REG_FIFO1;
+	i2s->playback_dma_data.addr =
+		ctrl->res->start + RCM_I2S_REG_FIFO0 + id * 8;
 	i2s->playback_dma_data.addr_width = 4;
 	i2s->playback_dma_data.maxburst = 1;
 
+	snprintf(&i2s->dai_name[0], 16, "rcm-i2s%1d", id);
+	i2s_dai->name = &i2s->dai_name[0];
+	i2s_dai->id = id;
+	i2s_dai->probe = rcm_i2s_dai_probe;
+	i2s_dai->playback = i2s_playback;
+	i2s_dai->ops = &rcm_i2s_dai_ops;
+	i2s_dai->symmetric_rates = 1;
 
 	ret = devm_snd_soc_register_component(&pdev->dev, &rcm_i2s_component,
-					 &rcm_i2s_dai, 1);
+					      i2s_dai, 1);
 
 	ret = devm_snd_dmaengine_pcm_register(&pdev->dev, &pcm_conf, 0);
 	if (ret) {
@@ -333,31 +315,32 @@ static int rcm_i2s_probe(struct platform_device *pdev)
 		return ret;
 	}
 
-	printk("TRACE: rcm_i2s_probe return %d", ret);
+	TRACE("return %d", ret);
 
 	return ret;
-
 }
-
 
 static int rcm_i2s_dev_remove(struct platform_device *pdev)
 {
 	//struct rcm_i2s *i2s = platform_get_drvdata(pdev);
-	printk("TRACE: rcm_i2s_dev_remove");
+	TRACE("");
 	return 0;
 }
 
 static const struct of_device_id rcm_i2s_of_match[] = {
-	{ .compatible = "rcm,i2s", },
+	{
+		.compatible = "rcm,i2s",
+	},
 	{},
 };
 MODULE_DEVICE_TABLE(of, rcm_i2s_of_match);
 
 static struct platform_driver rcm_i2s_driver = {
-	.driver = {
-		.name = "rcm-i2s",
-		.of_match_table = rcm_i2s_of_match,
-	},
+	.driver =
+		{
+			.name = "rcm-i2s",
+			.of_match_table = rcm_i2s_of_match,
+		},
 	.probe = rcm_i2s_probe,
 	.remove = rcm_i2s_dev_remove,
 };

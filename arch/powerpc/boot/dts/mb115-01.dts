@@ -114,7 +114,7 @@
 
 				cs4384: cs4384@18 {
 					compatible = "cirrus,cs4384";
-					#sound-dai-cells = <0>;
+					#sound-dai-cells = <1>;
 					reg = <0x18>;
 				};
 				
@@ -171,6 +171,18 @@
 			i2s: i2s@0x39080000 {
 				status = "ok";
 			};
+			i2s0: i2s@0 {
+				status = "ok";
+			};
+			i2s1: i2s@1 {
+				status = "ok";
+			};
+			i2s2: i2s@2 {
+				status = "ok";
+			};
+			i2s3: i2s@3 {
+				status = "ok";
+			};
 			spdif: spdif@0x39080000 {
 				status = "ok";
 			};
@@ -183,17 +195,47 @@
 				simple-audio-card,name = "RCM Audio";
 				#address-cells = <1>;
 				#size-cells = <0>;
-				#sound-dai-cells = <1>;
+				#sound-dai-cells = <0>;
 				status = "ok";
 
-				simple-audio-card,dai-link@0 {		/* I2S - cs4384 */
+				simple-audio-card,dai-link@0 {		/* I2S0 - cs4384_0 */
 					reg = <0>;
 					format = "i2s";
 					cpu {
-						sound-dai = <&i2s>;
+						sound-dai = <&i2s0>;
 					};
 					codec {
-						sound-dai = <&cs4384>;
+						sound-dai = <&cs4384 0>;
+					};
+				};
+				simple-audio-card,dai-link@1 {		/* I2S1 - cs4384_1 */
+					reg = <1>;
+					format = "i2s";
+					cpu {
+						sound-dai = <&i2s1>;
+					};
+					codec {
+						sound-dai = <&cs4384 1>;
+					};
+				};
+				simple-audio-card,dai-link@2 {		/* I2S2 - cs4384_2 */
+					reg = <2>;
+					format = "i2s";
+					cpu {
+						sound-dai = <&i2s2>;
+					};
+					codec {
+						sound-dai = <&cs4384 2>;
+					};
+				};
+				simple-audio-card,dai-link@3 {		/* I2S3 - cs4384_3 */
+					reg = <3>;
+					format = "i2s";
+					cpu {
+						sound-dai = <&i2s3>;
+					};
+					codec {
+						sound-dai = <&cs4384 3>;
 					};
 				};
 

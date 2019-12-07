@@ -25,6 +25,18 @@
 
 #include "dmaengine.h"
 
+static int g_dma_debug = 0;
+
+module_param_named(debug, g_dma_debug, int, 0);
+
+#define TRACE(format, ...)                                                     \
+	do {                                                                   \
+		if (g_dma_debug) {                                             \
+			printk("TRACE: rcm-audio-dma/%s:%d: " format "\n",     \
+			       __func__, __LINE__, ##__VA_ARGS__);             \
+		}                                                              \
+	} while (0)
+
 #define RCM_DMA_ENA_REG 0x00
 #define RCM_DMA_CH0_BASE0 0x04
 #define RCM_DMA_CH0_BASE1 0x08
@@ -60,9 +72,14 @@
 #define RCM_DMA_INT 0x80
 #define RCM_DMA_BUF_STATUS 0x84
 
-#define RCM_DMA_CHANNEL0_ACTIVE 0x02
+#define RCM_DMA_CHANNEL0_ACTIVE 0x01
 #define RCM_DMA_ENA_SPDIF 0x10
-#define RCM_DMA_CHANNEL0_SW 0x200
+#define RCM_DMA_CHANNEL0_SW 0x100
+
+#define RCM_DMA_INT_CH0_WR_END 0x01
+#define RCM_DMA_INT_CH1_WR_END 0x02
+#define RCM_DMA_INT_CH2_WR_END 0x04
+#define RCM_DMA_INT_CH3_WR_END 0x08
 
 static const struct regmap_config rcm_dma_regmap_config = {
 	.reg_bits = 32,
@@ -71,40 +88,48 @@ static const struct regmap_config rcm_dma_regmap_config = {
 	.max_register = RCM_DMA_BUF_STATUS,
 };
 
-struct rcm_audio_dma {
+#define RCM_DMA_MODE_UNDEFINED 0
+#define RCM_DMA_MODE_I2S 1
+#define RCM_DMA_MODE_SPDIF 2
+
+struct rcm_audio_dma_channel {
 	/* DMA-Engine Channel */
 	struct dma_chan chan;
 
-	/* To protect channel manipulation */
-	spinlock_t lock;
-
-	// number of real channels used - for multi channel audio
-	int channels;
-
-	struct regmap *regmap;
-	struct dma_device slave;
-
+	struct rcm_audio_dma *dmac;
 	phys_addr_t fifo_addr;
-	dma_addr_t fifo_dma;
-
-	struct dma_async_tx_descriptor desc[2];
-	int curr_desc;
-
-	int desc_state[2];
-	int desc_last_state[2];
-
-	struct tasklet_struct task;
-	int base_len;
-
+	//	int base_len;
+	struct dma_async_tx_descriptor desc;
+	int active;
 	int terminate;
 };
+
+struct rcm_audio_dma {
+	/* To protect channel manipulation */
+	spinlock_t lock;
+	struct rcm_audio_dma_channel channel[4];
+	struct regmap *regmap;
+	struct dma_device slave;
+	struct tasklet_struct task;
+	// last dma_int value
+	unsigned int dma_int;
+	int mode;
+};
+
+static inline struct rcm_audio_dma_channel *to_chan(struct dma_chan *ch)
+{
+	if (!ch)
+		return NULL;
+
+	return container_of(ch, struct rcm_audio_dma_channel, chan);
+}
 
 static inline struct rcm_audio_dma *to_dmac(struct dma_chan *ch)
 {
 	if (!ch)
 		return NULL;
 
-	return container_of(ch, struct rcm_audio_dma, chan);
+	return to_chan(ch)->dmac;
 }
 
 static irqreturn_t rcm_dma_interrupt_handler(int irq, void *data)
@@ -114,57 +139,22 @@ static irqreturn_t rcm_dma_interrupt_handler(int irq, void *data)
 	unsigned int dma_int = 0;
 
 	regmap_read(d->regmap, RCM_DMA_INT, &dma_int);
-	regmap_write(d->regmap, RCM_DMA_INT, dma_int);  //	cleanup ints
-//	printk("TRACE: rcm_dma_interrupt_handler start");
-
-//	spin_lock_irqsave(&d->lock, flags);
-//	d->desc_state[d->curr_desc] = DMA_COMPLETE;
-//	d->curr_desc = 1 - d->curr_desc;
-
-//	spin_unlock_irqrestore(&d->lock, flags);
-
+	regmap_write(d->regmap, RCM_DMA_INT, dma_int); //	cleanup ints
+	spin_lock_irqsave(&d->lock, flags);
+	d->dma_int |= dma_int;
+	spin_unlock_irqrestore(&d->lock, flags);
 	tasklet_schedule(&d->task);
-
-	printk("TRACE: rcm_dma_interrupt_handler %08X", dma_int);
+	TRACE("%08X", dma_int);
 
 	return IRQ_HANDLED;
 }
 
-//static int rcm_alloc_chan_resources(struct dma_chan *chan)
-//{
-//	struct rcm_audio_dma *d = to_dmac(chan);
-
-//	printk("TRACE: rcm_alloc_chan_resources");
-
-//	return 1;
-//}
-
-static void rcm_free_chan_resources(struct dma_chan *chan)
-{
-//	struct rcm_audio_dma *d = to_dmac(chan);
-
-	printk("TRACE: rcm_free_chan_resources");
-}
-
 static dma_cookie_t rcm_tx_submit(struct dma_async_tx_descriptor *tx)
 {
-	struct rcm_audio_dma *d = to_dmac(tx->chan);
-	unsigned long flags;
+	struct rcm_audio_dma_channel *ch = to_chan(tx->chan);
 	dma_cookie_t cookie;
-	
-	printk("TRACE: rcm_tx_submit");
-
-	spin_lock_irqsave(&d->lock, flags);
-
-	dma_cookie_assign(&d->desc[0]);
-	cookie = dma_cookie_assign(&d->desc[1]);
-
-	d->desc[0].callback = tx->callback;
-	d->desc[0].callback_param = tx->callback_param;
-	//tx->callback = 0;
-
-	spin_unlock_irqrestore(&d->lock, flags);
-
+	cookie = dma_cookie_assign(&ch->desc);
+	TRACE("cookie %d", cookie);
 	return cookie;
 }
 
@@ -175,104 +165,74 @@ static struct dma_async_tx_descriptor *
 			    unsigned long flags)
 {
 	struct rcm_audio_dma *d = to_dmac(chan);
-	int i;
-	unsigned long dma_offset = 0x40000000;		// to do fix on upper level
-	d->base_len = period_len / d->channels;
+	struct rcm_audio_dma_channel *ch = to_chan(chan);
+	int ch_no = chan->chan_id;
+	unsigned long lock_flags;
+	unsigned int ena;
+	unsigned long dma_offset = 0x40000000; // to do fix on upper level
+	// setup addresses for each descriptors based on numer of channels
+	u32 page0_start = (u32)dma_addr + period_len + dma_offset;
+	u32 page1_start = (u32)dma_addr + dma_offset;
+	u32 page0_end = page0_start + period_len;
+	u32 page1_end = page1_start + period_len;
 
-	printk("TRACE: rcm_prep_dma_cyclic, len: %d, period_len: %d, flags: %d, dma_addr: %llx", (int) len,
-	       (int) period_len, (int)  flags, dma_addr);
-
-	regmap_write(d->regmap, RCM_DMA_ENA_REG, 0x8000); 
-	regmap_write(d->regmap, RCM_DMA_ENA_REG, 0); 
+	TRACE("len: %d, period_len: %d, flags: %d, dma_addr: %llx", (int)len,
+	      (int)period_len, (int)flags, dma_addr);
 
 	// we always have only 2 DMA descriptios for each hw channel.
 	// call hw channels should works simultaniously, so we should prepare all of its at the same time
-	
-	// first descriptor is 1
-	d->curr_desc = 1;
+	regmap_read(d->regmap, RCM_DMA_ENA_REG, &ena);
+	regmap_write(d->regmap, RCM_DMA_ENA_REG,
+		     0x8000); // black magic - not works without it
+	regmap_write(d->regmap, RCM_DMA_ENA_REG, ena); // restore
 
-	d->desc[0].chan = chan;
-	d->desc[0].cookie = 0;
-	d->desc[0].tx_submit = rcm_tx_submit;
-	async_tx_ack(&d->desc[0]);	
-	dma_async_tx_descriptor_init(&d->desc[0], &d->chan);
-	d->desc[0].flags = flags;
+	ch->desc.chan = chan;
+	ch->desc.cookie = 0;
+	ch->desc.tx_submit = rcm_tx_submit;
+	async_tx_ack(&ch->desc);
+	dma_async_tx_descriptor_init(&ch->desc, &ch->chan);
+	ch->desc.flags = flags;
 
-	d->desc[1].chan = chan;
-	d->desc[1].cookie = 0;
-	d->desc[1].tx_submit = rcm_tx_submit;
-	async_tx_ack(&d->desc[1]);	
-	dma_async_tx_descriptor_init(&d->desc[1], &d->chan);
-	d->desc[1].flags = flags;
+	TRACE("channel %i, %llx, %08X, %08X, %08X, %08X", ch_no, ch->fifo_addr,
+	      (u32)page1_start, (u32)page1_end, (u32)page0_start,
+	      (u32)page0_end);
 
-	// setup addresses for each descriptors based on numer of channels
-	for (i = 0; i < d->channels; i++) {
-		u32 page0_start = (u32) dma_addr + period_len + i * d->base_len + dma_offset;
-		u32 page1_start = (u32) dma_addr + i * d->base_len + dma_offset;
-		u32 page0_end =
-			(u32) dma_addr + period_len + (i + 1) * d->base_len + dma_offset;
-		u32 page1_end = (u32) dma_addr + (i + 1) * d->base_len + dma_offset;
+	spin_lock_irqsave(&d->lock, lock_flags);
 
-		printk("TRACE rcm_prep_dma_cyclic: channel %i, %08X, %08X, %08X, %08X",
-		       i, (u32) page1_start, (u32) page1_end, (u32) page0_start, (u32) page0_end);
+	// write descriptors
+	regmap_write(d->regmap, RCM_DMA_CH0_BASE0 + ch_no * 2 * 4, page0_start);
+	regmap_write(d->regmap, RCM_DMA_CH0_BASE1 + ch_no * 2 * 4, page1_start);
+	regmap_write(d->regmap, RCM_DMA_CH0_END0 + ch_no * 2 * 4, page0_end);
+	regmap_write(d->regmap, RCM_DMA_CH0_END1 + ch_no * 2 * 4, page1_end);
 
-		// write descriptors
-		regmap_write(d->regmap, RCM_DMA_CH1_BASE0 + i * 2 * 4,
-			     page0_start);
-		regmap_write(d->regmap, RCM_DMA_CH1_BASE1 + i * 2 * 4,
-			     page1_start);
-		regmap_write(d->regmap, RCM_DMA_CH1_END0 + i * 2 * 4,
-			     page0_end);
-		regmap_write(d->regmap, RCM_DMA_CH1_END1 + i * 2 * 4,
-			     page1_end);
+	// size
+	regmap_write(d->regmap, RCM_DMA_CH0_TRW + ch_no * 4, period_len / 4);
 
-		// size
-		regmap_write(d->regmap, RCM_DMA_CH1_TRW + i * 4, d->base_len/4);
+	// slave base
+	regmap_write(d->regmap, RCM_DMA_SLV0_BASE + ch_no * 4,
+		     (u32)ch->fifo_addr);
 
-		// slave base
-		regmap_write(d->regmap, RCM_DMA_SLV1_BASE + i * 4,
-			     (u32)d->fifo_addr + i * 4);
+	// slave fifo size
+	regmap_write(d->regmap, RCM_DMA_SLV0_BSIZE + ch_no * 4, 31);
 
-		// slave fifo size
-		regmap_write(d->regmap, RCM_DMA_SLV1_BSIZE + i * 4,
-			     31); // todo read from channel info
+	spin_unlock_irqrestore(&d->lock, lock_flags);
 
-	}
-	// regmap_write(d->regmap, RCM_DMA_SLV_OVRH, 20); 
-
-	return &d->desc[1];
+	return &ch->desc;
 }
 
+// Using DMA_RESIDUE_GRANULARITY_DESCRIPTOR mode - this function should not be called
+// So its just for compatibility.
 static enum dma_status rcm_tx_status(struct dma_chan *chan, dma_cookie_t cookie,
 				     struct dma_tx_state *txstate)
 {
 	enum dma_status ret;
-	struct rcm_audio_dma *d = to_dmac(chan);
 	unsigned int residual = 0;
-	unsigned long flags;
 
 	ret = dma_cookie_status(chan, cookie, txstate);
 
 	if (!txstate)
 		return ret;
-	
-	//if(cookie == d->desc[d->curr_desc].cookie)
-	//	ret = DMA_COMPLETE;
 
-	if (ret == DMA_COMPLETE)
-		goto out;
-
-	spin_lock_irqsave(&d->lock, flags);
-
-	//regmap_read(d->regmap, RCM_DMA_BUF_STATUS, &residual);
-	//residual >>= 8;		// second channel temp
-	if(d->curr_desc == 1)
-		residual += d->base_len;
-
-	spin_unlock_irqrestore(&d->lock, flags);
-
-out:
-//	printk("TRACE: rcm_tx_status %d %d", cookie, residual);
 	dma_set_residue(txstate, residual);
 
 	return ret;
@@ -281,13 +241,34 @@ out:
 static int rcm_config(struct dma_chan *chan,
 		      struct dma_slave_config *slave_config)
 {
+	struct rcm_audio_dma_channel *ch = to_chan(chan);
 	struct rcm_audio_dma *d = to_dmac(chan);
+	int requested_mode;
 
-	printk("TRACE: rcm_config slave_config->dst_addr = %llx, slave_config->dst_maxburst = %d",
-	       slave_config->dst_addr, slave_config->dst_maxburst);
+	TRACE("slave_config->dst_addr = %llx, slave_config->dst_maxburst = %d",
+	      slave_config->dst_addr, slave_config->dst_maxburst);
 
-	d->channels = slave_config->dst_maxburst;
-	d->fifo_addr = slave_config->dst_addr;
+	ch->fifo_addr = slave_config->dst_addr;
+
+	// last bit of address shows mode for switching dma controller between i2s and spdif mode
+	// 0 means I2S, 1 - SPDIF
+	if (ch->fifo_addr & 1) {
+		phys_addr_t mask = ~1;
+		ch->fifo_addr &= mask;
+		requested_mode = RCM_DMA_MODE_SPDIF;
+	} else {
+		requested_mode = RCM_DMA_MODE_I2S;
+	}
+
+	if (requested_mode != d->mode) {
+		if (d->mode != RCM_DMA_MODE_UNDEFINED) {
+			dev_err(d->slave.dev, "conflict mode requested");
+			return -EBUSY;
+		}
+		d->mode = requested_mode;
+		TRACE("set mode to %s",
+		      requested_mode == RCM_DMA_MODE_I2S ? "i2s" : "spdif");
+	}
 
 	return 0;
 }
@@ -295,19 +276,14 @@ static int rcm_config(struct dma_chan *chan,
 static int rcm_terminate_all(struct dma_chan *chan)
 {
 	struct rcm_audio_dma *d = to_dmac(chan);
+	unsigned long flags;
 
-	printk("TRACE: rcm_terminate_all");
-	d->terminate = 1;
+	TRACE("");
+	spin_lock_irqsave(&d->lock, flags);
+	d->channel[chan->chan_id].terminate = 1;
+	spin_unlock_irqrestore(&d->lock, flags);
+
 	tasklet_schedule(&d->task);
-
-	return 0;
-}
-
-static int rcm_pause(struct dma_chan *chan)
-{
-//	struct rcm_audio_dma *d = to_dmac(chan);
-
-	printk("TRACE: rcm_pause");
 
 	return 0;
 }
@@ -315,28 +291,31 @@ static int rcm_pause(struct dma_chan *chan)
 static void rcm_issue_pending(struct dma_chan *chan)
 {
 	struct rcm_audio_dma *d = to_dmac(chan);
-	int i;
-	unsigned int mask;
-	unsigned int ena = 0;	// to do apply SPDIF swithing RCM_DMA_ENA_SPDIF
+	unsigned int mask, origmask;
+	unsigned long flags;
+	unsigned int ena = 0;
 
-	printk("TRACE: rcm_issue_pending");
+	if (d->mode == RCM_DMA_MODE_SPDIF)
+		ena = RCM_DMA_ENA_SPDIF;
+
+	spin_lock_irqsave(&d->lock, flags);
+	regmap_read(d->regmap, RCM_DMA_ENA_REG, &ena);
+	regmap_read(d->regmap, RCM_DMA_INT_MASK, &origmask);
+	ena |= ((RCM_DMA_CHANNEL0_ACTIVE | RCM_DMA_CHANNEL0_SW)
+		<< chan->chan_id);
+	mask = RCM_DMA_INT_CH0_WR_END << (chan->chan_id);
 
 	// enable DMA
+	regmap_write(d->regmap, RCM_DMA_INT, mask); // cleanup int
+	regmap_write(d->regmap, RCM_DMA_ENA_REG, ena); // allow channel
+	regmap_write(d->regmap, RCM_DMA_INT_MASK,
+		     origmask | mask); // channel interrupt
 
-	for(i = 0; i < d->channels; i++)
-		ena |= ((RCM_DMA_CHANNEL0_ACTIVE | RCM_DMA_CHANNEL0_SW) << i);
-	// set I2S mode temporary
+	// mark as active
+	d->channel[chan->chan_id].active = 1;
 
-	d->desc_last_state[0] = d->desc_last_state[1] = DMA_IN_PROGRESS;
-	d->desc_state[0] = d->desc_state[1] = DMA_IN_PROGRESS;
-
-	regmap_write(d->regmap, RCM_DMA_INT, -1);  		//	cleanup int
-
-	mask = (2) << (d->channels-1);
-
-	regmap_write(d->regmap, RCM_DMA_ENA_REG, ena); 
-
-	regmap_write(d->regmap, RCM_DMA_INT_MASK, mask);  // allow all inerrupts for a while // zero channel0 interrupt
+	spin_unlock_irqrestore(&d->lock, flags);
+	TRACE("%d, ena:%08X, dma:%08X", chan->chan_id, ena, origmask | mask);
 }
 
 static struct dma_chan *of_dma_rcm_xlate(struct of_phandle_args *dma_spec,
@@ -346,7 +325,7 @@ static struct dma_chan *of_dma_rcm_xlate(struct of_phandle_args *dma_spec,
 	struct rcm_audio_dma *d = ofdma->of_dma_data;
 	unsigned int chan_id;
 
-	printk("TRACE: of_dma_rcm_xlate");
+	TRACE("");
 
 	if (!d)
 		return NULL;
@@ -358,41 +337,82 @@ static struct dma_chan *of_dma_rcm_xlate(struct of_phandle_args *dma_spec,
 	if (chan_id >= 4)
 		return NULL;
 
-	return dma_get_slave_channel(&d->chan);
+	return dma_get_slave_channel(&d->channel[chan_id].chan);
 }
 
 static void rcm_dma_tasklet(unsigned long arg)
 {
 	struct rcm_audio_dma *d = (struct rcm_audio_dma *)arg;
-	if(d->terminate)
-	{
-		unsigned int v;
-		d->terminate = 0;
-		// Wait for transfer finish
-		regmap_write_bits(d->regmap, RCM_DMA_ENA_REG, 0xF00, 0); 
-		regmap_read_poll_timeout(d->regmap, RCM_DMA_BUF_STATUS, v, v==0, 0, 1000000);
-		regmap_write_bits(d->regmap, RCM_DMA_ENA_REG, 0xF, 0); 
-	}
-	else
-	{
-		struct dma_async_tx_descriptor *desc = &d->desc[1];
-		struct dmaengine_desc_callback cb;
-		dmaengine_desc_get_callback(desc, &cb);
-		if (dmaengine_desc_callback_valid(&cb)) {
-			dmaengine_desc_callback_invoke(&cb, NULL);
+	int i;
+	unsigned int terminate_mask = 0;
+	unsigned int ena_mask = 0;
+	unsigned int wait_mask = 0;
+	unsigned long flags;
+	unsigned int dma_int = d->dma_int;
+
+	spin_lock_irqsave(&d->lock, flags);
+	d->dma_int = 0;
+	spin_unlock_irqrestore(&d->lock, flags);
+
+	TRACE("%08X", dma_int);
+
+	// proceed channels callbacks
+	for (i = 0; i < 4; i++) {
+		if (dma_int & (RCM_DMA_INT_CH0_WR_END << i)) {
+			struct dma_async_tx_descriptor *desc =
+				&d->channel[i].desc;
+			struct dmaengine_desc_callback cb;
+			dmaengine_desc_get_callback(desc, &cb);
+			if (dmaengine_desc_callback_valid(&cb)) {
+				TRACE("invoke %d", i);
+				dmaengine_desc_callback_invoke(&cb, NULL);
+			}
 		}
 	}
-}
+	spin_lock_irqsave(&d->lock, flags);
+	// proceed termitation
+	for (i = 0; i < 4; i++) {
+		if (d->channel[i].terminate == 1) {
+			d->channel[i].terminate = 0;
+			d->channel[i].active = 1;
 
+			terminate_mask |= (RCM_DMA_CHANNEL0_SW << i);
+			ena_mask |= (RCM_DMA_CHANNEL0_ACTIVE << i);
+			wait_mask |= (0xff << i);
+		}
+	}
+	if (terminate_mask) {
+		unsigned int v;
+		unsigned int num_active = 0;
+		// Wait for transfer finish
+		TRACE("terminate %08X", terminate_mask);
+		for (i = 0; i < 4; i++)
+			if (d->channel[i].active)
+				num_active++;
+
+		if (num_active == 0) {
+			TRACE("set mode to undefined");
+			d->mode = RCM_DMA_MODE_UNDEFINED;
+		}
+
+		regmap_update_bits(d->regmap, RCM_DMA_ENA_REG, terminate_mask,
+				   0);
+		regmap_read_poll_timeout(d->regmap, RCM_DMA_BUF_STATUS, v,
+					 (v & wait_mask) == 0, 0, 500000);
+		regmap_update_bits(d->regmap, RCM_DMA_ENA_REG, ena_mask, 0);
+	}
+	spin_unlock_irqrestore(&d->lock, flags);
+}
 
 static int rcm_audio_dma_probe(struct platform_device *pdev)
 {
 	struct rcm_audio_dma *d;
 	void __iomem *base;
-	int ret, irq;
+	int ret, irq, i;
 	struct resource *res;
 
-	ret = dma_set_mask_and_coherent(&pdev->dev, DMA_BIT_MASK(32)); //???
+	// hardware able to use only first Gb for transfers
+	ret = dma_set_mask_and_coherent(&pdev->dev, DMA_BIT_MASK(32));
 	if (ret)
 		return ret;
 
@@ -424,27 +444,34 @@ static int rcm_audio_dma_probe(struct platform_device *pdev)
 		return -ENODEV;
 	};
 
+	regmap_write(d->regmap, RCM_DMA_ENA_REG, 0x8000);
+	regmap_write(d->regmap, RCM_DMA_ENA_REG, 0);
+
 	INIT_LIST_HEAD(&d->slave.channels);
-	d->chan.private = pdev->dev.of_node;
 	spin_lock_init(&d->lock);
-	d->chan.device = &d->slave;
-	list_add_tail(&d->chan.device_node, &d->slave.channels);
+
+	for (i = 0; i < 4; i++) {
+		d->channel[i].dmac = d;
+		d->channel[i].terminate = 0;
+		d->channel[i].chan.private = pdev->dev.of_node;
+		d->channel[i].chan.device = &d->slave;
+		list_add_tail(&d->channel[i].chan.device_node,
+			      &d->slave.channels);
+	}
 
 	dma_cap_set(DMA_CYCLIC, d->slave.cap_mask);
 	d->slave.dev = &pdev->dev;
-	//d->slave.device_alloc_chan_resources = rcm_alloc_chan_resources;
-	d->slave.device_free_chan_resources = rcm_free_chan_resources;
+	d->dma_int = 0;
 	d->slave.device_prep_dma_cyclic = rcm_prep_dma_cyclic;
 	d->slave.device_tx_status = rcm_tx_status;
 	d->slave.device_config = rcm_config;
-	d->slave.device_pause = rcm_pause;
 	d->slave.device_terminate_all = rcm_terminate_all;
 	d->slave.device_issue_pending = rcm_issue_pending;
 	d->slave.src_addr_widths = BIT(DMA_SLAVE_BUSWIDTH_4_BYTES);
 	d->slave.dst_addr_widths = BIT(DMA_SLAVE_BUSWIDTH_4_BYTES);
 	d->slave.directions = BIT(DMA_MEM_TO_DEV);
 	d->slave.residue_granularity = DMA_RESIDUE_GRANULARITY_DESCRIPTOR;
-	d->slave.max_burst = 4;
+	d->slave.max_burst = 1;
 
 	ret = dma_async_device_register(&d->slave);
 	if (ret)
@@ -459,9 +486,7 @@ static int rcm_audio_dma_probe(struct platform_device *pdev)
 		}
 	}
 
-	d->terminate = 0;
 	tasklet_init(&d->task, rcm_dma_tasklet, (unsigned long)d);
-
 	dev_info(&pdev->dev, "initialized\n");
 
 	return 0;

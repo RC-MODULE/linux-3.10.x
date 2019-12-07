@@ -109,7 +109,6 @@ static int cs4384_suspend(struct snd_soc_component *component)
 static int cs4384_resume(struct snd_soc_component *component)
 {
 	struct cs4384_private *priv = snd_soc_component_get_drvdata(component);
-	int ret; 
 
     // disabe PDN
     return regmap_update_bits(priv->regmap, CS4384_MODE_CONTROL,
@@ -254,14 +253,33 @@ static int cs4384_digital_mute(struct snd_soc_dai *dai, int mute)
 {
 	struct snd_soc_component *component = dai->component;
 	struct cs4384_private *priv = snd_soc_component_get_drvdata(component);
-	int val;
+	int val, mask;
+	int ret = regmap_read(priv->regmap, CS4384_MUTE_CONTROL, &val);
+	if(ret)
+		return ret;
+	
+	switch(dai->id)
+	{
+		case 0:
+			mask = 0x03;
+			break;
+		case 1:
+			mask = 0x0C;
+			break;
+		case 2:
+			mask = 0x30;
+			break;
+		case 3:
+			mask = 0xC0;
+			break;
+	}
 
 	if (mute)
 		val = 0xff;
 	else
 		val = 0;
 
-	return regmap_write(priv->regmap, CS4384_MUTE_CONTROL, val);
+	return regmap_update_bits(priv->regmap, CS4384_MUTE_CONTROL, mask, val);
 }
 
 static const struct snd_soc_dai_ops cs4384_dai_ops = {
@@ -311,16 +329,55 @@ static const struct snd_kcontrol_new cs4384_controls[] = {
 			    cs4384_get_deemph, cs4384_put_deemph),
 };
 
-static struct snd_soc_dai_driver cs4384_dai = {
-	.name = "cs4384-hifi",
-	.playback = {
-		.stream_name = "Playback",
-		.channels_min = 2,
-		.channels_max = 8,
-		.rates = CS4384_PCM_RATES,
-		.formats = CS4384_PCM_FORMATS,
+static struct snd_soc_dai_driver cs4384_dai[] = {
+	{
+		.name = "cs4384-hifi-0",
+		.id = 0,
+		.playback = {
+			.stream_name = "Playback 0",
+			.channels_min = 2,
+			.channels_max = 2,
+			.rates = CS4384_PCM_RATES,
+			.formats = CS4384_PCM_FORMATS,
+		},
+		.ops = &cs4384_dai_ops,
 	},
-	.ops = &cs4384_dai_ops,
+	{
+		.name = "cs4384-hifi-0",
+		.id = 1,
+		.playback = {
+			.stream_name = "Playback 1",
+			.channels_min = 2,
+			.channels_max = 2,
+			.rates = CS4384_PCM_RATES,
+			.formats = CS4384_PCM_FORMATS,
+		},
+		.ops = &cs4384_dai_ops,
+	},
+	{
+		.name = "cs4384-hifi-2",
+		.id = 2,
+		.playback = {
+			.stream_name = "Playback 2",
+			.channels_min = 2,
+			.channels_max = 2,
+			.rates = CS4384_PCM_RATES,
+			.formats = CS4384_PCM_FORMATS,
+		},
+		.ops = &cs4384_dai_ops,
+	},
+	{
+		.name = "cs4384-hifi-3",
+		.id = 3,
+		.playback = {
+			.stream_name = "Playback 3",
+			.channels_min = 2,
+			.channels_max = 2,
+			.rates = CS4384_PCM_RATES,
+			.formats = CS4384_PCM_FORMATS,
+		},
+		.ops = &cs4384_dai_ops,
+	}
 };
 
 
@@ -418,7 +475,7 @@ static int cs4384_i2c_probe(struct i2c_client *client,
 
 	return devm_snd_soc_register_component(&client->dev,
 		&soc_component_dev_cs4384,
-		&cs4384_dai, 1);
+		&cs4384_dai[0], 4);
 }
 
 static struct i2c_driver cs4384_i2c_driver = {
