@@ -1,5 +1,5 @@
 /*
- * drivers/video/fbdev/rcm/rcm-vdu.h - Module VDU header
+ * inlcude/video/rcm-vdu.h - Module VDU header
  *
  *	Copyright (C) 2008 Module
  *	Written by MSU, CMC dept., LVK lab http://lvk.cs.msu.su
@@ -8,8 +8,8 @@
  *  License. See the file COPYING in the main directory of this archive for
  *  more details.
  */
-#ifndef __CORE_RCM_VDU_H__
-#define __CORE_RCM_VDU_H__
+#ifndef __VIDEO_RCM_VDU_H__
+#define __VIDEO_RCM_VDU_H__
 
 #include <uapi/video/rcm-vdu.h>
 
@@ -278,7 +278,8 @@ struct mvdu_device {
 	struct mvdu_video_data *mvd;
 	int video_buffer_size;		/* video buffer size */
 	void *video_buffer_cpu;		/* video buffer CPU address */
-	dma_addr_t video_buffer_dma;	/* video buffer physical address */
+	unsigned long video_buffer_pa;  /* video buffer physical address */
+	dma_addr_t video_buffer_dma;	/* video buffer DMA address */
 	struct resource vpubuffer_res; /* vpubuffer resources */
 	struct v4l2_device v4l2_dev;
 #endif
@@ -344,4 +345,4 @@ extern void mvdu_mvl_stop_streaming(struct mvdu_device *dev);
 extern void mvdu_dump_registers(struct mvdu_device *dev);
 #endif
 
-#endif // __CORE_RCM_VDU_H__
+#endif // __VIDEO_RCM_VDU_H__

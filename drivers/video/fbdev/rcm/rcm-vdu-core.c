@@ -33,7 +33,7 @@
 #include <linux/sysfs.h>
 #include <linux/mfd/syscon.h>
 #include <linux/regmap.h>
-#include "rcm-vdu.h"
+#include <video/rcm-vdu.h>
 
 #define CRG_VDU_PLL_STATE 0x000
 #define CRG_VDU_PLL_CTRL 0x004
@@ -3845,8 +3845,13 @@ static int allocate_video_buffer(struct mvdu_device *vpu)
 	};
 
 	vpu->video_buffer_cpu = p;
+	vpu->video_buffer_pa = vpu->vpubuffer_res.start;
 	vpu->video_buffer_dma = vpu->vpubuffer_res.start;
 	vpu->video_buffer_size = VIDEO_BUFFER_SIZE;
+
+#ifdef CONFIG_1888TX018
+	vpu->video_buffer_dma = (dma_addr_t)(vpu->video_buffer_pa - (vpu->dev->dma_pfn_offset << PAGE_SHIFT));
+#endif
 
 	pr_info("mvdu: did allocate buffers %p\n", p);
 

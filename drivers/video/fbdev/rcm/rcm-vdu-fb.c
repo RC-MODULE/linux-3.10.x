@@ -14,7 +14,7 @@
 #include <linux/init.h>
 #include <linux/fb.h>
 #include <linux/uaccess.h>
-#include "rcm-vdu.h"
+#include <video/rcm-vdu.h>
 
 static bool no_osd_areas = 0;
 module_param(no_osd_areas, bool, 0444);
