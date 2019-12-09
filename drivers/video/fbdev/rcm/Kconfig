@@ -1,0 +1,12 @@
+config FB_RCM_VDU_CORE
+	tristate
+	default n
+
+config FB_RCM_VDU
+	tristate "RCM VDU framebuffer support"
+	default n
+	depends on FB
+	select FB_RCM_VDU_CORE
+	select FB_SYS_FILLRECT
+	select FB_SYS_COPYAREA
+	select FB_SYS_IMAGEBLIT
