@@ -81,6 +81,7 @@
 				reg = <0x0 0x37C00000 0x0 0x02200000>;
 			};
 			video_buffer_0: video_buffer@0x39E00000 {
+				no-map;
 				reg = <0x0 0x39E00000 0x0 0x02000000>;
 			};
 
@@ -88,6 +89,7 @@
 				reg = <0x0 0x3BE00000 0x0 0x02200000>;
 			};
 			video_buffer_1: video_buffer@0x3E000000 {
+				no-map;
 				reg = <0x0 0x3E000000 0x0 0x02000000>;
 			};
 	};
