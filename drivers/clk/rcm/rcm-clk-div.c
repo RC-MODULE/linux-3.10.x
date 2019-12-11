@@ -16,7 +16,7 @@
 #include <linux/regmap.h>
 #include "rcm-clk-pll.h"
 
-static int g_pll_div_debug = 1;
+static int g_pll_div_debug = 0;
 
 module_param_named(debug, g_pll_div_debug, int, 0);
 
