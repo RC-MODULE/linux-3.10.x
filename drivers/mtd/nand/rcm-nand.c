@@ -754,8 +754,8 @@ static int rcm_nand_read_id( struct rcm_nand_chip* chip, int cs ) {
         //                    chip->mtd.ecc_step_size )
         return 0; 
 inconsistent:
-        NAND_DBG_PRINT_ERR("rcm_nand_read_id: chip configurations differ, ignoring CS1\n")
-        return -EIO; 
+        NAND_DBG_PRINT_ERR("rcm_nand_read_id: chip configurations differ,error\n")
+        return -ENODEV; 
 } 
 
 static int rcm_nand_erase( struct mtd_info* mtd, struct erase_info* instr ) { 
@@ -1117,8 +1117,17 @@ static int rcm_nand_probe( struct platform_device* ofdev ) {
         chip->chip_size[0] = 0;
         chip->chip_size[1] = 0;
 
-        err = rcm_nand_read_id( chip, 0 );
-        err = rcm_nand_read_id( chip, 1 );
+        err = rcm_nand_read_id( chip, 0 );      // чип не опознан
+        if( err ) {
+                dev_err( &ofdev->dev, "error reading id #0\n" );
+                goto error_with_free_dma;
+        }
+
+        err = rcm_nand_read_id( chip, 1 );      // чипы разные
+        if( err ) {
+                dev_err( &ofdev->dev, "error reading id #1\n" );
+                goto error_with_free_dma;
+        }
 
         up( &chip->mutex );
 
