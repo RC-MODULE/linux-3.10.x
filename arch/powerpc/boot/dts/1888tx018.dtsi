@@ -620,7 +620,7 @@
 							200		/* tRHZ_max */
 							200 >;  /* tWB_max */
 				interrupt-parent = <&MPIC>;
-				interrupts = <109 0>; 									// IRQ_TYPE_EDGE_RISING
+				interrupts = <109 0>; 									// 0=low-to-high edge,1=active-low level,2=active-high level,3=high-to-low edge
 				status = "disabled";
 			};
 		};	// lsif0
