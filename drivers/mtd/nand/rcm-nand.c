@@ -161,7 +161,6 @@
 #define DRIVER_NAME "rcm-nand" 
 
 #define NAND_DBG_READ_CHECK                             // чтение до 2-х одинаковых буферов
-//#define NAND_DBG_WRITE_CHECK                            // запись с чтением и сравнением (только для отладки,потом убрать)
 #define READ_RETRY_CNT                  5               // число попыток чтения
 #define NAND_DBG_PRINTK
 
@@ -787,14 +786,6 @@ static int rcm_nand_write_oob( struct mtd_info* mtd, loff_t to, struct mtd_oob_o
         uint8_t* oobend = oob ? oob + ops->ooblen : 0;
         int err;
         struct rcm_nand_chip* chip = (struct rcm_nand_chip*)mtd->priv;
-#ifdef NAND_DBG_WRITE_CHECK
-        struct {
-                uint8_t* data[2];
-                loff_t from;
-                size_t len;
-                size_t retlen;
-        } chk;
-#endif // NAND_DBG_WRITE_CHECK
 
 #if !WRITE_ALIGNED
         size_t shift;
@@ -821,19 +812,6 @@ static int rcm_nand_write_oob( struct mtd_info* mtd, loff_t to, struct mtd_oob_o
                 NAND_DBG_PRINT_ERR( "rcm_nand_write_oob: oob>mtd->oobsize(ooboffs=0x%08X)\n", ops->ooboffs ) 
                 return -EINVAL; 
         }
-#ifdef NAND_DBG_WRITE_CHECK
-        if( ops->datbuf && ops->len ) {
-                memset( &chk, 0, sizeof( chk ) );
-                chk.data[0] = (uint8_t*)kmalloc( ops->len, GFP_KERNEL );
-                chk.data[1] = (uint8_t*)kmalloc( ops->len, GFP_KERNEL );
-                if( chk.data[0] && chk.data[1] ) {
-                        memcpy( chk.data[0], ops->datbuf, ops->len );
-                        chk.data[1][0] = ~chk.data[0][0];
-                        chk.from = to;
-                        chk.len = ops->len;
-                }
-        }
-#endif // NAND_DBG_WRITE_CHECK
 
         err = down_killable( &chip->mutex ); 
 
@@ -902,31 +880,6 @@ static int rcm_nand_write_oob( struct mtd_info* mtd, loff_t to, struct mtd_oob_o
         ops->retlen = ops->len; 
         ops->oobretlen = ops->ooblen;
 
-#ifdef NAND_DBG_WRITE_CHECK
-        if( ops->datbuf && ops->len ) {
-                if( chk.data[0] && chk.data[1] ) {
-                        if( err == 0 ) {
-                                err = rcm_nand_read( mtd, chk.from, chk.len, &chk.retlen, chk.data[1] );
-                                if( err == 0 ) {
-                                        err = memcmp( chk.data[0], chk.data[1], chk.len ) ? -EIO : 0;
-                                        if( err ) {
-                                                NAND_DBG_PRINT_ERR( "rcm_nand_write_oob: write buf no match read buf\n" )
-                                                err = -EIO;
-                                        }
-                                        else {
-                                                NAND_DBG_PRINT_INF( "rcm_nand_write_oob: write check ok\n" )
-                                        }
-
-                                }
-                        }
-                }
-                else {
-                        NAND_DBG_PRINT_ERR( "rcm_nand_write_oob: kmalloc for test buffer\n" )
-                }
-                if( chk.data[0] ) kfree( chk.data[0] );
-                if( chk.data[1] ) kfree( chk.data[1] );
-        }
-#endif // NAND_DBG_WRITE_CHECK 
         return err; 
 }
 
@@ -1107,47 +1060,49 @@ static int rcm_nand_probe( struct platform_device* ofdev ) {
 
         match = of_match_device( of_platform_nand_table, &ofdev->dev );
         if( !match ) {
-                NAND_DBG_PRINT_ERR( "rcm_nand_probe: of_match_device: failed\n" )
+                dev_err( &ofdev->dev, "of_match_device: failed\n" );
                 return -EINVAL;
         }
 
         chip->dev = ofdev;
         chip->io = of_iomap( of_node, 0 );
         if ( WARN_ON( !chip->io ) ) {
-                NAND_DBG_PRINT_ERR( "rcm_nand_probe: of_iomap: failed\n" )
+                dev_err( &ofdev->dev, "of_iomap: failed\n" );
                 return -EIO;
         }
 
         if( ( err = rcm_nand_lsif0_config( of_node ) ) != 0 ) {
+                dev_err( &ofdev->dev, "lsif0 config: failed\n" );
                 goto error_with_unmap;
         }
 
         chip->irq = irq_of_parse_and_map( of_node, 0 );
         //NAND_DBG_PRINT_INF( "rcm_nand_probe: irq_of_parse_and_map: return %u\n", chip->irq )
         if( ( err = request_irq( chip->irq, rcm_nand_interrupt_handler, IRQF_SHARED, DRIVER_NAME, chip ) ) ) {
-                NAND_DBG_PRINT_ERR( "rcm_nand_probe: failed to set handler on irq #%d (code: %d)\n", chip->irq, err );
+                dev_err( &ofdev->dev, "failed to set handler on irq %d,err=%d\n", chip->irq, err );
                 goto error_with_unmap;
         }
 
         chip->dev->dev.coherent_dma_mask = DMA_BIT_MASK( 32 );
         chip->dma_area = dma_alloc_coherent( &chip->dev->dev, DMA_SIZE, &chip->dma_handle, GFP_KERNEL | GFP_DMA );
         if( !chip->dma_area ) {
-                NAND_DBG_PRINT_ERR( "rcm_nand_probe: failed to request DMA area\n" )
+                dev_err( &ofdev->dev, "failed to request DMA area\n" );
                 err = -ENOMEM;
                 goto error_with_free_irq; 
         }
         memset( chip->dma_area, 0xFF, DMA_SIZE );
-        //NAND_DBG_PRINT_INF( "dma_alloc_coherent: area=%px,hanlde=%08x\n", chip->dma_area, (uint32_t)chip->dma_handle )
 
         init_completion( &chip->cmpl );
         sema_init( &chip->mutex, 1 ); 
         down( &chip->mutex );
 
         if( ( err = rcm_nand_get_timings( of_node, timings, &freq ) ) != 0 ) {
+                dev_err( &ofdev->dev, "rcm_nand_get_timings failed\n" );
                 goto error_with_free_dma;
         }
 
         if( ( err = rcm_nand_hw_init( chip, timings, freq ) ) != 0 ) {
+                dev_err( &ofdev->dev, "rcm_nand_hw_init failed\n" );
                 goto error_with_free_dma;
         }
 
@@ -1179,11 +1134,11 @@ static int rcm_nand_probe( struct platform_device* ofdev ) {
         chip->mtd.oobavail -= 4;      // байты 16..19 прочитать не удалось
 #endif
         chip->mtd.priv = chip;
-        NAND_DBG_PRINT_INF( "rcm_nand_probe(chip=%px): detected %llu bytes NAND memory,user oob size %u bytes\n", chip, chip->mtd.size, chip->mtd.oobavail )
+        dev_info( &ofdev->dev, "detected %llu bytes NAND memory,user oob size %u bytes\n", chip->mtd.size, chip->mtd.oobavail );
 
         err = mtd_device_parse_register( &chip->mtd, part_probes, 0, NULL, 0 );
-        if( err ) { 
-                NAND_DBG_PRINT_ERR( "rcm_nand_probe: failed add mtd device (code: %d)\n", err );
+        if( err ) {
+                dev_err( &ofdev->dev, "failed add mtd device,err: %d\n", err );
                 goto error_with_free_dma;
         }
         return 0;
