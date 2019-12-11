@@ -912,6 +912,14 @@
 				vdubuffer = <0x39E00000 0x02000000>;
 				status = "disabled";
 			};
+
+			vpu: vpu@0x38020000 {
+				compatible = "rcm,vpu-coda980";
+				reg = <0x38020000 0x4000>;
+				interrupt-parent = <&MPIC>;
+				interrupts = <123 2>; // active high level-sensitive
+				status = "disabled";
+			};
 		};
 		
 		apb0 {
