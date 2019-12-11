@@ -103,6 +103,12 @@
 		clock-frequency = <100000000>;
 	};
 
+	clk_aud: clk_aud {
+		#clock-cells = <0>;
+		compatible = "fixed-clock";
+		clock-frequency = <24576000>;
+	};
+
 	MPIC: interrupt-controller {
 		compatible = "chrp,open-pic";
 		interrupt-controller;
@@ -853,6 +859,8 @@
 				reg = <0x39080000 0x1000>;
 				interrupt-parent = <&MPIC>;
 				interrupts = <125 0>;
+				clocks = <&audio_pll_div>;
+				rcm,disable11025;
 				status = "disabled";
 			};
 
@@ -956,6 +964,30 @@
 			{
 				compatible = "syscon";
 				reg = <0x38007000 0x1000>;
+			};
+
+			audio_pll: audio_pll@0x38009000
+			{
+				compatible = "rcm,pll", "simple-bus";
+				#clock-cells = <0>;
+				#address-cells = <1>;
+				#size-cells = <0>;
+				reg = <0x38009000 0x1000>;
+				clocks = <&clk_aud>;
+				/*      fbdif,	prdiv,	psdiv  */
+				freqs = <64   	1	   	2>,			/* 0 - 393 216 000 Hz */
+						<147	10		0>;			/* 1 - 361 267 200 Hz */													
+
+				status ="ok";
+
+				audio_pll_div: audio_pll_div@100
+				{
+					compatible = "rcm,pll-div";
+					#clock-cells = <0>;
+					reg = <0x100>;
+					clocks = <&audio_pll>;
+					status ="ok";
+				};
 			};
 
 			thermal: thermal@0x38003000 {

@@ -9,11 +9,25 @@
 #include <linux/kernel.h>
 #include <linux/module.h>
 #include <linux/of.h>
+#include <linux/clk.h>
 #include <linux/platform_device.h>
 #include <linux/regmap.h>
 #include <linux/interrupt.h>
 
 #include "rcm-i2s.h"
+
+static int g_i2s_ctrl_debug = 0;
+
+module_param_named(debug, g_i2s_ctrl_debug, int, 0);
+
+#define TRACE(format, ...)                                                     \
+	do {                                                                   \
+		if (g_i2s_ctrl_debug) {                                             \
+			printk("TRACE: rcm-i2s-ctrl/%s:%d: " format "\n", __func__, \
+			       __LINE__, ##__VA_ARGS__);                       \
+		}                                                              \
+	} while (0)
+
 
 static const struct regmap_config rcm_i2s_regmap_config = {
 	.reg_bits = 32,
@@ -25,10 +39,11 @@ static const struct regmap_config rcm_i2s_regmap_config = {
 static int rcm_i2s_reset(struct rcm_i2s_control *i2s)
 {
 	unsigned int status;
-	printk("TRACE: rcm_i2s_reset");
-    i2s->hw_params[0] = i2s->hw_params[1] = 0;
+	TRACE("");
+	i2s->hw_params[0] = i2s->hw_params[1] = 0;
 	regmap_update_bits(i2s->regmap, RCM_I2S_REG_CTRL0, 1, 1);
-	return regmap_read_poll_timeout(i2s->regmap, RCM_I2S_REG_CTRL0, status, (status&1) == 0, 100, 10000);
+	return regmap_read_poll_timeout(i2s->regmap, RCM_I2S_REG_CTRL0, status,
+					(status & 1) == 0, 100, 10000);
 }
 
 static irqreturn_t i2s_interrupt_handler(int irq, void *data)
@@ -39,7 +54,7 @@ static irqreturn_t i2s_interrupt_handler(int irq, void *data)
 	regmap_read(i2s->regmap, RCM_I2S_REG_STAT0, &stat0);
 	regmap_read(i2s->regmap, RCM_I2S_REG_STAT1, &stat1);
 
-	printk("TRACE: i2s_interrupt_handler: %08X, %08X", stat0, stat1);
+	TRACE("%08X, %08X", stat0, stat1);
 
 	return IRQ_HANDLED;
 }
@@ -48,9 +63,9 @@ static int rcm_i2s_ctrl_probe(struct platform_device *pdev)
 {
 	struct rcm_i2s_control *i2s;
 	void __iomem *base;
-    int ret, irq;
+	int ret, irq;
 
-	printk("TRACE: rcm_i2s_ctrl_probe");
+	TRACE("");
 
 	i2s = devm_kzalloc(&pdev->dev, sizeof(*i2s), GFP_KERNEL);
 	if (!i2s)
@@ -63,60 +78,65 @@ static int rcm_i2s_ctrl_probe(struct platform_device *pdev)
 	if (IS_ERR(base))
 		return PTR_ERR(base);
 
-	i2s->regmap = devm_regmap_init_mmio(&pdev->dev, base,
-		&rcm_i2s_regmap_config);
+	i2s->regmap =
+		devm_regmap_init_mmio(&pdev->dev, base, &rcm_i2s_regmap_config);
 	if (IS_ERR(i2s->regmap))
 		return PTR_ERR(i2s->regmap);
 
-    spin_lock_init(&i2s->lock);
+	spin_lock_init(&i2s->lock);
 
-	if(rcm_i2s_reset(i2s))
-	{
-        dev_err(&pdev->dev, "unable to find i2s hardware");
+	if (rcm_i2s_reset(i2s)) {
+		dev_err(&pdev->dev, "unable to find i2s hardware");
 		return -ENODEV;
 	}
 
 	irq = platform_get_irq(pdev, 0);
 	if (irq < 0) {
-        dev_err(&pdev->dev, "unable to get interrupt property");
+		dev_err(&pdev->dev, "unable to get interrupt property");
 		return -ENODEV;
-    }
+	}
 	ret = devm_request_irq(&pdev->dev, irq, i2s_interrupt_handler, 0,
 			       pdev->name, i2s);
 	if (ret) {
 		dev_err(&pdev->dev, "Cannot claim IRQ\n");
-		return  -ENODEV;
+		return -ENODEV;
 	};
 
-    i2s->started_count = 0;
-    i2s->opened_count = 0;
-    i2s->rcm_i2s_reset = rcm_i2s_reset;
+	i2s->clock = devm_clk_get(&pdev->dev, 0);
+	if (IS_ERR(i2s->clock)) {
+		dev_err(&pdev->dev, "Cannot find clock source\n");
+		return -ENODEV;
+	}
+	clk_prepare(i2s->clock);
+	clk_enable(i2s->clock);
 
-	printk("TRACE: rcm_i2s_ctrl_probe return %d", ret);
+	if (of_get_property(pdev->dev.of_node, "rcm,disable11025", NULL))
+		i2s->disable_11025 = 1;
+
+	i2s->started_count = 0;
+	i2s->opened_count = 0;
+	i2s->rcm_i2s_reset = rcm_i2s_reset;
+
+	TRACE("return %d", ret);
 
 	return ret;
 }
 
-static int rcm_i2s_ctrl_remove(struct platform_device *pdev)
-{
-	//struct rcm_i2s_control *i2s = platform_get_drvdata(pdev);
-	printk("TRACE: rcm_i2s_ctrl_remove");
-	return 0;
-}
-
 static const struct of_device_id rcm_i2s_ctrl_of_match[] = {
-	{ .compatible = "rcm,i2s-ctrl", },
+	{
+		.compatible = "rcm,i2s-ctrl",
+	},
 	{},
 };
 MODULE_DEVICE_TABLE(of, rcm_i2s_ctrl_of_match);
 
 static struct platform_driver rcm_i2s_ctrl_driver = {
-	.driver = {
-		.name = "rcm-i2s-ctrl",
-		.of_match_table = rcm_i2s_ctrl_of_match,
-	},
+	.driver =
+		{
+			.name = "rcm-i2s-ctrl",
+			.of_match_table = rcm_i2s_ctrl_of_match,
+		},
 	.probe = rcm_i2s_ctrl_probe,
-	.remove = rcm_i2s_ctrl_remove,
 };
 module_platform_driver(rcm_i2s_ctrl_driver);
 

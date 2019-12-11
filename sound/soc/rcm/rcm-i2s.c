@@ -9,6 +9,7 @@
 #include <linux/kernel.h>
 #include <linux/module.h>
 #include <linux/of.h>
+#include <linux/clk.h>
 #include <linux/platform_device.h>
 #include <linux/regmap.h>
 #include <linux/dmaengine.h>
@@ -20,7 +21,7 @@
 #include <linux/of_platform.h>
 #include "rcm-i2s.h"
 
-static int g_i2s_debug = 1;
+static int g_i2s_debug = 0;
 
 module_param_named(debug, g_i2s_debug, int, 0);
 
@@ -31,6 +32,9 @@ module_param_named(debug, g_i2s_debug, int, 0);
 			       __LINE__, ##__VA_ARGS__);                       \
 		}                                                              \
 	} while (0)
+
+#define RCM_I2S_CLK_24 24576000
+#define RCM_I2S_CLK_22 22579200
 
 struct rcm_i2s {
 	struct device *dev;
@@ -154,9 +158,14 @@ static int rcm_i2s_hw_params(struct snd_pcm_substream *substream,
 	int width = snd_pcm_format_width(params_format(params));
 	int rate = params_rate(params);
 	int is_big_endian = snd_pcm_format_big_endian(params_format(params));
-	int div_value = 24576 / (rate / 1000) / width / 4;
+	int div_value;
+	unsigned long req_clock = RCM_I2S_CLK_24;
 	int ctrl0 = 0;
 	unsigned long flags;
+	if ((rate % 22050) == 0)
+		req_clock = RCM_I2S_CLK_22;
+
+	div_value = req_clock / (rate) / width / 4;
 	switch (width) {
 	case 16:
 		ctrl0 |= 0xF0008;
@@ -180,26 +189,46 @@ static int rcm_i2s_hw_params(struct snd_pcm_substream *substream,
 	if (is_big_endian)
 		ctrl0 |= 0x4;
 
+	//	ctrl0 |= 0x2;
+
 	TRACE("%d, %d, %d", params_channels(params), params_rate(params),
 	      params_format(params));
 
-	if((i2s_ctrl->hw_params[0] == 0) 
-		|| ((i2s_ctrl->hw_params[0] == ctrl0) &&
-		   (i2s_ctrl->hw_params[1] == div_value)))
-	{
-		spin_lock_irqsave(&i2s_ctrl->lock, flags);
-
-		i2s_ctrl->hw_params[0] = ctrl0; 
-		i2s_ctrl->hw_params[1] = div_value;
-
-		regmap_write(i2s_ctrl->regmap, RCM_I2S_REG_CTRL0, ctrl0);
-		regmap_write(i2s_ctrl->regmap, RCM_I2S_REG_CTRL1, div_value);
-
-		spin_unlock_irqrestore(&i2s_ctrl->lock, flags);
+	if ((i2s_ctrl->hw_params[0] == ctrl0) &&
+	    (i2s_ctrl->hw_params[1] == div_value)) {
+		// already changed just skip
 		return 0;
 	}
-	else
-	{
+
+	if (i2s_ctrl->hw_params[0] == 0) {
+		int ret = 0;
+		spin_lock_irqsave(&i2s_ctrl->lock, flags);
+
+		// set clock
+		if (i2s_ctrl->clock) {
+			if (clk_get_rate(i2s_ctrl->clock) != req_clock) {
+				unsigned long freq = clk_round_rate(
+					i2s_ctrl->clock, req_clock);
+				if (req_clock == freq)
+					ret = clk_set_rate(i2s_ctrl->clock,
+							   freq);
+			}
+			if (!ret) {
+				i2s_ctrl->hw_params[0] = ctrl0;
+				i2s_ctrl->hw_params[1] = div_value;
+
+				regmap_write(i2s_ctrl->regmap,
+					     RCM_I2S_REG_CTRL0, ctrl0);
+				regmap_write(i2s_ctrl->regmap,
+					     RCM_I2S_REG_CTRL1, div_value);
+			} else
+				dev_err(i2s->dev,
+					"Failed to set clock rate %ld\n",
+					req_clock);
+		}
+		spin_unlock_irqrestore(&i2s_ctrl->lock, flags);
+		return ret;
+	} else {
 		dev_err(i2s->dev, "requested conflict i2s parameters");
 		return -EBUSY;
 	}
@@ -216,18 +245,11 @@ static const struct snd_soc_dai_ops rcm_i2s_dai_ops = {
 	(SNDRV_PCM_FMTBIT_S16_LE | SNDRV_PCM_FMTBIT_S16_BE |                   \
 	 SNDRV_PCM_FMTBIT_S32_LE | SNDRV_PCM_FMTBIT_S32_BE)
 
-// do not support theese modes because it seems kernel unable to organize samples 
+// do not support theese modes because it seems kernel unable to organize samples
 // per words
 /*	 SNDRV_PCM_FMTBIT_S20_LE | SNDRV_PCM_FMTBIT_S20_BE |                   \
 	 SNDRV_PCM_FMTBIT_S24_LE | SNDRV_PCM_FMTBIT_S24_BE |                   \
 */
-
-struct snd_soc_pcm_stream i2s_playback = {
-	.channels_min = 2,
-	.channels_max = 2,
-	.rates = SNDRV_PCM_RATE_8000_192000,
-	.formats = RCM_I2S_FORMATS,
-};
 
 static const struct snd_soc_component_driver rcm_i2s_component = {
 	.name = "rcm-i2s",
@@ -255,6 +277,11 @@ static const struct snd_dmaengine_pcm_config pcm_conf = {
 	.pcm_hardware = &i2s_playback_hw
 };
 
+#define SNDRV_PCM_RATE_8000_192000_SKIP_11025                                  \
+	SNDRV_PCM_RATE_8000 | SNDRV_PCM_RATE_16000 | SNDRV_PCM_RATE_32000 |    \
+		SNDRV_PCM_RATE_48000 | SNDRV_PCM_RATE_64000 |                  \
+		SNDRV_PCM_RATE_96000 | SNDRV_PCM_RATE_192000
+
 static int rcm_i2s_probe(struct platform_device *pdev)
 {
 	struct rcm_i2s *i2s;
@@ -263,6 +290,7 @@ static int rcm_i2s_probe(struct platform_device *pdev)
 	struct of_phandle_args args;
 	struct rcm_i2s_control *ctrl;
 	struct snd_soc_dai_driver *i2s_dai;
+	struct snd_soc_pcm_stream i2s_playback;
 
 	TRACE("");
 
@@ -297,6 +325,13 @@ static int rcm_i2s_probe(struct platform_device *pdev)
 		ctrl->res->start + RCM_I2S_REG_FIFO0 + id * 8;
 	i2s->playback_dma_data.addr_width = 4;
 	i2s->playback_dma_data.maxburst = 1;
+
+	i2s_playback.channels_min = 2;
+	i2s_playback.channels_max = 2;
+	i2s_playback.rates = i2s->ctrl->disable_11025 ?
+				     SNDRV_PCM_RATE_8000_192000_SKIP_11025 :
+				     SNDRV_PCM_RATE_8000_192000;
+	i2s_playback.formats = RCM_I2S_FORMATS;
 
 	snprintf(&i2s->dai_name[0], 16, "rcm-i2s%1d", id);
 	i2s_dai->name = &i2s->dai_name[0];
