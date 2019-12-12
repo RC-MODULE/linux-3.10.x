@@ -2,6 +2,8 @@
  *  This program is free software; you can redistribute it and/or modify it
  *  under the terms of the GNU General Public License version 2 as published
  *  by the Free Software Foundation.
+ *
+ *  Copyright (C) 2019 Alexey Spirkov <alexeis@astrosoft.ru>
  */
 
 #include <linux/types.h>
@@ -1196,5 +1198,5 @@ static struct platform_driver of_platform_rcm_nand_driver = {
 module_platform_driver(of_platform_rcm_nand_driver); 
 
 MODULE_LICENSE("GPL"); 
-MODULE_AUTHOR("Shalyt Vladimir Vladimir.Shalyt@astrosoft.ru"); 
+MODULE_AUTHOR("Alexey Spirkov <alexeis@astrosoft.ru>");
 MODULE_DESCRIPTION("RCM SoC NAND controller driver");
