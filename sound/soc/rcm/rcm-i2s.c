@@ -66,8 +66,10 @@ static int rcm_i2s_startup(struct snd_pcm_substream *substream,
 
 	runtime->private_data = (void *)(uintptr_t)i2s_ctrl;
 
-	if (i2s_ctrl->opened_count == 0)
+	if (i2s_ctrl->opened_count == 0) {
 		i2s_ctrl->rcm_i2s_reset(i2s_ctrl);
+		clk_prepare_enable(i2s_ctrl->clock);
+	}
 
 	spin_lock_irqsave(&i2s_ctrl->lock, flags);
 	i2s_ctrl->opened_count++;
@@ -88,8 +90,10 @@ static void rcm_i2s_shutdown(struct snd_pcm_substream *substream,
 	i2s_ctrl->opened_count--;
 	spin_unlock_irqrestore(&i2s_ctrl->lock, flags);
 
-	if (i2s_ctrl->opened_count == 0)
+	if (i2s_ctrl->opened_count == 0) {
 		i2s_ctrl->rcm_i2s_reset(i2s_ctrl);
+		clk_disable_unprepare(i2s_ctrl->clock);
+	}
 
 	TRACE("%d %d", i2s->id, i2s_ctrl->opened_count);
 }

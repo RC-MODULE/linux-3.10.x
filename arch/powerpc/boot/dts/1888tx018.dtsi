@@ -934,11 +934,12 @@
 
 			spdif: spdif@0x39080000 {
 				compatible = "rcm,spdif";
-				#sound-dai-cells = <1>;
+				#sound-dai-cells = <0>;
 				reg = <0x39081000 0x1000>;
 				interrupt-parent = <&MPIC>;
 				interrupts = <126 0>;
-				dmas = <&audio_dma 0>;
+				clocks = <&audio_pll_div>;
+				dmas = <&audio_dma 4>;
 				dma-names = "rx";
 				status = "disabled";
 			};
@@ -951,16 +952,6 @@
 				interrupts = <127 0>;
 				status = "disabled";
 			};
-
-//			sound {
-//				compatible = "rcm,legacy-audio";
-//				interrupt-parent = <&MPIC>;
-//				interrupts = <127 4>;
-//				maudio,dmac = <&audio_dma>;
-//				maudio,i2s = <&i2s>;
-//				maudio,spdif = <&spdif>;
-//				status = "disabled";
-//			};
 
 			// HDMI channel 0 (actually VDU index 1)
 			vdu0: vdu@0x38013000 {
@@ -1049,8 +1040,8 @@
 				reg = <0x38009000 0x1000>;
 				clocks = <&clk_aud>;
 				/*      fbdif,	prdiv,	psdiv  */
-				freqs = <64   	1	   	2>,			/* 0 - 393 216 000 Hz */
-						<147	10		0>;			/* 1 - 361 267 200 Hz */													
+				freqs = <64   	1	   	2>,	/* 393 216 000 Hz / 16 = 24 576 000 */
+						<147	1		2>;	/* 451 584 000 Hz / 20 = 22 579 200 */
 
 				status ="ok";
 

@@ -243,15 +243,15 @@
 					};
 				};
 
-				//simple-audio-card,dai-link@1 {		/* I2S - cs4384 */
-				//	reg = <1>;
-				//	cpu {
-				//		sound-dai = <&spdif>;
-				//	};
-				//	codec {
-				//		sound-dai = <&spdif_out>;
-				//	};
-				//};
+				simple-audio-card,dai-link@4 {		/* spdif */
+					reg = <4>;
+					cpu {
+						sound-dai = <&spdif>;
+					};
+					codec {
+						sound-dai = <&spdif_out>;
+					};
+				};
 			};
 
 			spdif_out: spdif-out {
