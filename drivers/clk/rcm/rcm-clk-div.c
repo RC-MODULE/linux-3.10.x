@@ -103,10 +103,11 @@ static long rcm_pll_clk_div_round_rate(struct clk_hw *hw, unsigned long rate,
 				       unsigned long *prate)
 {
 	struct rcm_pll_div *div = to_div(hw);
-	//    TRACE("%ld, %ld", rate, *prate);
+	unsigned long ret = divider_round_rate(hw, rate, prate, 0,
+					       div->div.width, div->div.flags);
+	TRACE("%ld, %ld, %ld", rate, *prate, ret);
 
-	return divider_round_rate(hw, rate, prate, 0, div->div.width,
-				  div->div.flags);
+	return ret;
 }
 
 static int rcm_pll_clk_div_set_rate(struct clk_hw *hw, unsigned long rate,
@@ -117,15 +118,16 @@ static int rcm_pll_clk_div_set_rate(struct clk_hw *hw, unsigned long rate,
 	TRACE("");
 
 	if (!(parent_rate % rate) && (parent_rate / rate) <= 257) {
-		unsigned int val = parent_rate / rate - 1;
+		unsigned int divisor = parent_rate / rate - 1;
 		unsigned int current;
 
 		regmap_read(div->pll->regmap, div->reg, &current);
-		if (current != val) {
+		if (current != divisor) {
 			unsigned long flags;
 			int ret = -EBUSY;
+			unsigned int val = 0;
 
-			TRACE("set divisor to %d", val);
+			TRACE("set divisor to %d", divisor);
 			spin_lock_irqsave(&div->pll->lock, flags);
 
 			regmap_write(div->pll->regmap, RCM_PLL_WR_LOCK,
@@ -133,11 +135,11 @@ static int rcm_pll_clk_div_set_rate(struct clk_hw *hw, unsigned long rate,
 			regmap_read(div->pll->regmap, RCM_PLL_WR_LOCK, &val);
 			if (val == 0) {
 				// write new data to PLL control
-				regmap_write(div->pll->regmap, div->reg, val);
+				regmap_write(div->pll->regmap, div->reg,
+					     divisor);
 
 				regmap_write(div->pll->regmap, RCM_PLL_UPD_CK,
 					     0x1); // allow new values
-
 				ret = 0;
 			}
 			spin_unlock_irqrestore(&div->pll->lock, flags);
