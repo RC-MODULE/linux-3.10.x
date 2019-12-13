@@ -352,7 +352,6 @@ static void rcm_dma_tasklet(unsigned long arg)
 
 	spin_lock_irqsave(&d->lock, flags);
 	d->dma_int = 0;
-	spin_unlock_irqrestore(&d->lock, flags);
 
 	TRACE("%08X", dma_int);
 
@@ -365,7 +364,9 @@ static void rcm_dma_tasklet(unsigned long arg)
 			dmaengine_desc_get_callback(desc, &cb);
 			if (dmaengine_desc_callback_valid(&cb)) {
 				TRACE("invoke spdif");
+				spin_unlock_irqrestore(&d->lock, flags);
 				dmaengine_desc_callback_invoke(&cb, NULL);
+				spin_lock_irqsave(&d->lock, flags);
 			}
 		}
 	}
@@ -380,12 +381,13 @@ static void rcm_dma_tasklet(unsigned long arg)
 				dmaengine_desc_get_callback(desc, &cb);
 				if (dmaengine_desc_callback_valid(&cb)) {
 					TRACE("invoke %d", i);
+					spin_unlock_irqrestore(&d->lock, flags);
 					dmaengine_desc_callback_invoke(&cb, NULL);
+					spin_lock_irqsave(&d->lock, flags);
 				}
 			}
 		}
 	}
-	spin_lock_irqsave(&d->lock, flags);
 	// proceed termitation
 	for (i = 0; i < 5; i++) {
 		if (d->channel[i].terminate == 1) {
