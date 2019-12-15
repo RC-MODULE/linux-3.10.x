@@ -255,7 +255,7 @@ enum {
         #define COMPLETE_ALL(CHIP) complete_all(&CHIP->cmpl);
 #else
         #define INIT_COMPLETION(CHIP) while(0);
-        #define WAIT_FOR_COMPLETION_IO(CHIP) rcm_nand_wait_irq(CHIP);
+        #define WAIT_FOR_COMPLETION_IO(CHIP) rcm_nand_wait_irq(CHIP);   // нет проверки возвращаемого значения,но результат определится по изменению state
         #define COMPLETE_ALL(CHIP) while(0);
 #endif
 
@@ -399,18 +399,27 @@ static int rcm_nand_wait_irq( struct rcm_nand_chip* chip ) {
         while( --timeout ) {
                 chip->status_irq = rcm_nand_get( chip, NAND_REG_irq_status );
                 chip->status = rcm_nand_get( chip, NAND_REG_status );
-                if( ( ( chip->state == MNAND_WRITE ) && ( chip->status_irq & IRQ_PROGRAM_FINISH ) ) ||
-                    ( ( chip->state == MNAND_READ ) && ( chip->status_irq & IRQ_READ_FINISH ) ) ||
-                    ( ( chip->state == MNAND_ERASE ) && ( chip->status_irq & IRQ_ERASE ) ) ||
-                    ( ( chip->state == MNAND_READID ) && ( chip->status_irq & IRQ_READID ) ) ||
-                    ( ( chip->state == MNAND_RESET ) && ( chip->status_irq & IRQ_RESET ) ) ) {
-                        update_chip_err_empty( chip );
-                        chip->state = MNAND_IDLE;
+
+                if( ( chip->state == MNAND_READ ) && ( chip->status_irq & IRQ_READ_FINISH ) ) {
+                        chip->rd_page_cnt++;
                         ret = 0;
                         break;
                 }
-        }        
-        NAND_DBG_PRINT_INF( "rcm_nand_wait_irq: ret=%d,irq status=%08x,timeout=%u\n", ret, chip->status_irq, timeout )
+                else if( ( ( chip->state == MNAND_WRITE ) && ( chip->status_irq & IRQ_PROGRAM_FINISH ) ) ||
+                         ( ( chip->state == MNAND_ERASE ) && ( chip->status_irq & IRQ_ERASE ) ) ||
+                         ( ( chip->state == MNAND_READID ) && ( chip->status_irq & IRQ_READID ) ) ||
+                         ( ( chip->state == MNAND_RESET ) && ( chip->status_irq & IRQ_RESET ) ) ) {
+                        ret = 0;
+                        break;
+                }
+        }
+        if( ret == 0 ) {
+                update_chip_err_empty( chip );
+                chip->state = MNAND_IDLE;
+        }
+        else {
+                NAND_DBG_PRINT_ERR( "rcm_nand_wait_irq: ret=%d,irq status=%08x,timeout=%u\n", ret, chip->status_irq, timeout )
+        }
         return ret;
 }
 
@@ -1048,7 +1057,7 @@ static int rcm_nand_write(struct mtd_info* mtd, loff_t off, size_t len, size_t* 
          else {
                 *retlen = 0;
         }
-        NAND_DBG_PRINT_INF( "rcm_nand_write: off=0x%08llX,len=%zu,err=%d,retlen=%zu\n", off, len, err, *retlen )
+        //NAND_DBG_PRINT_INF( "rcm_nand_write: off=0x%08llX,len=%zu,err=%d,retlen=%zu\n", off, len, err, *retlen )
         return err; 
 }
 
@@ -1065,7 +1074,7 @@ static int rcm_nand_read( struct mtd_info* mtd, loff_t off, size_t len, size_t* 
         else {
                 *retlen = 0;
         }
-        NAND_DBG_PRINT_INF( "rcm_nand_read: off=0x%08llX,len=%zu,err=%d,retlen=%zu\n", off, len, err, *retlen )
+        //NAND_DBG_PRINT_INF( "rcm_nand_read: off=0x%08llX,len=%zu,err=%d,retlen=%zu\n", off, len, err, *retlen )
         return err;
 }
 
