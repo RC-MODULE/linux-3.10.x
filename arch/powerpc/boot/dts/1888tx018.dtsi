@@ -153,7 +153,7 @@
 			sctl = <&sctl>;			
 		    control = <&lsif0_config>;
 			pinctrl-names = "default";
-			/*pinctrl-0 =
+			pinctrl-0 =
 				<&lsif0_mgpio0_sram_nor>,
 				<&lsif0_mgpio1_sram_nor>,
 				<&lsif0_mgpio2_sram_nor>,
@@ -162,12 +162,7 @@
 				<&lsif0_mgpio5_sram_nor>,
 				<&lsif0_mgpio6_sram_nor>,
 				<&lsif0_mgpio7_sram_nor>,
-				<&lsif0_mgpio8_sram_nor>;*/
-			pinctrl-0 = 							// nand
-				<&lsif0_mgpio3_nand>,
-				<&lsif0_mgpio4_nand>,
-				<&lsif0_mgpio7_nand>,
-				<&lsif0_mgpio8_nand>;
+				<&lsif0_mgpio8_sram_nor>;
 			status = "disabled";
 		};
 
@@ -643,6 +638,11 @@
 							200 >;  /* tWB_max */
 				interrupt-parent = <&MPIC>;
 				interrupts = <109 0>; 									// 0=low-to-high edge,1=active-low level,2=active-high level,3=high-to-low edge
+				pinctrl-0 =
+					<&lsif0_mgpio3_nand>,
+					<&lsif0_mgpio4_nand>,
+					<&lsif0_mgpio7_nand>,
+					<&lsif0_mgpio8_nand>;
 				status = "disabled";
 			};
 		};	// lsif0

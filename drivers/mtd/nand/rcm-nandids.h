@@ -1,11 +1,7 @@
 #ifndef _RCM_NANDIDS_H
 #define _RCM_NANDIDS_H
 
-#include <linux/module.h>
-#include <linux/mtd/nand.h>
-#include <linux/mtd/rawnand.h>
 #include <linux/mtd/onenand.h>
-#include <linux/sizes.h>
 
 #define LP_OPTIONS NAND_SAMSUNG_LP_OPTIONS
 #define LP_OPTIONS16 (LP_OPTIONS | NAND_BUSWIDTH_16)
@@ -20,7 +16,7 @@
  * If page size and eraseblock size are 0, the sizes are taken from the
  * extended chip ID.
  */
-struct nand_flash_dev nand_flash_ids[] = {
+struct nand_flash_dev rcm_nand_flash_ids[] = {
 	/*
 	 * Some incompatible NAND chips share device ID's and so must be
 	 * listed by full ID. We list them first so that we can easily identify
@@ -152,7 +148,7 @@ struct nand_flash_dev nand_flash_ids[] = {
 };
 
 /* Manufacturer IDs */
-struct onenand_manufacturers nand_manuf_ids[] = {
+struct onenand_manufacturers rcm_nand_manuf_ids[] = {
 	{NAND_MFR_TOSHIBA, "Toshiba"},
 	{NAND_MFR_SAMSUNG, "Samsung"},
 	{NAND_MFR_FUJITSU, "Fujitsu"},
@@ -166,12 +162,5 @@ struct onenand_manufacturers nand_manuf_ids[] = {
 	{NAND_MFR_EON, "Eon"},
 	{0x0, "Unknown"}
 };
-
-//EXPORT_SYMBOL(nand_manuf_ids);
-//EXPORT_SYMBOL(nand_flash_ids);
-
-//MODULE_LICENSE("GPL");
-//MODULE_AUTHOR("Thomas Gleixner <tglx@linutronix.de>");
-//MODULE_DESCRIPTION("Nand device & manufacturer IDs");
 
 #endif // _RCM_NANDIDS_H
