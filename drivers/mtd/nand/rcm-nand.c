@@ -34,15 +34,15 @@
 #include <linux/of_address.h>
 #include <linux/of_irq.h>
 #include <linux/of_platform.h>
+#include "rcm-nandids.h"
 #else // __UBOOT__
 #include <dm/of.h>
 #include <dm/of_access.h>
 #include <fdtdec.h>
 #include <regmap.h>
 #include <nand.h>
+#include "rcm_nandids.h"
 #endif
-
-#include "rcm-nandids.h"
 
 #define NAND_REG_status                 0x00
 #define NAND_REG_control                0x04
@@ -241,13 +241,12 @@ enum {
 #else // __UBOOT__
         #define of_property_read_u32 of_read_u32
         #define of_property_read_u32_array of_read_u32_array
-        struct semaphore { int x; };
-        static int down_killable( struct semaphore* semaphore ) { semaphore->x = 0; return 0; }
-        static void down( struct semaphore* semaphore ) { semaphore->x = 1; }
-        static void up( struct semaphore* semaphore ) { semaphore->x = 0; }
+        #define DOWN_KILLABLE(SEMA) (0);
+        #define DOWN(SEMA) while(0);
+        #define UP(SEMA) while(0);
 #endif
 
-#define COMPLETE_INTERRUPT
+//#define COMPLETE_INTERRUPT
 
 #ifdef COMPLETE_INTERRUPT
         #define INIT_COMPLETION(CHIP) init_completion(&CHIP->cmpl);
@@ -277,8 +276,10 @@ struct rcm_nand_chip {
         int err;
         int empty;
         uint64_t chip_size[2];
+#ifndef __UBOOT__
         struct completion cmpl;
         struct semaphore mutex;
+#endif
 }; 
 
 static void rcm_nand_set( struct rcm_nand_chip* chip, uint32_t addr, uint32_t val ) {
@@ -780,8 +781,10 @@ static int rcm_nand_read_id( struct rcm_nand_chip* chip, int cs ) {
                 } 
         } 
   
-        if (!type)
+        if (!type) {
+                NAND_DBG_PRINT_ERR("rcm_nand_read_id: bad type\n")
                 return -ENODEV;
+        }
 
 #define NBUG(a,b) \
         { if (cs && (a!=b)) goto inconsistent; }                // чипы должны быть одинаковыми
@@ -1080,24 +1083,30 @@ static int rcm_nand_read( struct mtd_info* mtd, loff_t off, size_t len, size_t* 
 
 static int rcm_nand_lsif0_config( struct device_node *of_node ) {
         struct device_node* tmp_of_node;
-   	struct regmap* lsif0_config;
-        int ret;
+   	//struct regmap* lsif0_config;
+        //int ret;
+        void* lsif0_io;
 
         if( ( tmp_of_node = of_parse_phandle( of_node, "config", 0 ) ) == NULL ) {
                 NAND_DBG_PRINT_ERR( "of_parse_phandle(config): error\n" )
                 return -ENOENT;
         }
-        lsif0_config = syscon_node_to_regmap( tmp_of_node );
+        //lsif0_config = syscon_node_to_regmap( tmp_of_node );
+        //if( ( ret = regmap_write( lsif0_config, NAND_RADDR_EXTEND, 1 ) ) != 0 ) {
+        //        NAND_DBG_PRINT_ERR( "regmap_write(NAND_RADDR_EXTEND): error %d\n", ret )
+        //        return ret;
+        //}
 
-        if( ( ret = regmap_write( lsif0_config, NAND_RADDR_EXTEND, 1 ) ) != 0 ) {
-                NAND_DBG_PRINT_ERR( "regmap_write(NAND_RADDR_EXTEND): error %d\n", ret )
-                return ret;
+        //if( ( ret = regmap_write( lsif0_config, NAND_WADDR_EXTEND, 1 ) ) != 0 ) {
+        //        NAND_DBG_PRINT_ERR( "regmap_write(NAND_WADDR_EXTEND): error %d\n", ret )
+        //        return ret;
+        //}
+        if( ( lsif0_io = of_iomap( tmp_of_node, 0 ) ) == NULL ) {
+                NAND_DBG_PRINT_ERR( "of_parse_phandle(config): error\n" )
+                return -EIO;
         }
-
-        if( ( ret = regmap_write( lsif0_config, NAND_WADDR_EXTEND, 1 ) ) != 0 ) {
-                NAND_DBG_PRINT_ERR( "regmap_write(NAND_WADDR_EXTEND): error %d\n", ret )
-                return ret;
-        }
+        iowrite32( 1, lsif0_io + NAND_RADDR_EXTEND );
+        iowrite32( 1, lsif0_io + NAND_WADDR_EXTEND );
         return 0;
 }
 
