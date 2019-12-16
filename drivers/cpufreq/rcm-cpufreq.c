@@ -3,7 +3,7 @@
  * rcm-cpufreq.c - RCM PPC470 Core frequency driver.
  *
  * Copyright (C) 2019 by AstroSoft
- * Alexey Spirkov <alexeis@astrosoft.ru>
+ * Alexey Spirkov <dev@alsp.net>
  */
 
 #undef DEBUG
@@ -293,5 +293,5 @@ static struct platform_driver rcm_cpufreq_platform_driver = {
 module_platform_driver(rcm_cpufreq_platform_driver);
 
 MODULE_DESCRIPTION("RCM PPC 470 core frequency driver");
-MODULE_AUTHOR("Alexey Spirkov <alexeis@astrosoft.ru>");
+MODULE_AUTHOR("Alexey Spirkov <dev@alsp.net>");
 MODULE_LICENSE("GPL v2");
