@@ -1086,6 +1086,7 @@ static int rcm_nand_lsif0_config( struct device_node *of_node ) {
    	//struct regmap* lsif0_config;
         //int ret;
         void* lsif0_io;
+        struct resource res;
 
         if( ( tmp_of_node = of_parse_phandle( of_node, "config", 0 ) ) == NULL ) {
                 NAND_DBG_PRINT_ERR( "of_parse_phandle(config): error\n" )
@@ -1101,12 +1102,21 @@ static int rcm_nand_lsif0_config( struct device_node *of_node ) {
         //        NAND_DBG_PRINT_ERR( "regmap_write(NAND_WADDR_EXTEND): error %d\n", ret )
         //        return ret;
         //}
-        if( ( lsif0_io = of_iomap( tmp_of_node, 0 ) ) == NULL ) {
-                NAND_DBG_PRINT_ERR( "of_parse_phandle(config): error\n" )
-                return -EIO;
+        //if( ( lsif0_io = of_iomap( tmp_of_node, 0 ) ) == NULL ) {
+        //        NAND_DBG_PRINT_ERR( "of_iomap(config): error\n" )
+        //        return -EIO;
+        //}
+        if( of_address_to_resource( tmp_of_node, 0, &res ) != 0 ) {
+		NAND_DBG_PRINT_ERR( "of_address_to_resource(config): error\n" )
+                return -ENODEV;
+        }
+	if( ( lsif0_io = ioremap(res.start, resource_size(&res) ) ) == NULL ) {
+                NAND_DBG_PRINT_ERR( "ioremap(config): error\n" )
+		return -ENOMEM;
         }
         iowrite32( 1, lsif0_io + NAND_RADDR_EXTEND );
         iowrite32( 1, lsif0_io + NAND_WADDR_EXTEND );
+        // todo где сделать iounmap?
         return 0;
 }
 
@@ -1139,6 +1149,7 @@ static int rcm_nand_probe( struct platform_device* ofdev ) {
         const char *part_probes[] = { "cmdlinepart", NULL, };
         uint32_t freq, timings[30];
         int err;
+        struct resource res;
         struct rcm_nand_chip* chip;
 
         chip = (struct rcm_nand_chip*)kmalloc(sizeof( struct rcm_nand_chip ), GFP_KERNEL);
@@ -1155,12 +1166,21 @@ static int rcm_nand_probe( struct platform_device* ofdev ) {
         }
 
         chip->dev = ofdev;
-        chip->io = of_iomap( of_node, 0 );
-        if ( WARN_ON( !chip->io ) ) {
-                dev_err( &ofdev->dev, "of_iomap: failed\n" );
-                return -EIO;
-        }
+        //chip->io = of_iomap( of_node, 0 );
+        //if ( !chip->io ) {
+        //        dev_err( &ofdev->dev, "of_iomap: failed\n" );
+        //        return -EIO;
+        //}
 
+        if( of_address_to_resource( of_node, 0, &res ) != 0 ) {
+		dev_err( &ofdev->dev, "of_address_to_resource: failed\n" );
+                return -ENODEV;
+        }
+	if( ( chip->io = ioremap( res.start, resource_size(&res) ) ) == NULL ) {
+                dev_err( &ofdev->dev, "ioremap: error\n" );
+		return -ENOMEM;
+        }
+ 
         if( ( err = rcm_nand_lsif0_config( of_node ) ) != 0 ) {
                 dev_err( &ofdev->dev, "lsif0 config: failed\n" );
                 goto error_with_unmap;
