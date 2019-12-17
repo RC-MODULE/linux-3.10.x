@@ -36,9 +36,12 @@
 #include <linux/of_platform.h>
 #include "rcm-nandids.h"
 #else // __UBOOT__
-#include <dm/of.h>
-#include <dm/of_access.h>
 #include <fdtdec.h>
+#include <dm/of.h>
+#include <dm/device.h>
+#include <dm/of_access.h>
+#include <dm/of_addr.h>
+#include <linux/ioport.h>
 #include <regmap.h>
 #include <nand.h>
 #include "rcm_nandids.h"
@@ -181,16 +184,22 @@
 
 #define NAND_DBG_READ_CHECK                             // чтение до 2-х одинаковых буферов
 #define READ_RETRY_CNT                  5               // число попыток чтения
-#define NAND_DBG_PRINTK
+#define NAND_DBG_PRINT
 
-#if defined NAND_DBG_PRINTK
-    #define NAND_DBG_PRINT_INF(...) printk("RCM_NAND[INF] " __VA_ARGS__);
-    #define NAND_DBG_PRINT_WRN(...) printk("RCM_NAND[WRN] " __VA_ARGS__);
-    #define NAND_DBG_PRINT_ERR(...) printk("RCM_NAND[ERR] " __VA_ARGS__);
+#ifndef __UBOOT__
+        #define DBG_PRINT_PROC printk
 #else
-    #define NAND_DBG_PRINT_INF(...) while(0);
-    #define NAND_DBG_PRINT_WRN(...) while(0);
-    #define NAND_DBG_PRINT_ERR(...) while(0);
+        #define DBG_PRINT_PROC printf
+#endif
+
+#if defined NAND_DBG_PRINT
+        #define NAND_DBG_PRINT_INF(...) DBG_PRINT_PROC("RCM_NAND[INF] " __VA_ARGS__);
+        #define NAND_DBG_PRINT_WRN(...) DBG_PRINT_PROC("RCM_NAND[WRN] " __VA_ARGS__);
+        #define NAND_DBG_PRINT_ERR(...) DBG_PRINT_PROC("RCM_NAND[ERR] " __VA_ARGS__);
+#else
+        #define NAND_DBG_PRINT_INF(...) while(0);
+        #define NAND_DBG_PRINT_WRN(...) while(0);
+        #define NAND_DBG_PRINT_ERR(...) while(0);
 #endif
 
 #define PRINT_BUF_16(b,n) \
@@ -235,12 +244,14 @@ enum {
 }; 
 
 #ifndef __UBOOT__
+        #define SEMA_INIT(CHIP) sema_init(CHIP->mutex,1);
         #define DOWN_KILLABLE(SEMA) down_killable(SEMA);
         #define DOWN(SEMA) down(SEMA);
         #define UP(SEMA) up(SEMA);
 #else // __UBOOT__
         #define of_property_read_u32 of_read_u32
         #define of_property_read_u32_array of_read_u32_array
+        #define SEMA_INIT(CHIP) while(0);
         #define DOWN_KILLABLE(SEMA) (0);
         #define DOWN(SEMA) while(0);
         #define UP(SEMA) while(0);
@@ -259,7 +270,6 @@ enum {
 #endif
 
 struct rcm_nand_chip {
-        struct platform_device* dev;
         int init_flag;
         unsigned rd_page_cnt;
         void __iomem* io;
@@ -279,6 +289,9 @@ struct rcm_nand_chip {
 #ifndef __UBOOT__
         struct completion cmpl;
         struct semaphore mutex;
+        struct platform_device* dev;
+#else
+        struct udevice* dev;
 #endif
 }; 
 
@@ -560,6 +573,7 @@ static int rcm_nand_core_reset( struct rcm_nand_chip* chip, uint32_t chip_select
                 NAND_DBG_PRINT_ERR( "rcm_nand_core_reset: uncomplete interrupt(%08x)\n", chip->status_irq )
                 PRINT_INT_STATUS
                 chip->state = MNAND_IDLE;
+                return -EIO;
         }
         return 0; 
 } 
@@ -746,8 +760,15 @@ static int rcm_nand_core_write( struct rcm_nand_chip* chip, loff_t off ) {
         }
         //PRINT_BUF_256( ((uint8_t*)chip->dma_area), 0 )
         return chip->err ? -EIO : 0;
-} 
- 
+}
+
+static int rcm_nand_reset( struct rcm_nand_chip* chip ) {
+        int err = rcm_nand_core_reset( chip, 0 );
+        if( err == 0 )
+                err = rcm_nand_core_reset( chip, 1 );
+        return err;
+}
+
 static int rcm_nand_read_id( struct rcm_nand_chip* chip, int cs ) { 
         struct nand_flash_dev* type = 0; 
         int i; 
@@ -836,6 +857,13 @@ inconsistent:
         NAND_DBG_PRINT_ERR("rcm_nand_read_id: chip configurations differ,error\n")
         return -ENODEV; 
 } 
+
+static int rcm_nand_read_id2( struct rcm_nand_chip* chip ) {
+        int err = rcm_nand_read_id( chip, 0 );
+        if( err == 0 )
+                err = rcm_nand_read_id( chip, 1 );
+        return err;
+}
 
 static int rcm_nand_erase( struct mtd_info* mtd, struct erase_info* instr ) { 
         int err;
@@ -1081,7 +1109,7 @@ static int rcm_nand_read( struct mtd_info* mtd, loff_t off, size_t len, size_t* 
         return err;
 }
 
-static int rcm_nand_lsif0_config( struct device_node *of_node ) {
+static int rcm_nand_lsif0_config( const struct device_node *of_node ) {
         struct device_node* tmp_of_node;
    	//struct regmap* lsif0_config;
         //int ret;
@@ -1116,11 +1144,11 @@ static int rcm_nand_lsif0_config( struct device_node *of_node ) {
         }
         iowrite32( 1, lsif0_io + NAND_RADDR_EXTEND );
         iowrite32( 1, lsif0_io + NAND_WADDR_EXTEND );
-        // todo где сделать iounmap?
+        iounmap( lsif0_io );
         return 0;
 }
 
-static int rcm_nand_get_timings( struct device_node *of_node, uint32_t* timings, uint32_t* freq ) {
+static int rcm_nand_get_timings( const struct device_node *of_node, uint32_t* timings, uint32_t* freq ) {
         struct device_node* tmp_of_node;
         int ret;
 
@@ -1140,22 +1168,28 @@ static int rcm_nand_get_timings( struct device_node *of_node, uint32_t* timings,
 }
 
 #ifndef __UBOOT__
-
 static struct of_device_id of_platform_nand_table[];
+typedef struct platform_device rcm_nand_device;
+#else
+typedef struct udevice rcm_nand_device;
+#endif
 
-static int rcm_nand_probe( struct platform_device* ofdev ) {
-        const struct of_device_id *match;
-        struct device_node *of_node = ofdev->dev.of_node;
-        const char *part_probes[] = { "cmdlinepart", NULL, };
+static int rcm_nand_probe( rcm_nand_device* ofdev ) {
+        struct device_node *of_node;
         uint32_t freq, timings[30];
         int err;
         struct resource res;
         struct rcm_nand_chip* chip;
 
+#ifndef __UBOOT__
+        const char *part_probes[] = { "ofpart"/*"cmdlinepart"*/, NULL, };
+        const struct of_device_id *match;
+
+        of_node = ofdev->dev.of_node;
+
         chip = (struct rcm_nand_chip*)kmalloc(sizeof( struct rcm_nand_chip ), GFP_KERNEL);
         if( !chip )
                 return -ENOMEM;
-
         memset( chip, 0, sizeof( struct rcm_nand_chip ) );
         platform_set_drvdata( ofdev, chip );
 
@@ -1164,10 +1198,18 @@ static int rcm_nand_probe( struct platform_device* ofdev ) {
                 dev_err( &ofdev->dev, "of_match_device: failed\n" );
                 return -EINVAL;
         }
+#else // __UBOOT__
+        of_node = (struct device_node*)ofnode_to_np( ofdev->node );
 
+        chip = (struct rcm_nand_chip*)calloc( 1, sizeof( struct rcm_nand_chip ) );
+        if( !chip )
+                return -ENOMEM;
+        ofdev->priv = chip;
+#endif // __UBOOT__
         chip->dev = ofdev;
+
         //chip->io = of_iomap( of_node, 0 );
-        //if ( !chip->io ) {
+        //if( !chip->io ) {
         //        dev_err( &ofdev->dev, "of_iomap: failed\n" );
         //        return -EIO;
         //}
@@ -1185,6 +1227,7 @@ static int rcm_nand_probe( struct platform_device* ofdev ) {
                 dev_err( &ofdev->dev, "lsif0 config: failed\n" );
                 goto error_with_unmap;
         }
+
 #ifdef COMPLETE_INTERRUPT
         chip->irq = irq_of_parse_and_map( of_node, 0 );
         //NAND_DBG_PRINT_INF( "rcm_nand_probe: irq_of_parse_and_map: return %u\n", chip->irq )
@@ -1193,8 +1236,15 @@ static int rcm_nand_probe( struct platform_device* ofdev ) {
                 goto error_with_unmap;
         }
 #endif // COMPLETE_INTERRUPT
+
+#ifndef __UBOOT__
         chip->dev->dev.coherent_dma_mask = DMA_BIT_MASK( 32 );
         chip->dma_area = dma_alloc_coherent( &chip->dev->dev, DMA_SIZE, &chip->dma_handle, GFP_KERNEL | GFP_DMA );
+#else
+        chip->dma_handle = (dmaaddr_t)memalign( ARCH_DMA_MINALIGN, DMA_SIZE );
+        chip->dma_area = (void*)(uint32_t)(chip->dma_handle);  //???types?
+#endif
+
         if( !chip->dma_area ) {
                 dev_err( &ofdev->dev, "failed to request DMA area\n" );
                 err = -ENOMEM;
@@ -1203,37 +1253,34 @@ static int rcm_nand_probe( struct platform_device* ofdev ) {
         memset( chip->dma_area, 0xFF, DMA_SIZE );
 
         INIT_COMPLETION( chip )
-        sema_init( &chip->mutex, 1 ); 
+        SEMA_INIT( &chip ); 
         DOWN( &chip->mutex )
 
         if( ( err = rcm_nand_get_timings( of_node, timings, &freq ) ) != 0 ) {
                 dev_err( &ofdev->dev, "rcm_nand_get_timings failed\n" );
-                goto error_with_free_dma;
+                goto error_with_free_mem;
         }
 
         if( ( err = rcm_nand_hw_init( chip, timings, freq ) ) != 0 ) {
-                dev_err( &ofdev->dev, "rcm_nand_hw_init failed err=%d\n", err );
-                goto error_with_free_dma;
+                dev_err( &ofdev->dev, "rcm_nand_hw_init failed,err=%d\n", err );
+                goto error_with_free_mem;
         }
 
-        rcm_nand_core_reset( chip, 0 );
-        rcm_nand_core_reset( chip, 1 );
+        dev_info( &ofdev->dev, "found NAND controller id=%08x,version=%08x\n", chip->ctrl_id, chip->ctrl_ver );
+
+        if( ( err = rcm_nand_reset( chip ) ) != 0 ) {
+                dev_err( &ofdev->dev, "rcm_nand_reset failed,err=%d\n", err );
+                goto error_with_free_mem;
+        }
 
         chip->mtd.name = DRIVER_NAME;
         chip->mtd.size = 0;
         chip->chip_size[0] = 0;
         chip->chip_size[1] = 0;
 
-        err = rcm_nand_read_id( chip, 0 );      // чип не опознан
-        if( err ) {
-                dev_err( &ofdev->dev, "error reading id #0\n" );
-                goto error_with_free_dma;
-        }
-
-        err = rcm_nand_read_id( chip, 1 );      // чипы разные
-        if( err ) {
-                dev_err( &ofdev->dev, "error reading id #1\n" );
-                goto error_with_free_dma;
+        if( ( err = rcm_nand_read_id2( chip ) ) != 0 ) {
+                dev_err( &ofdev->dev, "rcm_nand_read_id2 failed,err=%d\n", err );
+                goto error_with_free_mem;
         }
 
         UP( &chip->mutex )
@@ -1246,38 +1293,54 @@ static int rcm_nand_probe( struct platform_device* ofdev ) {
         chip->mtd._write = rcm_nand_write;
         chip->mtd._read_oob = rcm_nand_read_oob;
         chip->mtd._write_oob = rcm_nand_write_oob;
-        chip->mtd.dev.parent = &ofdev->dev;
+        //chip->mtd.dev.parent = &ofdev->dev;???
         chip->mtd.oobavail = chip->mtd.oobsize - ECC_OOB_CTRL_USED;
 
 #if( NAND_ECC_MODE == NAND_ECC_MODE_4BITS )
         chip->mtd.oobavail -= 4;      // используем байты 0..15,16..19 читаются как ff
 #endif
         chip->mtd.priv = chip;
-        dev_info( &ofdev->dev, "found NAND controller id=%08x,version=%08x\n", chip->ctrl_id, chip->ctrl_ver );
         dev_info( &ofdev->dev, "detected %llu bytes NAND memory,page size %u bytes,user oob size %u bytes\n", chip->mtd.size, chip->mtd.writesize, chip->mtd.oobavail );
+
+#ifndef __UBOOT__
+        chip->mtd.dev = ofdev->dev;
         err = mtd_device_parse_register( &chip->mtd, part_probes, 0, NULL, 0 );
+#else
+        err = nand_register( 0, &chip->mtd );
+#endif
         if( err ) {
                 dev_err( &ofdev->dev, "failed add mtd device,err: %d\n", err );
-                goto error_with_free_dma;
+                goto error_with_free_mem;
         }
         return 0;
 
-error_with_free_dma: 
+error_with_free_mem:
+#ifndef __UBOOT__
         dma_free_coherent( &chip->dev->dev, DMA_SIZE, chip->dma_area, chip->dma_handle );
-error_with_free_irq: 
+#else
+        free( chip->dma_area );
+#endif
+error_with_free_irq:
+#ifdef COMPLETE_INTERRUPT
         free_irq( chip->irq, chip );
+#endif
         chip->irq = 0;
 error_with_unmap:
         iounmap( chip->io );
+        kfree( chip );
         return err;
 }
+
+#ifndef __UBOOT__
 
 static int rcm_nand_remove( struct platform_device* ofdev ) { 
         struct rcm_nand_chip* chip = platform_get_drvdata( ofdev );
         //NAND_DBG_PRINT_INF( "rcm_nand_remove chip=%px\n", chip );
-        mtd_device_unregister( &chip->mtd ); 
+        mtd_device_unregister( &chip->mtd );
         dma_free_coherent( &chip->dev->dev, DMA_SIZE, chip->dma_area, chip->dma_handle );
+#ifdef COMPLETE_INTERRUPT
         free_irq( chip->irq, chip );
+#endif
         iounmap( chip->io );
         kfree( chip );
         return 0; 
@@ -1300,18 +1363,24 @@ static struct platform_driver of_platform_rcm_nand_driver = {
 
 module_platform_driver(of_platform_rcm_nand_driver); 
 
+#else // __UBOOT__
+
+void board_nand_init(void) {}
+
+static const struct udevice_id rcm_nand_ids[] = {
+        { .compatible = "rcm,nand" },
+        {}
+};
+
+U_BOOT_DRIVER(rcm_nand) = {
+        .name = "rcm-nand",
+        .id = UCLASS_MTD,
+        .of_match = rcm_nand_ids,
+        .probe = rcm_nand_probe
+};
+
+#endif // __UBOOT__
+
 MODULE_LICENSE("GPL"); 
 MODULE_AUTHOR("Alexey Spirkov <alexeis@astrosoft.ru>");
 MODULE_DESCRIPTION("RCM SoC NAND controller driver");
-
-#else
-
-void board_nand_init(void)
-{
-        struct mtd_info mtd_info = {};
-
-        nand_register( 0, &mtd_info );
-
-}
-
-#endif
