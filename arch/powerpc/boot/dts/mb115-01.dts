@@ -167,6 +167,9 @@
 		
 		mms {
 			vdu0: vdu@0x38013000 {
+				// ??? status = "ok";
+			};
+			vdu1: vdu@0x38011000 { // ???
 				status = "ok";
 			};
 
