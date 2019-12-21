@@ -270,7 +270,7 @@ struct uart_amba_port {
 	unsigned int		old_cr;		/* state during shutdown */
 	unsigned int		fixed_baud;	/* vendor-set fixed baud rate */
 	char			type[12];
-#ifdef CONFIG_DMA_ENGINE
+#if defined(CONFIG_DMA_ENGINE) && !defined(CONFIG_PPC)
 	/* DMA stuff */
 	bool			using_tx_dma;
 	bool			using_rx_dma;
@@ -364,7 +364,7 @@ static int pl011_fifo_to_tty(struct uart_amba_port *uap)
  * This assumes that you have a generic DMA device interface,
  * no custom DMA interfaces are supported.
  */
-#ifdef CONFIG_DMA_ENGINE
+#if defined(CONFIG_DMA_ENGINE) && !defined(CONFIG_PPC)
 
 #define PL011_DMA_BUFFER_SIZE PAGE_SIZE
 
@@ -1362,7 +1362,7 @@ __acquires(&uap->port.lock)
 			uap->im |= UART011_RXIM;
 			pl011_write(uap->im, uap, REG_IMSC);
 		} else {
-#ifdef CONFIG_DMA_ENGINE
+#if defined(CONFIG_DMA_ENGINE) && !defined(CONFIG_PPC)
 			/* Start Rx DMA poll */
 			if (uap->dmarx.poll_rate) {
 				uap->dmarx.last_jiffies = jiffies;
@@ -1964,7 +1964,7 @@ pl011_set_termios(struct uart_port *port, struct ktermios *termios,
 	 */
 	baud = uart_get_baud_rate(port, termios, old, 0,
 				  port->uartclk / clkdiv);
-#ifdef CONFIG_DMA_ENGINE
+#if defined(CONFIG_DMA_ENGINE) && !defined(CONFIG_PPC)
 	/*
 	 * Adjust RX DMA polling rate with baud rate if not specified.
 	 */
