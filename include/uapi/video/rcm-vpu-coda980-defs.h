@@ -38,7 +38,7 @@
 #if defined(PLATFORM_NON_OS) || defined (ANDROID) || defined(MFHMFT_EXPORTS) || defined(OMXIL_COMPONENT) || defined(DXVA_UMOD_DRIVER) || defined(__MINGW32__)
 //#define SUPPORT_FFMPEG_DEMUX
 #else
-#define SUPPORT_FFMPEG_DEMUX
+// #define SUPPORT_FFMPEG_DEMUX
 #endif
 
 
@@ -53,8 +53,8 @@
 
 
 
-// #define BIT_CODE_FILE_PATH "../../../../design/asm_s/out/coda980.h"
-// #define PROJECT_ROOT	"../../../../"
+#define BIT_CODE_FILE_PATH <firmware/coda980.h>
+#define PROJECT_ROOT "./"
 
 // if BIT_CODE_FILE_PATH is not correct or is not present. vpurun will try to load bitcode from file which is specified in CORE_0_BIT_CODE_FILE_PATH. QC will try to load the file from 'firmware' field in qctool.conf.
 // #define CORE_0_BIT_CODE_FILE_PATH "../../../../design/asm_s/out/coda980.out"

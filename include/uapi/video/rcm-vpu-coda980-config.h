@@ -194,4 +194,8 @@ Config_2
 #define REQUIRED_VPU_MEMORY_SIZE		(CODEC_FRAME_BASE+((MAX_DPB_SIZE*(1+USE_WTL))+MAX_MV_COL_SIZE+MAX_PP_SRC_SIZE)*MAX_NUM_INSTANCE)
 
 
+//===== Physical and DMA adrresses maping =====
+#define VPU_ADDRESS_PHYS_TO_DMA(addr) ((addr) + 0x40000000)
+#define VPU_ADDRESS_DMA_TO_PHYS(addr) ((addr) - 0x40000000)
+
 #endif  // _RCM_VPU_CODA980_CONFIG_H_

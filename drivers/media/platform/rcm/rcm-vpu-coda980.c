@@ -40,10 +40,10 @@
 #include <linux/sched.h>
 #include <linux/sched/signal.h>
 
-#include "uapi/video/rcm-vpu-coda980-config.h"
+#include <uapi/video/rcm-vpu-coda980-config.h>
 
 #define LOG_TAG "RCM_VPU_DRV"
-#include "uapi/video/rcm-vpu-coda980.h"
+#include <uapi/video/rcm-vpu-coda980.h>
 
 
 /* definitions to be changed as customer  configuration */
@@ -112,9 +112,6 @@ typedef struct vpudrv_instanace_list_t {
 
 #ifdef VPU_SUPPORT_RESERVED_VIDEO_MEMORY
 
-// ??? #define VPU_INIT_VIDEO_MEMORY_SIZE_IN_BYTE (62*1024*1024)
-// ??? #define VPU_DRAM_PHYSICAL_BASE 0x86C00000
-
 #include "rcm-vpu-coda980-vmm.h"
 static video_mm_t s_vmem;
 static vpudrv_buffer_t s_video_memory = {0};
@@ -136,14 +133,12 @@ static int vpu_clk_enable(struct clk *clk);
 static struct clk *vpu_clk_get(struct device *dev);
 static void vpu_clk_put(struct clk *clk);
 
-// ???
-struct platform_device *g_pdev; // ???
+static struct platform_device *g_pdev;
 
 /* end customer definition */
 static vpudrv_buffer_t s_instance_pool = {0};
 static vpudrv_buffer_t s_common_memory = {0};
 static vpu_drv_context_t s_vpu_drv_context;
-// ??? static int s_vpu_major;
 static dev_t s_vpu_major;
 static struct cdev s_vpu_cdev;
 
@@ -192,17 +187,13 @@ static int vpu_resume(struct platform_device *pdev);
 static int vpu_suspend(struct platform_device *pdev, pm_message_t state);
 #endif
 
-// ??? #define ReadVpuRegister(addr)		*(volatile unsigned int *)(s_vpu_reg_virt_addr + s_bit_firmware_info[core].reg_base_offset + addr)
 #define ReadVpuRegister(addr) ioread32(s_vpu_reg_virt_addr + s_bit_firmware_info[core].reg_base_offset + addr)
-// ??? #define WriteVpuRegister(addr, val)	*(volatile unsigned int *)(s_vpu_reg_virt_addr + s_bit_firmware_info[core].reg_base_offset + addr) = (unsigned int)val
 #define WriteVpuRegister(addr, val) iowrite32(val, s_vpu_reg_virt_addr + s_bit_firmware_info[core].reg_base_offset + addr)
-// ??? #define WriteVpu(addr, val)			*(volatile unsigned int *)(addr) = (unsigned int)val;	
 
 
 
 static int vpu_alloc_dma_buffer(vpudrv_buffer_t *vb)
 {
-	// ??? dma_addr_t dma_address; // ???
 	if (!vb)
 		return -1;
 
@@ -215,15 +206,12 @@ static int vpu_alloc_dma_buffer(vpudrv_buffer_t *vb)
 
 	vb->base = (unsigned long)(s_video_memory.base + (vb->phys_addr - s_video_memory.phys_addr));
 #else
-	// ??? vb->base = (unsigned long)dma_alloc_coherent(NULL, PAGE_ALIGN(vb->size), (dma_addr_t *) (&vb->phys_addr), GFP_DMA | GFP_KERNEL);
-	vb->base = (unsigned long)dma_alloc_coherent(&g_pdev->dev, PAGE_ALIGN(vb->size), &dma_address, GFP_DMA | GFP_KERNEL);
+	vb->base = (unsigned long)dma_alloc_coherent(NULL, PAGE_ALIGN(vb->size), (dma_addr_t *) (&vb->phys_addr), GFP_DMA | GFP_KERNEL);
 	if ((void *)(vb->base) == NULL)	{
 		vpu_loge("dynamic Physical memory allocation error size=%d\n", vb->size);
 		return -1;
 	}
-	vb->phys_addr = (unsigned)dma_address; // ???
 #endif
-	vpu_logd("memory allocation size=%u, base=0x%08X, phys_addr=0x%08X\n", vb->size, (unsigned)vb->base, vb->phys_addr);
 
 
 	return 0;
@@ -238,10 +226,8 @@ static void vpu_free_dma_buffer(vpudrv_buffer_t *vb)
 	if (vb->base)
 		vmem_free(&s_vmem, vb->phys_addr, 0);
 #else
-	vpu_logd("irqs_disabled = %i\n", (int)irqs_disabled()); // ???
 	if (vb->base)
-		// ??? dma_free_coherent(0, PAGE_ALIGN(vb->size), (void *)vb->base, vb->phys_addr);
-		dma_free_coherent(&g_pdev->dev, PAGE_ALIGN(vb->size), (void *)vb->base, vb->phys_addr);
+		dma_free_coherent(0, PAGE_ALIGN(vb->size), (void *)vb->base, vb->phys_addr);
 #endif
 
 }
@@ -324,7 +310,6 @@ static irqreturn_t vpu_irq_handler(int irq, void *dev_id)
 #endif
 
 	//vpu_logi("[VPUDRV] vpu_irq_handler\n");
-	vpu_logi("[VPUDRV] vpu_irq_handler\n"); // ???
 
 	for (core = 0; core < MAX_NUM_VPU_CORE; core++)	{
 		if (s_bit_firmware_info[core].size == 0) /*it means that we didn't get an information the current core from API layer. No core activated.*/
@@ -333,7 +318,6 @@ static irqreturn_t vpu_irq_handler(int irq, void *dev_id)
 		if (ReadVpuRegister(BIT_INT_STS))
 		{
             //vpu_logd("BIT_INT_STS. int reason=0x%x", ReadVpuRegister(BIT_INT_REASON));
-			vpu_logd("BIT_INT_STS. int reason=0x%x", ReadVpuRegister(BIT_INT_REASON)); // ???
 			WriteVpuRegister(BIT_INT_CLEAR, 0x1);
 		}
 	}
@@ -363,11 +347,6 @@ static int vpu_open(struct inode *inode, struct file *filp)
 static long vpu_ioctl(struct file *filp, u_int cmd, u_long arg)
 {
 	int ret = 0;
-
-	// ???
-	if (cmd != VDI_IOCTL_SET_CLOCK_GATE)
-		vpu_logd("vpu_ioctl = %i\n", (int)cmd); // ???
-
 	switch (cmd) {
 	case VDI_IOCTL_ALLOCATE_PHYSICAL_MEMORY:
 		{
@@ -460,9 +439,6 @@ static long vpu_ioctl(struct file *filp, u_int cmd, u_long arg)
 		{
             u32 timeout = (u32) arg;
 
-			// ???
-			vpu_logd("VDI_IOCTL_WAIT_INTERRUPT - 0\n"); // ???
-
 			ret = wait_event_interruptible_timeout(s_interrupt_wait_q, s_interrupt_flag != 0, msecs_to_jiffies(timeout));
 			if (ret == 0) {
 				ret = -ETIME;
@@ -486,8 +462,6 @@ static long vpu_ioctl(struct file *filp, u_int cmd, u_long arg)
 		{
 			u32 clkgate;
 
-			// ???
-			// ??? vpu_logd("VDI_IOCTL_SET_CLOCK_GATE - 0\n"); // ???
 			if (get_user(clkgate, (u32 __user *) arg))
 				return -EFAULT;
 #ifdef VPU_SUPPORT_CLOCK_CONTROL
@@ -501,28 +475,20 @@ static long vpu_ioctl(struct file *filp, u_int cmd, u_long arg)
 		break;
 	case VDI_IOCTL_GET_INSTANCE_POOL:
 		{
-			// ???
-			vpu_logd("VDI_IOCTL_GET_INSTANCE_POOL - 0\n"); // ???
-
 			down(&s_vpu_sem);
 
 			if (s_instance_pool.base != 0) {
-				//vpu_logd("VDI_IOCTL_GET_INSTANCE_POOL - 1\n"); // ???
 				ret = copy_to_user((void __user *)arg, &s_instance_pool, sizeof(vpudrv_buffer_t));
 				if (ret != 0)
 					ret = -EFAULT;
 			} else {
-				//vpu_logd("VDI_IOCTL_GET_INSTANCE_POOL - 2\n"); // ???
 				ret = copy_from_user(&s_instance_pool, (vpudrv_buffer_t *)arg, sizeof(vpudrv_buffer_t));
 				if (ret == 0) {
-					//vpu_logd("VDI_IOCTL_GET_INSTANCE_POOL - 3\n"); // ???
-					if (vpu_alloc_dma_buffer(&s_instance_pool) != -1)
+                    if (vpu_alloc_dma_buffer(&s_instance_pool) != -1)
 					{
-						//vpu_logd("VDI_IOCTL_GET_INSTANCE_POOL - 4\n"); // ???
 						memset((void *)s_instance_pool.base, 0x0, s_instance_pool.size); /*clearing memory*/
 						ret = copy_to_user((void __user *)arg, &s_instance_pool, sizeof(vpudrv_buffer_t));
-						if (ret == 0) {
-							vpu_logd("VDI_IOCTL_GET_INSTANCE_POOL - 5\n"); // ???
+					    if (ret == 0) {
 							/* success to get memory for instance pool */
 							up(&s_vpu_sem);
 							break;
@@ -534,14 +500,10 @@ static long vpu_ioctl(struct file *filp, u_int cmd, u_long arg)
 			}
 
 			up(&s_vpu_sem);
-			//vpu_logd("VDI_IOCTL_GET_INSTANCE_POOL - 6\n"); // ???
 		}
 		break;
 	case VDI_IOCTL_GET_COMMON_MEMORY:
 		{
-			// ???
-			vpu_logd("VDI_IOCTL_GET_COMMON_MEMORY - 0\n"); // ???
-
 			if (s_common_memory.base != 0) {
 				ret = copy_to_user((void __user *)arg, &s_common_memory, sizeof(vpudrv_buffer_t));
 				if (ret != 0)
@@ -566,9 +528,6 @@ static long vpu_ioctl(struct file *filp, u_int cmd, u_long arg)
 		{
 			vpudrv_inst_info_t inst_info;
 			vpudrv_instanace_list_t *vil, *n;
-
-			// ???
-			vpu_logd("VDI_IOCTL_OPEN_INSTANCE - 0\n"); // ???
 
 			vil = kzalloc(sizeof(*vil), GFP_KERNEL);
 			if (!vil)
@@ -682,7 +641,6 @@ static ssize_t vpu_write(struct file *filp, const char __user *buf, size_t len, 
 {
 
 	/* vpu_logi("[VPUDRV] vpu_write len=%d\n", (int)len); */
-	vpu_logi("[VPUDRV] vpu_write len=%d\n", (int)len); // ???
 	if (!buf) {
 		vpu_loge("vpu_write buf = NULL error \n");
 		return -EFAULT;
@@ -763,8 +721,6 @@ static int vpu_release(struct inode *inode, struct file *filp)
 
 static int vpu_fasync(int fd, struct file *filp, int mode)
 {
-	vpu_logd("vpu_fasync\n"); // ???
-
 	struct vpu_drv_context_t *dev = (struct vpu_drv_context_t *)filp->private_data;
 	return fasync_helper(fd, filp, mode, &dev->async_queue);
 }
@@ -833,7 +789,6 @@ static int vpu_probe(struct platform_device *pdev)
 	int err = 0;
 	struct resource *res = NULL;
 
-	// ???
 	g_pdev = pdev;
 
 	vpu_logi("[VPUDRV] vpu_probe\n");
@@ -855,9 +810,6 @@ static int vpu_probe(struct platform_device *pdev)
 		printk(KERN_ERR "could not allocate major number\n");
 		goto ERROR_PROVE_DEVICE;
 	}
-
-	// ???
-	dev_info(&pdev->dev, "major number = %u\n", (unsigned)s_vpu_major); // ???
 
 	/* initialize the device structure and register the device with the kernel */
 	cdev_init(&s_vpu_cdev, &vpu_fops);
@@ -904,7 +856,6 @@ static int vpu_probe(struct platform_device *pdev)
 
 
 #ifdef VPU_SUPPORT_RESERVED_VIDEO_MEMORY
-	// ???
 	{
 		int ret;
 		struct device_node *mem_buffer;
@@ -925,9 +876,6 @@ static int vpu_probe(struct platform_device *pdev)
 		s_video_memory.phys_addr = res.start;
 		s_video_memory.size = res.end - res.start;
 	}
-	// ???
-	// ??? s_video_memory.size = VPU_INIT_VIDEO_MEMORY_SIZE_IN_BYTE;
-	// ??? s_video_memory.phys_addr = VPU_DRAM_PHYSICAL_BASE;
 	s_video_memory.base = (unsigned long)ioremap(s_video_memory.phys_addr, PAGE_ALIGN(s_video_memory.size));
 	if (!s_video_memory.base) {
 		printk(KERN_ERR "[VPUDRV] :  fail to remap video memory physical phys_addr=0x%08X, base=0x%08X, size=%d\n", (int)s_video_memory.phys_addr, (int)s_video_memory.base, (int)s_video_memory.size);
@@ -943,13 +891,6 @@ static int vpu_probe(struct platform_device *pdev)
 	vpu_logi("[VPUDRV] success to probe vpu device with non reserved video memory\n");
 #endif
 
-	// ???
-	{
-		u32 core = 0;
-		u32 config = ReadVpuRegister(0x1044);
-		vpu_logd("config = 0x%08X\n", config);
-	}
-	// ???
 
 	return 0;
 

@@ -66,8 +66,7 @@ typedef struct vpudrv_inst_info_t {
 } vpudrv_inst_info_t;
 
 
-// ??? #define VPU_DEBUG 0
-#define VPU_DEBUG 1
+#define VPU_DEBUG 0
 
 
 #define vpu_loge(fmt, ...) printk(KERN_ERR     "[ERROR][" LOG_TAG "]" "[F:%s-L:%d]" fmt, __FUNCTION__, __LINE__, ##__VA_ARGS__)
