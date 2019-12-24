@@ -108,6 +108,31 @@
 			};
 			nand: nand@0x3C032000 {
 				status = "ok";
+				partitions {
+					compatible = "fixed-partitions";
+					#address-cells = <1>;
+					#size-cells = <1>;
+
+					partition@0 {
+						label = "dtb";
+						reg = <0x00000000 0x00040000>;
+					};
+
+					partition@40000 {
+						label = "env";
+						reg = <0x00040000 0x00040000>;
+					};
+
+					partition@1040000 {
+						label = "kern";
+						reg = <0x00080000 0x00800000>;
+					};
+
+					partition@1050000 {
+						label = "rootfs";
+						reg = <0x00880000 0x0f780000>;
+					};
+				};
 			};	
 		};
 

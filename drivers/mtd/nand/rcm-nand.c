@@ -153,7 +153,7 @@
 #define NAND_ECC_MODE_4BITS             1               // USER: 4 ошибки на 512 байтов (7 байтов проверочных),OOB: 3 байта проверочных на 4 байта данных
 #define NAND_ECC_MODE_24BITS            2               // 24 ошибки на 1024 байта (42 байта проверочных)
 // текущий режим
-#define NAND_ECC_MODE                   NAND_ECC_MODE_4BITS
+#define NAND_ECC_MODE                   NAND_ECC_MODE_NO_ECC //NAND_ECC_MODE_4BITS
 
 #if ( NAND_ECC_MODE == NAND_ECC_MODE_NO_ECC )
         #define ENABLE_ECC_OOB          0               // запрет коррекции ООВ
@@ -209,6 +209,8 @@
 #define PRINT_BUF_256(b,n) PRINT_BUF_64(b,n) PRINT_BUF_64(b,n+64) PRINT_BUF_64(b,n+128) PRINT_BUF_64(b,n+192)
 #define PRINT_BUF_512(b) PRINT_BUF_256(b,0) PRINT_BUF_256(b,256)
 #define PRINT_BUF(s,b,n) printk( "%s:%*ph\n", s, n, b );
+#define PRINT_REGW(r,v) NAND_DBG_PRINT_INF("REGW %08x=%08x\n",r,v);
+#define PRINT_REGR(r,v) NAND_DBG_PRINT_INF("REGR %08x=%08x\n",r,v);
 
 #define PRINT_INT_STATUS \
         NAND_DBG_PRINT_ERR( "%u: RF=%u,RI=%u,PF=%u,ER=%u,RS=%u,E0=%u,WE=%u,WA=%u,WS=%u,RE=%u,RA=%u,RS=%u,E1=%u,EM=%u\n", \
@@ -296,11 +298,14 @@ struct rcm_nand_chip {
 }; 
 
 static void rcm_nand_set( struct rcm_nand_chip* chip, uint32_t addr, uint32_t val ) {
-        iowrite32( val, chip->io + addr ); 
+        iowrite32( val, chip->io + addr );
+        //PRINT_REGW( addr, val )
 }
 
-static uint32_t rcm_nand_get( struct rcm_nand_chip* chip, uint32_t addr ) { 
-        return ioread32( chip->io + addr ); 
+static uint32_t rcm_nand_get( struct rcm_nand_chip* chip, uint32_t addr ) {
+        uint32_t val = ioread32( chip->io + addr );
+        //PRINT_REGR( addr, val )
+        return val;
 }
 
 static uint32_t rcm_nand_pagesize_code( uint32_t size ) {
@@ -1004,12 +1009,13 @@ static int rcm_nand_read_oob( struct mtd_info* mtd, loff_t from, struct mtd_oob_
         uint8_t* oobend = oob ? oob + ops->ooblen : 0;
         struct rcm_nand_chip* chip = (struct rcm_nand_chip*)mtd->priv;
 
-        //NAND_DBG_PRINT_INF( "rcm_nand_read_oob: from=0x%08llX ops.mode=%d ops.len=%d ops.ooblen=%d ops ooboffs=0x%08X data=%p\n",
-        //                    from, ops->mode, ops->len, ops->ooblen, ops->ooboffs, data );
+        NAND_DBG_PRINT_INF( "rcm_nand_read_oob: from=0x%08llX ops.mode=%d ops.len=%d ops.ooblen=%d ops ooboffs=0x%08X data=%p\n",
+                            from, ops->mode, ops->len, ops->ooblen, ops->ooboffs, data )
+        NAND_DBG_PRINT_INF( "DMA: handle=%08x,area=%08x\n", (uint32_t)chip->dma_handle, (uint32_t)chip->dma_area )
         if( ops->len != 0 && data == 0 ) { 
                 ops->len = 0;
                 dataend = 0;
-        }      
+        }    
         ops->retlen = 0;
         ops->oobretlen = 0;
         chip->rd_page_cnt = 0;
@@ -1251,6 +1257,8 @@ static int rcm_nand_probe( rcm_nand_device* ofdev ) {
                 goto error_with_free_irq; 
         }
         memset( chip->dma_area, 0xFF, DMA_SIZE );
+        NAND_DBG_PRINT_INF( "DMA: handle=%08x,area=%08x\n", (uint32_t)chip->dma_handle, (uint32_t)chip->dma_area );
+
 
         INIT_COMPLETION( chip )
         SEMA_INIT( &chip ); 
@@ -1294,7 +1302,12 @@ static int rcm_nand_probe( rcm_nand_device* ofdev ) {
         chip->mtd._read_oob = rcm_nand_read_oob;
         chip->mtd._write_oob = rcm_nand_write_oob;
         //chip->mtd.dev.parent = &ofdev->dev;???
-        chip->mtd.oobavail = chip->mtd.oobsize - ECC_OOB_CTRL_USED;
+         chip->mtd.oobavail = chip->mtd.oobsize - ECC_OOB_CTRL_USED;
+
+        if( is_power_of_2( chip->mtd.writesize ) ) chip->mtd.writesize_shift = ffs(chip->mtd.writesize)-1;
+        if( is_power_of_2( chip->mtd.erasesize ) ) chip->mtd.erasesize_shift = ffs(chip->mtd.erasesize)-1;
+        chip->mtd.writesize_mask = (1<<chip->mtd.writesize_shift)-1;
+        chip->mtd.erasesize_mask = (1<<chip->mtd.erasesize_shift)-1;
 
 #if( NAND_ECC_MODE == NAND_ECC_MODE_4BITS )
         chip->mtd.oobavail -= 4;      // используем байты 0..15,16..19 читаются как ff
