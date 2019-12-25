@@ -41,6 +41,7 @@
 #include <dm/device.h>
 #include <dm/of_access.h>
 #include <dm/of_addr.h>
+#include <dm/uclass.h>
 #include <linux/ioport.h>
 #include <regmap.h>
 #include <nand.h>
@@ -153,7 +154,7 @@
 #define NAND_ECC_MODE_4BITS             1               // USER: 4 ошибки на 512 байтов (7 байтов проверочных),OOB: 3 байта проверочных на 4 байта данных
 #define NAND_ECC_MODE_24BITS            2               // 24 ошибки на 1024 байта (42 байта проверочных)
 // текущий режим
-#define NAND_ECC_MODE                   NAND_ECC_MODE_NO_ECC //NAND_ECC_MODE_4BITS
+#define NAND_ECC_MODE                   NAND_ECC_MODE_4BITS
 
 #if ( NAND_ECC_MODE == NAND_ECC_MODE_NO_ECC )
         #define ENABLE_ECC_OOB          0               // запрет коррекции ООВ
@@ -169,9 +170,37 @@
         #error "Unsupportded ECC mode"
 #endif
 
+#define PRINT_REGW(r,v) NAND_DBG_PRINT_INF("REGW %08x=%08x\n",r,v);
+#define PRINT_REGR(r,v) NAND_DBG_PRINT_INF("REGR %08x=%08x\n",r,v);
+
 // LSIF0_CTRL
 #define NAND_RADDR_EXTEND               0x24            // Расширение адреса для 36-разрядной адресации канала NAND памяти:
 #define NAND_WADDR_EXTEND               0x28            // Биты [3:0] - соответствуют 4 старшим разряда адреса
+#define EXT_MEM_MUX_MODE                0x30            // Выбор типа используемых контроллеров для выводов EXT_MEM
+
+// GPIO
+#define MGPIO3_GPIOAFSEL                0x3C043420      // 0xFF
+#define MGPIO4_GPIOAFSEL                0x3C044420      // 0x03
+#define MGPIO7_GPIOAFSEL                0x3C047420      // 0xF0
+#define MGPIO8_GPIOAFSEL                0x3C048420      // 0x83
+
+#ifdef __UBOOT__
+        #define SWAP_BYTES(VAL)         cpu_to_le32(VAL)
+#else
+        #define SWAP_BYTES(VAL)         (VAL)
+#endif
+
+#define IOWRITE32(D,P)                  iowrite32(SWAP_BYTES(D),P)
+#define IOREAD32(P)                     SWAP_BYTES(ioread32(P))
+
+#ifdef __UBOOT__
+        #define AFSEL_INIT \
+        IOWRITE32( 0&0x000000FF, (void*)MGPIO3_GPIOAFSEL ); \
+        IOWRITE32( 0&0x00000003, (void*)MGPIO4_GPIOAFSEL ); \
+        IOWRITE32( 0&0x000000F0, (void*)MGPIO7_GPIOAFSEL ); \
+        IOWRITE32( 0&0x00000083, (void*)MGPIO8_GPIOAFSEL );
+#endif
+
 // команды ONFI FLASH (см.стандарт)
 #define FLASH_CMD_PAGE_READ             0x00            // ONFI: Read
 #define FLASH_CMD_BLOCK_ERASE           0x60            // ONFI: Block Erase
@@ -180,7 +209,7 @@
 #define FLASH_CMD_NAND_ONFI             0xEC            // ONFI: Read Parameter Page
 
 #define RCM_NAND_CTRL_ID                0x444E414E
-#define DRIVER_NAME "rcm-nand" 
+#define DRIVER_NAME                     "rcm-nand" 
 
 #define NAND_DBG_READ_CHECK                             // чтение до 2-х одинаковых буферов
 #define READ_RETRY_CNT                  5               // число попыток чтения
@@ -209,8 +238,6 @@
 #define PRINT_BUF_256(b,n) PRINT_BUF_64(b,n) PRINT_BUF_64(b,n+64) PRINT_BUF_64(b,n+128) PRINT_BUF_64(b,n+192)
 #define PRINT_BUF_512(b) PRINT_BUF_256(b,0) PRINT_BUF_256(b,256)
 #define PRINT_BUF(s,b,n) printk( "%s:%*ph\n", s, n, b );
-#define PRINT_REGW(r,v) NAND_DBG_PRINT_INF("REGW %08x=%08x\n",r,v);
-#define PRINT_REGR(r,v) NAND_DBG_PRINT_INF("REGR %08x=%08x\n",r,v);
 
 #define PRINT_INT_STATUS \
         NAND_DBG_PRINT_ERR( "%u: RF=%u,RI=%u,PF=%u,ER=%u,RS=%u,E0=%u,WE=%u,WA=%u,WS=%u,RE=%u,RA=%u,RS=%u,E1=%u,EM=%u\n", \
@@ -251,15 +278,17 @@ enum {
         #define DOWN(SEMA) down(SEMA);
         #define UP(SEMA) up(SEMA);
 #else // __UBOOT__
-        #define of_property_read_u32 of_read_u32
-        #define of_property_read_u32_array of_read_u32_array
+        #define of_property_read_u32(DEVNODE,NAME,PVAL) ofnode_read_u32(np_to_ofnode(DEVNODE),NAME,PVAL)
+        #define of_property_read_u32_array(DEVNODE,NAME,PARR,PSIZE) ofnode_read_u32_array(np_to_ofnode(DEVNODE),NAME,PARR,PSIZE)
         #define SEMA_INIT(CHIP) while(0);
         #define DOWN_KILLABLE(SEMA) (0);
         #define DOWN(SEMA) while(0);
         #define UP(SEMA) while(0);
 #endif
 
-//#define COMPLETE_INTERRUPT
+#ifndef __UBOOT__
+        #define COMPLETE_INTERRUPT
+#endif
 
 #ifdef COMPLETE_INTERRUPT
         #define INIT_COMPLETION(CHIP) init_completion(&CHIP->cmpl);
@@ -298,12 +327,12 @@ struct rcm_nand_chip {
 }; 
 
 static void rcm_nand_set( struct rcm_nand_chip* chip, uint32_t addr, uint32_t val ) {
-        iowrite32( val, chip->io + addr );
+        IOWRITE32( val, chip->io + addr );
         //PRINT_REGW( addr, val )
 }
 
 static uint32_t rcm_nand_get( struct rcm_nand_chip* chip, uint32_t addr ) {
-        uint32_t val = ioread32( chip->io + addr );
+        uint32_t val = IOREAD32( chip->io + addr );
         //PRINT_REGR( addr, val )
         return val;
 }
@@ -435,6 +464,7 @@ static int rcm_nand_wait_irq( struct rcm_nand_chip* chip ) {
         if( ret == 0 ) {
                 update_chip_err_empty( chip );
                 chip->state = MNAND_IDLE;
+                //NAND_DBG_PRINT_INF( "rcm_nand_wait_irq: complete\n" )
         }
         else {
                 NAND_DBG_PRINT_ERR( "rcm_nand_wait_irq: ret=%d,irq status=%08x,timeout=%u\n", ret, chip->status_irq, timeout )
@@ -487,17 +517,17 @@ static int rcm_nand_wait_ready( struct rcm_nand_chip* chip ) {
 static void rcm_nand_set_timing( struct rcm_nand_chip* chip, uint32_t offset, const uint32_t* timings, unsigned cnt, uint32_t freq ) {
         unsigned i;
         uint32_t timing_reg_wr = 0, n = 0;
-        uint32_t timing_reg_rd;
+        //uint32_t timing_reg_rd;
 
         for( i=0; i<cnt; i++ ) {
                 timing_reg_wr |= ( RCM_NAND_TIMING_TO_CLOCKS( timings[i], freq ) << n );
                 n += 8;
         }
         rcm_nand_set( chip, offset, timing_reg_wr );
-        timing_reg_rd = rcm_nand_get( chip, offset );
-        NAND_DBG_PRINT_INF( "rcm_nand_set_timing: reg=%02x,wr=%08x,rd=%08x(%u,%u,%u,%u)\n",
-                            offset, timing_reg_wr, timing_reg_rd,
-                            (timing_reg_rd>>24)&0xff, (timing_reg_rd>>16)&0xff, (timing_reg_rd>>8)&0xff, (timing_reg_rd>>0)&0xff )
+        //timing_reg_rd = rcm_nand_get( chip, offset );
+        //NAND_DBG_PRINT_INF( "rcm_nand_set_timing: reg=%02x,wr=%08x,rd=%08x(%u,%u,%u,%u)\n",
+        //                    offset, timing_reg_wr, timing_reg_rd,
+        //                    (timing_reg_rd>>24)&0xff, (timing_reg_rd>>16)&0xff, (timing_reg_rd>>8)&0xff, (timing_reg_rd>>0)&0xff )
 }
 
 static void rcm_nand_set_timings( struct rcm_nand_chip* chip, uint32_t* timings, uint32_t freq ) {
@@ -519,7 +549,7 @@ static int rcm_nand_hw_init( struct rcm_nand_chip* chip, uint32_t* timings, uint
 
         chip->ctrl_id = rcm_nand_get( chip, NAND_REG_id );
         chip->ctrl_ver = rcm_nand_get( chip, NAND_REG_version );   // 0x000008B4
-        //NAND_DBG_PRINT_INF( "rcm_nand_init: id=%08x,version=%08x,ecc mode=%d\n", chip->ctrl_id, chip->ctrl_ver, NAND_ECC_MODE )
+        NAND_DBG_PRINT_INF( "rcm_nand_init: id=%08x,version=%08x,ecc mode=%d\n", chip->ctrl_id, chip->ctrl_ver, NAND_ECC_MODE )
 
         if( chip->ctrl_id != RCM_NAND_CTRL_ID )
                 return -ENXIO;
@@ -778,7 +808,7 @@ static int rcm_nand_read_id( struct rcm_nand_chip* chip, int cs ) {
         struct nand_flash_dev* type = 0; 
         int i; 
         int retries = 5; 
-        char* vendor = "unknown";
+        //char* vendor = "unknown";
  
         for (i=0; i<retries; i++) {
                 rcm_nand_core_read_id( chip, cs, 256 );      // 2
@@ -794,7 +824,7 @@ static int rcm_nand_read_id( struct rcm_nand_chip* chip, int cs ) {
 
         for (i = 0; rcm_nand_manuf_ids[i].name != NULL; i++) {     // Lookup the flash vendor
                 if (((uint8_t*)chip->dma_area)[0] == rcm_nand_manuf_ids[i].id) { 
-                        vendor =  rcm_nand_manuf_ids[i].name; 
+                        //vendor =  rcm_nand_manuf_ids[i].name; 
                         break; 
                 } 
         }
@@ -843,7 +873,7 @@ static int rcm_nand_read_id( struct rcm_nand_chip* chip, int cs ) {
         chip->chip_size[cs] = (uint64_t) type->chipsize << 20;
         //chip->mtd.ecc_strength = type->ecc.strength_ds;
         //chip->mtd.ecc_step_size = type->ecc.step_ds;
-
+/*
         NAND_DBG_PRINT_INF( "rcm_nand_read_id: %s,CS=%d,%s,chipsize=%u,size=%llu,writesize=%u,oobsize=%u,erasesize=%u\n", 
                             chip->mtd.name,
                             cs,
@@ -853,7 +883,7 @@ static int rcm_nand_read_id( struct rcm_nand_chip* chip, int cs ) {
                             chip->mtd.writesize,                        // размер страницы в байтах
                             chip->mtd.oobsize,                          // размер дополнительной области в байтах
                             chip->mtd.erasesize )                       // размер блока в байтах (число страниц в блоке * размер страницы)
-
+*/
         //NAND_DBG_PRINT_INF( "rcm_nand_read_id: ecc_strength=%u,ecc_step_size=%u\n",
         //                    chip->mtd.ecc_strength,
         //                    chip->mtd.ecc_step_size )
@@ -874,7 +904,7 @@ static int rcm_nand_erase( struct mtd_info* mtd, struct erase_info* instr ) {
         int err;
         struct rcm_nand_chip* chip = (struct rcm_nand_chip*)mtd->priv;
 
-        //NAND_DBG_PRINT_INF( "rcm_nand_erase: addr=0x%08llX, len=%lld\n", instr->addr, instr->len )
+        NAND_DBG_PRINT_INF( "rcm_nand_erase: addr=0x%08llX, len=%lld\n", instr->addr, instr->len )
 
         if( ( instr->addr & (chip->mtd.erasesize-1) ) ||
               instr->addr >= chip->mtd.size || 
@@ -891,7 +921,7 @@ static int rcm_nand_erase( struct mtd_info* mtd, struct erase_info* instr ) {
                 instr->fail_addr = instr->addr; 
         }
  
-        //NAND_DBG_PRINT_INF( "rcm_nand_erase: err=%d,addr=0x%08llx,fail_addr=0x%08llx\n", err, instr->addr, instr->fail_addr )
+        NAND_DBG_PRINT_INF( "rcm_nand_erase: err=%d,addr=0x%08llx,fail_addr=0x%08llx\n", err, instr->addr, instr->fail_addr )
         return err; 
 }
 
@@ -908,8 +938,8 @@ static int rcm_nand_write_oob( struct mtd_info* mtd, loff_t to, struct mtd_oob_o
         size_t bytes;
 #endif // WRITE_ALIGNED
 
-        //NAND_DBG_PRINT_INF( "rcm_nand_write_oob: to=0x%08llX,ops.mode=%d,ops.len=0x%X,ops.ooblen=%d,ops.ooboffs=0x%08X,crc=%08x\n",
-        //                     to, ops->mode, ops->len, ops->ooblen, ops->ooboffs, crc32_be( ~0, data, ops->len ) )
+        NAND_DBG_PRINT_INF( "rcm_nand_write_oob: to=0x%08llX,ops.mode=%d,ops.len=0x%X,ops.ooblen=%d,ops.ooboffs=0x%08X\n",
+                             to, ops->mode, ops->len, ops->ooblen, ops->ooboffs )
 
         ops->retlen = 0;
         ops->oobretlen = 0;
@@ -953,26 +983,26 @@ static int rcm_nand_write_oob( struct mtd_info* mtd, loff_t to, struct mtd_oob_o
                                 switch( ops->mode ) {
                                 default:
                                 case MTD_OPS_PLACE_OOB:                 // OOB data are placed at the given offset (default)
-                                case MTD_OPS_RAW:                       // OOB data are transferred as-is, with no error correction,this mode implies MTD_OPS_PLACE_OOB
-                                        NAND_DBG_PRINT_ERR( "rcm_nand_write_oob: bad parameters for write oob mode=%u\n", ops->mode )
+                                        
                                         err =  -EINVAL;
                                         break;                          // часть OOB используется корректором ошибок контроллера
+                                case MTD_OPS_RAW:                       // OOB data are transferred as-is, with no error correction,this mode implies MTD_OPS_PLACE_OOB
                                 case MTD_OPS_AUTO_OOB:                  // OOB data are automatically placed at the free areas which are defined by the internal ecclayout
                                         if( ( ops->ooblen > chip->mtd.oobavail ) || ( ops->ooboffs + ops->ooblen > chip->mtd.oobavail ) ) { // доступная область у нас с 0 смещения
-                                                NAND_DBG_PRINT_ERR( "rcm_nand_write_oob: bad parameters for write oob len=%u off=%u avl=%u\n",
-                                                                    ops->ooblen, ops->ooboffs, chip->mtd.oobavail )
                                                 err = -EINVAL;
                                         }
                                         else {
-                                                PRINT_BUF( "rcm_nand_write_oob", oob, ops->ooblen )
+                                                //PRINT_BUF( "rcm_nand_write_oob", oob, ops->ooblen )
                                                 memcpy( chip->dma_area + chip->mtd.writesize + ops->ooboffs, oob, ops->ooblen ); 
                                                 oob = oobend;
                                         }
                                         break;
                                 }
                         } 
-                        if( err )
+                        if( err ) {
+                                NAND_DBG_PRINT_ERR( "rcm_nand_write_oob: bad parameters for write oob mode=%u len=%u offs=%u\n", ops->mode, ops->ooblen, ops->ooboffs )
                                 break;
+                        }
 
                         //memcpy( (uint8_t*)chip->dma_area+chip->mtd.writesize, oob_test_data, 64 );
 
@@ -990,7 +1020,7 @@ static int rcm_nand_write_oob( struct mtd_info* mtd, loff_t to, struct mtd_oob_o
         }
 
         if( err ) { 
-                NAND_DBG_PRINT_ERR( "rcm_nand_write_oob: core write returned error at 0x%08llx\n", to ) 
+                NAND_DBG_PRINT_ERR( "rcm_nand_write_oob: returned error at 0x%08llx\n", to )
                 return err; 
         } 
         ops->retlen = ops->len; 
@@ -1011,7 +1041,6 @@ static int rcm_nand_read_oob( struct mtd_info* mtd, loff_t from, struct mtd_oob_
 
         NAND_DBG_PRINT_INF( "rcm_nand_read_oob: from=0x%08llX ops.mode=%d ops.len=%d ops.ooblen=%d ops ooboffs=0x%08X data=%p\n",
                             from, ops->mode, ops->len, ops->ooblen, ops->ooboffs, data )
-        NAND_DBG_PRINT_INF( "DMA: handle=%08x,area=%08x\n", (uint32_t)chip->dma_handle, (uint32_t)chip->dma_area )
         if( ops->len != 0 && data == 0 ) { 
                 ops->len = 0;
                 dataend = 0;
@@ -1045,25 +1074,25 @@ static int rcm_nand_read_oob( struct mtd_info* mtd, loff_t from, struct mtd_oob_
                                 switch( ops->mode ) {
                                 default:
                                 case MTD_OPS_PLACE_OOB:                 // OOB data are placed at the given offset (default)
-                                case MTD_OPS_RAW:                       // OOB data are transferred as-is, with no error correction,this mode implies MTD_OPS_PLACE_OOB
-                                        NAND_DBG_PRINT_ERR( "rcm_nand_read_oob: bad parameters for write oob mode=%u\n", ops->mode )
                                         err =  -EINVAL;
                                         break;                          // часть OOB используется корректором ошибок контроллера
                                 case MTD_OPS_AUTO_OOB:                  // OOB data are automatically placed at the free areas which are defined by the internal ecclayout
+                                case MTD_OPS_RAW:                       // OOB data are transferred as-is, with no error correction,this mode implies MTD_OPS_PLACE_OOB
                                         if( ( ops->ooblen > chip->mtd.oobavail ) || ( ops->ooboffs + ops->ooblen > chip->mtd.oobavail ) ) { // доступная область у нас с 0 смещения
-                                                NAND_DBG_PRINT_ERR( "rcm_nand_read_oob: bad parameters for write oob len=%u off=%u avl=%u\n", ops->ooblen, ops->ooboffs, chip->mtd.oobavail )
                                                 err = -EINVAL;
                                         }
                                         else {
-                                                PRINT_BUF( "rcm_nand_read_oob", oob, ops->ooblen )
+                                                //PRINT_BUF( "rcm_nand_read_oob", oob, ops->ooblen )
                                                 memcpy( oob, chip->dma_area + chip->mtd.writesize + ops->ooboffs, ops->ooblen ); 
                                                 oob = oobend;
                                         }
                                         break;
                                 }
                         }
-                        if( err )
+                        if( err ) {
+                                NAND_DBG_PRINT_ERR( "rcm_nand_read_oob: bad parameters for read oob mode=%u len=%u off=%u\n", ops->mode, ops->ooblen, ops->ooboffs )
                                 break;
+                        }
 
                         if( ( data == dataend ) &&  ( oob == oobend ) )
                                 break;
@@ -1074,10 +1103,13 @@ static int rcm_nand_read_oob( struct mtd_info* mtd, loff_t from, struct mtd_oob_
                 UP( &chip->mutex )
         }
 
-        if( err==0 ) { // -EUCLEAN 
-                ops->retlen = ops->len; 
-                ops->oobretlen = ops->ooblen; 
+        if( err ) { // -EUCLEAN
+                NAND_DBG_PRINT_ERR( "rcm_nand_read_oob: returned error at 0x%08llx\n", from )
+                return err; 
         } 
+        ops->retlen = ops->len; 
+        ops->oobretlen = ops->ooblen;
+ 
         return err; 
 }
 
@@ -1116,30 +1148,14 @@ static int rcm_nand_read( struct mtd_info* mtd, loff_t off, size_t len, size_t* 
 }
 
 static int rcm_nand_lsif0_config( const struct device_node *of_node ) {
-        struct device_node* tmp_of_node;
-   	//struct regmap* lsif0_config;
-        //int ret;
         void* lsif0_io;
+#ifndef __UBOOT__
+        struct device_node* tmp_of_node;
         struct resource res;
-
         if( ( tmp_of_node = of_parse_phandle( of_node, "config", 0 ) ) == NULL ) {
                 NAND_DBG_PRINT_ERR( "of_parse_phandle(config): error\n" )
                 return -ENOENT;
         }
-        //lsif0_config = syscon_node_to_regmap( tmp_of_node );
-        //if( ( ret = regmap_write( lsif0_config, NAND_RADDR_EXTEND, 1 ) ) != 0 ) {
-        //        NAND_DBG_PRINT_ERR( "regmap_write(NAND_RADDR_EXTEND): error %d\n", ret )
-        //        return ret;
-        //}
-
-        //if( ( ret = regmap_write( lsif0_config, NAND_WADDR_EXTEND, 1 ) ) != 0 ) {
-        //        NAND_DBG_PRINT_ERR( "regmap_write(NAND_WADDR_EXTEND): error %d\n", ret )
-        //        return ret;
-        //}
-        //if( ( lsif0_io = of_iomap( tmp_of_node, 0 ) ) == NULL ) {
-        //        NAND_DBG_PRINT_ERR( "of_iomap(config): error\n" )
-        //        return -EIO;
-        //}
         if( of_address_to_resource( tmp_of_node, 0, &res ) != 0 ) {
 		NAND_DBG_PRINT_ERR( "of_address_to_resource(config): error\n" )
                 return -ENODEV;
@@ -1148,20 +1164,35 @@ static int rcm_nand_lsif0_config( const struct device_node *of_node ) {
                 NAND_DBG_PRINT_ERR( "ioremap(config): error\n" )
 		return -ENOMEM;
         }
-        iowrite32( 1, lsif0_io + NAND_RADDR_EXTEND );
-        iowrite32( 1, lsif0_io + NAND_WADDR_EXTEND );
+#else
+        uint32_t config_reg[2];
+        int ret;
+        if( ( ret = of_property_read_u32_array( of_node, "config-reg", config_reg, 2 ) ) != 0 ) {
+                NAND_DBG_PRINT_ERR( "of_property_read_u32_array: config-reg read error\n" )
+                return ret;
+        }
+        lsif0_io = (void*)config_reg[0];
+        IOWRITE32( 0x00000002, lsif0_io + EXT_MEM_MUX_MODE );
+#endif
+        IOWRITE32( 0x00000001, lsif0_io + NAND_RADDR_EXTEND );
+        IOWRITE32( 0x00000001, lsif0_io + NAND_WADDR_EXTEND );
+#ifndef __UBOOT__
         iounmap( lsif0_io );
+#endif
         return 0;
 }
 
 static int rcm_nand_get_timings( const struct device_node *of_node, uint32_t* timings, uint32_t* freq ) {
         struct device_node* tmp_of_node;
         int ret;
-
+#ifndef __UBOOT__
         if( ( tmp_of_node = of_parse_phandle( of_node, "clocks", 0 ) ) == NULL ) {
                 NAND_DBG_PRINT_ERR( "of_parse_phandle(clocks): error\n" )
                 return -ENOENT;
         }
+#else
+        tmp_of_node = (struct device_node*)of_node;
+#endif // 
         if( ( ret = of_property_read_u32( tmp_of_node, "clock-frequency", freq ) ) != 0 ) {
                 NAND_DBG_PRINT_ERR( "of_property_read_u32(%s): clock-frequency read error\n", tmp_of_node->name )
                 return ret;
@@ -1184,10 +1215,10 @@ static int rcm_nand_probe( rcm_nand_device* ofdev ) {
         struct device_node *of_node;
         uint32_t freq, timings[30];
         int err;
-        struct resource res;
         struct rcm_nand_chip* chip;
 
 #ifndef __UBOOT__
+        struct resource res;
         const char *part_probes[] = { "ofpart"/*"cmdlinepart"*/, NULL, };
         const struct of_device_id *match;
 
@@ -1205,6 +1236,8 @@ static int rcm_nand_probe( rcm_nand_device* ofdev ) {
                 return -EINVAL;
         }
 #else // __UBOOT__
+        uint32_t reg[2];
+
         of_node = (struct device_node*)ofnode_to_np( ofdev->node );
 
         chip = (struct rcm_nand_chip*)calloc( 1, sizeof( struct rcm_nand_chip ) );
@@ -1214,12 +1247,7 @@ static int rcm_nand_probe( rcm_nand_device* ofdev ) {
 #endif // __UBOOT__
         chip->dev = ofdev;
 
-        //chip->io = of_iomap( of_node, 0 );
-        //if( !chip->io ) {
-        //        dev_err( &ofdev->dev, "of_iomap: failed\n" );
-        //        return -EIO;
-        //}
-
+#ifndef __UBOOT__
         if( of_address_to_resource( of_node, 0, &res ) != 0 ) {
 		dev_err( &ofdev->dev, "of_address_to_resource: failed\n" );
                 return -ENODEV;
@@ -1228,7 +1256,13 @@ static int rcm_nand_probe( rcm_nand_device* ofdev ) {
                 dev_err( &ofdev->dev, "ioremap: error\n" );
 		return -ENOMEM;
         }
- 
+#else
+        if( ( err = of_property_read_u32_array( of_node, "reg", reg, 2 ) ) != 0 ) {
+                NAND_DBG_PRINT_ERR( "of_property_read_u32_array: reg read error\n" )
+                return err;
+        }
+        chip->io = (void*)reg[0];
+#endif
         if( ( err = rcm_nand_lsif0_config( of_node ) ) != 0 ) {
                 dev_err( &ofdev->dev, "lsif0 config: failed\n" );
                 goto error_with_unmap;
@@ -1247,7 +1281,7 @@ static int rcm_nand_probe( rcm_nand_device* ofdev ) {
         chip->dev->dev.coherent_dma_mask = DMA_BIT_MASK( 32 );
         chip->dma_area = dma_alloc_coherent( &chip->dev->dev, DMA_SIZE, &chip->dma_handle, GFP_KERNEL | GFP_DMA );
 #else
-        chip->dma_handle = (dmaaddr_t)memalign( ARCH_DMA_MINALIGN, DMA_SIZE );
+        chip->dma_handle = (dmaaddr_t)memalign( 512/*ARCH_DMA_MINALIGN*/, DMA_SIZE );
         chip->dma_area = (void*)(uint32_t)(chip->dma_handle);  //???types?
 #endif
 
@@ -1257,8 +1291,6 @@ static int rcm_nand_probe( rcm_nand_device* ofdev ) {
                 goto error_with_free_irq; 
         }
         memset( chip->dma_area, 0xFF, DMA_SIZE );
-        NAND_DBG_PRINT_INF( "DMA: handle=%08x,area=%08x\n", (uint32_t)chip->dma_handle, (uint32_t)chip->dma_area );
-
 
         INIT_COMPLETION( chip )
         SEMA_INIT( &chip ); 
@@ -1316,9 +1348,10 @@ static int rcm_nand_probe( rcm_nand_device* ofdev ) {
         dev_info( &ofdev->dev, "detected %llu bytes NAND memory,page size %u bytes,user oob size %u bytes\n", chip->mtd.size, chip->mtd.writesize, chip->mtd.oobavail );
 
 #ifndef __UBOOT__
-        chip->mtd.dev = ofdev->dev;
+        chip->mtd.dev = ofdev->dev;     // device
         err = mtd_device_parse_register( &chip->mtd, part_probes, 0, NULL, 0 );
 #else
+        chip->mtd.dev = ofdev;          // udevice*
         err = nand_register( 0, &chip->mtd );
 #endif
         if( err ) {
@@ -1378,19 +1411,30 @@ module_platform_driver(of_platform_rcm_nand_driver);
 
 #else // __UBOOT__
 
-void board_nand_init(void) {}
-
 static const struct udevice_id rcm_nand_ids[] = {
         { .compatible = "rcm,nand" },
-        {}
+        { /* end of list */ }
 };
 
 U_BOOT_DRIVER(rcm_nand) = {
-        .name = "rcm-nand",
+        .name = DRIVER_NAME,
         .id = UCLASS_MTD,
         .of_match = rcm_nand_ids,
         .probe = rcm_nand_probe
 };
+
+void board_nand_init( void ) {
+        //NAND_DBG_PRINT_INF( "%s\n", __FUNCTION__ );
+        struct udevice *dev;
+        int ret;
+
+        ret = uclass_get_device_by_driver( UCLASS_MTD,
+                                           DM_GET_DRIVER(rcm_nand),
+                                           &dev );
+        if( ret && ret != -ENODEV ) {
+                NAND_DBG_PRINT_ERR( "Failed to initialize RCM NAND controller,error=%d)\n", ret );
+        }
+}
 
 #endif // __UBOOT__
 
