@@ -212,6 +212,7 @@
 #define DRIVER_NAME                     "rcm-nand" 
 
 #define NAND_DBG_READ_CHECK                             // чтение до 2-х одинаковых буферов
+#define NAND_DBG_WRITE_CHECK                            // запись с проверкой
 #define READ_RETRY_CNT                  5               // число попыток чтения
 #define NAND_DBG_PRINT
 
@@ -335,6 +336,14 @@ static uint32_t rcm_nand_get( struct rcm_nand_chip* chip, uint32_t addr ) {
         uint32_t val = IOREAD32( chip->io + addr );
         //PRINT_REGR( addr, val )
         return val;
+}
+
+static int rcm_nand_is_buffer_ff( const uint8_t* buf, uint32_t len ) {
+        uint32_t i;
+        for( i = 0; i < len; i++ ) {
+                if( buf[i] != 0xFF ) return 0;
+        }
+        return 1;
 }
 
 static uint32_t rcm_nand_pagesize_code( uint32_t size ) {
@@ -722,47 +731,67 @@ static int rcm_nand_core_read( struct rcm_nand_chip* chip, loff_t off ) {
 #if ( NAND_ECC_MODE == NAND_ECC_MODE_4BITS )
         if( chip->empty ) {                                                                     // читаемая страница чистая,но корректор пытается исправить ошибки
                 memset( chip->dma_area, 0xff, chip->mtd.writesize + chip->mtd.oobsize );        // уберем это
+                NAND_DBG_PRINT_WRN( "rcm_nand_core_read: page is empty\n" )
         }
 #endif
         return chip->err ? -EIO : 0;
 } 
 
+#ifdef NAND_DBG_READ_CHECK
 static int rcm_nand_core_read_with_check( struct rcm_nand_chip* chip, loff_t from ) {
         void* buf[2] = { NULL, NULL };
         int err = -ENOMEM, nrd, nok =-1;
+        uint32_t ncmp = chip->mtd.writesize + chip->mtd.oobsize;
 
-        buf[0] = kmalloc( DMA_SIZE, GFP_KERNEL  );
-        buf[1] = kmalloc( DMA_SIZE, GFP_KERNEL  );
+        buf[0] = kmalloc( DMA_SIZE, GFP_KERNEL );
+        buf[1] = kmalloc( DMA_SIZE, GFP_KERNEL );
 
         if( ( buf[0] == NULL ) || ( buf[1] == NULL ) )
                 goto ret;
 
         for( nrd = 0; nrd < READ_RETRY_CNT; nrd++ ) {
                 if( ( err = rcm_nand_core_read( chip, from ) ) == 0 ) {
-                        memcpy( buf[1], chip->dma_area, chip->mtd.writesize + chip->mtd.oobsize );
+                        memcpy( buf[1], chip->dma_area, ncmp );
                         break;
                 }
         }
-        if( err != 0 )
+        if( err != 0 ) {
+                NAND_DBG_PRINT_ERR( "rcm_nand_core_read_with_check: line %u\n", __LINE__ )
                 goto ret;
+        }
 
         for( nrd = 0; nrd < READ_RETRY_CNT; nrd++ ) {
                 if( ( err = rcm_nand_core_read( chip, from ) ) == 0 ) {
-                        memcpy( buf[nrd&1], chip->dma_area, chip->mtd.writesize + chip->mtd.oobsize );
-                        if( ( nok = memcmp( buf[0], buf[1], chip->mtd.writesize + chip->mtd.oobsize ) ) == 0 ) break;
+                        memcpy( buf[nrd&1], chip->dma_area, ncmp );
+                        if( ( nok = memcmp( buf[0], buf[1], ncmp ) ) == 0 ) break;
                 }
+        }
+
+        if( err != 0 ) {
+                NAND_DBG_PRINT_ERR( "rcm_nand_core_read_with_check: line %u\n", __LINE__ )
+        }
+        else if( nok ) {
+                NAND_DBG_PRINT_ERR( "rcm_nand_core_read_with_check: line %u\n", __LINE__ )
         }
 ret:
         if( buf[0] ) kfree( buf[0] );
         if( buf[1] ) kfree( buf[1] );
         return err ? err : nok ? -EIO : 0;
 }
+#endif // NAND_DBG_READ_CHECK
 
 static int rcm_nand_core_write( struct rcm_nand_chip* chip, loff_t off ) { 
         int cs;
-       
+
         if( rcm_nand_wait_ready( chip ) )
                 return -EIO;
+
+#if ( NAND_ECC_MODE == NAND_ECC_MODE_4BITS )
+        if( rcm_nand_is_buffer_ff( (uint8_t*)chip->dma_area, chip->mtd.writesize + chip->mtd.oobsize - ECC_OOB_CTRL_USED ) ) {
+                NAND_DBG_PRINT_WRN( "rcm_nand_core_write: write page as empty\n" )              // это сделано для того,чтобы запись образа фс с чистыми страницами работал
+                return 0;                                                                       // тут надо бы проверить, что страница действительно пуста
+        }
+#endif
 
         cs = rcm_nand_chip_offset( chip, &off );
         //NAND_DBG_PRINT_INF( "rcm_nand_core_write: cs=%u,off=0x%08llX,status=%08x\n", cs, off, status )
@@ -796,6 +825,55 @@ static int rcm_nand_core_write( struct rcm_nand_chip* chip, loff_t off ) {
         //PRINT_BUF_256( ((uint8_t*)chip->dma_area), 0 )
         return chip->err ? -EIO : 0;
 }
+
+#ifdef NAND_DBG_WRITE_CHECK
+static int rcm_nand_core_write_with_check( struct rcm_nand_chip* chip, loff_t to ) {
+        uint8_t* buf[2] = { NULL, NULL };
+        int err = -ENOMEM, nwr, ok = 0, i;
+        uint32_t ncmp = chip->mtd.writesize + chip->mtd.oobsize - ECC_OOB_CTRL_USED;
+
+        buf[0] = kmalloc( DMA_SIZE, GFP_KERNEL );
+        buf[1] = kmalloc( DMA_SIZE, GFP_KERNEL );
+
+        if( ( buf[0] == NULL ) || ( buf[1] == NULL ) )
+                goto ret;
+
+        memcpy( buf[0], chip->dma_area, ncmp );
+
+        for( nwr = 0; nwr < READ_RETRY_CNT; nwr++ ) {
+                if( ( err = rcm_nand_core_write( chip, to ) ) != 0 ) {
+                        NAND_DBG_PRINT_ERR( "rcm_nand_core_write_with_check: line %u\n", __LINE__ )
+                        goto ret;
+                }
+
+                if( ( err = rcm_nand_core_read_with_check( chip, to ) ) == 0 ) {
+                        memcpy( buf[1], chip->dma_area, ncmp );
+                        for( i=0; i<ncmp; i++ ) {
+                            if( buf[0][i] != buf[1][i] ) {
+                                    NAND_DBG_PRINT_ERR( "%u: %02x:%02x\n", i, buf[0][i], buf[1][i] );
+                                    break;
+                             }
+                        }
+                        if( i == ncmp ) {
+                                ok = 1;
+                                goto ret;
+                        }
+                }
+        }
+
+        if( err != 0 ) {
+                NAND_DBG_PRINT_ERR( "rcm_nand_core_write_with_check: line %u\n", __LINE__ )
+                goto ret;
+        }
+        else if( !ok ) {
+                NAND_DBG_PRINT_ERR( "rcm_nand_core_write_with_check: line %u\n", __LINE__ )
+        }
+ret:
+        if( buf[0] ) kfree( buf[0] );
+        if( buf[1] ) kfree( buf[1] );
+        return err ? err : ok ? 0 : -EIO;
+}
+#endif // NAND_DBG_WRITE_CHECK
 
 static int rcm_nand_reset( struct rcm_nand_chip* chip ) {
         int err = rcm_nand_core_reset( chip, 0 );
@@ -1005,8 +1083,11 @@ static int rcm_nand_write_oob( struct mtd_info* mtd, loff_t to, struct mtd_oob_o
                         }
 
                         //memcpy( (uint8_t*)chip->dma_area+chip->mtd.writesize, oob_test_data, 64 );
-
+#ifdef NAND_DBG_WRITE_CHECK
+                        err = rcm_nand_core_write_with_check( chip, to );
+#else
                         err = rcm_nand_core_write( chip, to );
+#endif
                         if( err )
                                 break;
                         #if WRITE_ALIGNED
