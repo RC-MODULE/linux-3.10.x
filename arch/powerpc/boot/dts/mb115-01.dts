@@ -123,14 +123,29 @@
 						reg = <0x00040000 0x00040000>;
 					};
 
-					partition@1040000 {
+					partition@80000 {
 						label = "kern";
 						reg = <0x00080000 0x00800000>;
 					};
 
-					partition@1050000 {
+					partition@880000 {
+						label = "udtb";
+						reg = <0x00880000 0x00040000>;
+					};
+
+					partition@8C0000 {
+						label = "uboot";
+						reg = <0x008C0000 0x00160000>;
+					};
+
+					partition@A20000 {
 						label = "rootfs";
-						reg = <0x00880000 0x0f780000>;
+						reg = <0x00A20000 0x0f000000>;
+					};
+
+					partition@5E0000 {
+						label = "res";
+						reg = <0x0FA20000 0x005E0000>;
 					};
 				};
 			};	

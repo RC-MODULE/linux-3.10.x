@@ -972,9 +972,13 @@ inconsistent:
 } 
 
 static int rcm_nand_read_id2( struct rcm_nand_chip* chip ) {
-        int err = rcm_nand_read_id( chip, 0 );
-        if( err == 0 )
-                err = rcm_nand_read_id( chip, 1 );
+        int i, err;
+        for( i=0; i<READ_RETRY_CNT; i++ ) {
+                err = rcm_nand_read_id( chip, 0 );
+                if( err == 0 )
+                        err = rcm_nand_read_id( chip, 1 );
+                if( err == 0 ) break;
+        }
         return err;
 }
 
