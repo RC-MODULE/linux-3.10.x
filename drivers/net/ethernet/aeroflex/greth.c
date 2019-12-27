@@ -67,7 +67,7 @@ static int macaddr[6];
 module_param_array(macaddr, int, NULL, 0);
 MODULE_PARM_DESC(macaddr, "GRETH Ethernet MAC address");
 
-static int greth_edcl = 1;
+static int greth_edcl = 0;
 module_param(greth_edcl, int, 0);
 MODULE_PARM_DESC(greth_edcl, "GRETH EDCL usage indicator. Set to 1 if EDCL is used.");
 
@@ -1548,6 +1548,9 @@ static int greth_of_probe(struct platform_device *ofdev)
 		goto error1;
 #endif
 
+	if (of_find_property(greth->dev->of_node, "enable-edcl", NULL))
+		greth_edcl = 1;
+
 	if (netif_msg_probe(greth))
 		dev_dbg(greth->dev, "resetting controller.\n");
 
@@ -1577,10 +1580,17 @@ static int greth_of_probe(struct platform_device *ofdev)
 
 	greth->edcl = (tmp >> 31) & 1;
 
-	/* If we have EDCL we disable the EDCL speed-duplex FSM so
-	 * it doesn't interfere with the software */
-	if (greth->edcl != 0)
+	if (greth->edcl != 0) {
+		/* If we have EDCL we disable the EDCL speed-duplex FSM so
+		 * it doesn't interfere with the software */
 		GRETH_REGORIN(regs->control, GRETH_CTRL_DISDUPLEX);
+
+		// enable/disable EDCL
+		if (greth_edcl)
+			GRETH_REGANDIN(regs->control, ~GRETH_CTRL_ED);
+		else
+			GRETH_REGORIN(regs->control, GRETH_CTRL_ED);
+	}
 
 	/* Check if MAC can handle MDIO interrupts */
 	greth->mdio_int_en = (tmp >> 26) & 1;
