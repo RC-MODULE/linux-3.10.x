@@ -262,6 +262,10 @@
 			vdu0: vdu@0x38013000 {
 				status = "ok";
 			};
+
+			vpu: vpu@0x38020000 {
+				status = "ok";
+			};
 		};
 		
 		apb0 {

@@ -77,6 +77,11 @@
 					alignment = <0 0x1000000>;
 			};
 
+			vpu_buffer: vpu_buffer@0x33C00000 {
+				reg = <0x0 0x33C00000 0x0 0x04000000>;
+				no-map;
+			};
+
 			frame_buffer_0: frame_buffer@0x37C00000 {
 				reg = <0x0 0x37C00000 0x0 0x02200000>;
 			};
@@ -881,9 +886,9 @@
 
 			ranges = <0x38010000 0x010 0x38010000 0x00024000
 				  0x39080000 0x010 0x39080000 0x00002000
-				  0x37C00000 0x000 0x37C00000 0x08400000>;
+				  0x33C00000 0x000 0x33C00000 0x0C400000>;
 
-			dma-ranges = <0x40000000 0x00000000 0x00000000 0x40000000>;
+			dma-ranges = <0x40000000 0x000 0x00000000 0x40000000>;
 
 			i2s: i2s@0x39080000 {			
 				compatible = "rcm,i2s-ctrl";
@@ -986,6 +991,15 @@
 				axi_mvl_param = <0x0f310000>;
 				memory-region = <&frame_buffer_0>;
 				vdubuffer = <0x39E00000 0x02000000>;
+				status = "disabled";
+			};
+
+			vpu: vpu@0x38020000 {
+				compatible = "rcm,vpu-coda980";
+				reg = <0x38020000 0x4000>;
+				interrupt-parent = <&MPIC>;
+				interrupts = <123 2>; // active high level-sensitive
+				memory-buffer = <&vpu_buffer>;
 				status = "disabled";
 			};
 		};
