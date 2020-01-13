@@ -201,7 +201,7 @@ config CURRITUCK
 	  This option enables support for the IBM Currituck (476fpe) evaluation board
 
 config 1888TX018
-	bool "RCM 1888TX018 (470s) Support"
+	bool "RCM 1888TX018 (PPC476FS) Support"
 	depends on PPC_47x
 	default n
 	select SWIOTLB
@@ -212,7 +212,7 @@ config 1888TX018
 	select DEFAULT_UIMAGE
 	select PPC_UDBG_PL011
 	help
-	  This option enables support for the RC-Module M115.01 (1888tx018) evaluation board
+	  This option enables support for the RCM 1888TX018 SoC
 
 config FSP2
 	bool "IBM FSP2 (476fpe) Support"
