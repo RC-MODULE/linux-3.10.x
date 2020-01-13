@@ -3,7 +3,7 @@
  *
  * Copyright (c) 2018, AstroSoft.  All rights reserved.
  *
- * Author: Alexey Spirkov <alexeis@astrosoft.ru>
+ * Author: Alexey Spirkov <dev@alsp.net>
  *
  * This program is free software; you can redistribute it and/or modify it
  * under the terms and conditions of the GNU General Public License,
@@ -278,5 +278,5 @@ static struct platform_driver rcm_thermal_driver = {
 module_platform_driver(rcm_thermal_driver);
 
 MODULE_DESCRIPTION("RCM temperature Thermal driver");
-MODULE_AUTHOR("Alexey Spirkov <alexeis@astrosoft.ru>");
+MODULE_AUTHOR("Alexey Spirkov <dev@alsp.net>");
 MODULE_LICENSE("GPL v2");

@@ -1,7 +1,7 @@
 /*
  * Device Tree Source for RCM 1888TX018 platform
  *
- * Copyright © 2019 Alexey Spirkov <alexeis@astrosoft.ru>
+ * Copyright © 2019 Alexey Spirkov <dev@alsp.net>
  *
  * This file is licensed under the terms of the GNU General Public
  * License version 2.  This program is licensed "as is" without
@@ -75,6 +75,11 @@
 			nmc_mem3: nmc_mem3 {
 					size = <0 0x1000000>;
 					alignment = <0 0x1000000>;
+			};
+
+			vpu_buffer: vpu_buffer@0x33C00000 {
+				reg = <0x0 0x33C00000 0x0 0x04000000>;
+				no-map;
 			};
 
 			frame_buffer_0: frame_buffer@0x37C00000 {
@@ -952,9 +957,9 @@
 
 			ranges = <0x38010000 0x010 0x38010000 0x00024000
 				  0x39080000 0x010 0x39080000 0x00002000
-				  0x37C00000 0x000 0x37C00000 0x08400000>;
+				  0x33C00000 0x000 0x33C00000 0x0C400000>;
 
-			dma-ranges = <0x40000000 0x00000000 0x00000000 0x40000000>;
+			dma-ranges = <0x40000000 0x000 0x00000000 0x40000000>;
 
 			i2s: i2s@0x39080000 {			
 				compatible = "rcm,i2s-ctrl";
@@ -1005,11 +1010,12 @@
 
 			spdif: spdif@0x39080000 {
 				compatible = "rcm,spdif";
-				#sound-dai-cells = <1>;
+				#sound-dai-cells = <0>;
 				reg = <0x39081000 0x1000>;
 				interrupt-parent = <&MPIC>;
 				interrupts = <126 0>;
-				dmas = <&audio_dma 0>;
+				clocks = <&audio_pll_div>;
+				dmas = <&audio_dma 4>;
 				dma-names = "rx";
 				status = "disabled";
 			};
@@ -1022,16 +1028,6 @@
 				interrupts = <127 0>;
 				status = "disabled";
 			};
-
-//			sound {
-//				compatible = "rcm,legacy-audio";
-//				interrupt-parent = <&MPIC>;
-//				interrupts = <127 4>;
-//				maudio,dmac = <&audio_dma>;
-//				maudio,i2s = <&i2s>;
-//				maudio,spdif = <&spdif>;
-//				status = "disabled";
-//			};
 
 			// HDMI channel 0 (actually VDU index 1)
 			vdu0: vdu@0x38013000 {
@@ -1066,6 +1062,15 @@
 				axi_mvl_param = <0x0f310000>;
 				memory-region = <&frame_buffer_0>;
 				vdubuffer = <0x39E00000 0x02000000>;
+				status = "disabled";
+			};
+
+			vpu: vpu@0x38020000 {
+				compatible = "rcm,vpu-coda980";
+				reg = <0x38020000 0x4000>;
+				interrupt-parent = <&MPIC>;
+				interrupts = <123 2>; // active high level-sensitive
+				memory-buffer = <&vpu_buffer>;
 				status = "disabled";
 			};
 		};
@@ -1120,8 +1125,8 @@
 				reg = <0x38009000 0x1000>;
 				clocks = <&clk_aud>;
 				/*      fbdif,	prdiv,	psdiv  */
-				freqs = <64   	1	   	2>,			/* 0 - 393 216 000 Hz */
-						<147	10		0>;			/* 1 - 361 267 200 Hz */													
+				freqs = <64   	1	   	2>,	/* 393 216 000 Hz / 16 = 24 576 000 */
+						<147	1		2>;	/* 451 584 000 Hz / 20 = 22 579 200 */
 
 				status ="ok";
 

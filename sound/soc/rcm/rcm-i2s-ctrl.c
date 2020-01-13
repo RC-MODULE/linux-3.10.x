@@ -22,12 +22,11 @@ module_param_named(debug, g_i2s_ctrl_debug, int, 0);
 
 #define TRACE(format, ...)                                                     \
 	do {                                                                   \
-		if (g_i2s_ctrl_debug) {                                             \
-			printk("TRACE: rcm-i2s-ctrl/%s:%d: " format "\n", __func__, \
-			       __LINE__, ##__VA_ARGS__);                       \
+		if (g_i2s_ctrl_debug) {                                        \
+			printk("TRACE: rcm-i2s-ctrl/%s:%d: " format "\n",      \
+			       __func__, __LINE__, ##__VA_ARGS__);             \
 		}                                                              \
 	} while (0)
-
 
 static const struct regmap_config rcm_i2s_regmap_config = {
 	.reg_bits = 32,
@@ -107,8 +106,6 @@ static int rcm_i2s_ctrl_probe(struct platform_device *pdev)
 		dev_err(&pdev->dev, "Cannot find clock source\n");
 		return -ENODEV;
 	}
-	clk_prepare(i2s->clock);
-	clk_enable(i2s->clock);
 
 	if (of_get_property(pdev->dev.of_node, "rcm,disable11025", NULL))
 		i2s->disable_11025 = 1;

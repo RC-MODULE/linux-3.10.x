@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: GPL-2.0
 /*
  * Copyright (C) 2018 by AstroSoft
- * Alexey Spirkov <alexeis@astrosoft.ru>
+ * Alexey Spirkov <dev@alsp.net>
  * 
  * Some code has been taken from omap2430.c
  * Copyrights for that are attributable to:
@@ -294,5 +294,5 @@ static struct platform_driver rcm_driver = {
 module_platform_driver(rcm_driver);
 
 MODULE_DESCRIPTION("RCM MUSB Glue Layer");
-MODULE_AUTHOR("Alexey Spirkov <alexeis@astrosoft.ru>");
+MODULE_AUTHOR("Alexey Spirkov <dev@alsp.net>");
 MODULE_LICENSE("GPL v2");

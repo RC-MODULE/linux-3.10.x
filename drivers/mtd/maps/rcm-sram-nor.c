@@ -3,7 +3,7 @@
  *  under the terms of the GNU General Public License version 2 as published
  *  by the Free Software Foundation.
  *
- *  Copyright (C) 2019 Alexey Spirkov <alexeis@astrosoft.ru>
+ *  Copyright (C) 2019 Alexey Spirkov <dev@alsp.net>
  */
 
 #include <linux/err.h>
@@ -249,5 +249,5 @@ static struct platform_driver rcm_mtd_driver = {
 module_platform_driver(rcm_mtd_driver);
 
 MODULE_LICENSE("GPL");
-MODULE_AUTHOR("Alexey Spirkov <alexeis@astrosoft.ru>");
+MODULE_AUTHOR("Alexey Spirkov <dev@alsp.net>");
 MODULE_DESCRIPTION("RCM SoC SRAM/NOR controller driver");

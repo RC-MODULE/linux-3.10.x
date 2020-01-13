@@ -3,7 +3,7 @@
  * phy-rcm-usb - USB PHY, talking to musb controller in RCM PPC board.
  *
  * Copyright (C) 2018 by AstroSoft
- * Alexey Spirkov <alexeis@astrosoft.ru>
+ * Alexey Spirkov <dev@alsp.net>
  * 
  * Some code has been taken from phy-keystone.c
  * Copyrights for that are attributable to:
@@ -193,6 +193,6 @@ static struct platform_driver phy_rcm_usb2_driver = {
 
 module_platform_driver(phy_rcm_usb2_driver);
 
-MODULE_AUTHOR("Alexey Spirkov <alexeis@astrosoft.ru>");
+MODULE_AUTHOR("Alexey Spirkov <dev@alsp.net>");
 MODULE_DESCRIPTION("RCM USB2 phy driver");
 MODULE_LICENSE("GPL v2");

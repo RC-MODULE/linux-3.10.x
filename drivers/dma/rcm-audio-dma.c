@@ -107,7 +107,7 @@ struct rcm_audio_dma_channel {
 struct rcm_audio_dma {
 	/* To protect channel manipulation */
 	spinlock_t lock;
-	struct rcm_audio_dma_channel channel[4];
+	struct rcm_audio_dma_channel channel[5];
 	struct regmap *regmap;
 	struct dma_device slave;
 	struct tasklet_struct task;
@@ -166,7 +166,7 @@ static struct dma_async_tx_descriptor *
 {
 	struct rcm_audio_dma *d = to_dmac(chan);
 	struct rcm_audio_dma_channel *ch = to_chan(chan);
-	int ch_no = chan->chan_id;
+	int ch_no = chan->chan_id & 0x3;
 	unsigned long lock_flags;
 	unsigned int ena;
 	unsigned long dma_offset = 0x40000000; // to do fix on upper level
@@ -250,11 +250,9 @@ static int rcm_config(struct dma_chan *chan,
 
 	ch->fifo_addr = slave_config->dst_addr;
 
-	// last bit of address shows mode for switching dma controller between i2s and spdif mode
+	// number of channel used for switching dma controller between i2s and spdif mode
 	// 0 means I2S, 1 - SPDIF
-	if (ch->fifo_addr & 1) {
-		phys_addr_t mask = ~1;
-		ch->fifo_addr &= mask;
+	if (chan->chan_id > 3) {
 		requested_mode = RCM_DMA_MODE_SPDIF;
 	} else {
 		requested_mode = RCM_DMA_MODE_I2S;
@@ -295,15 +293,17 @@ static void rcm_issue_pending(struct dma_chan *chan)
 	unsigned long flags;
 	unsigned int ena = 0;
 
-	if (d->mode == RCM_DMA_MODE_SPDIF)
-		ena = RCM_DMA_ENA_SPDIF;
-
 	spin_lock_irqsave(&d->lock, flags);
 	regmap_read(d->regmap, RCM_DMA_ENA_REG, &ena);
 	regmap_read(d->regmap, RCM_DMA_INT_MASK, &origmask);
+	if (d->mode == RCM_DMA_MODE_SPDIF)
+		ena |= RCM_DMA_ENA_SPDIF;
+	else
+		ena &= ~RCM_DMA_ENA_SPDIF;
+
 	ena |= ((RCM_DMA_CHANNEL0_ACTIVE | RCM_DMA_CHANNEL0_SW)
-		<< chan->chan_id);
-	mask = RCM_DMA_INT_CH0_WR_END << (chan->chan_id);
+		<< (chan->chan_id & 0x3));
+	mask = RCM_DMA_INT_CH0_WR_END << (chan->chan_id & 0x3);
 
 	// enable DMA
 	regmap_write(d->regmap, RCM_DMA_INT, mask); // cleanup int
@@ -334,7 +334,7 @@ static struct dma_chan *of_dma_rcm_xlate(struct of_phandle_args *dma_spec,
 		return NULL;
 
 	chan_id = dma_spec->args[0];
-	if (chan_id >= 4)
+	if (chan_id > 4)
 		return NULL;
 
 	return dma_get_slave_channel(&d->channel[chan_id].chan);
@@ -352,33 +352,51 @@ static void rcm_dma_tasklet(unsigned long arg)
 
 	spin_lock_irqsave(&d->lock, flags);
 	d->dma_int = 0;
-	spin_unlock_irqrestore(&d->lock, flags);
 
 	TRACE("%08X", dma_int);
 
-	// proceed channels callbacks
-	for (i = 0; i < 4; i++) {
-		if (dma_int & (RCM_DMA_INT_CH0_WR_END << i)) {
+	if(d->mode == RCM_DMA_MODE_SPDIF)
+	{
+		if (dma_int & RCM_DMA_INT_CH0_WR_END) {
 			struct dma_async_tx_descriptor *desc =
-				&d->channel[i].desc;
+				&d->channel[4].desc;
 			struct dmaengine_desc_callback cb;
 			dmaengine_desc_get_callback(desc, &cb);
 			if (dmaengine_desc_callback_valid(&cb)) {
-				TRACE("invoke %d", i);
+				TRACE("invoke spdif");
+				spin_unlock_irqrestore(&d->lock, flags);
 				dmaengine_desc_callback_invoke(&cb, NULL);
+				spin_lock_irqsave(&d->lock, flags);
 			}
 		}
 	}
-	spin_lock_irqsave(&d->lock, flags);
+	else
+	{
+		// proceed channels callbacks
+		for (i = 0; i < 4; i++) {
+			if (dma_int & (RCM_DMA_INT_CH0_WR_END << (i&0x3))) {
+				struct dma_async_tx_descriptor *desc =
+					&d->channel[i].desc;
+				struct dmaengine_desc_callback cb;
+				dmaengine_desc_get_callback(desc, &cb);
+				if (dmaengine_desc_callback_valid(&cb)) {
+					TRACE("invoke %d", i);
+					spin_unlock_irqrestore(&d->lock, flags);
+					dmaengine_desc_callback_invoke(&cb, NULL);
+					spin_lock_irqsave(&d->lock, flags);
+				}
+			}
+		}
+	}
 	// proceed termitation
-	for (i = 0; i < 4; i++) {
+	for (i = 0; i < 5; i++) {
 		if (d->channel[i].terminate == 1) {
 			d->channel[i].terminate = 0;
-			d->channel[i].active = 1;
+			d->channel[i].active = 0;
 
-			terminate_mask |= (RCM_DMA_CHANNEL0_SW << i);
-			ena_mask |= (RCM_DMA_CHANNEL0_ACTIVE << i);
-			wait_mask |= (0xff << i);
+			terminate_mask |= (RCM_DMA_CHANNEL0_SW << (i&0x3));
+			ena_mask |= (RCM_DMA_CHANNEL0_ACTIVE << (i&0x3));
+			wait_mask |= (0xff << (i&0x3));
 		}
 	}
 	if (terminate_mask) {
@@ -386,7 +404,7 @@ static void rcm_dma_tasklet(unsigned long arg)
 		unsigned int num_active = 0;
 		// Wait for transfer finish
 		TRACE("terminate %08X", terminate_mask);
-		for (i = 0; i < 4; i++)
+		for (i = 0; i < 5; i++)
 			if (d->channel[i].active)
 				num_active++;
 
@@ -450,7 +468,7 @@ static int rcm_audio_dma_probe(struct platform_device *pdev)
 	INIT_LIST_HEAD(&d->slave.channels);
 	spin_lock_init(&d->lock);
 
-	for (i = 0; i < 4; i++) {
+	for (i = 0; i < 5; i++) {
 		d->channel[i].dmac = d;
 		d->channel[i].terminate = 0;
 		d->channel[i].chan.private = pdev->dev.of_node;

@@ -1,7 +1,7 @@
 /*
  * Device Tree Source for RCM 1888TX018 platform
  *
- * Copyright © 2019 Alexey Spirkov <alexeis@astrosoft.ru>
+ * Copyright © 2019 Alexey Spirkov <dev@alsp.net>
  *
  * This file is licensed under the terms of the GNU General Public
  * License version 2.  This program is licensed "as is" without
@@ -281,15 +281,15 @@
 					};
 				};
 
-				//simple-audio-card,dai-link@1 {		/* I2S - cs4384 */
-				//	reg = <1>;
-				//	cpu {
-				//		sound-dai = <&spdif>;
-				//	};
-				//	codec {
-				//		sound-dai = <&spdif_out>;
-				//	};
-				//};
+				simple-audio-card,dai-link@4 {		/* spdif */
+					reg = <4>;
+					cpu {
+						sound-dai = <&spdif>;
+					};
+					codec {
+						sound-dai = <&spdif_out>;
+					};
+				};
 			};
 
 			spdif_out: spdif-out {
@@ -298,6 +298,10 @@
 			};
 
 			vdu0: vdu@0x38013000 {
+				status = "ok";
+			};
+
+			vpu: vpu@0x38020000 {
 				status = "ok";
 			};
 		};

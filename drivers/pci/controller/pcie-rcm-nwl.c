@@ -4,7 +4,7 @@
  * Based on pcie-xilinx-nwl.c
  *
  * Copyright (C) 2019 by AstroSoft
- * Alexey Spirkov <alexeis@astrosoft.ru>
+ * Alexey Spirkov <dev@alsp.net>
 */
 
 #include <linux/delay.h>
