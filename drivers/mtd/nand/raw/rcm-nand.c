@@ -33,7 +33,6 @@
 #include <linux/of_address.h>
 #include <linux/of_irq.h>
 #include <linux/of_platform.h>
-#include "rcm-nandids.h"
 #else // __UBOOT__
 #include <fdtdec.h>
 #include <dm/of.h>
@@ -44,7 +43,6 @@
 #include <linux/ioport.h>
 #include <regmap.h>
 #include <nand.h>
-#include "rcm_nandids.h"
 #endif
 
 #define NAND_CTRL_BASE                  0x3C032000
@@ -881,7 +879,8 @@ static int rcm_nand_reset( struct rcm_nand_chip* chip ) {
 static int rcm_nand_read_id( struct rcm_nand_chip* chip, int cs ) { 
         struct nand_flash_dev* type = 0; 
         int i; 
-        //char* vendor = "unknown";
+        char* vendor = "unknown";
+        const struct nand_manufacturer* nand_manufacturer = { 0 };
  
         for (i=0; i<READ_RETRY_CNT; i++) {
                 rcm_nand_core_read_id( chip, cs, 256 );      // 2
@@ -895,17 +894,15 @@ static int rcm_nand_read_id( struct rcm_nand_chip* chip, int cs ) {
                 return -ENODEV; 
         } 
 
-        for (i = 0; rcm_nand_manuf_ids[i].name != NULL; i++) {     // Lookup the flash vendor
-                if (((uint8_t*)chip->dma_area)[0] == rcm_nand_manuf_ids[i].id) { 
-                        //vendor =  rcm_nand_manuf_ids[i].name; 
-                        break; 
-                } 
+        if( ( nand_manufacturer = nand_get_manufacturer(((uint8_t*)chip->dma_area)[0]) ) != NULL ) {
+                vendor =  nand_manufacturer->name;
         }
+        NAND_DBG_PRINT_INF( "rcm_nand_read_id: vendor %s\n", vendor );
  
-        for (i = 0; rcm_nand_flash_ids[i].name != NULL; i++) {     // Lookup the flash id
-                if (((uint8_t*)chip->dma_area)[1] == rcm_nand_flash_ids[i].dev_id && 
-                        rcm_nand_flash_ids[i].mfr_id == 0) { 
-                        type = &rcm_nand_flash_ids[i]; 
+        for (i = 0; nand_flash_ids[i].name != NULL; i++) {     // Lookup the flash id
+                if (((uint8_t*)chip->dma_area)[1] == nand_flash_ids[i].dev_id && 
+                        nand_flash_ids[i].mfr_id == 0) { 
+                        type = &nand_flash_ids[i]; 
                         break; 
                 } 
         } 
@@ -1392,7 +1389,7 @@ static int rcm_nand_probe( rcm_nand_device* ofdev ) {
                 goto error_with_free_dma_mem;
         }
 
-        dev_info( &ofdev->dev, "found NAND controller: id=%08x,version=%08x\n", chip->ctrl_id, chip->ctrl_ver );
+        dev_info( &ofdev->dev, "found NAND controller:: id=%08x,version=%08x\n", chip->ctrl_id, chip->ctrl_ver );
 
         if( ( err = rcm_nand_reset( chip ) ) != 0 ) {
                 dev_err( &ofdev->dev, "rcm_nand_reset failed,err=%d\n", err );
