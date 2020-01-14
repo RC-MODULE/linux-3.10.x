@@ -879,9 +879,10 @@ static int rcm_nand_reset( struct rcm_nand_chip* chip ) {
 static int rcm_nand_read_id( struct rcm_nand_chip* chip, int cs ) { 
         struct nand_flash_dev* type = 0; 
         int i; 
-        char* vendor = "unknown";
+        char* vendor = "Unknown";
+#ifndef __UBOOT__
         const struct nand_manufacturer* nand_manufacturer = { 0 };
- 
+#endif
         for (i=0; i<READ_RETRY_CNT; i++) {
                 rcm_nand_core_read_id( chip, cs, 256 );      // 2
                 //PRINT_BUF_256( ((uint8_t*)(chip->dma_area)),0 )
@@ -894,9 +895,18 @@ static int rcm_nand_read_id( struct rcm_nand_chip* chip, int cs ) {
                 return -ENODEV; 
         } 
 
+#ifndef __UBOOT__
         if( ( nand_manufacturer = nand_get_manufacturer(((uint8_t*)chip->dma_area)[0]) ) != NULL ) {
                 vendor =  nand_manufacturer->name;
         }
+#else
+       for (i = 0; nand_manuf_ids[i].name != NULL; i++) {     // Lookup the flash vendor,function nand_get_manufacturer is absent
+                if (((uint8_t*)chip->dma_area)[0] == nand_manuf_ids[i].id) { 
+                        vendor = nand_manuf_ids[i].name;
+                        break; 
+                } 
+        }
+#endif
         NAND_DBG_PRINT_INF( "rcm_nand_read_id: vendor %s\n", vendor );
  
         for (i = 0; nand_flash_ids[i].name != NULL; i++) {     // Lookup the flash id
@@ -1680,9 +1690,9 @@ static int nand_spl_read_param( uint32_t cs, struct rcm_spl_nand_chip* chip, uin
                 chip->oob_size =  (8 << (dst[3] & 0x01)) * (chip->write_size >> 9); 
                 chip->erase_size =  (64 * 1024) << (dst[3] & 0x03);
 
-                for (i = 0; rcm_nand_flash_ids[i].name != NULL; i++) {
-                        if( ((uint8_t*)dst)[1] == rcm_nand_flash_ids[i].dev_id && rcm_nand_flash_ids[i].mfr_id == 0 ) { 
-                                type = &rcm_nand_flash_ids[i]; 
+                for (i = 0; nand_flash_ids[i].name != NULL; i++) {
+                        if( ((uint8_t*)dst)[1] == nand_flash_ids[i].dev_id && nand_flash_ids[i].mfr_id == 0 ) { 
+                                type = &nand_flash_ids[i]; 
                                 break;
                         } 
                 }
@@ -1763,7 +1773,7 @@ int nand_spl_load_image( uint32_t offs, unsigned int size, void *dst ) {
         int err;
         struct rcm_spl_nand_chips chips = { 0 };
         const struct rcm_spl_nand_chip* chip = &chips.chip[0];
-        SPL_DBG_PRINT( "%s: start offs=%08x,size=%08x,dst=%08x\n", __FUNCTION__, offs, size, (uint32_t)dst )
+        SPL_DBG_PRINT( "%s:: start offs=%08x,size=%08x,dst=%08x\n", __FUNCTION__, offs, size, (uint32_t)dst )
 
         if( ( err = nand_spl_init_chips_param( &chips, dst ) ) != 0 )
                 return err;
