@@ -1,0 +1,175 @@
+/*
+ *
+ */
+
+/dts-v1/;
+#include "skeleton.dtsi"
+
+/ {
+    model = "RC-Module 1879VM8YA SoC";
+    compatible = "rcm,1879VM8YA";
+/*
+    chosen {
+        bootargs = "earlyprintk debug";
+        stdout-path = &uart0;
+    };
+*/
+    aliases {
+        uart0 = &spiuart;
+        mmc0 = &mmc;
+    }; 
+/*
+    memory {
+        device_type = "memory";
+*/
+        /* (1GiB-16MiB) memory @ 0x01000000 */
+/*
+        reg = <0x01000000 0x3f000000>;
+    };
+*/
+    cpus {
+        #address-cells = <1>;
+        #size-cells = <0>;
+
+        cpu@0 {
+            device_type = "cpu";
+            compatible = "arm,cortex-a5";
+            reg = <0>;
+        };
+    };
+
+    axi {
+        compatible = "arm,amba-bus";
+        #address-cells = <1>;
+        #size-cells = <1>;
+        ranges = <0 0x0 0xFFFFFFFF>;
+
+        bus-frequency = <10000000>;
+
+        gic0: interrupt-controller@b0000 {
+            compatible = "arm,pl390";
+            interrupt-controller;
+            irq_start = <0>;
+            #interrupt-cells = <3>;
+            #address-cells = <1>;
+            reg = <0x000b0000 0x1000>,
+                  <0x000b1000 0x1000>;
+        };
+/*
+        L2: cache-controller {
+                compatible = "arm,l220-cache";
+                reg = <0xfff80000 0x10000>;
+                cache-unified;
+                cache-level = <2>;
+            interrupts = <0 55 4>;
+            cache-size = <0x20000>;
+            cache-sets = <512>;
+            cache-block = <32>;
+            cache-line-size = <32>;
+        };
+*/
+        apb {
+            compatible = "arm,amba-bus", "simple-bus";
+            #address-cells = <1>;
+            #size-cells = <1>;
+            ranges = <0 0x0 0xffffffff>;
+
+            timer@000cd000 {
+                compatible = "arm,sp804", "arm,primecell";
+                reg = <0x000cd000 0x1000>;
+                interrupts = <0 4 4>, <0 5 4>;
+                interrupt-parent = <&gic0>;
+                interrupt-names = "timer0", "timer1";
+                clocks = <&clk_apb>;
+                clock-names = "apb_pclk";
+            };
+
+            wd@000ce000 {
+                reg = <0x000ce000 0x1000>;
+                compatible = "arm,sp805", "arm,primecell";
+/*
+                interrupts = <0 6 4>;
+*/
+                clocks = <&clk_apb>, <&clk_apb>;
+                clock-names = "wdogclk", "apb_pclk";
+            };
+
+            ssp@000cf000 {
+                compatible = "arm,pl022", "arm,primecell";
+                bus-id = <0>;
+                reg = <0x000cf000 0x1000>;
+                #address-cells = <1>;
+                #size-cells = <0>;
+                interrupt-parent = <&gic0>;
+                interrupts = <0 34 4>;
+                clocks = <&clk_apb>;
+                clock-names = "apb_pclk";
+                num-cs = <3>;
+                
+                flash-slot@0 {
+                    compatible = "st,m25p80";
+                    reg = <0>;
+                    spi-max-frequency = <9000000>; /* DDDDDD <25000000>; */
+                };
+                mmc: mmc-slot@1 {
+                    compatible = "mmc-spi-slot";
+                    reg = <1>;
+                    spi-max-frequency = <9000000>; /* DDDDDD <25000000>; */
+                };
+                spiuart: uart-slot@2
+                {
+                    compatible = "rcm,serial_pseudo_spi";           
+                    reg = <2>;
+                    spi-max-frequency = <40000>;
+                    spi-cpol;
+                    spi-cpha;
+                };
+            };
+
+            clk_axi: clk@0 {
+                /* Reference 800MHz clock */
+                compatible = "fixed-clock";
+                #clock-cells = <0>;
+                clock-frequency = <800000000>;
+                clock-output-names = "clk_axi";
+            };
+
+            clk_apb: clk@1 {
+                /* Reference 200MHz clock */
+                compatible = "fixed-clock";
+                #clock-cells = <0>;
+                clock-frequency = <200000000>;
+                clock-output-names = "clk_apb";
+            };
+
+            ethernet: greth@000d0000 {
+                local-mac-address = [ ec 17 66 64 08 10 ];
+                status = "okay";
+
+                #address-cells = <1>;
+                #size-cells = <1>;
+                compatible = "greth";
+                reg = <0x000d0000 0x1000>;
+                cell-index = <0>;
+                device_type = "network";
+                clocks = <&clk_axi>;
+                clock-names = "clk_axi";
+                interrupt-parent = <&gic0>;
+/*
+                interrupts = <0 35 4>;
+*/
+
+                mdio {
+                    compatible = "greth-mdio";
+                    #address-cells = <1>;
+                    #size-cells = <0>;
+
+                    phy0: ethernet-phy@0 {
+                        reg = <0>;  /* 0x1f */
+                    };
+                };
+            };
+        };
+    };
+};
+

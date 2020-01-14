@@ -542,6 +542,17 @@ config ARCH_PXA
 	help
 	  Support for Intel/Marvell's PXA2xx/PXA3xx processor line.
 
+config ARCH_RCM_ARM
+	bool "RC-Module ARM platforms"
+	select COMMON_CLK
+	select GENERIC_CLOCKEVENTS
+	select ARM_TIMER_SP804
+	select ARM_GIC
+	select ARM_AMBA
+	select CPU_V7
+	help
+	  Support for ARM based SoCs family developed by RC-Module
+
 config ARCH_RPC
 	bool "RiscPC"
 	depends on MMU
@@ -804,6 +815,8 @@ source "arch/arm/mach-pxa/Kconfig"
 source "arch/arm/plat-pxa/Kconfig"
 
 source "arch/arm/mach-qcom/Kconfig"
+
+source "arch/arm/mach-rcm/Kconfig"
 
 source "arch/arm/mach-realview/Kconfig"
 
