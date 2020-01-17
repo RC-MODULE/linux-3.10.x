@@ -530,4 +530,10 @@ config MTD_NAND_MTK
 	  Enables support for NAND controller on MTK SoCs.
 	  This controller is found on mt27xx, mt81xx, mt65xx SoCs.
 
+config MTD_RCM_NAND
+	tristate "RC-Module SoC NAND support"
+	depends on 1888TX018
+	help
+		Support for NAND flash attached to the 1888TX018 SoC's
+
 endif # MTD_NAND

@@ -106,6 +106,12 @@
 		>;  
 	};
 
+	lsif0clock: lsif0clock@100M {
+		#clock-cells = <0>;
+		compatible = "fixed-clock";
+		clock-frequency = <100000000>;
+	};
+
 	lsif1clock: lsif1clock@100M {
 		#clock-cells = <0>;
 		compatible = "fixed-clock";
@@ -231,7 +237,6 @@
 				lsif0_mgpio0_sram_nor: lsif0_mgpio0_sram_nor {
 					pinctrl-single,bits = <0 0xFF 0xFF>;
 				};
-
 			};
 
 			lsif0_mgpio1: lsif0_mgpio1@0x3C041420 {
@@ -297,6 +302,10 @@
 				lsif0_mgpio3_sram_nor: lsif0_mgpio3_sram_nor {
 					pinctrl-single,bits = <0 0xFF 0xFF>;
 				};
+
+				lsif0_mgpio3_nand: lsif0_mgpio3_nand {		// d7..d0
+					pinctrl-single,bits = <0 0xFF 0xFF>;
+				};
 			};
 
 			lsif0_mgpio4: lsif0_mgpio4@0x3C044420 {
@@ -328,6 +337,11 @@
 				lsif0_mgpio4_sram_nor: lsif0_mgpio4_sram_nor {
 					pinctrl-single,bits = <0 0xFF 0xFF>;
 				};
+
+				lsif0_mgpio4_nand: lsif0_mgpio4_nand {		// ready2n,ready1n
+					pinctrl-single,bits = <0 0x03 0x03>;
+				};
+
 			};
 
 			lsif0_mgpio5: lsif0_mgpio5@0x3C045420 {
@@ -397,6 +411,10 @@
 				lsif0_mgpio7_sram_nor: lsif0_mgpio7_sram_nor {
 					pinctrl-single,bits = <0 0xFF 0xFF>;
 				};
+
+				lsif0_mgpio7_nand: lsif0_mgpio7_nand {		// ce1n, ce2n, cle, ren
+					pinctrl-single,bits = <0 0xF0 0xF0>;
+				};
 			};
 
 			lsif0_mgpio8: lsif0_mgpio8@0x3C048420 {
@@ -411,6 +429,10 @@
 
 				lsif0_mgpio8_sram_nor: lsif0_mgpio8_sram_nor {
 					pinctrl-single,bits = <0 0xFF 0xFF>;
+				};
+
+				lsif0_mgpio8_nand: lsif0_mgpio8_nand {
+					pinctrl-single,bits = <0 0x83 0x83>;	// wpn, wen, ale
 				};
 			};
 
@@ -579,7 +601,56 @@
 				// interrupts = <104 0>; // IRQ_TYPE_EDGE_RISING
 				status = "disabled";
 			};
-		};
+
+			nand: nand@0x3C032000 {
+				compatible = "rcm,nand";
+				#address-cells = <1>;
+				#size-cells = <1>;
+				reg = <0x3C032000 0x1000>;
+				ranges = <0x00000000 0x20000000 0x20000000>;
+
+				clocks = <&lsif0clock>;
+				config = <&lsif0_config>;
+				timings = < 200		/* tADL_min (ONFI_2_0_Gold.pdf,page 47)*/
+							20		/* tALH_min */
+							50		/* tALS_min */
+							20		/* tCH_min */
+							20		/* tCLH_min */
+							50		/* tCLS_min */
+							70		/* tCS_min */
+							20		/* tDH_min */
+							40		/* tDS_min */
+							100		/* tWC_min */
+							30		/* tWH_min */
+							50		/* tWP_min */
+							100		/* tWW_min */
+							25		/* tAR_min */
+							20		/* tCLR_min */
+							0		/* tCOH_min */
+							10		/* tIR_min */
+							100		/* tRC_min  не видать,как влияет*/
+							30		/* tREH_min не видать,как влияет*/
+							0		/* tRHOH_min */
+							200		/* tRHW_min */
+							0		/* tRLOH_min не видать,как влияет*/
+							50		/* tRP_min */
+							40		/* tRR_min */
+							120		/* tWHR_min */
+							100		/* tCEA_max */
+							100		/* tCHZ_max */
+							40		/* tREA_max */
+							200		/* tRHZ_max */
+							200 >;  /* tWB_max */
+				interrupt-parent = <&MPIC>;
+				interrupts = <109 0>; 									// 0=low-to-high edge,1=active-low level,2=active-high level,3=high-to-low edge
+				pinctrl-0 =
+					<&lsif0_mgpio3_nand>,
+					<&lsif0_mgpio4_nand>,
+					<&lsif0_mgpio7_nand>,
+					<&lsif0_mgpio8_nand>;
+				status = "disabled";
+			};
+		};	// lsif0
 
 		lsif1 {
 			compatible = "arm,amba-bus", "ibm,plb6";
