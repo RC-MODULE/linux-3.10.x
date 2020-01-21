@@ -71,10 +71,12 @@ static int greth_edcl = 1;
 module_param(greth_edcl, int, 0);
 MODULE_PARM_DESC(greth_edcl, "GRETH EDCL usage indicator. Set to 1 if EDCL is used.");
 
+#ifdef CONFIG_PPC
 // EXT_MEM_MUX and MII_MUX data
 static spinlock_t mux_data_lock = __SPIN_LOCK_UNLOCKED(mux_data_lock);
 static int ext_mem_mux_counter = 0; // how times the mux was set (0 - it is free for setting), protected by mux_data_lock
 static int mii_mux_counter = 0; // how times the mux was set (0 - it is free for settting), protected by mux_data_lock
+#endif
 
 static int greth_open(struct net_device *dev);
 static netdev_tx_t greth_start_xmit(struct sk_buff *skb,
@@ -90,7 +92,7 @@ static int greth_close(struct net_device *dev);
 static int greth_set_mac_add(struct net_device *dev, void *p);
 static void greth_set_multicast_list(struct net_device *dev);
 
-#ifndef CONFIG_PPC
+#if !defined(CONFIG_PPC) && !defined(CONFIG_ARM)
 #define GRETH_REGLOAD(a)	    (be32_to_cpu(__raw_readl(&(a))))
 #define GRETH_REGSAVE(a, v)         (__raw_writel(cpu_to_be32(v), &(a)))
 #else
@@ -810,7 +812,6 @@ static int greth_rx(struct net_device *dev, int limit)
 		}
 		if (unlikely(bad)) {
 			dev->stats.rx_errors++;
-
 		} else {
 
 			pkt_len = status & GRETH_BD_LEN;
@@ -1519,6 +1520,8 @@ static int greth_of_probe(struct platform_device *ofdev)
 		}
 		greth->control = syscon_node_to_regmap(tmp);
 	}
+#elif defined(CONFIG_ARM)
+	greth->regs = devm_ioremap_resource(greth->dev, ofdev->resource);
 #else
 	greth->regs = of_ioremap(&ofdev->resource[0], 0,
 				 resource_size(&ofdev->resource[0]),
@@ -1533,7 +1536,7 @@ static int greth_of_probe(struct platform_device *ofdev)
 	}
 
 	regs = greth->regs;
-#ifdef CONFIG_PPC
+#if defined(CONFIG_PPC) || defined(CONFIG_ARM)
 	greth->irq = platform_get_irq(ofdev, 0);
 #else	
 	greth->irq = ofdev->archdata.irqs[0];
@@ -1592,8 +1595,10 @@ static int greth_of_probe(struct platform_device *ofdev)
 		goto error2;
 	}
 
+#ifdef CONFIG_PPC
 	/* setup dma -offset for bus */
 	set_dma_offset(greth->dev, - (greth->dev->dma_pfn_offset << PAGE_SHIFT));
+#endif
 
 	/* Allocate TX descriptor ring in coherent memory */
 	greth->tx_bd_base = dma_zalloc_coherent(greth->dev, 1024,
@@ -1689,6 +1694,8 @@ error2:
 #ifdef CONFIG_PPC
 	devm_iounmap(greth->dev, greth->regs);
 	mux_free(greth);
+#elif defined(CONFIG_ARM)
+	devm_iounmap(greth->dev, greth->regs);
 #else
 	of_iounmap(&ofdev->resource[0], greth->regs, resource_size(&ofdev->resource[0]));
 #endif
@@ -1717,6 +1724,8 @@ static int greth_of_remove(struct platform_device *of_dev)
 #ifdef CONFIG_PPC
 	devm_iounmap(greth->dev, greth->regs);
 	mux_free(greth);
+#elif defined(CONFIG_ARM)
+	devm_iounmap(greth->dev, greth->regs);
 #else
 	of_iounmap(&of_dev->resource[0], greth->regs, resource_size(&of_dev->resource[0]));
 #endif
