@@ -148,16 +148,14 @@
 
                 #address-cells = <1>;
                 #size-cells = <1>;
-                compatible = "greth";
+                compatible = "rcm,greth";
                 reg = <0x000d0000 0x1000>;
                 cell-index = <0>;
                 device_type = "network";
                 clocks = <&clk_axi>;
                 clock-names = "clk_axi";
                 interrupt-parent = <&gic0>;
-/*
-                interrupts = <0 35 4>;
-*/
+                interrupts = <0 35 1>;
 
                 mdio {
                     compatible = "greth-mdio";

@@ -4,7 +4,7 @@
 
 config GRETH
 	tristate "Aeroflex Gaisler GRETH Ethernet MAC support"
-	depends on SPARC || PPC
+	depends on SPARC || PPC || ARM
 	select PHYLIB
 	select CRC32
 	---help---
