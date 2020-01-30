@@ -358,7 +358,7 @@ void __init mem_init(void)
 		for (pfn = highmem_mapnr; pfn < max_mapnr; ++pfn) {
 			phys_addr_t paddr = (phys_addr_t)pfn << PAGE_SHIFT;
 			struct page *page = pfn_to_page(pfn);
-			if (!memblock_is_reserved(paddr))
+			if (memblock_is_memory(paddr) && !memblock_is_reserved(paddr))
 				free_highmem_page(page);
 		}
 	}
@@ -557,8 +557,8 @@ static int __init add_system_ram_resources(void)
 
 	for_each_memblock(memory, reg) {
 		struct resource *res;
-		unsigned long base = reg->base;
-		unsigned long size = reg->size;
+		phys_addr_t base = reg->base;
+		phys_addr_t size = reg->size;
 
 		res = kzalloc(sizeof(struct resource), GFP_KERNEL);
 		WARN_ON(!res);

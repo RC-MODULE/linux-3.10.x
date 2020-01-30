@@ -44,3 +44,31 @@ _GLOBAL(as1_writeb)
 	sync
 	isync
 	blr
+
+_GLOBAL(as1_readl)
+	mfmsr	r7
+	ori	r0,r7,MSR_DS
+	sync
+	mtmsr	r0
+	sync
+	isync
+	lwz	r3,0(r3)
+	sync
+	mtmsr	r7
+	sync
+	isync
+	blr
+
+_GLOBAL(as1_writel)
+	mfmsr	r7
+	ori	r0,r7,MSR_DS
+	sync
+	mtmsr	r0
+	sync
+	isync
+	stw	r3,0(r4)
+	sync
+	mtmsr	r7
+	sync
+	isync
+	blr
