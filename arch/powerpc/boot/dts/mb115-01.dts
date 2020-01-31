@@ -24,16 +24,16 @@
 	plb {
 
 		sram_nor_arbiter {
-			sram-nor-mux = <0>;	/*1*/		// 0 to route extmem wires to LSIF0, 1 - to MCIF
-			/* in case of LSIF0 following lines will be needed */
-			ext-mem-mux-mode = <1>; /*//*/
-			ce-manage = <2>; //0
 			status = "ok";
+			sram-nor-mux = <0>; // 0 to route extmem wires to LSIF0, 1 - to MCIF
+			// in case of LSIF0 following lines will be needed
+			ext-mem-mux-mode = <0>; // 0 - SRAN_NOR, 1 - NAND GBIT_GRETH0 GBIT_GRETH1, 2 - GRETH0 GRETH1 NAND
+			ce-manage = <2>; // 0
 		};
 
 		sram_plb_nor0: sram_plb_nor0@0x80170000 {
-			chip-num = <15>;	/* bitmask */
-			status = "ok";
+			// status = "ok";
+			chip-num = <15>; // bitmask
 			sram: sram@0 {
 				compatible = "mmio-sram";
 				#address-cells = <1>;
@@ -44,13 +44,13 @@
 				exported@0 {
 					reg = <0x0 0x10000000>;
 					export;
-				};				
+				};
 			};
 		};
 
 		sram_plb_nor1: sram_plb_nor1@0x80190000 {
-			chip-num = <3>;	/* bitmask */
-			status = "ok";
+			// status = "ok";
+			chip-num = <3>; // bitmask
 
 			nor_flash0: nor_flash0@0 {
 				compatible = "cfi-flash";
@@ -83,7 +83,7 @@
 				partition@2050000 {
 					label = "rootfs";
 					reg = <0x2080000 0xDF80000>;
-				};				 
+				};
 			};
 
 			nor_flash1: nor_flash1@10000000 {
@@ -96,18 +96,19 @@
 
 				partition@10000000 {
 					label = "data";
-					reg = <0x00000 0x10000000>; /* 256 Mb */
+					reg = <0x00000 0x10000000>; // 256 Mb
 				};
 			};
 		};
 
 		lsif0 {
 			greth_gbit1: greth_gbit1@0x3C034000 {
-			 	mac-address = [ EC 17 66 77 05 02 ];
-			 	status = "ok";
-			};
-			nand: nand@0x3C032000 {
 				status = "ok";
+				mac-address = [ EC 17 66 77 05 02 ];
+			};
+
+			nand: nand@0x3C032000 {
+				// status = "ok";
 				partitions {
 					compatible = "fixed-partitions";
 					#address-cells = <1>;
@@ -143,10 +144,10 @@
 						reg = <0x0FA20000 0x005E0000>;
 					};
 				};
-			};	
+			};
 		};
 
-		lsif1 {						
+		lsif1 {
 			i2c0: i2c@0x3C05A000 {
 				status = "ok";
 
@@ -155,14 +156,20 @@
 					#sound-dai-cells = <1>;
 					reg = <0x18>;
 				};
-				
+
 				rtc@68 {
 					compatible = "dallas,ds1338";
 					reg = <0x68>;
 				};
 
+				// HDMI channel 0
 				adv7513_0: adv7513@39 {
-					status = "ok";
+					// status = "ok";
+				};
+
+				// HDMI channel 1
+				adv7513_1: adv7513@3D {
+					// status = "ok";
 				};
 			};
 
@@ -186,13 +193,13 @@
 					reg = <0>;
 					spi-max-frequency = <20000000>;
 				};
-				
-			};			
+
+			};
 
 			mmc0: mmc0@0x3C064000 {
-				max-frequency = <8000000>;
-				cd-gpios = <&gpio1 1 0>;	/* card detect */
 				status = "ok";
+				max-frequency = <8000000>;
+				cd-gpios = <&gpio1 1 0>; // card detect
 			};
 
 			gpio0: gpio0@0x3C065000 {
@@ -204,9 +211,9 @@
 			};
 
 			usb_otg_hs: usb_otg_hs@0x3C06D000 {
-				mode = <1>;			/* 1 - host, 2 - device */
 				status = "ok";
-			};		
+				mode = <1>; // 1 - host, 2 - device
+			};
 		};
 
 		mms {
@@ -233,14 +240,14 @@
 			};
 
 			sound {
+				// status = "ok";
 				compatible = "simple-audio-card";
 				simple-audio-card,name = "RCM Audio";
 				#address-cells = <1>;
 				#size-cells = <0>;
 				#sound-dai-cells = <0>;
-				status = "ok";
 
-				simple-audio-card,dai-link@0 {		/* I2S0 - cs4384_0 */
+				simple-audio-card,dai-link@0 { // I2S0 - cs4384_0
 					reg = <0>;
 					format = "i2s";
 					cpu {
@@ -250,7 +257,7 @@
 						sound-dai = <&cs4384 0>;
 					};
 				};
-				simple-audio-card,dai-link@1 {		/* I2S1 - cs4384_1 */
+				simple-audio-card,dai-link@1 { // I2S1 - cs4384_1
 					reg = <1>;
 					format = "i2s";
 					cpu {
@@ -260,7 +267,7 @@
 						sound-dai = <&cs4384 1>;
 					};
 				};
-				simple-audio-card,dai-link@2 {		/* I2S2 - cs4384_2 */
+				simple-audio-card,dai-link@2 { // I2S2 - cs4384_2
 					reg = <2>;
 					format = "i2s";
 					cpu {
@@ -270,7 +277,7 @@
 						sound-dai = <&cs4384 2>;
 					};
 				};
-				simple-audio-card,dai-link@3 {		/* I2S3 - cs4384_3 */
+				simple-audio-card,dai-link@3 { // I2S3 - cs4384_3
 					reg = <3>;
 					format = "i2s";
 					cpu {
@@ -281,7 +288,7 @@
 					};
 				};
 
-				simple-audio-card,dai-link@4 {		/* spdif */
+				simple-audio-card,dai-link@4 { // spdif
 					reg = <4>;
 					cpu {
 						sound-dai = <&spdif>;
@@ -297,15 +304,21 @@
 				compatible = "linux,spdif-dit";
 			};
 
+			// HDMI channel 0 (actually VDU index 1)
 			vdu0: vdu@0x38013000 {
-				status = "ok";
+				// status = "ok";
+			};
+
+			// HDMI channel 1 (actually VDU index 0)
+			vdu1: vdu@0x38011000 {
+				// status = "ok";
 			};
 
 			vpu: vpu@0x38020000 {
 				status = "ok";
 			};
 		};
-		
+
 		apb0 {
 
 			watchdog: watchdog@0x38002000 {
@@ -317,12 +330,12 @@
 			};
 
 			cpufreq: cpufreq@0x38006000 {
-				/*	     freq       fb  pre post div	*/
-				freqs = <200000     32  1   2   0>,
-						<400000     32  1   1   0>,
-						<800000     64  1   1   0>;
-
 				status = "ok";
+				      // freq      fb pre post div
+				freqs = <200000     32  1   2    0>,
+				        <400000     32  1   1    0>,
+				        <800000     64  1   1    0>;
+
 			};
 		};
 
@@ -340,41 +353,41 @@
 
 		dspcores {
 			nmc3_0_core0: nmc3_0_core0@0x39000000 {
-				core-name = "K1879-nmc";
 				status = "ok";
+				core-name = "K1879-nmc";
 			};
 			nmc3_0_core1: nmc3_0_core1@0x39020000 {
-				core-name = "K1879-nmc";
 				status = "ok";
+				core-name = "K1879-nmc";
 			};
 			nmc3_1_core0: nmc3_1_core0@0x39040000 {
-				core-name = "K1879-nmc";
 				status = "ok";
+				core-name = "K1879-nmc";
 			};
 			nmc3_1_core1: nmc3_1_core1@0x39060000 {
-				core-name = "K1879-nmc";
 				status = "ok";
+				core-name = "K1879-nmc";
 			};
 		};
 	};
 
 	thermal-zones {
-			cpu-thermal {
-					polling-delay-passive = <0>;
-					polling-delay =  <1000>; 
-					thermal-sensors = <&thermal>;
-					
-					trips {
-							cpu-crit {
-									temperature     = <100000>;
-									hysteresis      = <0>;
-									type            = "critical";
-							};
-					};
+		cpu-thermal {
+			polling-delay-passive = <0>;
+			polling-delay =  <1000>;
+			thermal-sensors = <&thermal>;
 
-					cooling-maps {
-					};
+			trips {
+				cpu-crit {
+					temperature = <100000>;
+					hysteresis = <0>;
+					type = "critical";
+				};
 			};
+
+			cooling-maps {
+			};
+		};
 	};
 
 	chosen {
