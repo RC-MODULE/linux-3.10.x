@@ -88,6 +88,10 @@
 #define SSP_ITOP(r)	(r + 0x088)
 #define SSP_TDR(r)	(r + 0x08C)
 
+#ifdef CONFIG_TARGET_1879VM8YA
+#define SSP_DMACS(r)	(r + 0x140)
+#endif
+
 #define SSP_PID0(r)	(r + 0xFE0)
 #define SSP_PID1(r)	(r + 0xFE4)
 #define SSP_PID2(r)	(r + 0xFE8)
@@ -456,6 +460,7 @@ static void null_cs_control(u32 command)
  * (vendor extension). Each of the 5 LSB in the register controls one chip
  * select signal.
  */
+#ifndef CONFIG_TARGET_1879VM8YA
 static void internal_cs_control(struct pl022 *pl022, u32 command)
 {
 	u32 tmp;
@@ -467,6 +472,12 @@ static void internal_cs_control(struct pl022 *pl022, u32 command)
 		tmp |= BIT(pl022->cur_cs);
 	writew(tmp, SSP_CSR(pl022->virtbase));
 }
+#else
+static void internal_cs_control(struct pl022 *pl022, u32 command)
+{
+	writew(BIT(pl022->cur_cs), SSP_DMACS(pl022->virtbase));
+}
+#endif
 
 static void pl022_cs_control(struct pl022 *pl022, u32 command)
 {
@@ -1835,7 +1846,6 @@ static int pl022_setup(struct spi_device *spi)
 	unsigned int bits = spi->bits_per_word;
 	u32 tmp;
 	struct device_node *np = spi->dev.of_node;
-
 	if (!spi->max_speed_hz)
 		return -EINVAL;
 
@@ -2142,6 +2152,10 @@ static int pl022_probe(struct amba_device *adev, const struct amba_id *id)
 		status = -ENOMEM;
 		goto err_no_mem;
 	}
+
+#ifdef CONFIG_TARGET_1879VM8YA
+	pl022->vendor->internal_cs_ctrl = true;
+#endif
 
 	/*
 	 * Bus Number Which has been Assigned to this SSP controller
