@@ -3,7 +3,7 @@
  *  under the terms of the GNU General Public License version 2 as published
  *  by the Free Software Foundation.
  *
- *  Copyright (C) 2019 Alexey Spirkov <dev@alsp.net>
+ *  Copyright (C) 2020 Alexander Shtreys <alexander.shtreys@mir.dev>
  */
 
 #include <linux/module.h>
@@ -595,7 +595,7 @@ static struct spi_driver pseudo_spi_serial_driver = {
 
 module_spi_driver(pseudo_spi_serial_driver);
 
-MODULE_AUTHOR("Alexey Spirkov");
+MODULE_AUTHOR("Alexander Shtreys");
 MODULE_DESCRIPTION("Serial pseudo SPI driver");
 MODULE_LICENSE("GPL");
 MODULE_ALIAS("spi:serial_pseudo_spi");

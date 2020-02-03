@@ -3,7 +3,7 @@
  *  under the terms of the GNU General Public License version 2 as published
  *  by the Free Software Foundation.
  *
- *  Copyright (C) 2019 Alexey Spirkov <dev@alsp.net>
+ *  Copyright (C) 2020 Alexander Shtreys <alexander.shtreys@mir.dev>
  */
 
 #include <linux/tty.h>
