@@ -1528,6 +1528,12 @@ config SERIAL_OWL_CONSOLE
 	  Say 'Y' here if you wish to use Actions Semiconductor S500/S900 UART
 	  as the system console.
 
+config SERIAL_PSEUDO_SPI
+	bool "Serial over SPI support"
+	depends on SPI=y
+	help
+	  Select this to enable a UART simulation over SPI.
+
 endmenu
 
 config SERIAL_MCTRL_GPIO
