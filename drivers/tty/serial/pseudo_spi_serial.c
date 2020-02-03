@@ -281,7 +281,7 @@ static void pseudo_spi_serial_io(unsigned long context)
 		return;
 	}
 
-	tx_count = kfifo_out(&data->tx_fifo, data->tx_buffer, PSEUDO_SPI_SERIAL_FIFO_SIZE);
+	tx_count = kfifo_out_peek(&data->tx_fifo, data->tx_buffer, PSEUDO_SPI_SERIAL_FIFO_SIZE);
 
 	spi_message_init(&data->spi_msg);
 	data->spi_msg.context  = data;
@@ -333,10 +333,19 @@ static void pseudo_spi_serial_io(unsigned long context)
 
 	retval = spi_async(data->spi, &data->spi_msg);
 
-	if (retval)
+	if (retval == -EBUSY)
+	{
+		data->spi_msg.context = NULL;
+		tasklet_schedule(&data->io_tasklet);
+	}
+	else if (retval)
 	{
 		data->spi_msg.context = NULL;
 		pr_err("%s: spi_async() failed: %d\n", __func__, retval);
+	}
+	else
+	{
+		kfifo_reset(&data->tx_fifo);
 	}
 }
 
