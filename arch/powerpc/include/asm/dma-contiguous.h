@@ -1,0 +1,12 @@
+/* SPDX-License-Identifier: GPL-2.0 */
+#ifndef _ASM_GENERIC_DMA_CONTIGUOUS_H
+#define _ASM_GENERIC_DMA_CONTIGUOUS_H
+
+// [***] EasyNMC prototype
+
+#include <linux/types.h>
+
+static inline void
+dma_contiguous_early_fixup(phys_addr_t base, unsigned long size) { }
+
+#endif
