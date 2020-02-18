@@ -1986,6 +1986,7 @@ static int pl022_setup(struct spi_device *spi)
 			       SSP_DMACR_MASK_RXDMAE, 0);
 		SSP_WRITE_BITS(chip->dmacr, SSP_DMA_DISABLED,
 			       SSP_DMACR_MASK_TXDMAE, 1);
+		pl022->adev->dev.dma_mask = 0;
 	}
 
 	chip->cpsr = clk_freq.cpsdvsr;
