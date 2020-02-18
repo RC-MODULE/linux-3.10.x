@@ -1,13 +1,9 @@
+/* SPDX-License-Identifier: GPL-2.0-or-later */
 /*
  * This file contains assembly-language implementations
  * of IP-style 1's complement checksum routines.
  *	
  *    Copyright (C) 1995-1996 Gary Thomas (gdt@linuxppc.org)
- *
- *  This program is free software; you can redistribute it and/or
- *  modify it under the terms of the GNU General Public License
- *  as published by the Free Software Foundation; either version
- *  2 of the License, or (at your option) any later version.
  *
  * Severely hacked about by Paul Mackerras (paulus@cs.anu.edu.au).
  */
@@ -443,6 +439,9 @@ _GLOBAL(csum_ipv6_magic)
 	addc	r0, r8, r9
 	ld	r10, 0(r4)
 	ld	r11, 8(r4)
+#ifdef CONFIG_CPU_LITTLE_ENDIAN
+	rotldi	r5, r5, 8
+#endif
 	adde	r0, r0, r10
 	add	r5, r5, r7
 	adde	r0, r0, r11

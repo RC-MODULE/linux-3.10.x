@@ -1,12 +1,13 @@
 /* SPDX-License-Identifier: GPL-2.0 */
 /*
- * Thunderbolt Cactus Ridge driver - Port/Switch config area registers
+ * Thunderbolt driver - Port/Switch config area registers
  *
  * Every thunderbolt device consists (logically) of a switch with multiple
  * ports. Every port contains up to four config regions (HOPS, PORT, SWITCH,
  * COUNTERS) which are used to configure the device.
  *
  * Copyright (c) 2014 Andreas Noever <andreas.noever@gmail.com>
+ * Copyright (C) 2018, Intel Corporation
  */
 
 #ifndef _TB_REGS
@@ -202,13 +203,79 @@ struct tb_regs_port_header {
 	/* DWORD 5 */
 	u32 max_in_hop_id:11;
 	u32 max_out_hop_id:11;
-	u32 __unkown4:10;
+	u32 __unknown4:10;
 	/* DWORD 6 */
 	u32 __unknown5;
 	/* DWORD 7 */
 	u32 __unknown6;
 
 } __packed;
+
+/* Basic adapter configuration registers */
+#define ADP_CS_4				0x04
+#define ADP_CS_4_NFC_BUFFERS_MASK		GENMASK(9, 0)
+#define ADP_CS_4_TOTAL_BUFFERS_MASK		GENMASK(29, 20)
+#define ADP_CS_4_TOTAL_BUFFERS_SHIFT		20
+#define ADP_CS_5				0x05
+#define ADP_CS_5_LCA_MASK			GENMASK(28, 22)
+#define ADP_CS_5_LCA_SHIFT			22
+
+/* Lane adapter registers */
+#define LANE_ADP_CS_0				0x00
+#define LANE_ADP_CS_0_SUPPORTED_WIDTH_MASK	GENMASK(25, 20)
+#define LANE_ADP_CS_0_SUPPORTED_WIDTH_SHIFT	20
+#define LANE_ADP_CS_1				0x01
+#define LANE_ADP_CS_1_TARGET_WIDTH_MASK		GENMASK(9, 4)
+#define LANE_ADP_CS_1_TARGET_WIDTH_SHIFT	4
+#define LANE_ADP_CS_1_TARGET_WIDTH_SINGLE	0x1
+#define LANE_ADP_CS_1_TARGET_WIDTH_DUAL		0x3
+#define LANE_ADP_CS_1_LB			BIT(15)
+#define LANE_ADP_CS_1_CURRENT_SPEED_MASK	GENMASK(19, 16)
+#define LANE_ADP_CS_1_CURRENT_SPEED_SHIFT	16
+#define LANE_ADP_CS_1_CURRENT_SPEED_GEN2	0x8
+#define LANE_ADP_CS_1_CURRENT_SPEED_GEN3	0x4
+#define LANE_ADP_CS_1_CURRENT_WIDTH_MASK	GENMASK(25, 20)
+#define LANE_ADP_CS_1_CURRENT_WIDTH_SHIFT	20
+
+/* Display Port adapter registers */
+#define ADP_DP_CS_0				0x00
+#define ADP_DP_CS_0_VIDEO_HOPID_MASK		GENMASK(26, 16)
+#define ADP_DP_CS_0_VIDEO_HOPID_SHIFT		16
+#define ADP_DP_CS_0_AE				BIT(30)
+#define ADP_DP_CS_0_VE				BIT(31)
+#define ADP_DP_CS_1_AUX_TX_HOPID_MASK		GENMASK(10, 0)
+#define ADP_DP_CS_1_AUX_RX_HOPID_MASK		GENMASK(21, 11)
+#define ADP_DP_CS_1_AUX_RX_HOPID_SHIFT		11
+#define ADP_DP_CS_2				0x02
+#define ADP_DP_CS_2_HDP				BIT(6)
+#define ADP_DP_CS_3				0x03
+#define ADP_DP_CS_3_HDPC			BIT(9)
+#define DP_LOCAL_CAP				0x04
+#define DP_REMOTE_CAP				0x05
+#define DP_STATUS_CTRL				0x06
+#define DP_STATUS_CTRL_CMHS			BIT(25)
+#define DP_STATUS_CTRL_UF			BIT(26)
+#define DP_COMMON_CAP				0x07
+/*
+ * DP_COMMON_CAP offsets work also for DP_LOCAL_CAP and DP_REMOTE_CAP
+ * with exception of DPRX done.
+ */
+#define DP_COMMON_CAP_RATE_MASK			GENMASK(11, 8)
+#define DP_COMMON_CAP_RATE_SHIFT		8
+#define DP_COMMON_CAP_RATE_RBR			0x0
+#define DP_COMMON_CAP_RATE_HBR			0x1
+#define DP_COMMON_CAP_RATE_HBR2			0x2
+#define DP_COMMON_CAP_RATE_HBR3			0x3
+#define DP_COMMON_CAP_LANES_MASK		GENMASK(14, 12)
+#define DP_COMMON_CAP_LANES_SHIFT		12
+#define DP_COMMON_CAP_1_LANE			0x0
+#define DP_COMMON_CAP_2_LANES			0x1
+#define DP_COMMON_CAP_4_LANES			0x2
+#define DP_COMMON_CAP_DPRX_DONE			BIT(31)
+
+/* PCIe adapter registers */
+#define ADP_PCIE_CS_0				0x00
+#define ADP_PCIE_CS_0_PE			BIT(31)
 
 /* Hop register from TB_CFG_HOPS. 8 byte per entry. */
 struct tb_regs_hop {
@@ -233,8 +300,33 @@ struct tb_regs_hop {
 	bool egress_fc:1;
 	bool ingress_shared_buffer:1;
 	bool egress_shared_buffer:1;
-	u32 unknown3:4; /* set to zero */
+	bool pending:1;
+	u32 unknown3:3; /* set to zero */
 } __packed;
 
+/* Common link controller registers */
+#define TB_LC_DESC			0x02
+#define TB_LC_DESC_NLC_MASK		GENMASK(3, 0)
+#define TB_LC_DESC_SIZE_SHIFT		8
+#define TB_LC_DESC_SIZE_MASK		GENMASK(15, 8)
+#define TB_LC_DESC_PORT_SIZE_SHIFT	16
+#define TB_LC_DESC_PORT_SIZE_MASK	GENMASK(27, 16)
+#define TB_LC_FUSE			0x03
+#define TB_LC_SNK_ALLOCATION		0x10
+#define TB_LC_SNK_ALLOCATION_SNK0_MASK	GENMASK(3, 0)
+#define TB_LC_SNK_ALLOCATION_SNK0_CM	0x1
+#define TB_LC_SNK_ALLOCATION_SNK1_SHIFT	4
+#define TB_LC_SNK_ALLOCATION_SNK1_MASK	GENMASK(7, 4)
+#define TB_LC_SNK_ALLOCATION_SNK1_CM	0x1
+
+/* Link controller registers */
+#define TB_LC_PORT_ATTR			0x8d
+#define TB_LC_PORT_ATTR_BE		BIT(12)
+
+#define TB_LC_SX_CTRL			0x96
+#define TB_LC_SX_CTRL_L1C		BIT(16)
+#define TB_LC_SX_CTRL_L2C		BIT(20)
+#define TB_LC_SX_CTRL_UPSTREAM		BIT(30)
+#define TB_LC_SX_CTRL_SLP		BIT(31)
 
 #endif

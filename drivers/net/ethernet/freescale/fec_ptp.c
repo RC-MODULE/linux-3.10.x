@@ -99,7 +99,6 @@ static int fec_ptp_enable_pps(struct fec_enet_private *fep, uint enable)
 {
 	unsigned long flags;
 	u32 val, tempval;
-	int inc;
 	struct timespec64 ts;
 	u64 ns;
 	val = 0;
@@ -114,7 +113,6 @@ static int fec_ptp_enable_pps(struct fec_enet_private *fep, uint enable)
 
 	fep->pps_channel = DEFAULT_PPS_CHANNEL;
 	fep->reload_period = PPS_OUPUT_RELOAD_PERIOD;
-	inc = fep->ptp_inc;
 
 	spin_lock_irqsave(&fep->tmreg_lock, flags);
 
@@ -602,9 +600,9 @@ void fec_ptp_init(struct platform_device *pdev, int irq_idx)
 
 	INIT_DELAYED_WORK(&fep->time_keep, fec_time_keep);
 
-	irq = platform_get_irq_byname(pdev, "pps");
+	irq = platform_get_irq_byname_optional(pdev, "pps");
 	if (irq < 0)
-		irq = platform_get_irq(pdev, irq_idx);
+		irq = platform_get_irq_optional(pdev, irq_idx);
 	/* Failure to get an irq is not fatal,
 	 * only the PTP_CLOCK_PPS clock events should stop
 	 */
@@ -619,7 +617,7 @@ void fec_ptp_init(struct platform_device *pdev, int irq_idx)
 	fep->ptp_clock = ptp_clock_register(&fep->ptp_caps, &pdev->dev);
 	if (IS_ERR(fep->ptp_clock)) {
 		fep->ptp_clock = NULL;
-		pr_err("ptp_clock_register failed\n");
+		dev_err(&pdev->dev, "ptp_clock_register failed\n");
 	}
 
 	schedule_delayed_work(&fep->time_keep, HZ);

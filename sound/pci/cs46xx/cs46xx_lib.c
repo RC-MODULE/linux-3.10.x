@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: GPL-2.0-or-later
 /*
  *  Copyright (c) by Jaroslav Kysela <perex@perex.cz>
  *                   Abramo Bagnara <abramo@alsa-project.org>
@@ -28,21 +29,6 @@
  *           references to be able to implement all fancy feutures
  *           supported by the cs46xx DSP's. 
  *           Benny <benny@hostmobility.com>
- *                
- *   This program is free software; you can redistribute it and/or modify
- *   it under the terms of the GNU General Public License as published by
- *   the Free Software Foundation; either version 2 of the License, or
- *   (at your option) any later version.
- *
- *   This program is distributed in the hope that it will be useful,
- *   but WITHOUT ANY WARRANTY; without even the implied warranty of
- *   MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- *   GNU General Public License for more details.
- *
- *   You should have received a copy of the GNU General Public License
- *   along with this program; if not, write to the Free Software
- *   Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307 USA
- *
  */
 
 #include <linux/delay.h>
@@ -1443,7 +1429,8 @@ static const struct snd_pcm_hardware snd_cs46xx_playback =
 	.info =			(SNDRV_PCM_INFO_MMAP |
 				 SNDRV_PCM_INFO_INTERLEAVED | 
 				 SNDRV_PCM_INFO_BLOCK_TRANSFER /*|*/
-				 /*SNDRV_PCM_INFO_RESUME*/),
+				 /*SNDRV_PCM_INFO_RESUME*/ |
+				 SNDRV_PCM_INFO_SYNC_APPLPTR),
 	.formats =		(SNDRV_PCM_FMTBIT_S8 | SNDRV_PCM_FMTBIT_U8 |
 				 SNDRV_PCM_FMTBIT_S16_LE | SNDRV_PCM_FMTBIT_S16_BE |
 				 SNDRV_PCM_FMTBIT_U16_LE | SNDRV_PCM_FMTBIT_U16_BE),
@@ -1465,7 +1452,8 @@ static const struct snd_pcm_hardware snd_cs46xx_capture =
 	.info =			(SNDRV_PCM_INFO_MMAP |
 				 SNDRV_PCM_INFO_INTERLEAVED |
 				 SNDRV_PCM_INFO_BLOCK_TRANSFER /*|*/
-				 /*SNDRV_PCM_INFO_RESUME*/),
+				 /*SNDRV_PCM_INFO_RESUME*/ |
+				 SNDRV_PCM_INFO_SYNC_APPLPTR),
 	.formats =		SNDRV_PCM_FMTBIT_S16_LE,
 	.rates =		SNDRV_PCM_RATE_CONTINUOUS | SNDRV_PCM_RATE_8000_48000,
 	.rate_min =		5500,
@@ -1506,7 +1494,7 @@ static int _cs46xx_playback_open_channel (struct snd_pcm_substream *substream,in
 	cpcm = kzalloc(sizeof(*cpcm), GFP_KERNEL);
 	if (cpcm == NULL)
 		return -ENOMEM;
-	if (snd_dma_alloc_pages(SNDRV_DMA_TYPE_DEV, snd_dma_pci_data(chip->pci),
+	if (snd_dma_alloc_pages(SNDRV_DMA_TYPE_DEV, &chip->pci->dev,
 				PAGE_SIZE, &cpcm->hw_buf) < 0) {
 		kfree(cpcm);
 		return -ENOMEM;
@@ -1594,7 +1582,7 @@ static int snd_cs46xx_capture_open(struct snd_pcm_substream *substream)
 {
 	struct snd_cs46xx *chip = snd_pcm_substream_chip(substream);
 
-	if (snd_dma_alloc_pages(SNDRV_DMA_TYPE_DEV, snd_dma_pci_data(chip->pci),
+	if (snd_dma_alloc_pages(SNDRV_DMA_TYPE_DEV, &chip->pci->dev,
 				PAGE_SIZE, &chip->capt.hw_buf) < 0)
 		return -ENOMEM;
 	chip->capt.substream = substream;
@@ -1796,7 +1784,8 @@ int snd_cs46xx_pcm(struct snd_cs46xx *chip, int device)
 	chip->pcm = pcm;
 
 	snd_pcm_lib_preallocate_pages_for_all(pcm, SNDRV_DMA_TYPE_DEV,
-					      snd_dma_pci_data(chip->pci), 64*1024, 256*1024);
+					      &chip->pci->dev,
+					      64*1024, 256*1024);
 
 	return 0;
 }
@@ -1821,7 +1810,8 @@ int snd_cs46xx_pcm_rear(struct snd_cs46xx *chip, int device)
 	chip->pcm_rear = pcm;
 
 	snd_pcm_lib_preallocate_pages_for_all(pcm, SNDRV_DMA_TYPE_DEV,
-					      snd_dma_pci_data(chip->pci), 64*1024, 256*1024);
+					      &chip->pci->dev,
+					      64*1024, 256*1024);
 
 	return 0;
 }
@@ -1844,7 +1834,8 @@ int snd_cs46xx_pcm_center_lfe(struct snd_cs46xx *chip, int device)
 	chip->pcm_center_lfe = pcm;
 
 	snd_pcm_lib_preallocate_pages_for_all(pcm, SNDRV_DMA_TYPE_DEV,
-					      snd_dma_pci_data(chip->pci), 64*1024, 256*1024);
+					      &chip->pci->dev,
+					      64*1024, 256*1024);
 
 	return 0;
 }
@@ -1867,7 +1858,8 @@ int snd_cs46xx_pcm_iec958(struct snd_cs46xx *chip, int device)
 	chip->pcm_iec958 = pcm;
 
 	snd_pcm_lib_preallocate_pages_for_all(pcm, SNDRV_DMA_TYPE_DEV,
-					      snd_dma_pci_data(chip->pci), 64*1024, 256*1024);
+					      &chip->pci->dev,
+					      64*1024, 256*1024);
 
 	return 0;
 }
@@ -3779,12 +3771,6 @@ static int snd_cs46xx_suspend(struct device *dev)
 
 	snd_power_change_state(card, SNDRV_CTL_POWER_D3hot);
 	chip->in_suspend = 1;
-	snd_pcm_suspend_all(chip->pcm);
-#ifdef CONFIG_SND_CS46XX_NEW_DSP
-	snd_pcm_suspend_all(chip->pcm_rear);
-	snd_pcm_suspend_all(chip->pcm_center_lfe);
-	snd_pcm_suspend_all(chip->pcm_iec958);
-#endif
 	// chip->ac97_powerdown = snd_cs46xx_codec_read(chip, AC97_POWER_CONTROL);
 	// chip->ac97_general_purpose = snd_cs46xx_codec_read(chip, BA0_AC97_GENERAL_PURPOSE);
 

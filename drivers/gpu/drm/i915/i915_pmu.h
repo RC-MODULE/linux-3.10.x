@@ -18,7 +18,7 @@ enum {
 	__I915_SAMPLE_FREQ_ACT = 0,
 	__I915_SAMPLE_FREQ_REQ,
 	__I915_SAMPLE_RC6,
-	__I915_SAMPLE_RC6_ESTIMATED,
+	__I915_SAMPLE_RC6_LAST_REPORTED,
 	__I915_NUM_PMU_SAMPLERS
 };
 
@@ -30,6 +30,8 @@ enum {
 #define I915_PMU_MASK_BITS \
 	((1 << I915_PMU_SAMPLE_BITS) + \
 	 (I915_PMU_LAST + 1 - __I915_PMU_OTHER(0)))
+
+#define I915_ENGINE_SAMPLE_COUNT (I915_SAMPLE_SEMA + 1)
 
 struct i915_pmu_sample {
 	u64 cur;
@@ -44,6 +46,10 @@ struct i915_pmu {
 	 * @base: PMU base.
 	 */
 	struct pmu base;
+	/**
+	 * @name: Name as registered with perf core.
+	 */
+	const char *name;
 	/**
 	 * @lock: Lock protecting enable mask and ref count handling.
 	 */
@@ -65,6 +71,14 @@ struct i915_pmu {
 	 * event types.
 	 */
 	u64 enable;
+
+	/**
+	 * @timer_last:
+	 *
+	 * Timestmap of the previous timer invocation.
+	 */
+	ktime_t timer_last;
+
 	/**
 	 * @enable_count: Reference counts for the enabled events.
 	 *
@@ -87,9 +101,9 @@ struct i915_pmu {
 	 */
 	struct i915_pmu_sample sample[__I915_NUM_PMU_SAMPLERS];
 	/**
-	 * @suspended_jiffies_last: Cached suspend time from PM core.
+	 * @sleep_last: Last time GT parked for RC6 estimation.
 	 */
-	unsigned long suspended_jiffies_last;
+	ktime_t sleep_last;
 	/**
 	 * @i915_attr: Memory block holding device attributes.
 	 */

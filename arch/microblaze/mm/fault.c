@@ -90,7 +90,7 @@ void do_page_fault(struct pt_regs *regs, unsigned long address,
 	struct mm_struct *mm = current->mm;
 	int code = SEGV_MAPERR;
 	int is_write = error_code & ESR_S;
-	int fault;
+	vm_fault_t fault;
 	unsigned int flags = FAULT_FLAG_ALLOW_RETRY | FAULT_FLAG_KILLABLE;
 
 	regs->ear = address;
@@ -289,7 +289,7 @@ out_of_memory:
 do_sigbus:
 	up_read(&mm->mmap_sem);
 	if (user_mode(regs)) {
-		force_sig_fault(SIGBUS, BUS_ADRERR, (void __user *)address, current);
+		force_sig_fault(SIGBUS, BUS_ADRERR, (void __user *)address);
 		return;
 	}
 	bad_page_fault(regs, address, SIGBUS);

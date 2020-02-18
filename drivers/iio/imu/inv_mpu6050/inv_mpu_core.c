@@ -1,14 +1,6 @@
+// SPDX-License-Identifier: GPL-2.0-only
 /*
 * Copyright (C) 2012 Invensense, Inc.
-*
-* This software is licensed under the terms of the GNU General Public
-* License version 2, as published by the Free Software Foundation, and
-* may be copied, distributed, and modified under those terms.
-*
-* This program is distributed in the hope that it will be useful,
-* but WITHOUT ANY WARRANTY; without even the implied warranty of
-* MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-* GNU General Public License for more details.
 */
 
 #include <linux/module.h>
@@ -20,12 +12,12 @@
 #include <linux/jiffies.h>
 #include <linux/irq.h>
 #include <linux/interrupt.h>
-#include <linux/kfifo.h>
-#include <linux/spinlock.h>
 #include <linux/iio/iio.h>
 #include <linux/acpi.h>
 #include <linux/platform_device.h>
+#include <linux/regulator/consumer.h>
 #include "inv_mpu_iio.h"
+#include "inv_mpu_magn.h"
 
 /*
  * this is the gyro scale translated from dynamic range plus/minus
@@ -38,6 +30,29 @@ static const int gyro_scale_6050[] = {133090, 266181, 532362, 1064724};
  * {2, 4, 8, 16} to m/s^2
  */
 static const int accel_scale[] = {598, 1196, 2392, 4785};
+
+static const struct inv_mpu6050_reg_map reg_set_icm20602 = {
+	.sample_rate_div	= INV_MPU6050_REG_SAMPLE_RATE_DIV,
+	.lpf                    = INV_MPU6050_REG_CONFIG,
+	.accel_lpf              = INV_MPU6500_REG_ACCEL_CONFIG_2,
+	.user_ctrl              = INV_MPU6050_REG_USER_CTRL,
+	.fifo_en                = INV_MPU6050_REG_FIFO_EN,
+	.gyro_config            = INV_MPU6050_REG_GYRO_CONFIG,
+	.accl_config            = INV_MPU6050_REG_ACCEL_CONFIG,
+	.fifo_count_h           = INV_MPU6050_REG_FIFO_COUNT_H,
+	.fifo_r_w               = INV_MPU6050_REG_FIFO_R_W,
+	.raw_gyro               = INV_MPU6050_REG_RAW_GYRO,
+	.raw_accl               = INV_MPU6050_REG_RAW_ACCEL,
+	.temperature            = INV_MPU6050_REG_TEMPERATURE,
+	.int_enable             = INV_MPU6050_REG_INT_ENABLE,
+	.int_status             = INV_MPU6050_REG_INT_STATUS,
+	.pwr_mgmt_1             = INV_MPU6050_REG_PWR_MGMT_1,
+	.pwr_mgmt_2             = INV_MPU6050_REG_PWR_MGMT_2,
+	.int_pin_cfg            = INV_MPU6050_REG_INT_PIN_CFG,
+	.accl_offset            = INV_MPU6500_REG_ACCEL_OFFSET,
+	.gyro_offset            = INV_MPU6050_REG_GYRO_OFFSET,
+	.i2c_if                 = INV_ICM20602_REG_I2C_IF,
+};
 
 static const struct inv_mpu6050_reg_map reg_set_6500 = {
 	.sample_rate_div	= INV_MPU6050_REG_SAMPLE_RATE_DIV,
@@ -59,6 +74,7 @@ static const struct inv_mpu6050_reg_map reg_set_6500 = {
 	.int_pin_cfg		= INV_MPU6050_REG_INT_PIN_CFG,
 	.accl_offset		= INV_MPU6500_REG_ACCEL_OFFSET,
 	.gyro_offset		= INV_MPU6050_REG_GYRO_OFFSET,
+	.i2c_if                 = 0,
 };
 
 static const struct inv_mpu6050_reg_map reg_set_6050 = {
@@ -79,14 +95,16 @@ static const struct inv_mpu6050_reg_map reg_set_6050 = {
 	.int_pin_cfg		= INV_MPU6050_REG_INT_PIN_CFG,
 	.accl_offset		= INV_MPU6050_REG_ACCEL_OFFSET,
 	.gyro_offset		= INV_MPU6050_REG_GYRO_OFFSET,
+	.i2c_if                 = 0,
 };
 
 static const struct inv_mpu6050_chip_config chip_config_6050 = {
 	.fsr = INV_MPU6050_FSR_2000DPS,
 	.lpf = INV_MPU6050_FILTER_20HZ,
-	.fifo_rate = INV_MPU6050_INIT_FIFO_RATE,
+	.divider = INV_MPU6050_FIFO_RATE_TO_DIVIDER(INV_MPU6050_INIT_FIFO_RATE),
 	.gyro_fifo_enable = false,
 	.accl_fifo_enable = false,
+	.magn_fifo_enable = false,
 	.accl_fs = INV_MPU6050_FS_02G,
 	.user_ctrl = 0,
 };
@@ -98,42 +116,72 @@ static const struct inv_mpu6050_hw hw_info[] = {
 		.name = "MPU6050",
 		.reg = &reg_set_6050,
 		.config = &chip_config_6050,
+		.fifo_size = 1024,
+		.temp = {INV_MPU6050_TEMP_OFFSET, INV_MPU6050_TEMP_SCALE},
 	},
 	{
 		.whoami = INV_MPU6500_WHOAMI_VALUE,
 		.name = "MPU6500",
 		.reg = &reg_set_6500,
 		.config = &chip_config_6050,
+		.fifo_size = 512,
+		.temp = {INV_MPU6500_TEMP_OFFSET, INV_MPU6500_TEMP_SCALE},
+	},
+	{
+		.whoami = INV_MPU6515_WHOAMI_VALUE,
+		.name = "MPU6515",
+		.reg = &reg_set_6500,
+		.config = &chip_config_6050,
+		.fifo_size = 512,
+		.temp = {INV_MPU6500_TEMP_OFFSET, INV_MPU6500_TEMP_SCALE},
 	},
 	{
 		.whoami = INV_MPU6000_WHOAMI_VALUE,
 		.name = "MPU6000",
 		.reg = &reg_set_6050,
 		.config = &chip_config_6050,
+		.fifo_size = 1024,
+		.temp = {INV_MPU6050_TEMP_OFFSET, INV_MPU6050_TEMP_SCALE},
 	},
 	{
 		.whoami = INV_MPU9150_WHOAMI_VALUE,
 		.name = "MPU9150",
 		.reg = &reg_set_6050,
 		.config = &chip_config_6050,
+		.fifo_size = 1024,
+		.temp = {INV_MPU6050_TEMP_OFFSET, INV_MPU6050_TEMP_SCALE},
 	},
 	{
 		.whoami = INV_MPU9250_WHOAMI_VALUE,
 		.name = "MPU9250",
 		.reg = &reg_set_6500,
 		.config = &chip_config_6050,
+		.fifo_size = 512,
+		.temp = {INV_MPU6500_TEMP_OFFSET, INV_MPU6500_TEMP_SCALE},
 	},
 	{
 		.whoami = INV_MPU9255_WHOAMI_VALUE,
 		.name = "MPU9255",
 		.reg = &reg_set_6500,
 		.config = &chip_config_6050,
+		.fifo_size = 512,
+		.temp = {INV_MPU6500_TEMP_OFFSET, INV_MPU6500_TEMP_SCALE},
 	},
 	{
 		.whoami = INV_ICM20608_WHOAMI_VALUE,
 		.name = "ICM20608",
 		.reg = &reg_set_6500,
 		.config = &chip_config_6050,
+		.fifo_size = 512,
+		.temp = {INV_ICM20608_TEMP_OFFSET, INV_ICM20608_TEMP_SCALE},
+	},
+	{
+		.whoami = INV_ICM20602_WHOAMI_VALUE,
+		.name = "ICM20602",
+		.reg = &reg_set_icm20602,
+		.config = &chip_config_6050,
+		.fifo_size = 1008,
+		.temp = {INV_ICM20608_TEMP_OFFSET, INV_ICM20608_TEMP_SCALE},
 	},
 };
 
@@ -280,7 +328,7 @@ static int inv_mpu6050_init_config(struct iio_dev *indio_dev)
 	if (result)
 		goto error_power_off;
 
-	d = INV_MPU6050_ONE_K_HZ / INV_MPU6050_INIT_FIFO_RATE - 1;
+	d = INV_MPU6050_FIFO_RATE_TO_DIVIDER(INV_MPU6050_INIT_FIFO_RATE);
 	result = regmap_write(st->map, st->reg->sample_rate_div, d);
 	if (result)
 		goto error_power_off;
@@ -296,6 +344,18 @@ static int inv_mpu6050_init_config(struct iio_dev *indio_dev)
 
 	memcpy(&st->chip_config, hw_info[st->chip_type].config,
 	       sizeof(struct inv_mpu6050_chip_config));
+
+	/*
+	 * Internal chip period is 1ms (1kHz).
+	 * Let's use at the beginning the theorical value before measuring
+	 * with interrupt timestamps.
+	 */
+	st->chip_period = NSEC_PER_MSEC;
+
+	/* magn chip init, noop if not present in the chip */
+	result = inv_mpu_magn_probe(st);
+	if (result)
+		goto error_power_off;
 
 	return inv_mpu6050_set_power_itg(st, false);
 
@@ -376,6 +436,9 @@ static int inv_mpu6050_read_channel_data(struct iio_dev *indio_dev,
 		ret = inv_mpu6050_sensor_show(st, st->reg->temperature,
 					      IIO_MOD_X, val);
 		break;
+	case IIO_MAGN:
+		ret = inv_mpu_magn_read(st, chan->channel2, val);
+		break;
 	default:
 		ret = -EINVAL;
 		break;
@@ -427,18 +490,18 @@ inv_mpu6050_read_raw(struct iio_dev *indio_dev,
 
 			return IIO_VAL_INT_PLUS_MICRO;
 		case IIO_TEMP:
-			*val = 0;
-			*val2 = INV_MPU6050_TEMP_SCALE;
-
+			*val = st->hw->temp.scale / 1000000;
+			*val2 = st->hw->temp.scale % 1000000;
 			return IIO_VAL_INT_PLUS_MICRO;
+		case IIO_MAGN:
+			return inv_mpu_magn_get_scale(st, chan, val, val2);
 		default:
 			return -EINVAL;
 		}
 	case IIO_CHAN_INFO_OFFSET:
 		switch (chan->type) {
 		case IIO_TEMP:
-			*val = INV_MPU6050_TEMP_OFFSET;
-
+			*val = st->hw->temp.offset;
 			return IIO_VAL_INT;
 		default:
 			return -EINVAL;
@@ -630,7 +693,7 @@ static ssize_t
 inv_mpu6050_fifo_rate_store(struct device *dev, struct device_attribute *attr,
 			    const char *buf, size_t count)
 {
-	s32 fifo_rate;
+	int fifo_rate;
 	u8 d;
 	int result;
 	struct iio_dev *indio_dev = dev_to_iio_dev(dev);
@@ -646,8 +709,13 @@ inv_mpu6050_fifo_rate_store(struct device *dev, struct device_attribute *attr,
 	if (result)
 		return result;
 
+	/* compute the chip sample rate divider */
+	d = INV_MPU6050_FIFO_RATE_TO_DIVIDER(fifo_rate);
+	/* compute back the fifo rate to handle truncation cases */
+	fifo_rate = INV_MPU6050_DIVIDER_TO_FIFO_RATE(d);
+
 	mutex_lock(&st->lock);
-	if (fifo_rate == st->chip_config.fifo_rate) {
+	if (d == st->chip_config.divider) {
 		result = 0;
 		goto fifo_rate_fail_unlock;
 	}
@@ -655,13 +723,17 @@ inv_mpu6050_fifo_rate_store(struct device *dev, struct device_attribute *attr,
 	if (result)
 		goto fifo_rate_fail_unlock;
 
-	d = INV_MPU6050_ONE_K_HZ / fifo_rate - 1;
 	result = regmap_write(st->map, st->reg->sample_rate_div, d);
 	if (result)
 		goto fifo_rate_fail_power_off;
-	st->chip_config.fifo_rate = fifo_rate;
+	st->chip_config.divider = d;
 
 	result = inv_mpu6050_set_lpf(st, fifo_rate);
+	if (result)
+		goto fifo_rate_fail_power_off;
+
+	/* update rate for magn, noop if not present in chip */
+	result = inv_mpu_magn_set_rate(st, fifo_rate);
 	if (result)
 		goto fifo_rate_fail_power_off;
 
@@ -687,7 +759,7 @@ inv_fifo_rate_show(struct device *dev, struct device_attribute *attr,
 	unsigned fifo_rate;
 
 	mutex_lock(&st->lock);
-	fifo_rate = st->chip_config.fifo_rate;
+	fifo_rate = INV_MPU6050_DIVIDER_TO_FIFO_RATE(st->chip_config.divider);
 	mutex_unlock(&st->lock);
 
 	return scnprintf(buf, PAGE_SIZE, "%u\n", fifo_rate);
@@ -749,12 +821,20 @@ static const struct iio_mount_matrix *
 inv_get_mount_matrix(const struct iio_dev *indio_dev,
 		     const struct iio_chan_spec *chan)
 {
-	return &((struct inv_mpu6050_state *)iio_priv(indio_dev))->orientation;
+	struct inv_mpu6050_state *data = iio_priv(indio_dev);
+	const struct iio_mount_matrix *matrix;
+
+	if (chan->type == IIO_MAGN)
+		matrix = &data->magn_orient;
+	else
+		matrix = &data->orientation;
+
+	return matrix;
 }
 
 static const struct iio_chan_spec_ext_info inv_ext_info[] = {
 	IIO_MOUNT_MATRIX(IIO_SHARED_BY_TYPE, inv_get_mount_matrix),
-	{ },
+	{ }
 };
 
 #define INV_MPU6050_CHAN(_type, _channel2, _index)                    \
@@ -796,6 +876,165 @@ static const struct iio_chan_spec inv_mpu_channels[] = {
 	INV_MPU6050_CHAN(IIO_ACCEL, IIO_MOD_X, INV_MPU6050_SCAN_ACCL_X),
 	INV_MPU6050_CHAN(IIO_ACCEL, IIO_MOD_Y, INV_MPU6050_SCAN_ACCL_Y),
 	INV_MPU6050_CHAN(IIO_ACCEL, IIO_MOD_Z, INV_MPU6050_SCAN_ACCL_Z),
+};
+
+static const unsigned long inv_mpu_scan_masks[] = {
+	/* 3-axis accel */
+	BIT(INV_MPU6050_SCAN_ACCL_X)
+		| BIT(INV_MPU6050_SCAN_ACCL_Y)
+		| BIT(INV_MPU6050_SCAN_ACCL_Z),
+	/* 3-axis gyro */
+	BIT(INV_MPU6050_SCAN_GYRO_X)
+		| BIT(INV_MPU6050_SCAN_GYRO_Y)
+		| BIT(INV_MPU6050_SCAN_GYRO_Z),
+	/* 6-axis accel + gyro */
+	BIT(INV_MPU6050_SCAN_ACCL_X)
+		| BIT(INV_MPU6050_SCAN_ACCL_Y)
+		| BIT(INV_MPU6050_SCAN_ACCL_Z)
+		| BIT(INV_MPU6050_SCAN_GYRO_X)
+		| BIT(INV_MPU6050_SCAN_GYRO_Y)
+		| BIT(INV_MPU6050_SCAN_GYRO_Z),
+	0,
+};
+
+#define INV_MPU9X50_MAGN_CHAN(_chan2, _bits, _index)			\
+	{								\
+		.type = IIO_MAGN,					\
+		.modified = 1,						\
+		.channel2 = _chan2,					\
+		.info_mask_separate = BIT(IIO_CHAN_INFO_SCALE) |	\
+				      BIT(IIO_CHAN_INFO_RAW),		\
+		.scan_index = _index,					\
+		.scan_type = {						\
+			.sign = 's',					\
+			.realbits = _bits,				\
+			.storagebits = 16,				\
+			.shift = 0,					\
+			.endianness = IIO_BE,				\
+		},							\
+		.ext_info = inv_ext_info,				\
+	}
+
+static const struct iio_chan_spec inv_mpu9250_channels[] = {
+	IIO_CHAN_SOFT_TIMESTAMP(INV_MPU9X50_SCAN_TIMESTAMP),
+	/*
+	 * Note that temperature should only be via polled reading only,
+	 * not the final scan elements output.
+	 */
+	{
+		.type = IIO_TEMP,
+		.info_mask_separate = BIT(IIO_CHAN_INFO_RAW)
+				| BIT(IIO_CHAN_INFO_OFFSET)
+				| BIT(IIO_CHAN_INFO_SCALE),
+		.scan_index = -1,
+	},
+	INV_MPU6050_CHAN(IIO_ANGL_VEL, IIO_MOD_X, INV_MPU6050_SCAN_GYRO_X),
+	INV_MPU6050_CHAN(IIO_ANGL_VEL, IIO_MOD_Y, INV_MPU6050_SCAN_GYRO_Y),
+	INV_MPU6050_CHAN(IIO_ANGL_VEL, IIO_MOD_Z, INV_MPU6050_SCAN_GYRO_Z),
+
+	INV_MPU6050_CHAN(IIO_ACCEL, IIO_MOD_X, INV_MPU6050_SCAN_ACCL_X),
+	INV_MPU6050_CHAN(IIO_ACCEL, IIO_MOD_Y, INV_MPU6050_SCAN_ACCL_Y),
+	INV_MPU6050_CHAN(IIO_ACCEL, IIO_MOD_Z, INV_MPU6050_SCAN_ACCL_Z),
+
+	/* Magnetometer resolution is 16 bits */
+	INV_MPU9X50_MAGN_CHAN(IIO_MOD_X, 16, INV_MPU9X50_SCAN_MAGN_X),
+	INV_MPU9X50_MAGN_CHAN(IIO_MOD_Y, 16, INV_MPU9X50_SCAN_MAGN_Y),
+	INV_MPU9X50_MAGN_CHAN(IIO_MOD_Z, 16, INV_MPU9X50_SCAN_MAGN_Z),
+};
+
+static const unsigned long inv_mpu9x50_scan_masks[] = {
+	/* 3-axis accel */
+	BIT(INV_MPU6050_SCAN_ACCL_X)
+		| BIT(INV_MPU6050_SCAN_ACCL_Y)
+		| BIT(INV_MPU6050_SCAN_ACCL_Z),
+	/* 3-axis gyro */
+	BIT(INV_MPU6050_SCAN_GYRO_X)
+		| BIT(INV_MPU6050_SCAN_GYRO_Y)
+		| BIT(INV_MPU6050_SCAN_GYRO_Z),
+	/* 3-axis magn */
+	BIT(INV_MPU9X50_SCAN_MAGN_X)
+		| BIT(INV_MPU9X50_SCAN_MAGN_Y)
+		| BIT(INV_MPU9X50_SCAN_MAGN_Z),
+	/* 6-axis accel + gyro */
+	BIT(INV_MPU6050_SCAN_ACCL_X)
+		| BIT(INV_MPU6050_SCAN_ACCL_Y)
+		| BIT(INV_MPU6050_SCAN_ACCL_Z)
+		| BIT(INV_MPU6050_SCAN_GYRO_X)
+		| BIT(INV_MPU6050_SCAN_GYRO_Y)
+		| BIT(INV_MPU6050_SCAN_GYRO_Z),
+	/* 6-axis accel + magn */
+	BIT(INV_MPU6050_SCAN_ACCL_X)
+		| BIT(INV_MPU6050_SCAN_ACCL_Y)
+		| BIT(INV_MPU6050_SCAN_ACCL_Z)
+		| BIT(INV_MPU9X50_SCAN_MAGN_X)
+		| BIT(INV_MPU9X50_SCAN_MAGN_Y)
+		| BIT(INV_MPU9X50_SCAN_MAGN_Z),
+	/* 6-axis gyro + magn */
+	BIT(INV_MPU6050_SCAN_GYRO_X)
+		| BIT(INV_MPU6050_SCAN_GYRO_Y)
+		| BIT(INV_MPU6050_SCAN_GYRO_Z)
+		| BIT(INV_MPU9X50_SCAN_MAGN_X)
+		| BIT(INV_MPU9X50_SCAN_MAGN_Y)
+		| BIT(INV_MPU9X50_SCAN_MAGN_Z),
+	/* 9-axis accel + gyro + magn */
+	BIT(INV_MPU6050_SCAN_ACCL_X)
+		| BIT(INV_MPU6050_SCAN_ACCL_Y)
+		| BIT(INV_MPU6050_SCAN_ACCL_Z)
+		| BIT(INV_MPU6050_SCAN_GYRO_X)
+		| BIT(INV_MPU6050_SCAN_GYRO_Y)
+		| BIT(INV_MPU6050_SCAN_GYRO_Z)
+		| BIT(INV_MPU9X50_SCAN_MAGN_X)
+		| BIT(INV_MPU9X50_SCAN_MAGN_Y)
+		| BIT(INV_MPU9X50_SCAN_MAGN_Z),
+	0,
+};
+
+static const struct iio_chan_spec inv_icm20602_channels[] = {
+	IIO_CHAN_SOFT_TIMESTAMP(INV_ICM20602_SCAN_TIMESTAMP),
+	{
+		.type = IIO_TEMP,
+		.info_mask_separate = BIT(IIO_CHAN_INFO_RAW)
+				| BIT(IIO_CHAN_INFO_OFFSET)
+				| BIT(IIO_CHAN_INFO_SCALE),
+		.scan_index = INV_ICM20602_SCAN_TEMP,
+		.scan_type = {
+				.sign = 's',
+				.realbits = 16,
+				.storagebits = 16,
+				.shift = 0,
+				.endianness = IIO_BE,
+			     },
+	},
+
+	INV_MPU6050_CHAN(IIO_ANGL_VEL, IIO_MOD_X, INV_ICM20602_SCAN_GYRO_X),
+	INV_MPU6050_CHAN(IIO_ANGL_VEL, IIO_MOD_Y, INV_ICM20602_SCAN_GYRO_Y),
+	INV_MPU6050_CHAN(IIO_ANGL_VEL, IIO_MOD_Z, INV_ICM20602_SCAN_GYRO_Z),
+
+	INV_MPU6050_CHAN(IIO_ACCEL, IIO_MOD_Y, INV_ICM20602_SCAN_ACCL_Y),
+	INV_MPU6050_CHAN(IIO_ACCEL, IIO_MOD_X, INV_ICM20602_SCAN_ACCL_X),
+	INV_MPU6050_CHAN(IIO_ACCEL, IIO_MOD_Z, INV_ICM20602_SCAN_ACCL_Z),
+};
+
+static const unsigned long inv_icm20602_scan_masks[] = {
+	/* 3-axis accel + temp (mandatory) */
+	BIT(INV_ICM20602_SCAN_ACCL_X)
+		| BIT(INV_ICM20602_SCAN_ACCL_Y)
+		| BIT(INV_ICM20602_SCAN_ACCL_Z)
+		| BIT(INV_ICM20602_SCAN_TEMP),
+	/* 3-axis gyro + temp (mandatory) */
+	BIT(INV_ICM20602_SCAN_GYRO_X)
+		| BIT(INV_ICM20602_SCAN_GYRO_Y)
+		| BIT(INV_ICM20602_SCAN_GYRO_Z)
+		| BIT(INV_ICM20602_SCAN_TEMP),
+	/* 6-axis accel + gyro + temp (mandatory) */
+	BIT(INV_ICM20602_SCAN_ACCL_X)
+		| BIT(INV_ICM20602_SCAN_ACCL_Y)
+		| BIT(INV_ICM20602_SCAN_ACCL_Z)
+		| BIT(INV_ICM20602_SCAN_GYRO_X)
+		| BIT(INV_ICM20602_SCAN_GYRO_Y)
+		| BIT(INV_ICM20602_SCAN_GYRO_Z)
+		| BIT(INV_ICM20602_SCAN_TEMP),
+	0,
 };
 
 /*
@@ -911,6 +1150,47 @@ error_power_off:
 	return result;
 }
 
+static int inv_mpu_core_enable_regulator_vddio(struct inv_mpu6050_state *st)
+{
+	int result;
+
+	result = regulator_enable(st->vddio_supply);
+	if (result) {
+		dev_err(regmap_get_device(st->map),
+			"Failed to enable vddio regulator: %d\n", result);
+	} else {
+		/* Give the device a little bit of time to start up. */
+		usleep_range(35000, 70000);
+	}
+
+	return result;
+}
+
+static int inv_mpu_core_disable_regulator_vddio(struct inv_mpu6050_state *st)
+{
+	int result;
+
+	result = regulator_disable(st->vddio_supply);
+	if (result)
+		dev_err(regmap_get_device(st->map),
+			"Failed to disable vddio regulator: %d\n", result);
+
+	return result;
+}
+
+static void inv_mpu_core_disable_regulator_action(void *_data)
+{
+	struct inv_mpu6050_state *st = _data;
+	int result;
+
+	result = regulator_disable(st->vdd_supply);
+	if (result)
+		dev_err(regmap_get_device(st->map),
+			"Failed to disable vdd regulator: %d\n", result);
+
+	inv_mpu_core_disable_regulator_vddio(st);
+}
+
 int inv_mpu_core_probe(struct regmap *regmap, int irq, const char *name,
 		int (*inv_mpu_bus_setup)(struct iio_dev *), int chip_type)
 {
@@ -941,8 +1221,8 @@ int inv_mpu_core_probe(struct regmap *regmap, int irq, const char *name,
 
 	pdata = dev_get_platdata(dev);
 	if (!pdata) {
-		result = of_iio_read_mount_matrix(dev, "mount-matrix",
-						  &st->orientation);
+		result = iio_read_mount_matrix(dev, "mount-matrix",
+					       &st->orientation);
 		if (result) {
 			dev_err(dev, "Failed to retrieve mounting matrix %d\n",
 				result);
@@ -977,6 +1257,49 @@ int inv_mpu_core_probe(struct regmap *regmap, int irq, const char *name,
 		return -EINVAL;
 	}
 
+	st->vdd_supply = devm_regulator_get(dev, "vdd");
+	if (IS_ERR(st->vdd_supply)) {
+		if (PTR_ERR(st->vdd_supply) != -EPROBE_DEFER)
+			dev_err(dev, "Failed to get vdd regulator %d\n",
+				(int)PTR_ERR(st->vdd_supply));
+
+		return PTR_ERR(st->vdd_supply);
+	}
+
+	st->vddio_supply = devm_regulator_get(dev, "vddio");
+	if (IS_ERR(st->vddio_supply)) {
+		if (PTR_ERR(st->vddio_supply) != -EPROBE_DEFER)
+			dev_err(dev, "Failed to get vddio regulator %d\n",
+				(int)PTR_ERR(st->vddio_supply));
+
+		return PTR_ERR(st->vddio_supply);
+	}
+
+	result = regulator_enable(st->vdd_supply);
+	if (result) {
+		dev_err(dev, "Failed to enable vdd regulator: %d\n", result);
+		return result;
+	}
+
+	result = inv_mpu_core_enable_regulator_vddio(st);
+	if (result) {
+		regulator_disable(st->vdd_supply);
+		return result;
+	}
+
+	result = devm_add_action_or_reset(dev, inv_mpu_core_disable_regulator_action,
+				 st);
+	if (result) {
+		dev_err(dev, "Failed to setup regulator cleanup action %d\n",
+			result);
+		return result;
+	}
+
+	/* fill magnetometer orientation */
+	result = inv_mpu_magn_set_orient(st);
+	if (result)
+		return result;
+
 	/* power is turned on inside check chip type*/
 	result = inv_check_and_setup_chip(st);
 	if (result)
@@ -988,9 +1311,6 @@ int inv_mpu_core_probe(struct regmap *regmap, int irq, const char *name,
 		return result;
 	}
 
-	if (inv_mpu_bus_setup)
-		inv_mpu_bus_setup(indio_dev);
-
 	dev_set_drvdata(dev, indio_dev);
 	indio_dev->dev.parent = dev;
 	/* name will be NULL when enumerated via ACPI */
@@ -998,14 +1318,45 @@ int inv_mpu_core_probe(struct regmap *regmap, int irq, const char *name,
 		indio_dev->name = name;
 	else
 		indio_dev->name = dev_name(dev);
-	indio_dev->channels = inv_mpu_channels;
-	indio_dev->num_channels = ARRAY_SIZE(inv_mpu_channels);
+
+	/* requires parent device set in indio_dev */
+	if (inv_mpu_bus_setup)
+		inv_mpu_bus_setup(indio_dev);
+
+	switch (chip_type) {
+	case INV_MPU9250:
+	case INV_MPU9255:
+		/*
+		 * Use magnetometer inside the chip only if there is no i2c
+		 * auxiliary device in use.
+		 */
+		if (!st->magn_disabled) {
+			indio_dev->channels = inv_mpu9250_channels;
+			indio_dev->num_channels = ARRAY_SIZE(inv_mpu9250_channels);
+			indio_dev->available_scan_masks = inv_mpu9x50_scan_masks;
+		} else {
+			indio_dev->channels = inv_mpu_channels;
+			indio_dev->num_channels = ARRAY_SIZE(inv_mpu_channels);
+			indio_dev->available_scan_masks = inv_mpu_scan_masks;
+		}
+		break;
+	case INV_ICM20602:
+		indio_dev->channels = inv_icm20602_channels;
+		indio_dev->num_channels = ARRAY_SIZE(inv_icm20602_channels);
+		indio_dev->available_scan_masks = inv_icm20602_scan_masks;
+		break;
+	default:
+		indio_dev->channels = inv_mpu_channels;
+		indio_dev->num_channels = ARRAY_SIZE(inv_mpu_channels);
+		indio_dev->available_scan_masks = inv_mpu_scan_masks;
+		break;
+	}
 
 	indio_dev->info = &mpu_info;
 	indio_dev->modes = INDIO_BUFFER_TRIGGERED;
 
 	result = devm_iio_triggered_buffer_setup(dev, indio_dev,
-						 inv_mpu6050_irq_handler,
+						 iio_pollfunc_store_time,
 						 inv_mpu6050_read_fifo,
 						 NULL);
 	if (result) {
@@ -1018,8 +1369,6 @@ int inv_mpu_core_probe(struct regmap *regmap, int irq, const char *name,
 		return result;
 	}
 
-	INIT_KFIFO(st->timestamps);
-	spin_lock_init(&st->time_stamp_lock);
 	result = devm_iio_device_register(dev, indio_dev);
 	if (result) {
 		dev_err(dev, "IIO register fail %d\n", result);
@@ -1038,7 +1387,12 @@ static int inv_mpu_resume(struct device *dev)
 	int result;
 
 	mutex_lock(&st->lock);
+	result = inv_mpu_core_enable_regulator_vddio(st);
+	if (result)
+		goto out_unlock;
+
 	result = inv_mpu6050_set_power_itg(st, true);
+out_unlock:
 	mutex_unlock(&st->lock);
 
 	return result;
@@ -1051,6 +1405,7 @@ static int inv_mpu_suspend(struct device *dev)
 
 	mutex_lock(&st->lock);
 	result = inv_mpu6050_set_power_itg(st, false);
+	inv_mpu_core_disable_regulator_vddio(st);
 	mutex_unlock(&st->lock);
 
 	return result;

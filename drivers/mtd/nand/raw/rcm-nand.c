@@ -3,7 +3,7 @@
  *  under the terms of the GNU General Public License version 2 as published
  *  by the Free Software Foundation.
  *
- *  Copyright (C) 2019 Alexey Spirkov <alexeis@astrosoft.ru>
+ *  Copyright (C) 2020 Vladimir Shalyt <Vladimir.Shalyt@astrosoft.ru>
  */
 
 #include <linux/types.h>
@@ -33,6 +33,7 @@
 #include <linux/of_address.h>
 #include <linux/of_irq.h>
 #include <linux/of_platform.h>
+#include "internals.h"
 #else // __UBOOT__
 #include <fdtdec.h>
 #include <dm/of.h>
@@ -183,14 +184,8 @@
 #define MGPIO7_GPIOAFSEL                0x3C047420      // 0xF0
 #define MGPIO8_GPIOAFSEL                0x3C048420      // 0x83
 
-#ifdef __UBOOT__
-        #define SWAP_BYTES(VAL)         cpu_to_le32(VAL)
-#else
-        #define SWAP_BYTES(VAL)         (VAL)
-#endif
-
-#define IOWRITE32(D,P)                  iowrite32(SWAP_BYTES(D),P)
-#define IOREAD32(P)                     SWAP_BYTES(ioread32(P))
+#define IOWRITE32(D,P)                  iowrite32(D,P)
+#define IOREAD32(P)                     ioread32(P)
 
 // ONFI FLASH commands
 #define FLASH_CMD_PAGE_READ             0x00            // ONFI: Read
@@ -1424,10 +1419,13 @@ static int rcm_nand_probe( rcm_nand_device* ofdev ) {
         chip->mtd._erase = rcm_nand_erase;
         chip->mtd._read = rcm_nand_read;
         chip->mtd._write = rcm_nand_write;
-        chip->mtd._read_oob = rcm_nand_read_oob;
+#ifdef __UBOOT__
+        chip->mtd._read_oob = rcm_nand_read_oob; // v5.5-new: MTD drivers should implement ->_{write,read}() or ->_{write,read}_oob(), but not both.
         chip->mtd._write_oob = rcm_nand_write_oob;
-        //chip->mtd.dev.parent = &ofdev->dev;???
-         chip->mtd.oobavail = chip->mtd.oobsize - ECC_OOB_CTRL_USED;
+#else
+        chip->mtd.dev.parent = &ofdev->dev;
+#endif
+        chip->mtd.oobavail = chip->mtd.oobsize - ECC_OOB_CTRL_USED;
 
         if( is_power_of_2( chip->mtd.writesize ) ) chip->mtd.writesize_shift = ffs(chip->mtd.writesize)-1;
         if( is_power_of_2( chip->mtd.erasesize ) ) chip->mtd.erasesize_shift = ffs(chip->mtd.erasesize)-1;
@@ -1539,16 +1537,16 @@ void board_nand_init( void ) {
 #endif // __UBOOT__
 
 MODULE_LICENSE("GPL"); 
-MODULE_AUTHOR("Alexey Spirkov <alexeis@astrosoft.ru>");
+MODULE_AUTHOR("Vladimir Shalyt <Vladimir.Shalyt@astrosoft.ru>");
 MODULE_DESCRIPTION("RCM SoC NAND controller driver");
 
 #else // CONFIG_SPL_BUILD
 
 #define SPL_DBG_PRINT(...) printf( __VA_ARGS__ );
 
-#define WRLSIF0(D,R) iowrite32(SWAP_BYTES(D),(void*)(LSIF0_CTRL_BASE+R))
-#define WRNAND(D,R) iowrite32(SWAP_BYTES(D),(void*)(NAND_CTRL_BASE+R))
-#define RDNAND(R) SWAP_BYTES(ioread32(((void*)(NAND_CTRL_BASE+R))))
+#define WRLSIF0(D,R) iowrite32(D,(void*)(LSIF0_CTRL_BASE+R))
+#define WRNAND(D,R) iowrite32(D,(void*)(NAND_CTRL_BASE+R))
+#define RDNAND(R) ioread32(((void*)(NAND_CTRL_BASE+R)))
 #define CTRL( CHIP_SELECT, PAGE_SIZE, OOB_SIZE, OP_BEGIN, NUM_ADR_BYTES, ECC_MODE, HW_PROTECT, OOB_ECC, COMMAND )       \
                 ( ( OP_BEGIN << CTRL_REG_OP_BEGIN_SHIFT ) |                                                             \
                 ( PAGE_SIZE << CTRL_REG_PAGE_SIZE_SHIFT ) |                                                             \
@@ -1560,10 +1558,10 @@ MODULE_DESCRIPTION("RCM SoC NAND controller driver");
                 ( OOB_SIZE << CTRL_REG_OOB_SIZE_SHIFT ) |                                                               \
                 ( COMMAND << CTRL_REG_FCMD_SHIFT ) )
 #define AFSEL_INIT                                                                                                      \
-        IOWRITE32( 0x000000FF, (void*)MGPIO3_GPIOAFSEL );                                                               \
-        IOWRITE32( 0x00000003, (void*)MGPIO4_GPIOAFSEL );                                                               \
-        IOWRITE32( 0x000000F0, (void*)MGPIO7_GPIOAFSEL );                                                               \
-        IOWRITE32( 0x00000083, (void*)MGPIO8_GPIOAFSEL );
+        iowrite32( 0x000000FF, (void*)MGPIO3_GPIOAFSEL );                                                               \
+        iowrite32( 0x00000003, (void*)MGPIO4_GPIOAFSEL );                                                               \
+        iowrite32( 0x000000F0, (void*)MGPIO7_GPIOAFSEL );                                                               \
+        iowrite32( 0x00000083, (void*)MGPIO8_GPIOAFSEL );
 
 #define CHIPSIZE        (chip->size)                    // 0x8000000
 #define OOBSIZE         (chip->oob_size)                // 64

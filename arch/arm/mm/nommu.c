@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: GPL-2.0-only
 /*
  *  linux/arch/arm/mm/nommu.c
  *
@@ -53,7 +54,8 @@ static inline bool security_extensions_enabled(void)
 {
 	/* Check CPUID Identification Scheme before ID_PFR1 read */
 	if ((read_cpuid_id() & 0x000f0000) == 0x000f0000)
-		return !!cpuid_feature_extract(CPUID_EXT_PFR1, 4);
+		return cpuid_feature_extract(CPUID_EXT_PFR1, 4) ||
+			cpuid_feature_extract(CPUID_EXT_PFR1, 20);
 	return 0;
 }
 
@@ -204,15 +206,11 @@ void __iomem *ioremap(resource_size_t res_cookie, size_t size)
 EXPORT_SYMBOL(ioremap);
 
 void __iomem *ioremap_cache(resource_size_t res_cookie, size_t size)
-	__alias(ioremap_cached);
-
-void __iomem *ioremap_cached(resource_size_t res_cookie, size_t size)
 {
 	return __arm_ioremap_caller(res_cookie, size, MT_DEVICE_CACHED,
 				    __builtin_return_address(0));
 }
 EXPORT_SYMBOL(ioremap_cache);
-EXPORT_SYMBOL(ioremap_cached);
 
 void __iomem *ioremap_wc(resource_size_t res_cookie, size_t size)
 {

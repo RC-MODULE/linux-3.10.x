@@ -11,8 +11,7 @@
 
 #define PROC_LIMIT (PAGE_SIZE - 80)
 
-
-#ifndef PRISM2_NO_PROCFS_DEBUG
+#if !defined(PRISM2_NO_PROCFS_DEBUG) && defined(CONFIG_PROC_FS)
 static int prism2_debug_proc_show(struct seq_file *m, void *v)
 {
 	local_info_t *local = m->private;
@@ -43,9 +42,9 @@ static int prism2_debug_proc_show(struct seq_file *m, void *v)
 
 	return 0;
 }
-#endif /* PRISM2_NO_PROCFS_DEBUG */
+#endif
 
-
+#ifdef CONFIG_PROC_FS
 static int prism2_stats_proc_show(struct seq_file *m, void *v)
 {
 	local_info_t *local = m->private;
@@ -82,6 +81,7 @@ static int prism2_stats_proc_show(struct seq_file *m, void *v)
 
 	return 0;
 }
+#endif
 
 static int prism2_wds_proc_show(struct seq_file *m, void *v)
 {
@@ -174,6 +174,7 @@ static const struct seq_operations prism2_bss_list_proc_seqops = {
 	.show	= prism2_bss_list_proc_show,
 };
 
+#ifdef CONFIG_PROC_FS
 static int prism2_crypt_proc_show(struct seq_file *m, void *v)
 {
 	local_info_t *local = m->private;
@@ -190,6 +191,7 @@ static int prism2_crypt_proc_show(struct seq_file *m, void *v)
 	}
 	return 0;
 }
+#endif
 
 static ssize_t prism2_pda_proc_read(struct file *file, char __user *buf,
 				    size_t count, loff_t *_pos)
@@ -232,7 +234,7 @@ static int prism2_io_debug_proc_read(char *page, char **start, off_t off,
 {
 	local_info_t *local = (local_info_t *) data;
 	int head = local->io_debug_head;
-	int start_bytes, left, copy, copied;
+	int start_bytes, left, copy;
 
 	if (off + count > PRISM2_IO_DEBUG_SIZE * 4) {
 		*eof = 1;
@@ -241,7 +243,6 @@ static int prism2_io_debug_proc_read(char *page, char **start, off_t off,
 		count = PRISM2_IO_DEBUG_SIZE * 4 - off;
 	}
 
-	copied = 0;
 	start_bytes = (PRISM2_IO_DEBUG_SIZE - head) * 4;
 	left = count;
 

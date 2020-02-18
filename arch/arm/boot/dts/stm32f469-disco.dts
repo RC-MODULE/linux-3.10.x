@@ -60,7 +60,8 @@
 		stdout-path = "serial0:115200n8";
 	};
 
-	memory {
+	memory@00000000 {
+		device_type = "memory";
 		reg = <0x00000000 0x1000000>;
 	};
 
@@ -165,7 +166,6 @@
 };
 
 &ltdc {
-	dma-ranges;
 	status = "okay";
 
 	port {
@@ -210,8 +210,7 @@
 &sdio {
 	status = "okay";
 	vmmc-supply = <&mmc_vcard>;
-	cd-gpios = <&gpiog 2 GPIO_ACTIVE_HIGH>;
-	cd-inverted;
+	cd-gpios = <&gpiog 2 GPIO_ACTIVE_LOW>;
 	broken-cd;
 	pinctrl-names = "default", "opendrain";
 	pinctrl-0 = <&sdio_pins>;

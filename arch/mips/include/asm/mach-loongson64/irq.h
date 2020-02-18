@@ -4,13 +4,11 @@
 
 #include <boot_param.h>
 
-#ifdef CONFIG_CPU_LOONGSON3
-
 /* cpu core interrupt numbers */
 #define MIPS_CPU_IRQ_BASE 56
 
 #define LOONGSON_UART_IRQ   (MIPS_CPU_IRQ_BASE + 2) /* UART */
-#define LOONGSON_HT1_IRQ    (MIPS_CPU_IRQ_BASE + 3) /* HT1 */
+#define LOONGSON_BRIDGE_IRQ (MIPS_CPU_IRQ_BASE + 3) /* CASCADE */
 #define LOONGSON_TIMER_IRQ  (MIPS_CPU_IRQ_BASE + 7) /* CPU Timer */
 
 #define LOONGSON_HT1_CFG_BASE		loongson_sysconf.ht_control_base
@@ -34,8 +32,6 @@
 #define LOONGSON_INT_ROUTER_HT1(n)	LOONGSON_INT_ROUTER_ENTRY(n + 0x18)
 
 #define LOONGSON_INT_COREx_INTy(x, y)	(1<<(x) | 1<<(y+4))	/* route to int y of core x */
-
-#endif
 
 extern void fixup_irqs(void);
 extern void loongson3_ipi_interrupt(struct pt_regs *regs);

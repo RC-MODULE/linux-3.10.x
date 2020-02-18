@@ -768,7 +768,7 @@
 				};
 
 				// HDMI channel 1
-				adv7513_1: adv7513@3D {
+				adv7513_1: adv7513@3d {
 					status = "disabled";
 					compatible = "rcm,adv7513";
 					reg = <0x3D>;
@@ -837,7 +837,7 @@
 				interrupts = <65 0>; // IRQ_TYPE_EDGE_RISING
 			};
 
-			spi0: spi0@0x3C061000 {
+			spi0: spi@0x3C061000 {
 				status = "disabled";
 				compatible = "arm,pl022", "arm,primecell";
 				reg = <0x3C061000 0x1000>;
@@ -853,7 +853,7 @@
 				cs-gpios = <&gpio1 2 0>;
 			};
 
-			spi1: spi1@0x3C062000 {
+			spi1: spi@0x3C062000 {
 				status = "disabled";
 				compatible = "arm,pl022", "arm,primecell";
 				reg = <0x3C062000 0x1000>;

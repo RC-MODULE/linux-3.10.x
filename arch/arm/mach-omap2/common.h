@@ -336,6 +336,15 @@ static inline void omap5_secondary_hyp_startup(void)
 }
 #endif
 
+#ifdef CONFIG_SOC_DRA7XX
+extern int dra7xx_pciess_reset(struct omap_hwmod *oh);
+#else
+static inline int dra7xx_pciess_reset(struct omap_hwmod *oh)
+{
+	return 0;
+}
+#endif
+
 void pdata_quirks_init(const struct of_device_id *);
 void omap_auxdata_legacy_init(struct device *dev);
 void omap_pcs_legacy_init(int irq, void (*rearm)(void));
@@ -343,7 +352,6 @@ void omap_pcs_legacy_init(int irq, void (*rearm)(void));
 struct omap_sdrc_params;
 extern void omap_sdrc_init(struct omap_sdrc_params *sdrc_cs0,
 				      struct omap_sdrc_params *sdrc_cs1);
-struct omap2_hsmmc_info;
 extern void omap_reserve(void);
 
 struct omap_hwmod;

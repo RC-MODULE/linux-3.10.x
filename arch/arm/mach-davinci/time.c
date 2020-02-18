@@ -17,6 +17,7 @@
 #include <linux/io.h>
 #include <linux/clk.h>
 #include <linux/err.h>
+#include <linux/of.h>
 #include <linux/platform_device.h>
 #include <linux/sched_clock.h>
 
@@ -26,8 +27,6 @@
 #include <mach/cputype.h>
 #include <mach/hardware.h>
 #include <mach/time.h>
-
-#include "clock.h"
 
 static struct clock_event_device clockevent_davinci;
 static unsigned int davinci_clock_tick_rate;
@@ -334,10 +333,8 @@ static struct clock_event_device clockevent_davinci = {
 	.set_state_oneshot	= davinci_set_oneshot,
 };
 
-
-void __init davinci_timer_init(void)
+void __init davinci_timer_init(struct clk *timer_clk)
 {
-	struct clk *timer_clk;
 	struct davinci_soc_info *soc_info = &davinci_soc_info;
 	unsigned int clockevent_id;
 	unsigned int clocksource_id;
@@ -373,7 +370,6 @@ void __init davinci_timer_init(void)
 		}
 	}
 
-	timer_clk = clk_get(NULL, "timer0");
 	BUG_ON(IS_ERR(timer_clk));
 	clk_prepare_enable(timer_clk);
 

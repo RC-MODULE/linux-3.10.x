@@ -19,6 +19,7 @@
 
 #define IDETAPE_VERSION "1.20"
 
+#include <linux/compat.h>
 #include <linux/module.h>
 #include <linux/types.h>
 #include <linux/string.h>
@@ -639,7 +640,7 @@ static ide_startstop_t idetape_do_request(ide_drive_t *drive,
 		goto out;
 	}
 	if (req->cmd[13] & REQ_IDETAPE_PC1) {
-		pc = (struct ide_atapi_pc *)rq->special;
+		pc = (struct ide_atapi_pc *)ide_req(rq)->special;
 		req->cmd[13] &= ~(REQ_IDETAPE_PC1);
 		req->cmd[13] |= REQ_IDETAPE_PC2;
 		goto out;
@@ -1407,14 +1408,10 @@ static long do_idetape_chrdev_ioctl(struct file *file,
 		if (tape->drv_write_prot)
 			mtget.mt_gstat |= GMT_WR_PROT(0xffffffff);
 
-		if (copy_to_user(argp, &mtget, sizeof(struct mtget)))
-			return -EFAULT;
-		return 0;
+		return put_user_mtget(argp, &mtget);
 	case MTIOCPOS:
 		mtpos.mt_blkno = position / tape->user_bs_factor - block_offset;
-		if (copy_to_user(argp, &mtpos, sizeof(struct mtpos)))
-			return -EFAULT;
-		return 0;
+		return put_user_mtpos(argp, &mtpos);
 	default:
 		if (tape->chrdev_dir == IDETAPE_DIR_READ)
 			ide_tape_discard_merge_buffer(drive, 1);
@@ -1426,6 +1423,22 @@ static long idetape_chrdev_ioctl(struct file *file,
 				unsigned int cmd, unsigned long arg)
 {
 	long ret;
+	mutex_lock(&ide_tape_mutex);
+	ret = do_idetape_chrdev_ioctl(file, cmd, arg);
+	mutex_unlock(&ide_tape_mutex);
+	return ret;
+}
+
+static long idetape_chrdev_compat_ioctl(struct file *file,
+				unsigned int cmd, unsigned long arg)
+{
+	long ret;
+
+	if (cmd == MTIOCPOS32)
+		cmd = MTIOCPOS;
+	else if (cmd == MTIOCGET32)
+		cmd = MTIOCGET;
+
 	mutex_lock(&ide_tape_mutex);
 	ret = do_idetape_chrdev_ioctl(file, cmd, arg);
 	mutex_unlock(&ide_tape_mutex);
@@ -1746,7 +1759,6 @@ static void idetape_setup(ide_drive_t *drive, idetape_tape_t *tape, int minor)
 {
 	unsigned long t;
 	int speed;
-	int buffer_size;
 	u16 *ctl = (u16 *)&tape->caps[12];
 
 	ide_debug_log(IDE_DBG_FUNC, "minor: %d", minor);
@@ -1781,7 +1793,6 @@ static void idetape_setup(ide_drive_t *drive, idetape_tape_t *tape, int minor)
 		*ctl /= 2;
 		tape->buffer_size = *ctl * tape->blk_size;
 	}
-	buffer_size = tape->buffer_size;
 
 	/* select the "best" DSC read/write polling freq */
 	speed = max(*(u16 *)&tape->caps[14], *(u16 *)&tape->caps[8]);
@@ -1888,6 +1899,8 @@ static const struct file_operations idetape_fops = {
 	.read		= idetape_chrdev_read,
 	.write		= idetape_chrdev_write,
 	.unlocked_ioctl	= idetape_chrdev_ioctl,
+	.compat_ioctl	= IS_ENABLED(CONFIG_COMPAT) ?
+			  idetape_chrdev_compat_ioctl : NULL,
 	.open		= idetape_chrdev_open,
 	.release	= idetape_chrdev_release,
 	.llseek		= noop_llseek,

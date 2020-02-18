@@ -33,7 +33,7 @@ static int btrfs_encode_fh(struct inode *inode, u32 *fh, int *max_len,
 	type = FILEID_BTRFS_WITHOUT_PARENT;
 
 	fid->objectid = btrfs_ino(BTRFS_I(inode));
-	fid->root_objectid = BTRFS_I(inode)->root->objectid;
+	fid->root_objectid = BTRFS_I(inode)->root->root_key.objectid;
 	fid->gen = inode->i_generation;
 
 	if (parent) {
@@ -41,7 +41,7 @@ static int btrfs_encode_fh(struct inode *inode, u32 *fh, int *max_len,
 
 		fid->parent_objectid = BTRFS_I(parent)->location.objectid;
 		fid->parent_gen = parent->i_generation;
-		parent_root_id = BTRFS_I(parent)->root->objectid;
+		parent_root_id = BTRFS_I(parent)->root->root_key.objectid;
 
 		if (parent_root_id != fid->root_objectid) {
 			fid->parent_root_objectid = parent_root_id;
@@ -87,7 +87,7 @@ static struct dentry *btrfs_get_dentry(struct super_block *sb, u64 objectid,
 	key.type = BTRFS_INODE_ITEM_KEY;
 	key.offset = 0;
 
-	inode = btrfs_iget(sb, &key, root, NULL);
+	inode = btrfs_iget(sb, &key, root);
 	if (IS_ERR(inode)) {
 		err = PTR_ERR(inode);
 		goto fail;
@@ -214,7 +214,7 @@ static struct dentry *btrfs_get_parent(struct dentry *child)
 
 	key.type = BTRFS_INODE_ITEM_KEY;
 	key.offset = 0;
-	return d_obtain_alias(btrfs_iget(fs_info->sb, &key, root, NULL));
+	return d_obtain_alias(btrfs_iget(fs_info->sb, &key, root));
 fail:
 	btrfs_free_path(path);
 	return ERR_PTR(ret);

@@ -143,8 +143,9 @@ static int rcm_cpufreq_init(struct cpufreq_policy *policy)
 {
 	struct rcm_cpufreq_data *data =
 		rcm_cpufreq_driver.driver_data;
-	return cpufreq_generic_init(policy, data->cpu_freqs,
-				    12000); // to check latency
+	cpufreq_generic_init(policy, data->cpu_freqs,
+					12000); // to check latency
+	return 0;
 }
 
 static unsigned int rcm_get_cpu_freq(unsigned int cpu)

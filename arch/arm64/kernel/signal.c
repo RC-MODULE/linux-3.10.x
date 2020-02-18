@@ -1,20 +1,9 @@
+// SPDX-License-Identifier: GPL-2.0-only
 /*
  * Based on arch/arm/kernel/signal.c
  *
  * Copyright (C) 1995-2009 Russell King
  * Copyright (C) 2012 ARM Ltd.
- *
- * This program is free software; you can redistribute it and/or modify
- * it under the terms of the GNU General Public License version 2 as
- * published by the Free Software Foundation.
- *
- * This program is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU General Public License for more details.
- *
- * You should have received a copy of the GNU General Public License
- * along with this program.  If not, see <http://www.gnu.org/licenses/>.
  */
 
 #include <linux/cache.h>
@@ -296,11 +285,6 @@ static int restore_sve_fpsimd_context(struct user_ctxs *user)
 	 */
 
 	fpsimd_flush_task_state(current);
-	barrier();
-	/* From now, fpsimd_thread_switch() won't clear TIF_FOREIGN_FPSTATE */
-
-	set_thread_flag(TIF_FOREIGN_FPSTATE);
-	barrier();
 	/* From now, fpsimd_thread_switch() won't touch thread.sve_state */
 
 	sve_alloc(current);
@@ -470,7 +454,7 @@ static int parse_user_sigframe(struct user_ctxs *user,
 			offset = 0;
 			limit = extra_size;
 
-			if (!access_ok(VERIFY_READ, base, limit))
+			if (!access_ok(base, limit))
 				goto invalid;
 
 			continue;
@@ -539,8 +523,9 @@ static int restore_sigframe(struct pt_regs *regs,
 	return err;
 }
 
-asmlinkage long sys_rt_sigreturn(struct pt_regs *regs)
+SYSCALL_DEFINE0(rt_sigreturn)
 {
+	struct pt_regs *regs = current_pt_regs();
 	struct rt_sigframe __user *frame;
 
 	/* Always make any pending restarted system calls return -EINTR */
@@ -555,7 +540,7 @@ asmlinkage long sys_rt_sigreturn(struct pt_regs *regs)
 
 	frame = (struct rt_sigframe __user *)regs->sp;
 
-	if (!access_ok(VERIFY_READ, frame, sizeof (*frame)))
+	if (!access_ok(frame, sizeof (*frame)))
 		goto badframe;
 
 	if (restore_sigframe(regs, frame))
@@ -729,7 +714,7 @@ static int get_sigframe(struct rt_sigframe_user_layout *user,
 	/*
 	 * Check that we can actually write to the signal frame.
 	 */
-	if (!access_ok(VERIFY_WRITE, user->sigframe, sp_top - sp))
+	if (!access_ok(user->sigframe, sp_top - sp))
 		return -EFAULT;
 
 	return 0;
@@ -801,6 +786,8 @@ static void handle_signal(struct ksignal *ksig, struct pt_regs *regs)
 	sigset_t *oldset = sigmask_to_save();
 	int usig = ksig->sig;
 	int ret;
+
+	rseq_signal_deliver(ksig, regs);
 
 	/*
 	 * Set up the stack frame
@@ -910,7 +897,7 @@ static void do_signal(struct pt_regs *regs)
 }
 
 asmlinkage void do_notify_resume(struct pt_regs *regs,
-				 unsigned int thread_flags)
+				 unsigned long thread_flags)
 {
 	/*
 	 * The assembly code enters us with IRQs off, but it hasn't
@@ -940,6 +927,7 @@ asmlinkage void do_notify_resume(struct pt_regs *regs,
 			if (thread_flags & _TIF_NOTIFY_RESUME) {
 				clear_thread_flag(TIF_NOTIFY_RESUME);
 				tracehook_notify_resume(regs);
+				rseq_handle_notify_resume(NULL, regs);
 			}
 
 			if (thread_flags & _TIF_FOREIGN_FPSTATE)

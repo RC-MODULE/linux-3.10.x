@@ -1,3 +1,4 @@
+/* SPDX-License-Identifier: GPL-2.0-or-later */
 /*
  * This is a SIMD SHA-1 implementation. It requires the Intel(R) Supplemental
  * SSE3 instruction set extensions introduced in Intel Core Microarchitecture
@@ -21,11 +22,6 @@
  *
  * Converted to AT&T syntax and adapted for inclusion in the Linux kernel:
  *   Author: Mathias Krause <minipli@googlemail.com>
- *
- * This program is free software; you can redistribute it and/or modify
- * it under the terms of the GNU General Public License as published by
- * the Free Software Foundation; either version 2 of the License, or
- * (at your option) any later version.
  */
 
 #include <linux/linkage.h>
@@ -71,7 +67,7 @@
  * param: function's name
  */
 .macro SHA1_VECTOR_ASM  name
-	ENTRY(\name)
+	SYM_FUNC_START(\name)
 
 	push	%rbx
 	push	%r12
@@ -96,7 +92,7 @@
 	# cleanup workspace
 	mov	$8, %ecx
 	mov	%rsp, %rdi
-	xor	%rax, %rax
+	xor	%eax, %eax
 	rep stosq
 
 	mov	%rbp, %rsp		# deallocate workspace
@@ -105,7 +101,7 @@
 	pop	%rbx
 	ret
 
-	ENDPROC(\name)
+	SYM_FUNC_END(\name)
 .endm
 
 /*

@@ -21,7 +21,10 @@
  */
 
 #include <linux/export.h>
-#include <drm/drmP.h>
+
+#include <drm/drm_bridge.h>
+#include <drm/drm_device.h>
+#include <drm/drm_drv.h>
 #include <drm/drm_encoder.h>
 
 #include "drm_crtc_internal.h"
@@ -222,7 +225,7 @@ int drm_mode_getencoder(struct drm_device *dev, void *data,
 	struct drm_crtc *crtc;
 
 	if (!drm_core_check_feature(dev, DRIVER_MODESET))
-		return -EINVAL;
+		return -EOPNOTSUPP;
 
 	encoder = drm_encoder_find(dev, file_priv, enc_resp->encoder_id);
 	if (!encoder)

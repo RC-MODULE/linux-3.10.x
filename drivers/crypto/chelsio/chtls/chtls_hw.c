@@ -1,9 +1,6 @@
+// SPDX-License-Identifier: GPL-2.0-only
 /*
  * Copyright (c) 2018 Chelsio Communications, Inc.
- *
- * This program is free software; you can redistribute it and/or modify
- * it under the terms of the GNU General Public License version 2 as
- * published by the Free Software Foundation.
  *
  * Written by: Atul Gupta (atul.gupta@chelsio.com)
  */
@@ -97,7 +94,7 @@ static int chtls_set_tcb_field(struct sock *sk, u16 word, u64 mask, u64 val)
 int chtls_set_tcb_tflag(struct sock *sk, unsigned int bit_pos, int val)
 {
 	return chtls_set_tcb_field(sk, 1, 1ULL << bit_pos,
-				   val << bit_pos);
+				   (u64)val << bit_pos);
 }
 
 static int chtls_set_tcb_keyid(struct sock *sk, int keyid)
@@ -216,8 +213,8 @@ static int chtls_key_info(struct chtls_sock *csk,
 	unsigned char key[AES_KEYSIZE_128];
 	struct tls12_crypto_info_aes_gcm_128 *gcm_ctx;
 	unsigned char ghash_h[AEAD_H_SIZE];
-	struct crypto_cipher *cipher;
 	int ck_size, key_ctx_size;
+	struct crypto_aes_ctx aes;
 	int ret;
 
 	gcm_ctx = (struct tls12_crypto_info_aes_gcm_128 *)
@@ -237,18 +234,13 @@ static int chtls_key_info(struct chtls_sock *csk,
 	/* Calculate the H = CIPH(K, 0 repeated 16 times).
 	 * It will go in key context
 	 */
-	cipher = crypto_alloc_cipher("aes", 0, 0);
-	if (IS_ERR(cipher)) {
-		ret = -ENOMEM;
-		goto out;
-	}
-
-	ret = crypto_cipher_setkey(cipher, key, keylen);
+	ret = aes_expandkey(&aes, key, keylen);
 	if (ret)
-		goto out1;
+		return ret;
 
 	memset(ghash_h, 0, AEAD_H_SIZE);
-	crypto_cipher_encrypt_one(cipher, ghash_h, ghash_h);
+	aes_encrypt(&aes, ghash_h, ghash_h);
+	memzero_explicit(&aes, sizeof(aes));
 	csk->tlshws.keylen = key_ctx_size;
 
 	/* Copy the Key context */
@@ -272,10 +264,7 @@ static int chtls_key_info(struct chtls_sock *csk,
 	/* erase key info from driver */
 	memset(gcm_ctx->key, 0, keylen);
 
-out1:
-	crypto_free_cipher(cipher);
-out:
-	return ret;
+	return 0;
 }
 
 static void chtls_set_scmd(struct chtls_sock *csk)

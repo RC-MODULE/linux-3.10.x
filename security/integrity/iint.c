@@ -1,13 +1,9 @@
+// SPDX-License-Identifier: GPL-2.0-only
 /*
  * Copyright (C) 2008 IBM Corporation
  *
  * Authors:
  * Mimi Zohar <zohar@us.ibm.com>
- *
- * This program is free software; you can redistribute it and/or
- * modify it under the terms of the GNU General Public License as
- * published by the Free Software Foundation, version 2 of the
- * License.
  *
  * File: integrity_iint.c
  *	- implements the integrity hooks: integrity_inode_alloc,
@@ -16,12 +12,13 @@
  *	  using a rbtree tree.
  */
 #include <linux/slab.h>
-#include <linux/module.h>
+#include <linux/init.h>
 #include <linux/spinlock.h>
 #include <linux/rbtree.h>
 #include <linux/file.h>
 #include <linux/uaccess.h>
 #include <linux/security.h>
+#include <linux/lsm_hooks.h>
 #include "integrity.h"
 
 static struct rb_root integrity_iint_tree = RB_ROOT;
@@ -174,7 +171,10 @@ static int __init integrity_iintcache_init(void)
 			      0, SLAB_PANIC, init_once);
 	return 0;
 }
-security_initcall(integrity_iintcache_init);
+DEFINE_LSM(integrity) = {
+	.name = "integrity",
+	.init = integrity_iintcache_init,
+};
 
 
 /*
@@ -196,7 +196,7 @@ int integrity_kernel_read(struct file *file, loff_t offset,
 		return -EBADF;
 
 	old_fs = get_fs();
-	set_fs(get_ds());
+	set_fs(KERNEL_DS);
 	ret = __vfs_read(file, buf, count, &offset);
 	set_fs(old_fs);
 
@@ -219,10 +219,13 @@ static int __init integrity_fs_init(void)
 {
 	integrity_dir = securityfs_create_dir("integrity", NULL);
 	if (IS_ERR(integrity_dir)) {
-		pr_err("Unable to create integrity sysfs dir: %ld\n",
-		       PTR_ERR(integrity_dir));
+		int ret = PTR_ERR(integrity_dir);
+
+		if (ret != -ENODEV)
+			pr_err("Unable to create integrity sysfs dir: %d\n",
+			       ret);
 		integrity_dir = NULL;
-		return PTR_ERR(integrity_dir);
+		return ret;
 	}
 
 	return 0;

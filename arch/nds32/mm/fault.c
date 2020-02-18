@@ -9,6 +9,7 @@
 #include <linux/init.h>
 #include <linux/hardirq.h>
 #include <linux/uaccess.h>
+#include <linux/perf_event.h>
 
 #include <asm/pgtable.h>
 #include <asm/tlbflush.h>
@@ -30,6 +31,8 @@ void show_pte(struct mm_struct *mm, unsigned long addr)
 	pr_alert("[%08lx] *pgd=%08lx", addr, pgd_val(*pgd));
 
 	do {
+		p4d_t *p4d;
+		pud_t *pud;
 		pmd_t *pmd;
 
 		if (pgd_none(*pgd))
@@ -40,7 +43,9 @@ void show_pte(struct mm_struct *mm, unsigned long addr)
 			break;
 		}
 
-		pmd = pmd_offset(pgd, addr);
+		p4d = p4d_offset(pgd, addr);
+		pud = pud_offset(p4d, addr);
+		pmd = pmd_offset(pud, addr);
 #if PTRS_PER_PMD != 1
 		pr_alert(", *pmd=%08lx", pmd_val(*pmd));
 #endif
@@ -73,7 +78,7 @@ void do_page_fault(unsigned long entry, unsigned long addr,
 	struct mm_struct *mm;
 	struct vm_area_struct *vma;
 	int si_code;
-	int fault;
+	vm_fault_t fault;
 	unsigned int mask = VM_READ | VM_WRITE | VM_EXEC;
 	unsigned int flags = FAULT_FLAG_ALLOW_RETRY | FAULT_FLAG_KILLABLE;
 
@@ -169,8 +174,6 @@ good_area:
 			mask = VM_EXEC;
 		else {
 			mask = VM_READ | VM_WRITE;
-			if (vma->vm_flags & VM_WRITE)
-				flags |= FAULT_FLAG_WRITE;
 		}
 	} else if (entry == ENTRY_TLB_MISC) {
 		switch (error_code & ITYPE_mskETYPE) {
@@ -231,11 +234,17 @@ good_area:
 	 * attempt. If we go through a retry, it is extremely likely that the
 	 * page will be found in page cache at that point.
 	 */
+	perf_sw_event(PERF_COUNT_SW_PAGE_FAULTS, 1, regs, addr);
 	if (flags & FAULT_FLAG_ALLOW_RETRY) {
-		if (fault & VM_FAULT_MAJOR)
+		if (fault & VM_FAULT_MAJOR) {
 			tsk->maj_flt++;
-		else
+			perf_sw_event(PERF_COUNT_SW_PAGE_FAULTS_MAJ,
+				      1, regs, addr);
+		} else {
 			tsk->min_flt++;
+			perf_sw_event(PERF_COUNT_SW_PAGE_FAULTS_MIN,
+				      1, regs, addr);
+		}
 		if (fault & VM_FAULT_RETRY) {
 			flags &= ~FAULT_FLAG_ALLOW_RETRY;
 			flags |= FAULT_FLAG_TRIED;
@@ -266,7 +275,7 @@ bad_area_nosemaphore:
 		tsk->thread.address = addr;
 		tsk->thread.error_code = error_code;
 		tsk->thread.trap_no = entry;
-		force_sig_fault(SIGSEGV, si_code, (void __user *)addr, tsk);
+		force_sig_fault(SIGSEGV, si_code, (void __user *)addr);
 		return;
 	}
 
@@ -335,7 +344,7 @@ do_sigbus:
 	tsk->thread.address = addr;
 	tsk->thread.error_code = error_code;
 	tsk->thread.trap_no = entry;
-	force_sig_fault(SIGBUS, BUS_ADRERR, (void __user *)addr, tsk);
+	force_sig_fault(SIGBUS, BUS_ADRERR, (void __user *)addr);
 
 	return;
 
@@ -354,6 +363,7 @@ vmalloc_fault:
 
 		unsigned int index = pgd_index(addr);
 		pgd_t *pgd, *pgd_k;
+		p4d_t *p4d, *p4d_k;
 		pud_t *pud, *pud_k;
 		pmd_t *pmd, *pmd_k;
 		pte_t *pte_k;
@@ -364,8 +374,13 @@ vmalloc_fault:
 		if (!pgd_present(*pgd_k))
 			goto no_context;
 
-		pud = pud_offset(pgd, addr);
-		pud_k = pud_offset(pgd_k, addr);
+		p4d = p4d_offset(pgd, addr);
+		p4d_k = p4d_offset(pgd_k, addr);
+		if (!p4d_present(*p4d_k))
+			goto no_context;
+
+		pud = pud_offset(p4d, addr);
+		pud_k = pud_offset(p4d_k, addr);
 		if (!pud_present(*pud_k))
 			goto no_context;
 

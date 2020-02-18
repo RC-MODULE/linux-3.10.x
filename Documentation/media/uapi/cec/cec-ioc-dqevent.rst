@@ -1,4 +1,11 @@
-.. -*- coding: utf-8; mode: rst -*-
+.. Permission is granted to copy, distribute and/or modify this
+.. document under the terms of the GNU Free Documentation License,
+.. Version 1.1 or any later version published by the Free Software
+.. Foundation, with no Invariant Sections, no Front-Cover Texts
+.. and no Back-Cover Texts. A copy of the license is included at
+.. Documentation/media/uapi/fdl-appendix.rst.
+..
+.. TODO: replace it to GFDL-1.1-or-later WITH no-invariant-sections
 
 .. _CEC_DQEVENT:
 
@@ -63,6 +70,14 @@ it is guaranteed that the state did change in between the two events.
         addresses are claimed or if ``phys_addr`` is ``CEC_PHYS_ADDR_INVALID``.
 	If bit 15 is set (``1 << CEC_LOG_ADDR_UNREGISTERED``) then this device
 	has the unregistered logical address. In that case all other bits are 0.
+    * - __u16
+      - ``have_conn_info``
+      - If non-zero, then HDMI connector information is available.
+        This field is only valid if ``CEC_CAP_CONNECTOR_INFO`` is set. If that
+        capability is set and ``have_conn_info`` is zero, then that indicates
+        that the HDMI connector device is not instantiated, either because
+        the HDMI driver is still configuring the device or because the HDMI
+        device was unbound.
 
 
 .. c:type:: cec_event_lost_msgs
@@ -178,6 +193,24 @@ it is guaranteed that the state did change in between the two events.
 	Only applies to adapters that have the ``CEC_CAP_MONITOR_PIN``
 	capability set. When open() is called, the HPD pin can be read and
 	if the HPD is high, then an initial event will be generated for that
+	filehandle.
+    * .. _`CEC-EVENT-PIN-5V-LOW`:
+
+      - ``CEC_EVENT_PIN_5V_LOW``
+      - 6
+      - Generated if the 5V pin goes from a high voltage to a low voltage.
+	Only applies to adapters that have the ``CEC_CAP_MONITOR_PIN``
+	capability set. When open() is called, the 5V pin can be read and
+	if the 5V is low, then an initial event will be generated for that
+	filehandle.
+    * .. _`CEC-EVENT-PIN-5V-HIGH`:
+
+      - ``CEC_EVENT_PIN_5V_HIGH``
+      - 7
+      - Generated if the 5V pin goes from a low voltage to a high voltage.
+	Only applies to adapters that have the ``CEC_CAP_MONITOR_PIN``
+	capability set. When open() is called, the 5V pin can be read and
+	if the 5V is high, then an initial event will be generated for that
 	filehandle.
 
 

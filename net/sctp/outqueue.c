@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: GPL-2.0-or-later
 /* SCTP kernel implementation
  * (C) Copyright IBM Corp. 2001, 2004
  * Copyright (c) 1999-2000 Cisco, Inc.
@@ -8,22 +9,6 @@
  *
  * These functions implement the sctp_outq class.   The outqueue handles
  * bundling and queueing of outgoing SCTP chunks.
- *
- * This SCTP implementation is free software;
- * you can redistribute it and/or modify it under the terms of
- * the GNU General Public License as published by
- * the Free Software Foundation; either version 2, or (at your option)
- * any later version.
- *
- * This SCTP implementation is distributed in the hope that it
- * will be useful, but WITHOUT ANY WARRANTY; without even the implied
- *                 ************************
- * warranty of MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.
- * See the GNU General Public License for more details.
- *
- * You should have received a copy of the GNU General Public License
- * along with GNU CC; see the file COPYING.  If not, see
- * <http://www.gnu.org/licenses/>.
  *
  * Please send any bug reports or fixes you make to the
  * email address(es):
@@ -80,7 +65,7 @@ static inline void sctp_outq_head_data(struct sctp_outq *q,
 	q->out_qlen += ch->skb->len;
 
 	stream = sctp_chunk_stream_no(ch);
-	oute = q->asoc->stream.out[stream].ext;
+	oute = SCTP_SO(&q->asoc->stream, stream)->ext;
 	list_add(&ch->stream_list, &oute->outq);
 }
 
@@ -101,7 +86,7 @@ static inline void sctp_outq_tail_data(struct sctp_outq *q,
 	q->out_qlen += ch->skb->len;
 
 	stream = sctp_chunk_stream_no(ch);
-	oute = q->asoc->stream.out[stream].ext;
+	oute = SCTP_SO(&q->asoc->stream, stream)->ext;
 	list_add_tail(&ch->stream_list, &oute->outq);
 }
 
@@ -212,7 +197,7 @@ void sctp_outq_init(struct sctp_association *asoc, struct sctp_outq *q)
 	INIT_LIST_HEAD(&q->retransmit);
 	INIT_LIST_HEAD(&q->sacked);
 	INIT_LIST_HEAD(&q->abandoned);
-	sctp_sched_set_sched(asoc, SCTP_SS_FCFS);
+	sctp_sched_set_sched(asoc, sctp_sk(asoc->base.sk)->default_ss);
 }
 
 /* Free the outqueue structure and any related pending chunks.
@@ -372,7 +357,7 @@ static int sctp_prsctp_prune_sent(struct sctp_association *asoc,
 		sctp_insert_list(&asoc->outqueue.abandoned,
 				 &chk->transmitted_list);
 
-		streamout = &asoc->stream.out[chk->sinfo.sinfo_stream];
+		streamout = SCTP_SO(&asoc->stream, chk->sinfo.sinfo_stream);
 		asoc->sent_cnt_removable--;
 		asoc->abandoned_sent[SCTP_PR_INDEX(PRIO)]++;
 		streamout->ext->abandoned_sent[SCTP_PR_INDEX(PRIO)]++;
@@ -385,9 +370,7 @@ static int sctp_prsctp_prune_sent(struct sctp_association *asoc,
 			asoc->outqueue.outstanding_bytes -= sctp_data_size(chk);
 		}
 
-		msg_len -= SCTP_DATA_SNDSIZE(chk) +
-			   sizeof(struct sk_buff) +
-			   sizeof(struct sctp_chunk);
+		msg_len -= chk->skb->truesize + sizeof(struct sctp_chunk);
 		if (msg_len <= 0)
 			break;
 	}
@@ -416,14 +399,12 @@ static int sctp_prsctp_prune_unsent(struct sctp_association *asoc,
 		asoc->abandoned_unsent[SCTP_PR_INDEX(PRIO)]++;
 		if (chk->sinfo.sinfo_stream < asoc->stream.outcnt) {
 			struct sctp_stream_out *streamout =
-				&asoc->stream.out[chk->sinfo.sinfo_stream];
+				SCTP_SO(&asoc->stream, chk->sinfo.sinfo_stream);
 
 			streamout->ext->abandoned_unsent[SCTP_PR_INDEX(PRIO)]++;
 		}
 
-		msg_len -= SCTP_DATA_SNDSIZE(chk) +
-			   sizeof(struct sk_buff) +
-			   sizeof(struct sctp_chunk);
+		msg_len -= chk->skb->truesize + sizeof(struct sctp_chunk);
 		sctp_chunk_free(chk);
 		if (msg_len <= 0)
 			break;
@@ -1048,7 +1029,7 @@ static void sctp_outq_flush_data(struct sctp_flush_ctx *ctx,
 		if (!ctx->packet || !ctx->packet->has_cookie_echo)
 			return;
 
-		/* fallthru */
+		/* fall through */
 	case SCTP_STATE_ESTABLISHED:
 	case SCTP_STATE_SHUTDOWN_PENDING:
 	case SCTP_STATE_SHUTDOWN_RECEIVED:
@@ -1082,6 +1063,7 @@ static void sctp_outq_flush_data(struct sctp_flush_ctx *ctx,
 	/* Finally, transmit new packets.  */
 	while ((chunk = sctp_outq_dequeue_data(ctx->q)) != NULL) {
 		__u32 sid = ntohs(chunk->subh.data_hdr->stream);
+		__u8 stream_state = SCTP_SO(&ctx->asoc->stream, sid)->state;
 
 		/* Has this chunk expired? */
 		if (sctp_chunk_abandoned(chunk)) {
@@ -1091,7 +1073,7 @@ static void sctp_outq_flush_data(struct sctp_flush_ctx *ctx,
 			continue;
 		}
 
-		if (ctx->asoc->stream.out[sid].state == SCTP_STREAM_CLOSED) {
+		if (stream_state == SCTP_STREAM_CLOSED) {
 			sctp_outq_head_data(ctx->q, chunk);
 			break;
 		}

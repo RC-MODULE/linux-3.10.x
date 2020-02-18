@@ -33,6 +33,7 @@
 #include <linux/hw_breakpoint.h>
 #include <linux/perf_event.h>
 #include <linux/context_tracking.h>
+#include <linux/nospec.h>
 
 #include <linux/uaccess.h>
 #include <linux/pkeys.h>
@@ -42,6 +43,7 @@
 #include <asm/tm.h>
 #include <asm/asm-prototypes.h>
 #include <asm/debug.h>
+#include <asm/hw_breakpoint.h>
 
 #define CREATE_TRACE_POINTS
 #include <trace/events/syscalls.h>
@@ -274,6 +276,8 @@ static int set_user_trap(struct task_struct *task, unsigned long trap)
  */
 int ptrace_get_reg(struct task_struct *task, int regno, unsigned long *data)
 {
+	unsigned int regs_max;
+
 	if ((task->thread.regs == NULL) || !data)
 		return -EIO;
 
@@ -297,7 +301,9 @@ int ptrace_get_reg(struct task_struct *task, int regno, unsigned long *data)
 	}
 #endif
 
-	if (regno < (sizeof(struct pt_regs) / sizeof(unsigned long))) {
+	regs_max = sizeof(struct user_pt_regs) / sizeof(unsigned long);
+	if (regno < regs_max) {
+		regno = array_index_nospec(regno, regs_max);
 		*data = ((unsigned long *)task->thread.regs)[regno];
 		return 0;
 	}
@@ -321,6 +327,7 @@ int ptrace_put_reg(struct task_struct *task, int regno, unsigned long data)
 		return set_user_dscr(task, data);
 
 	if (regno <= PT_MAX_PUT_REG) {
+		regno = array_index_nospec(regno, PT_MAX_PUT_REG + 1);
 		((unsigned long *)task->thread.regs)[regno] = data;
 		return 0;
 	}
@@ -360,10 +367,10 @@ static int gpr_get(struct task_struct *target, const struct user_regset *regset,
 		ret = user_regset_copyout(&pos, &count, &kbuf, &ubuf,
 					  &target->thread.regs->orig_gpr3,
 					  offsetof(struct pt_regs, orig_gpr3),
-					  sizeof(struct pt_regs));
+					  sizeof(struct user_pt_regs));
 	if (!ret)
 		ret = user_regset_copyout_zero(&pos, &count, &kbuf, &ubuf,
-					       sizeof(struct pt_regs), -1);
+					       sizeof(struct user_pt_regs), -1);
 
 	return ret;
 }
@@ -561,6 +568,7 @@ static int vr_get(struct task_struct *target, const struct user_regset *regset,
 		/*
 		 * Copy out only the low-order word of vrsave.
 		 */
+		int start, end;
 		union {
 			elf_vrreg_t reg;
 			u32 word;
@@ -569,8 +577,10 @@ static int vr_get(struct task_struct *target, const struct user_regset *regset,
 
 		vrsave.word = target->thread.vrsave;
 
+		start = 33 * sizeof(vector128);
+		end = start + sizeof(vrsave);
 		ret = user_regset_copyout(&pos, &count, &kbuf, &ubuf, &vrsave,
-					  33 * sizeof(vector128), -1);
+					  start, end);
 	}
 
 	return ret;
@@ -608,6 +618,7 @@ static int vr_set(struct task_struct *target, const struct user_regset *regset,
 		/*
 		 * We use only the first word of vrsave.
 		 */
+		int start, end;
 		union {
 			elf_vrreg_t reg;
 			u32 word;
@@ -616,8 +627,10 @@ static int vr_set(struct task_struct *target, const struct user_regset *regset,
 
 		vrsave.word = target->thread.vrsave;
 
+		start = 33 * sizeof(vector128);
+		end = start + sizeof(vrsave);
 		ret = user_regset_copyin(&pos, &count, &kbuf, &ubuf, &vrsave,
-					 33 * sizeof(vector128), -1);
+					 start, end);
 		if (!ret)
 			target->thread.vrsave = vrsave.word;
 	}
@@ -853,10 +866,10 @@ static int tm_cgpr_get(struct task_struct *target,
 		ret = user_regset_copyout(&pos, &count, &kbuf, &ubuf,
 					  &target->thread.ckpt_regs.orig_gpr3,
 					  offsetof(struct pt_regs, orig_gpr3),
-					  sizeof(struct pt_regs));
+					  sizeof(struct user_pt_regs));
 	if (!ret)
 		ret = user_regset_copyout_zero(&pos, &count, &kbuf, &ubuf,
-					       sizeof(struct pt_regs), -1);
+					       sizeof(struct user_pt_regs), -1);
 
 	return ret;
 }
@@ -1609,7 +1622,7 @@ static int ppr_get(struct task_struct *target,
 		      void *kbuf, void __user *ubuf)
 {
 	return user_regset_copyout(&pos, &count, &kbuf, &ubuf,
-				   &target->thread.ppr, 0, sizeof(u64));
+				   &target->thread.regs->ppr, 0, sizeof(u64));
 }
 
 static int ppr_set(struct task_struct *target,
@@ -1618,7 +1631,7 @@ static int ppr_set(struct task_struct *target,
 		      const void *kbuf, const void __user *ubuf)
 {
 	return user_regset_copyin(&pos, &count, &kbuf, &ubuf,
-				  &target->thread.ppr, 0, sizeof(u64));
+				  &target->thread.regs->ppr, 0, sizeof(u64));
 }
 
 static int dscr_get(struct task_struct *target,
@@ -2412,7 +2425,8 @@ static int ptrace_set_debugreg(struct task_struct *task, unsigned long addr,
 		return -EIO;
 	hw_brk.address = data & (~HW_BRK_TYPE_DABR);
 	hw_brk.type = (data & HW_BRK_TYPE_DABR) | HW_BRK_TYPE_PRIV_ALL;
-	hw_brk.len = 8;
+	hw_brk.len = DABR_MAX_LEN;
+	hw_brk.hw_len = DABR_MAX_LEN;
 	set_bp = (data) && (hw_brk.type & HW_BRK_TYPE_RDWR);
 #ifdef CONFIG_HAVE_HW_BREAKPOINT
 	bp = thread->ptrace_bps[0];
@@ -2426,6 +2440,7 @@ static int ptrace_set_debugreg(struct task_struct *task, unsigned long addr,
 	if (bp) {
 		attr = bp->attr;
 		attr.bp_addr = hw_brk.address;
+		attr.bp_len = DABR_MAX_LEN;
 		arch_bp_generic_fields(hw_brk.type, &attr.bp_type);
 
 		/* Enable breakpoint */
@@ -2443,7 +2458,7 @@ static int ptrace_set_debugreg(struct task_struct *task, unsigned long addr,
 	/* Create a new breakpoint request if one doesn't exist already */
 	hw_breakpoint_init(&attr);
 	attr.bp_addr = hw_brk.address;
-	attr.bp_len = 8;
+	attr.bp_len = DABR_MAX_LEN;
 	arch_bp_generic_fields(hw_brk.type,
 			       &attr.bp_type);
 
@@ -2867,18 +2882,14 @@ static long ppc_set_hwdebug(struct task_struct *child,
 	if ((unsigned long)bp_info->addr >= TASK_SIZE)
 		return -EIO;
 
-	brk.address = bp_info->addr & ~7UL;
+	brk.address = bp_info->addr & ~HW_BREAKPOINT_ALIGN;
 	brk.type = HW_BRK_TYPE_TRANSLATE;
-	brk.len = 8;
+	brk.len = DABR_MAX_LEN;
 	if (bp_info->trigger_type & PPC_BREAKPOINT_TRIGGER_READ)
 		brk.type |= HW_BRK_TYPE_READ;
 	if (bp_info->trigger_type & PPC_BREAKPOINT_TRIGGER_WRITE)
 		brk.type |= HW_BRK_TYPE_WRITE;
 #ifdef CONFIG_HAVE_HW_BREAKPOINT
-	/*
-	 * Check if the request is for 'range' breakpoints. We can
-	 * support it if range < 8 bytes.
-	 */
 	if (bp_info->addr_mode == PPC_BREAKPOINT_MODE_RANGE_INCLUSIVE)
 		len = bp_info->addr2 - bp_info->addr;
 	else if (bp_info->addr_mode == PPC_BREAKPOINT_MODE_EXACT)
@@ -2891,7 +2902,7 @@ static long ppc_set_hwdebug(struct task_struct *child,
 
 	/* Create a new breakpoint request if one doesn't exist already */
 	hw_breakpoint_init(&attr);
-	attr.bp_addr = (unsigned long)bp_info->addr & ~HW_BREAKPOINT_ALIGN;
+	attr.bp_addr = (unsigned long)bp_info->addr;
 	attr.bp_len = len;
 	arch_bp_generic_fields(brk.type, &attr.bp_type);
 
@@ -3075,7 +3086,7 @@ long arch_ptrace(struct task_struct *child, long request,
 		dbginfo.sizeof_condition = 0;
 #ifdef CONFIG_HAVE_HW_BREAKPOINT
 		dbginfo.features = PPC_DEBUG_FEATURE_DATA_BP_RANGE;
-		if (cpu_has_feature(CPU_FTR_DAWR))
+		if (dawr_enabled())
 			dbginfo.features |= PPC_DEBUG_FEATURE_DATA_BP_DAWR;
 #else
 		dbginfo.features = 0;
@@ -3130,7 +3141,7 @@ long arch_ptrace(struct task_struct *child, long request,
 	case PTRACE_GETREGS:	/* Get all pt_regs from the child. */
 		return copy_regset_to_user(child, &user_ppc_native_view,
 					   REGSET_GPR,
-					   0, sizeof(struct pt_regs),
+					   0, sizeof(struct user_pt_regs),
 					   datavp);
 
 #ifdef CONFIG_PPC64
@@ -3139,7 +3150,7 @@ long arch_ptrace(struct task_struct *child, long request,
 	case PTRACE_SETREGS:	/* Set all gp regs in the child. */
 		return copy_regset_from_user(child, &user_ppc_native_view,
 					     REGSET_GPR,
-					     0, sizeof(struct pt_regs),
+					     0, sizeof(struct user_pt_regs),
 					     datavp);
 
 	case PTRACE_GETFPREGS: /* Get the child FPU state (FPR0...31 + FPSCR) */
@@ -3262,17 +3273,40 @@ static inline int do_seccomp(struct pt_regs *regs) { return 0; }
  */
 long do_syscall_trace_enter(struct pt_regs *regs)
 {
+	u32 flags;
+
 	user_exit();
 
-	/*
-	 * The tracer may decide to abort the syscall, if so tracehook
-	 * will return !0. Note that the tracer may also just change
-	 * regs->gpr[0] to an invalid syscall number, that is handled
-	 * below on the exit path.
-	 */
-	if (test_thread_flag(TIF_SYSCALL_TRACE) &&
-	    tracehook_report_syscall_entry(regs))
-		goto skip;
+	flags = READ_ONCE(current_thread_info()->flags) &
+		(_TIF_SYSCALL_EMU | _TIF_SYSCALL_TRACE);
+
+	if (flags) {
+		int rc = tracehook_report_syscall_entry(regs);
+
+		if (unlikely(flags & _TIF_SYSCALL_EMU)) {
+			/*
+			 * A nonzero return code from
+			 * tracehook_report_syscall_entry() tells us to prevent
+			 * the syscall execution, but we are not going to
+			 * execute it anyway.
+			 *
+			 * Returning -1 will skip the syscall execution. We want
+			 * to avoid clobbering any registers, so we don't goto
+			 * the skip label below.
+			 */
+			return -1;
+		}
+
+		if (rc) {
+			/*
+			 * The tracer decided to abort the syscall. Note that
+			 * the tracer may also just change regs->gpr[0] to an
+			 * invalid syscall number, that is handled below on the
+			 * exit path.
+			 */
+			goto skip;
+		}
+	}
 
 	/* Run seccomp after ptrace; allow it to set gpr[3]. */
 	if (do_seccomp(regs))
@@ -3323,4 +3357,112 @@ void do_syscall_trace_leave(struct pt_regs *regs)
 		tracehook_report_syscall_exit(regs, step);
 
 	user_enter();
+}
+
+void __init pt_regs_check(void);
+
+/*
+ * Dummy function, its purpose is to break the build if struct pt_regs and
+ * struct user_pt_regs don't match.
+ */
+void __init pt_regs_check(void)
+{
+	BUILD_BUG_ON(offsetof(struct pt_regs, gpr) !=
+		     offsetof(struct user_pt_regs, gpr));
+	BUILD_BUG_ON(offsetof(struct pt_regs, nip) !=
+		     offsetof(struct user_pt_regs, nip));
+	BUILD_BUG_ON(offsetof(struct pt_regs, msr) !=
+		     offsetof(struct user_pt_regs, msr));
+	BUILD_BUG_ON(offsetof(struct pt_regs, msr) !=
+		     offsetof(struct user_pt_regs, msr));
+	BUILD_BUG_ON(offsetof(struct pt_regs, orig_gpr3) !=
+		     offsetof(struct user_pt_regs, orig_gpr3));
+	BUILD_BUG_ON(offsetof(struct pt_regs, ctr) !=
+		     offsetof(struct user_pt_regs, ctr));
+	BUILD_BUG_ON(offsetof(struct pt_regs, link) !=
+		     offsetof(struct user_pt_regs, link));
+	BUILD_BUG_ON(offsetof(struct pt_regs, xer) !=
+		     offsetof(struct user_pt_regs, xer));
+	BUILD_BUG_ON(offsetof(struct pt_regs, ccr) !=
+		     offsetof(struct user_pt_regs, ccr));
+#ifdef __powerpc64__
+	BUILD_BUG_ON(offsetof(struct pt_regs, softe) !=
+		     offsetof(struct user_pt_regs, softe));
+#else
+	BUILD_BUG_ON(offsetof(struct pt_regs, mq) !=
+		     offsetof(struct user_pt_regs, mq));
+#endif
+	BUILD_BUG_ON(offsetof(struct pt_regs, trap) !=
+		     offsetof(struct user_pt_regs, trap));
+	BUILD_BUG_ON(offsetof(struct pt_regs, dar) !=
+		     offsetof(struct user_pt_regs, dar));
+	BUILD_BUG_ON(offsetof(struct pt_regs, dsisr) !=
+		     offsetof(struct user_pt_regs, dsisr));
+	BUILD_BUG_ON(offsetof(struct pt_regs, result) !=
+		     offsetof(struct user_pt_regs, result));
+
+	BUILD_BUG_ON(sizeof(struct user_pt_regs) > sizeof(struct pt_regs));
+
+	// Now check that the pt_regs offsets match the uapi #defines
+	#define CHECK_REG(_pt, _reg) \
+		BUILD_BUG_ON(_pt != (offsetof(struct user_pt_regs, _reg) / \
+				     sizeof(unsigned long)));
+
+	CHECK_REG(PT_R0,  gpr[0]);
+	CHECK_REG(PT_R1,  gpr[1]);
+	CHECK_REG(PT_R2,  gpr[2]);
+	CHECK_REG(PT_R3,  gpr[3]);
+	CHECK_REG(PT_R4,  gpr[4]);
+	CHECK_REG(PT_R5,  gpr[5]);
+	CHECK_REG(PT_R6,  gpr[6]);
+	CHECK_REG(PT_R7,  gpr[7]);
+	CHECK_REG(PT_R8,  gpr[8]);
+	CHECK_REG(PT_R9,  gpr[9]);
+	CHECK_REG(PT_R10, gpr[10]);
+	CHECK_REG(PT_R11, gpr[11]);
+	CHECK_REG(PT_R12, gpr[12]);
+	CHECK_REG(PT_R13, gpr[13]);
+	CHECK_REG(PT_R14, gpr[14]);
+	CHECK_REG(PT_R15, gpr[15]);
+	CHECK_REG(PT_R16, gpr[16]);
+	CHECK_REG(PT_R17, gpr[17]);
+	CHECK_REG(PT_R18, gpr[18]);
+	CHECK_REG(PT_R19, gpr[19]);
+	CHECK_REG(PT_R20, gpr[20]);
+	CHECK_REG(PT_R21, gpr[21]);
+	CHECK_REG(PT_R22, gpr[22]);
+	CHECK_REG(PT_R23, gpr[23]);
+	CHECK_REG(PT_R24, gpr[24]);
+	CHECK_REG(PT_R25, gpr[25]);
+	CHECK_REG(PT_R26, gpr[26]);
+	CHECK_REG(PT_R27, gpr[27]);
+	CHECK_REG(PT_R28, gpr[28]);
+	CHECK_REG(PT_R29, gpr[29]);
+	CHECK_REG(PT_R30, gpr[30]);
+	CHECK_REG(PT_R31, gpr[31]);
+	CHECK_REG(PT_NIP, nip);
+	CHECK_REG(PT_MSR, msr);
+	CHECK_REG(PT_ORIG_R3, orig_gpr3);
+	CHECK_REG(PT_CTR, ctr);
+	CHECK_REG(PT_LNK, link);
+	CHECK_REG(PT_XER, xer);
+	CHECK_REG(PT_CCR, ccr);
+#ifdef CONFIG_PPC64
+	CHECK_REG(PT_SOFTE, softe);
+#else
+	CHECK_REG(PT_MQ, mq);
+#endif
+	CHECK_REG(PT_TRAP, trap);
+	CHECK_REG(PT_DAR, dar);
+	CHECK_REG(PT_DSISR, dsisr);
+	CHECK_REG(PT_RESULT, result);
+	#undef CHECK_REG
+
+	BUILD_BUG_ON(PT_REGS_COUNT != sizeof(struct user_pt_regs) / sizeof(unsigned long));
+
+	/*
+	 * PT_DSCR isn't a real reg, but it's important that it doesn't overlap the
+	 * real registers.
+	 */
+	BUILD_BUG_ON(PT_DSCR < sizeof(struct user_pt_regs) / sizeof(unsigned long));
 }

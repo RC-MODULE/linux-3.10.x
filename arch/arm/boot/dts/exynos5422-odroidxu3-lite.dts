@@ -18,6 +18,18 @@
 	compatible = "hardkernel,odroid-xu3-lite", "samsung,exynos5800", "samsung,exynos5";
 };
 
+&arm_a7_pmu {
+	status = "disabled";
+};
+
+&arm_a15_pmu {
+	status = "disabled";
+};
+
+&chipid {
+	samsung,asv-bin = <2>;
+};
+
 &pwm {
 	/*
 	 * PWM 0 -- fan

@@ -481,7 +481,7 @@ static u32 rmsdio_finish_cmd(struct rmsdio_host *host, struct mmc_command *cmd,
 	} else
 		cmd->error = 0; 
 
-		return 0;
+	return 0;
 }
 
 /* 
@@ -970,7 +970,7 @@ static int rmsdio_probe(struct platform_device *pdev)
 	struct mmc_host *mmc = NULL;
 	struct rmsdio_host *host = NULL;
 	struct resource *r;
-	int ret, irq;
+	int ret = 0, irq;
 	struct clk *clk;
 //	struct device_node		*np = pdev->dev.of_node;
 
@@ -1067,7 +1067,7 @@ static int rmsdio_probe(struct platform_device *pdev)
 		goto out;
 	}
 
-	set_dma_offset(&pdev->dev, - (pdev->dev.dma_pfn_offset << PAGE_SHIFT));
+	pdev->dev.archdata.dma_offset = - (pdev->dev.dma_pfn_offset << PAGE_SHIFT); /* before v5.5 it was: set_dma_offset(&pdev->dev, - (pdev->dev.dma_pfn_offset << PAGE_SHIFT)); */
 
 	STEP(4);
 

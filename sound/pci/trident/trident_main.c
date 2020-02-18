@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: GPL-2.0-or-later
 /*
  *  Maintained by Jaroslav Kysela <perex@perex.cz>
  *  Originated by audio@tridentmicro.com
@@ -8,21 +9,6 @@
  *
  *  TODO:
  *    ---
- *
- *   This program is free software; you can redistribute it and/or modify
- *   it under the terms of the GNU General Public License as published by
- *   the Free Software Foundation; either version 2 of the License, or
- *   (at your option) any later version.
- *
- *   This program is distributed in the hope that it will be useful,
- *   but WITHOUT ANY WARRANTY; without even the implied warranty of
- *   MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- *   GNU General Public License for more details.
- *
- *   You should have received a copy of the GNU General Public License
- *   along with this program; if not, write to the Free Software
- *   Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307 USA
- *
  *
  *  SiS7018 S/PDIF support by Thomas Winischhofer <thomas@winischhofer.net>
  */
@@ -2090,7 +2076,6 @@ static const struct snd_pcm_ops snd_trident_nx_playback_ops = {
 	.prepare =	snd_trident_playback_prepare,
 	.trigger =	snd_trident_trigger,
 	.pointer =	snd_trident_playback_pointer,
-	.page =		snd_pcm_sgbuf_ops_page,
 };
 
 static const struct snd_pcm_ops snd_trident_capture_ops = {
@@ -2135,7 +2120,6 @@ static const struct snd_pcm_ops snd_trident_nx_foldback_ops = {
 	.prepare =	snd_trident_foldback_prepare,
 	.trigger =	snd_trident_trigger,
 	.pointer =	snd_trident_playback_pointer,
-	.page =		snd_pcm_sgbuf_ops_page,
 };
 
 static const struct snd_pcm_ops snd_trident_spdif_ops = {
@@ -2200,14 +2184,16 @@ int snd_trident_pcm(struct snd_trident *trident, int device)
 		struct snd_pcm_substream *substream;
 		for (substream = pcm->streams[SNDRV_PCM_STREAM_PLAYBACK].substream; substream; substream = substream->next)
 			snd_pcm_lib_preallocate_pages(substream, SNDRV_DMA_TYPE_DEV_SG,
-						      snd_dma_pci_data(trident->pci),
+						      &trident->pci->dev,
 						      64*1024, 128*1024);
 		snd_pcm_lib_preallocate_pages(pcm->streams[SNDRV_PCM_STREAM_CAPTURE].substream,
-					      SNDRV_DMA_TYPE_DEV, snd_dma_pci_data(trident->pci),
+					      SNDRV_DMA_TYPE_DEV,
+					      &trident->pci->dev,
 					      64*1024, 128*1024);
 	} else {
 		snd_pcm_lib_preallocate_pages_for_all(pcm, SNDRV_DMA_TYPE_DEV,
-						      snd_dma_pci_data(trident->pci), 64*1024, 128*1024);
+						      &trident->pci->dev,
+						      64*1024, 128*1024);
 	}
 
 	return 0;
@@ -2257,10 +2243,12 @@ int snd_trident_foldback_pcm(struct snd_trident *trident, int device)
 
 	if (trident->tlb.entries)
 		snd_pcm_lib_preallocate_pages_for_all(foldback, SNDRV_DMA_TYPE_DEV_SG,
-						      snd_dma_pci_data(trident->pci), 0, 128*1024);
+						      &trident->pci->dev,
+						      0, 128*1024);
 	else
 		snd_pcm_lib_preallocate_pages_for_all(foldback, SNDRV_DMA_TYPE_DEV,
-						      snd_dma_pci_data(trident->pci), 64*1024, 128*1024);
+						      &trident->pci->dev,
+						      64*1024, 128*1024);
 
 	return 0;
 }
@@ -2294,7 +2282,9 @@ int snd_trident_spdif_pcm(struct snd_trident *trident, int device)
 	strcpy(spdif->name, "Trident 4DWave IEC958");
 	trident->spdif = spdif;
 
-	snd_pcm_lib_preallocate_pages_for_all(spdif, SNDRV_DMA_TYPE_DEV, snd_dma_pci_data(trident->pci), 64*1024, 128*1024);
+	snd_pcm_lib_preallocate_pages_for_all(spdif, SNDRV_DMA_TYPE_DEV,
+					      &trident->pci->dev,
+					      64*1024, 128*1024);
 
 	return 0;
 }
@@ -3320,13 +3310,11 @@ static void snd_trident_proc_read(struct snd_info_entry *entry,
 
 static void snd_trident_proc_init(struct snd_trident *trident)
 {
-	struct snd_info_entry *entry;
 	const char *s = "trident";
 	
 	if (trident->device == TRIDENT_DEVICE_ID_SI7018)
 		s = "sis7018";
-	if (! snd_card_proc_new(trident->card, s, &entry))
-		snd_info_set_text_ops(entry, trident, snd_trident_proc_read);
+	snd_card_ro_proc_new(trident->card, s, trident, snd_trident_proc_read);
 }
 
 static int snd_trident_dev_free(struct snd_device *device)
@@ -3354,12 +3342,12 @@ static int snd_trident_tlb_alloc(struct snd_trident *trident)
 	/* TLB array must be aligned to 16kB !!! so we allocate
 	   32kB region and correct offset when necessary */
 
-	if (snd_dma_alloc_pages(SNDRV_DMA_TYPE_DEV, snd_dma_pci_data(trident->pci),
+	if (snd_dma_alloc_pages(SNDRV_DMA_TYPE_DEV, &trident->pci->dev,
 				2 * SNDRV_TRIDENT_MAX_PAGES * 4, &trident->tlb.buffer) < 0) {
 		dev_err(trident->card->dev, "unable to allocate TLB buffer\n");
 		return -ENOMEM;
 	}
-	trident->tlb.entries = (unsigned int*)ALIGN((unsigned long)trident->tlb.buffer.area, SNDRV_TRIDENT_MAX_PAGES * 4);
+	trident->tlb.entries = (__le32 *)ALIGN((unsigned long)trident->tlb.buffer.area, SNDRV_TRIDENT_MAX_PAGES * 4);
 	trident->tlb.entries_dmaaddr = ALIGN(trident->tlb.buffer.addr, SNDRV_TRIDENT_MAX_PAGES * 4);
 	/* allocate shadow TLB page table (virtual addresses) */
 	trident->tlb.shadow_entries =
@@ -3369,7 +3357,7 @@ static int snd_trident_tlb_alloc(struct snd_trident *trident)
 		return -ENOMEM;
 
 	/* allocate and setup silent page and initialise TLB entries */
-	if (snd_dma_alloc_pages(SNDRV_DMA_TYPE_DEV, snd_dma_pci_data(trident->pci),
+	if (snd_dma_alloc_pages(SNDRV_DMA_TYPE_DEV, &trident->pci->dev,
 				SNDRV_TRIDENT_PAGE_SIZE, &trident->tlb.silent_page) < 0) {
 		dev_err(trident->card->dev, "unable to allocate silent page\n");
 		return -ENOMEM;
@@ -3915,10 +3903,6 @@ static int snd_trident_suspend(struct device *dev)
 
 	trident->in_suspend = 1;
 	snd_power_change_state(card, SNDRV_CTL_POWER_D3hot);
-	snd_pcm_suspend_all(trident->pcm);
-	snd_pcm_suspend_all(trident->foldback);
-	snd_pcm_suspend_all(trident->spdif);
-
 	snd_ac97_suspend(trident->ac97);
 	snd_ac97_suspend(trident->ac97_sec);
 	return 0;

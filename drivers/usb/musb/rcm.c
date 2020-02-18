@@ -153,7 +153,7 @@ static int rcm_probe(struct platform_device *pdev)
 	glue->dev			= &pdev->dev;
 	glue->musb			= musb;
 
-	set_dma_offset(&musb->dev, - (musb->dev.dma_pfn_offset << PAGE_SHIFT));
+	musb->dev.archdata.dma_offset = - (musb->dev.dma_pfn_offset << PAGE_SHIFT); /* before v5.5 it was: set_dma_offset(&musb->dev, - (musb->dev.dma_pfn_offset << PAGE_SHIFT)); */
 
 	if (np) {
 		struct device_node *sctl;

@@ -1,37 +1,11 @@
+/* SPDX-License-Identifier: GPL-2.0 OR Linux-OpenIB */
 /*
  * Copyright (c) 2004, 2011 Intel Corporation.  All rights reserved.
  * Copyright (c) 2004 Topspin Corporation.  All rights reserved.
  * Copyright (c) 2004 Voltaire Corporation.  All rights reserved.
- *
- * This software is available to you under a choice of one of two
- * licenses.  You may choose to be licensed under the terms of the GNU
- * General Public License (GPL) Version 2, available from the file
- * COPYING the madirectory of this source tree, or the
- * OpenIB.org BSD license below:
- *
- *     Redistribution and use source and binary forms, with or
- *     withmodification, are permitted provided that the following
- *     conditions are met:
- *
- *      - Redistributions of source code must retathe above
- *        copyright notice, this list of conditions and the following
- *        disclaimer.
- *
- *      - Redistributions binary form must reproduce the above
- *        copyright notice, this list of conditions and the following
- *        disclaimer the documentation and/or other materials
- *        provided with the distribution.
- *
- * THE SOFTWARE IS PROVIDED "AS IS", WITHWARRANTY OF ANY KIND,
- * EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF
- * MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND
- * NONINFRINGEMENT. NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS
- * BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER AN
- * ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OF OR IN
- * CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS THE
- * SOFTWARE.
+ * Copyright (c) 2019, Mellanox Technologies inc.  All rights reserved.
  */
-#if !defined(CM_MSGS_H)
+#ifndef CM_MSGS_H
 #define CM_MSGS_H
 
 #include <rdma/ib_mad.h>
@@ -43,13 +17,6 @@
  */
 
 #define IB_CM_CLASS_VERSION	2 /* IB specification 1.2 */
-
-enum cm_msg_sequence {
-	CM_MSG_SEQUENCE_REQ,
-	CM_MSG_SEQUENCE_LAP,
-	CM_MSG_SEQUENCE_DREQ,
-	CM_MSG_SEQUENCE_SIDR
-};
 
 struct cm_req_msg {
 	struct ib_mad_hdr hdr;
@@ -105,7 +72,7 @@ struct cm_req_msg {
 
 	u32 private_data[IB_CM_REQ_PRIVATE_DATA_SIZE / sizeof(u32)];
 
-} __attribute__ ((packed));
+} __packed;
 
 static inline __be32 cm_req_get_local_qpn(struct cm_req_msg *req_msg)
 {
@@ -430,7 +397,7 @@ enum cm_msg_response {
 
 	u8 private_data[IB_CM_MRA_PRIVATE_DATA_SIZE];
 
-} __attribute__ ((packed));
+} __packed;
 
 static inline u8 cm_mra_get_msg_mraed(struct cm_mra_msg *mra_msg)
 {
@@ -468,7 +435,7 @@ struct cm_rej_msg {
 
 	u8 private_data[IB_CM_REJ_PRIVATE_DATA_SIZE];
 
-} __attribute__ ((packed));
+} __packed;
 
 static inline u8 cm_rej_get_msg_rejected(struct cm_rej_msg *rej_msg)
 {
@@ -513,7 +480,7 @@ struct cm_rep_msg {
 
 	u8 private_data[IB_CM_REP_PRIVATE_DATA_SIZE];
 
-} __attribute__ ((packed));
+} __packed;
 
 static inline __be32 cm_rep_get_local_qpn(struct cm_rep_msg *rep_msg)
 {
@@ -621,7 +588,7 @@ struct cm_rtu_msg {
 
 	u8 private_data[IB_CM_RTU_PRIVATE_DATA_SIZE];
 
-} __attribute__ ((packed));
+} __packed;
 
 struct cm_dreq_msg {
 	struct ib_mad_hdr hdr;
@@ -633,7 +600,7 @@ struct cm_dreq_msg {
 
 	u8 private_data[IB_CM_DREQ_PRIVATE_DATA_SIZE];
 
-} __attribute__ ((packed));
+} __packed;
 
 static inline __be32 cm_dreq_get_remote_qpn(struct cm_dreq_msg *dreq_msg)
 {
@@ -654,7 +621,7 @@ struct cm_drep_msg {
 
 	u8 private_data[IB_CM_DREP_PRIVATE_DATA_SIZE];
 
-} __attribute__ ((packed));
+} __packed;
 
 struct cm_lap_msg {
 	struct ib_mad_hdr hdr;
@@ -682,7 +649,7 @@ struct cm_lap_msg {
 	u8 offset63;
 
 	u8 private_data[IB_CM_LAP_PRIVATE_DATA_SIZE];
-} __attribute__  ((packed));
+} __packed;
 
 static inline __be32 cm_lap_get_remote_qpn(struct cm_lap_msg *lap_msg)
 {
@@ -791,7 +758,7 @@ struct cm_apr_msg {
 	u8 info[IB_CM_APR_INFO_LENGTH];
 
 	u8 private_data[IB_CM_APR_PRIVATE_DATA_SIZE];
-} __attribute__ ((packed));
+} __packed;
 
 struct cm_sidr_req_msg {
 	struct ib_mad_hdr hdr;
@@ -802,7 +769,7 @@ struct cm_sidr_req_msg {
 	__be64 service_id;
 
 	u32 private_data[IB_CM_SIDR_REQ_PRIVATE_DATA_SIZE / sizeof(u32)];
-} __attribute__ ((packed));
+} __packed;
 
 struct cm_sidr_rep_msg {
 	struct ib_mad_hdr hdr;
@@ -818,7 +785,7 @@ struct cm_sidr_rep_msg {
 	u8 info[IB_CM_SIDR_REP_INFO_LENGTH];
 
 	u8 private_data[IB_CM_SIDR_REP_PRIVATE_DATA_SIZE];
-} __attribute__ ((packed));
+} __packed;
 
 static inline __be32 cm_sidr_rep_get_qpn(struct cm_sidr_rep_msg *sidr_rep_msg)
 {

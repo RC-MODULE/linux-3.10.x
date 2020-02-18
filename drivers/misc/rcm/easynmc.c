@@ -985,7 +985,7 @@ static ssize_t proc_read(struct file *filp, char __user *buffer, size_t buffer_l
 }
 
 static struct proc_dir_entry *nmc_proc_entry;
-static const struct file_operations proc_fops = {
+static const struct file_operations proc_fops = { /*wherefore? struct proc_ops?*/
 	.read = proc_read,
 	.owner = THIS_MODULE
 };

@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: GPL-2.0-only
 /*
  *  OneNAND driver for OMAP2 / OMAP3
  *
@@ -5,20 +6,6 @@
  *
  *  Author: Jarkko Lavinen <jarkko.lavinen@nokia.com> and Juha Yrjölä
  *  IRQ and DMA support written by Timo Teras
- *
- * This program is free software; you can redistribute it and/or modify it
- * under the terms of the GNU General Public License version 2 as published by
- * the Free Software Foundation.
- *
- * This program is distributed in the hope that it will be useful, but WITHOUT
- * ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or
- * FITNESS FOR A PARTICULAR PURPOSE. See the GNU General Public License for
- * more details.
- *
- * You should have received a copy of the GNU General Public License along with
- * this program; see the file COPYING. If not, write to the Free Software
- * Foundation, 59 Temple Place - Suite 330, Boston, MA 02111-1307, USA.
- *
  */
 
 #include <linux/device.h>
@@ -161,13 +148,13 @@ static int omap2_onenand_wait(struct mtd_info *mtd, int state)
 	unsigned long timeout;
 	u32 syscfg;
 
-	if (state == FL_RESETING || state == FL_PREPARING_ERASE ||
+	if (state == FL_RESETTING || state == FL_PREPARING_ERASE ||
 	    state == FL_VERIFYING_ERASE) {
 		int i = 21;
 		unsigned int intr_flags = ONENAND_INT_MASTER;
 
 		switch (state) {
-		case FL_RESETING:
+		case FL_RESETTING:
 			intr_flags |= ONENAND_INT_RESET;
 			break;
 		case FL_PREPARING_ERASE:
@@ -341,7 +328,8 @@ static inline int omap2_onenand_dma_transfer(struct omap2_onenand *c,
 	struct dma_async_tx_descriptor *tx;
 	dma_cookie_t cookie;
 
-	tx = dmaengine_prep_dma_memcpy(c->dma_chan, dst, src, count, 0);
+	tx = dmaengine_prep_dma_memcpy(c->dma_chan, dst, src, count,
+				       DMA_CTRL_ACK | DMA_PREP_INTERRUPT);
 	if (!tx) {
 		dev_err(&c->pdev->dev, "Failed to prepare DMA memcpy\n");
 		return -EIO;
@@ -388,7 +376,7 @@ static int omap2_onenand_read_bufferram(struct mtd_info *mtd, int area,
 	 * context fallback to PIO mode.
 	 */
 	if (!virt_addr_valid(buf) || bram_offset & 3 || (size_t)buf & 3 ||
-	    count < 384 || in_interrupt() || oops_in_progress )
+	    count < 384 || in_interrupt() || oops_in_progress)
 		goto out_copy;
 
 	xtra = count & 3;
@@ -435,7 +423,7 @@ static int omap2_onenand_write_bufferram(struct mtd_info *mtd, int area,
 	 * context fallback to PIO mode.
 	 */
 	if (!virt_addr_valid(buf) || bram_offset & 3 || (size_t)buf & 3 ||
-	    count < 384 || in_interrupt() || oops_in_progress )
+	    count < 384 || in_interrupt() || oops_in_progress)
 		goto out_copy;
 
 	dma_src = dma_map_single(dev, buf, count, DMA_TO_DEVICE);
@@ -541,7 +529,8 @@ static int omap2_onenand_probe(struct platform_device *pdev)
 		 c->gpmc_cs, c->phys_base, c->onenand.base,
 		 c->dma_chan ? "DMA" : "PIO");
 
-	if ((r = onenand_scan(&c->mtd, 1)) < 0)
+	r = onenand_scan(&c->mtd, 1);
+	if (r < 0)
 		goto err_release_dma;
 
 	freq = omap2_onenand_get_freq(c->onenand.version_id);

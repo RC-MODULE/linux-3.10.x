@@ -9,14 +9,13 @@
   _sdata = .;
   PROVIDE (sdata = .);
 
-  RODATA
+  RO_DATA(4096)
 
   .unprotected : { *(.unprotected) }
   . = ALIGN(4096);
   PROVIDE (_unprotected_end = .);
 
   . = ALIGN(4096);
-  NOTES
   EXCEPTION_TABLE(0)
 
   BUG_TABLE
@@ -53,8 +52,6 @@
 	CON_INITCALL
   }
 
-  SECURITY_INIT
-
   .exitcall : {
 	__exitcall_begin = .;
 	*(.exitcall.exit)
@@ -85,8 +82,8 @@
 	__preinit_array_end = .;
   }
   .init_array : {
+        /* dummy - we call this ourselves */
 	__init_array_start = .;
-	*(.init_array)
 	__init_array_end = .;
   }
   .fini_array : {
