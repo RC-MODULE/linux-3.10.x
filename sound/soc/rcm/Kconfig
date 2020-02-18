@@ -1,0 +1,25 @@
+config SND_SOC_RCM
+	tristate "Audio support for RC Module reference designs"
+	depends on 1888TX018 || COMPILE_TEST
+	select SND_SOC_SPDIF
+	select SND_SIMPLE_CARD
+	help
+	  Audio support for reference designs by RC Module.
+
+config SND_SOC_RCM_I2S
+	tristate "I2S support"
+	depends on SND_SOC_RCM
+	select REGMAP_MMIO
+	select RCM_AUDIO_DMA
+	select SND_SOC_GENERIC_DMAENGINE_PCM
+	help
+	  Driver for 1888TX018 SoC I2S subsystem.
+
+config SND_SOC_RCM_SPDIF
+	tristate "SPDIF support"
+	depends on SND_SOC_RCM
+	select REGMAP_MMIO
+	select RCM_AUDIO_DMA
+	select SND_SOC_GENERIC_DMAENGINE_PCM
+	help
+	  Driver for 1888TX018 SoC SPDIF subsystem.
