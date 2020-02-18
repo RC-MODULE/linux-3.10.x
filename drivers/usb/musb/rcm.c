@@ -1,0 +1,298 @@
+// SPDX-License-Identifier: GPL-2.0
+/*
+ * Copyright (C) 2018 by AstroSoft
+ * Alexey Spirkov <dev@alsp.net>
+ * 
+ * Some code has been taken from omap2430.c
+ * Copyrights for that are attributable to:
+ * Copyright (C) 2005-2007 by Texas Instruments 
+ * Copyright (C) 2006 Nokia Corporation
+ * Tony Lindgren <tony@atomide.com>
+ *
+ * This file is part of the Inventra Controller Driver for Linux.
+ */
+
+#include <linux/module.h>
+#include <linux/kernel.h>
+#include <linux/sched.h>
+#include <linux/init.h>
+#include <linux/list.h>
+#include <linux/io.h>
+#include <linux/of.h>
+#include <linux/platform_device.h>
+#include <linux/dma-mapping.h>
+#include <linux/pm_runtime.h>
+#include <linux/err.h>
+#include <linux/delay.h>
+#include <linux/usb/musb.h>
+#include <linux/of_platform.h>
+#include <linux/dma-mapping.h>
+#include "musb_core.h"
+#include <linux/mfd/syscon.h>
+#include <linux/regmap.h>
+
+struct rcm_glue {
+	struct device		*dev;
+	struct platform_device	*musb;
+};
+#define glue_to_musb(g)		platform_get_drvdata(g->musb)
+
+
+static irqreturn_t rcm_musb_interrupt(int irq, void *__hci)
+{
+	unsigned long   flags;
+	irqreturn_t     retval = IRQ_NONE;
+	struct musb     *musb = __hci;
+
+	spin_lock_irqsave(&musb->lock, flags);
+
+	musb->int_usb = musb_readb(musb->mregs, MUSB_INTRUSB);
+	musb->int_tx = musb_readw(musb->mregs, MUSB_INTRTX);
+	musb->int_rx = musb_readw(musb->mregs, MUSB_INTRRX);
+
+	if (musb->int_usb || musb->int_tx || musb->int_rx)
+		retval = musb_interrupt(musb);
+
+	spin_unlock_irqrestore(&musb->lock, flags);
+
+	return retval;
+}
+
+static int rcm_musb_init(struct musb *musb)
+{
+	int status = 0;
+	struct device *dev = musb->controller;
+
+	if (dev->parent->of_node) {
+		musb->phy = devm_phy_get(dev->parent, "usb2-phy");
+		musb->xceiv = devm_usb_get_phy_by_phandle(dev->parent,
+		    "usb-phy", 0);
+	}
+
+	if (IS_ERR(musb->xceiv)) {
+		status = PTR_ERR(musb->xceiv);
+
+		if (status == -ENXIO)
+			return status;
+
+		dev_dbg(dev, "HS USB OTG: no transceiver configured\n");
+		return -EPROBE_DEFER;
+	}
+
+	if (IS_ERR(musb->phy)) {
+		dev_err(dev, "HS USB OTG: no PHY configured\n");
+		return PTR_ERR(musb->phy);
+	}
+	musb->isr = rcm_musb_interrupt;
+
+	phy_init(musb->phy);
+	phy_power_on(musb->phy);
+
+	return 0;
+}
+
+static int rcm_musb_exit(struct musb *musb)
+{
+	phy_power_off(musb->phy);
+	phy_exit(musb->phy);
+	musb->phy = NULL;
+	return 0;
+}
+
+static u16 _readw(const void __iomem *addr, unsigned offset)
+{
+	u16 data = le16_to_cpu(__raw_readw(addr + offset));
+	return data;
+}
+
+static void _writew(void __iomem *addr, unsigned offset, u16 data)
+{
+	__raw_writew(cpu_to_le16(data), addr + offset);
+}
+
+static const struct musb_platform_ops rcm_ops = {
+	.quirks		= MUSB_DMA_INVENTRA,
+#ifdef CONFIG_USB_INVENTRA_DMA
+	.dma_init	= musbhs_dma_controller_create,
+	.dma_exit	= musbhs_dma_controller_destroy,
+#endif
+	.init		= rcm_musb_init,
+	.exit		= rcm_musb_exit,
+    .readw 		= _readw,
+	.writew 	= _writew,
+	.fifo_mode  = 4
+};
+
+static u64 rcm_dmamask = DMA_BIT_MASK(25); // use only first Gb
+
+static int rcm_probe(struct platform_device *pdev)
+{
+	struct resource			musb_resources[3];
+	struct musb_hdrc_platform_data	*pdata = dev_get_platdata(&pdev->dev);
+	struct platform_device		*musb;
+	struct rcm_glue		*glue;
+	struct device_node		*np = pdev->dev.of_node;
+	struct musb_hdrc_config		*config;
+	int				ret = -ENOMEM, val;
+
+	glue = devm_kzalloc(&pdev->dev, sizeof(*glue), GFP_KERNEL);
+	if (!glue)
+		goto err0;
+
+	musb = platform_device_alloc("musb-hdrc", PLATFORM_DEVID_AUTO);
+	if (!musb) {
+		dev_err(&pdev->dev, "failed to allocate musb device\n");
+		goto err0;
+	}
+
+	musb->dev.parent		= &pdev->dev;
+	musb->dev.dma_mask		= &rcm_dmamask;
+	musb->dev.coherent_dma_mask	= rcm_dmamask;
+	musb->dev.dma_pfn_offset = pdev->dev.dma_pfn_offset;
+
+	glue->dev			= &pdev->dev;
+	glue->musb			= musb;
+
+	musb->dev.archdata.dma_offset = - (musb->dev.dma_pfn_offset << PAGE_SHIFT); /* before v5.5 it was: set_dma_offset(&musb->dev, - (musb->dev.dma_pfn_offset << PAGE_SHIFT)); */
+
+	if (np) {
+		struct device_node *sctl;
+
+		pdata = devm_kzalloc(&pdev->dev, sizeof(*pdata), GFP_KERNEL);
+		if (!pdata)
+			goto err2;
+
+		config = devm_kzalloc(&pdev->dev, sizeof(*config), GFP_KERNEL);
+		if (!config)
+			goto err2;
+
+		of_property_read_u32(np, "mode", &val); pdata->mode = (u8) val;
+		of_property_read_u32(np, "num-eps", &val); config->num_eps = (u8) val;
+		of_property_read_u32(np, "ram-bits", &val); config->ram_bits = (u8) val;
+		of_property_read_u32(np, "power", &val); pdata->power = (u8) val;
+
+		ret = of_property_read_u32(np, "multipoint", &val);
+		if (!ret && val)
+			config->multipoint = true;
+
+		pdata->board_data	= 0; // not needed for a while
+		pdata->config		= config;
+
+
+		// process control register		
+		sctl = of_parse_phandle(np, "control", 0);
+		if (sctl) {
+			struct regmap * control = syscon_node_to_regmap(sctl);
+			unsigned int offs, bitno;
+			int ret;
+
+			ret = of_property_read_u32_index(pdev->dev.of_node, "control", 1,
+							&offs);
+			if (ret < 0) {
+				dev_err(&pdev->dev, "Unable to find offset in control register\n");
+				goto err2;
+			}
+
+			ret = of_property_read_u32_index(pdev->dev.of_node, "control", 2,
+							&bitno);
+			if (ret < 0) {
+				dev_err(&pdev->dev, "Unable to find bit number in control register\n");
+				goto err2;
+			}
+
+			if(regmap_update_bits(control, offs, BIT(bitno), BIT(bitno))) // write 1 - 24Mhz
+			{
+				dev_err(&pdev->dev, "Unable to change control register value\n");
+				goto err2;
+			}
+		}
+	}
+	pdata->platform_ops		= &rcm_ops;
+
+	platform_set_drvdata(pdev, glue);
+
+	memset(musb_resources, 0x00, sizeof(*musb_resources) *
+			ARRAY_SIZE(musb_resources));
+
+	musb_resources[0].name = pdev->resource[0].name;
+	musb_resources[0].start = pdev->resource[0].start;
+	musb_resources[0].end = pdev->resource[0].end;
+	musb_resources[0].flags = pdev->resource[0].flags;
+
+	musb_resources[1].name = pdev->resource[1].name;
+	musb_resources[1].start = pdev->resource[1].start;
+	musb_resources[1].end = pdev->resource[1].end;
+	musb_resources[1].flags = pdev->resource[1].flags;
+
+	musb_resources[2].name = pdev->resource[2].name;
+	musb_resources[2].start = pdev->resource[2].start;
+	musb_resources[2].end = pdev->resource[2].end;
+	musb_resources[2].flags = pdev->resource[2].flags;
+
+	ret = platform_device_add_resources(musb, musb_resources,
+			ARRAY_SIZE(musb_resources));
+	if (ret) {
+		dev_err(&pdev->dev, "failed to add resources\n");
+		goto err2;
+	}
+
+	ret = platform_device_add_data(musb, pdata, sizeof(*pdata));
+	if (ret) {
+		dev_err(&pdev->dev, "failed to add platform_data\n");
+		goto err2;
+	}
+
+	pm_runtime_enable(&pdev->dev);
+
+	ret = platform_device_add(musb);
+	if (ret) {
+		dev_err(&pdev->dev, "failed to register musb device\n");
+		goto err3;
+	}
+
+	return 0;
+
+err3:
+	pm_runtime_disable(glue->dev);
+
+err2:
+	platform_device_put(musb);
+
+err0:
+	return ret;
+}
+
+static int rcm_remove(struct platform_device *pdev)
+{
+	struct rcm_glue *glue = platform_get_drvdata(pdev);
+
+	platform_device_unregister(glue->musb);
+	pm_runtime_disable(glue->dev);
+
+	return 0;
+}
+
+#ifdef CONFIG_OF
+static const struct of_device_id rcm_id_table[] = {
+	{
+		.compatible = "rcm,musb"
+	},
+	{},
+};
+MODULE_DEVICE_TABLE(of, rcm_id_table);
+#endif
+
+static struct platform_driver rcm_driver = {
+	.probe		= rcm_probe,
+	.remove		= rcm_remove,
+	.driver		= {
+		.name	= "musb-rcm",
+		.of_match_table = of_match_ptr(rcm_id_table),
+	},
+};
+
+module_platform_driver(rcm_driver);
+
+MODULE_DESCRIPTION("RCM MUSB Glue Layer");
+MODULE_AUTHOR("Alexey Spirkov <dev@alsp.net>");
+MODULE_LICENSE("GPL v2");
