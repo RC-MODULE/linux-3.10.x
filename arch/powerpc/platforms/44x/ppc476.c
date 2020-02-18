@@ -40,6 +40,8 @@ static const struct of_device_id ppc47x_of_bus[] __initconst = {
 	{ .compatible = "ibm,plb6", },
 	{ .compatible = "ibm,opb", },
 	{ .compatible = "ibm,ebc", },
+	{ .compatible = "ibm,apb", },
+	{ .compatible = "simple-bus", },
 	{},
 };
 
@@ -171,12 +173,16 @@ static int smp_ppc47x_kick_cpu(int cpu)
 		return 1;
 	}
 
+#ifndef CONFIG_1888TX018
 	/* Assume it's mapped as part of the linear mapping. This is a bit
 	 * fishy but will work fine for now
 	 *
 	 * XXX: Is there any reason to assume differently?
 	 */
 	spin_table = (u32 *)__va(*spin_table_addr_prop);
+#else
+	spin_table = ioremap(*spin_table_addr_prop, sizeof(u32)*6);
+#endif
 	pr_debug("CPU%d: Spin table mapped at %p\n", cpu, spin_table);
 
 	spin_table[3] = cpu;
@@ -184,6 +190,9 @@ static int smp_ppc47x_kick_cpu(int cpu)
 	spin_table[1] = __pa(start_secondary_47x);
 	mb();
 
+#ifdef CONFIG_1888TX018
+	iounmap(spin_table);
+#endif
 	return 0;
 }
 
@@ -223,6 +232,12 @@ static int __init ppc47x_get_board_rev(void)
 	u8 *fpga;
 	struct device_node *np = NULL;
 
+	if(of_machine_is_compatible("rcm,1888tx018"))
+	{
+		/* AstroSoft ToDo: get revision of board*/
+		pr_info("%s: Found board revision %d\n", __func__, 0);
+		return 0;
+	}
 	if (of_machine_is_compatible("ibm,currituck")) {
 		np = of_find_compatible_node(NULL, NULL, "ibm,currituck-fpga");
 		reg = 0;
@@ -279,6 +294,9 @@ static int __init ppc47x_probe(void)
 		ppc_md.pci_irq_fixup = ppc47x_pci_irq_fixup;
 		return 1;
 	}
+
+	if (of_machine_is_compatible("rcm,1888tx018"))
+		return 1;
 
 	return 0;
 }

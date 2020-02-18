@@ -121,6 +121,7 @@ void __init MMU_init(void)
 	 * Reserve gigantic pages for hugetlb.  This MUST occur before
 	 * lowmem_end_addr is initialized below.
 	 */
+#ifndef CONFIG_1888TX018
 	if (memblock.memory.cnt > 1) {
 #ifndef CONFIG_WII
 		memblock_enforce_memory_limit(memblock.memory.regions[0].size);
@@ -129,6 +130,7 @@ void __init MMU_init(void)
 		wii_memory_fixups();
 #endif
 	}
+#endif
 
 	total_lowmem = total_memory = memblock_end_of_DRAM() - memstart_addr;
 	lowmem_end_addr = memstart_addr + total_lowmem;

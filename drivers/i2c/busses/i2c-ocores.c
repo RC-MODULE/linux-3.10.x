@@ -84,6 +84,7 @@ struct ocores_i2c {
 #define TYPE_OCORES		0
 #define TYPE_GRLIB		1
 #define TYPE_SIFIVE_REV0	2
+#define TYPE_RCM	2
 
 #define OCORES_FLAG_BROKEN_IRQ BIT(1) /* Broken IRQ for FU540-C000 SoC */
 
@@ -482,6 +483,10 @@ static const struct of_device_id ocores_i2c_match[] = {
 		.compatible = "sifive,i2c0",
 		.data = (void *)TYPE_SIFIVE_REV0,
 	},
+	{
+		.compatible = "rcm,i2cmst",
+		.data = (void *)TYPE_RCM,
+	},
 	{},
 };
 MODULE_DEVICE_TABLE(of, ocores_i2c_match);
@@ -524,6 +529,42 @@ static void oc_setreg_grlib(struct ocores_i2c *i2c, int reg, u8 value)
 	}
 	iowrite32be(wr, i2c->base + (rreg << i2c->reg_shift));
 }
+
+/* Read and write functions for the RCM port of the controller. Registers are
+ * 32-bit little endian and the PRELOW and PREHIGH registers are merged into one
+ * register. The subsequent registers has their offset decreased accordingly. */
+
+static u8 oc_getreg_rcm(struct ocores_i2c *i2c, int reg)
+{
+	u32 rd;
+	int rreg = reg;
+	if (reg != OCI2C_PRELOW)
+		rreg--;
+	rd = ioread32(i2c->base + (rreg << i2c->reg_shift));
+	if (reg == OCI2C_PREHIGH)
+		return (u8)(rd >> 8);
+	else
+		return (u8)rd;
+}
+
+static void oc_setreg_rcm(struct ocores_i2c *i2c, int reg, u8 value)
+{
+	u32 curr, wr;
+	int rreg = reg;
+	if (reg != OCI2C_PRELOW)
+		rreg--;
+	if (reg == OCI2C_PRELOW || reg == OCI2C_PREHIGH) {
+		curr = ioread32(i2c->base + (rreg << i2c->reg_shift));
+		if (reg == OCI2C_PRELOW)
+			wr = (curr & 0xff00) | value;
+		else
+			wr = (((u32)value) << 8) | (curr & 0xff);
+	} else {
+		wr = value;
+	}
+	iowrite32(wr, i2c->base + (rreg << i2c->reg_shift));
+}
+
 
 static int ocores_i2c_of_probe(struct platform_device *pdev,
 				struct ocores_i2c *i2c)
@@ -594,6 +635,11 @@ static int ocores_i2c_of_probe(struct platform_device *pdev,
 		dev_dbg(&pdev->dev, "GRLIB variant of i2c-ocores\n");
 		i2c->setreg = oc_setreg_grlib;
 		i2c->getreg = oc_getreg_grlib;
+	}
+	else if (match && (long)match->data == TYPE_RCM) {
+		dev_dbg(&pdev->dev, "RCM variant of i2c-ocores\n");
+		i2c->setreg = oc_setreg_rcm;
+		i2c->getreg = oc_getreg_rcm;
 	}
 
 	return 0;

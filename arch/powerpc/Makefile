@@ -248,7 +248,12 @@ KBUILD_CFLAGS	+= $(call cc-option,-fno-dwarf2-cfi-asm)
 # often slow when they are implemented at all
 KBUILD_CFLAGS		+= $(call cc-option,-mno-string)
 
+ifeq ($(CONFIG_1888TX018),y)
+CFLAGS-y += $(call cc-option,-mcpu=476fp)
+else
 cpu-as-$(CONFIG_4xx)		+= -Wa,-m405
+endif
+
 cpu-as-$(CONFIG_ALTIVEC)	+= $(call as-option,-Wa$(comma)-maltivec)
 cpu-as-$(CONFIG_E200)		+= -Wa,-me200
 cpu-as-$(CONFIG_E500)		+= -Wa,-me500
