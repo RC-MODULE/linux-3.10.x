@@ -551,4 +551,10 @@ config MTD_NAND_DISKONCHIP_BBTWRITE
 	  load time (assuming you build diskonchip as a module) with the module
 	  parameter "inftl_bbt_write=1".
 
+config MTD_RCM_NAND
+	tristate "RC-Module SoC NAND support"
+	depends on 1888TX018
+	help
+		Support for NAND flash attached to the 1888TX018 SoC's
+	  
 endif # MTD_RAW_NAND
