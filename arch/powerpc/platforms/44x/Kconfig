@@ -185,6 +185,20 @@ config CURRITUCK
 	help
 	  This option enables support for the IBM Currituck (476fpe) evaluation board
 
+config 1888TX018
+	bool "RCM 1888TX018 (PPC476FS) Support"
+	depends on PPC_47x
+	default n
+	select SWIOTLB
+	select 476FPE
+	select ARM_AMBA
+	select COMMON_CLK
+	select NOT_COHERENT_CACHE
+	select DEFAULT_UIMAGE
+	select PPC_UDBG_PL011
+	help
+	  This option enables support for the RCM 1888TX018 SoC
+
 config FSP2
 	bool "IBM FSP2 (476fpe) Support"
 	depends on PPC_47x
@@ -328,7 +342,7 @@ config 460SX
 
 config 476FPE
 	bool
-	select PPC_FPU
+	select PPC_FPU 
 
 config APM821xx
 	bool

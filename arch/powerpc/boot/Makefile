@@ -298,6 +298,7 @@ image-$(CONFIG_YOSEMITE)		+= cuImage.yosemite
 image-$(CONFIG_ISS4xx)			+= treeImage.iss4xx \
 					   treeImage.iss4xx-mpic
 image-$(CONFIG_CURRITUCK)			+= treeImage.currituck
+image-$(CONFIG_1888TX108)			+= treeImage.1888tx018
 image-$(CONFIG_AKEBONO)			+= treeImage.akebono
 
 # Board ports in arch/powerpc/platform/8xx/Kconfig
