@@ -16,6 +16,7 @@
 #include <linux/spinlock.h>
 #include <linux/delay.h>
 #include <linux/dma-mapping.h>
+#include <linux/dma-direct.h>
 #include <linux/slab.h>
 
 #include "musb_core.h"
@@ -70,7 +71,7 @@ static inline void map_dma_buffer(struct musb_request *request,
 		request->map_state = MUSB_MAPPED;
 	} else {
 		dma_sync_single_for_device(musb->controller,
-			request->request.dma,
+			dma_to_phys(musb->controller, request->request.dma),
 			request->request.length,
 			request->tx
 				? DMA_TO_DEVICE
@@ -103,7 +104,7 @@ static inline void unmap_dma_buffer(struct musb_request *request,
 		request->request.dma = DMA_ADDR_INVALID;
 	} else { /* PRE_MAPPED */
 		dma_sync_single_for_cpu(musb->controller,
-			request->request.dma,
+			dma_to_phys(musb->controller, request->request.dma),
 			request->request.length,
 			request->tx
 				? DMA_TO_DEVICE
@@ -140,7 +141,8 @@ __acquires(ep->musb->lock)
 	ep->busy = 1;
 	spin_unlock(&musb->lock);
 
-	if (!dma_mapping_error(&musb->g.dev, request->dma))
+	if (!get_dma_ops(&musb->g.dev) || 
+		!dma_mapping_error(&musb->g.dev, request->dma))
 		unmap_dma_buffer(req, musb);
 
 	trace_musb_req_gb(req);
