@@ -289,6 +289,10 @@ config ARCH_MAY_HAVE_PC_FDC
 config PPC_UDBG_16550
 	bool
 
+config PPC_UDBG_PL011
+	bool
+	default n
+
 config GENERIC_TBSYNC
 	bool
 	default y if PPC32 && SMP
