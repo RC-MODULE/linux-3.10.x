@@ -211,7 +211,7 @@ config 1888TX018
 	select NOT_COHERENT_CACHE
 	select DEFAULT_UIMAGE
 	select PPC_UDBG_PL011
-	select HAVE_DMA_CONTIGUOUS # [***] EasyNMC prototype
+	select HAVE_DMA_CONTIGUOUS
 	help
 	  This option enables support for the RCM 1888TX018 SoC
 

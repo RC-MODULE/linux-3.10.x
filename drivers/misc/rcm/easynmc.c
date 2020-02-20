@@ -471,7 +471,7 @@ static long easynmc_ioctl(struct file *filp, unsigned int ioctl_num, unsigned lo
 		break;
 	}
 
-// [***] EasyNMC prototype (start)
+// [***] EasyNMC prototype (start) FixMe!!!
 #ifdef CONFIG_ION
 	case IOCTL_NMC3_ION2NMC:
 	{

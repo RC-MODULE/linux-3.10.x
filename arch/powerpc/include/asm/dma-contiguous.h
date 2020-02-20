@@ -2,8 +2,6 @@
 #ifndef _ASM_GENERIC_DMA_CONTIGUOUS_H
 #define _ASM_GENERIC_DMA_CONTIGUOUS_H
 
-// [***] EasyNMC prototype
-
 #include <linux/types.h>
 
 static inline void

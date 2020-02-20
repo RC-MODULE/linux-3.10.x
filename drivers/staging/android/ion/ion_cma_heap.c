@@ -56,7 +56,7 @@ static int ion_cma_allocate(struct ion_heap *heap, struct ion_buffer *buffer,
 			nr_clear_pages--;
 		}
 	} else {
-		// [***] EasyNMC prototype
+		// [***] EasyNMC prototype FixMe
 		// memset(page_address(pages), 0, size);
 	}
 
