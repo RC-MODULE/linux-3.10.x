@@ -123,7 +123,12 @@ static const struct musb_platform_ops rcm_ops = {
 	.fifo_mode  = 4
 };
 
+#ifndef CONFIG_1888TX018
 static u64 rcm_dmamask = DMA_BIT_MASK(25); // use only first Gb
+#else
+// dma_coherent_ok: dma buffer ptr(example): 699f43ff, dma mask for this: 7fffffff
+static u64 rcm_dmamask = DMA_BIT_MASK(31);
+#endif
 
 static int rcm_probe(struct platform_device *pdev)
 {
