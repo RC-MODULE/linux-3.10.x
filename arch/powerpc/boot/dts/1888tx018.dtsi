@@ -74,6 +74,15 @@
 					alignment = <0 0x1000000>;
 			};
 
+			// [***] EasyNMC prototype
+			test: test_mem {
+				compatible = "shared-dma-pool";
+				reusable;
+				size = <0x4000000>;
+				alignment = <0x1000000>;
+				linux,cma-default;
+			};
+
 			vpu_buffer: vpu_buffer@0x33C00000 {
 				reg = <0x0 0x33C00000 0x0 0x04000000>;
 				no-map;

@@ -38,6 +38,7 @@
 #include <linux/circ_buf.h>
 #include <linux/proc_fs.h>
 #include <linux/list.h>
+#include <linux/dma-buf.h> // [***] EasyNMC prototype
 
 #define DRVNAME "easynmc"
 
@@ -379,7 +380,7 @@ static long easynmc_ioctl(struct file *filp, unsigned int ioctl_num, unsigned lo
 
 		chan = (struct nmc_stdio_channel *) &core->imem_virt[addr];
 
-		if ((chan->size & (le32_to_cpu(chan->size) - 1)) != 0) {
+		if ((le32_to_cpu(chan->size) & (le32_to_cpu(chan->size) - 1)) != 0) {
 			printk("easynmc: IO buffer size not power of 2, not attaching\n");
 			return -EIO;
 		}
@@ -470,8 +471,55 @@ static long easynmc_ioctl(struct file *filp, unsigned int ioctl_num, unsigned lo
 		break;
 	}
 
+// [***] EasyNMC prototype (start) FixMe!!!
+#ifdef CONFIG_ION
+	case IOCTL_NMC3_ION2NMC:
+	{
+		uint32_t fd;
+		phys_addr_t paddr;
+		struct dma_buf *buffer;
+		struct dma_buf_attachment *attachement;
+		struct sg_table *sg_tbl;
+		int ret = get_user(fd,  (uint32_t __user *) ioctl_param);
+		if (ret)
+			return -EFAULT;
+
+		buffer = dma_buf_get(fd);
+		if (IS_ERR(buffer))
+			return PTR_ERR(buffer);
+
+		attachement = dma_buf_attach(buffer, core->dev);
+		if (IS_ERR(attachement)) {
+			dma_buf_put(buffer);
+			return PTR_ERR(attachement);
+		}
+
+		sg_tbl = dma_buf_map_attachment(attachement, DMA_BIDIRECTIONAL);
+		if (IS_ERR(sg_tbl)) {
+			dma_buf_detach(buffer, attachement);
+			dma_buf_put(buffer);
+			return PTR_ERR(attachement);
+		}
+
+		paddr = page_to_phys(sg_page(sg_tbl->sgl));
+
+		dma_buf_unmap_attachment(attachement, sg_tbl, DMA_BIDIRECTIONAL);
+		dma_buf_detach(buffer, attachement);
+		dma_buf_put(buffer);
+
+		ret = put_user((uint32_t)((paddr >> 2) + 0x10000000), (uint32_t __user *) ioctl_param);
+		if (ret)
+			return -EFAULT;
+		break;
+	}
+#endif
+// [***] EasyNMC prototype (end)
+
+	default:
+		return -ENOTTY;
 
 	}
+
 	return 0;
 }
 
@@ -576,7 +624,8 @@ static int imem_mmap(struct file * filp, struct vm_area_struct * vma)
 
 static int pollflags[NMC_NUM_IRQS] = {
 	POLLHUP,
-	POLLPRI | POLLRDBAND,
+//	POLLPRI | POLLRDBAND, // [***] EasyNMC prototype
+	POLLOUT | POLLWRNORM, // [***] EasyNMC prototype
 	POLLIN  | POLLRDNORM
 };
 

@@ -30,6 +30,7 @@
 #include <linux/of_fdt.h>
 #include <linux/libfdt.h>
 #include <linux/cpu.h>
+#include <linux/dma-contiguous.h>
 
 #include <asm/prom.h>
 #include <asm/rtas.h>
@@ -750,6 +751,10 @@ void __init early_init_devtree(void *params)
 	memblock_enforce_memory_limit(limit);
 
 	memblock_allow_resize();
+
+	/* reserve memory for DMA contiguous allocations */
+	dma_contiguous_reserve(0); // 0 if there is a default cma-buffer in DTS
+
 	memblock_dump_all();
 
 	DBG("Phys. mem: %llx\n", (unsigned long long)memblock_phys_mem_size());
