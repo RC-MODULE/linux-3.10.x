@@ -948,7 +948,7 @@
 				num-eps = <16>;
 				ram-bits = <12>;
 				mode = <3>; // 1 - host, 2 - device, 3 - otg
-				power = <500>;
+				power = <250>;
 			};
 		};
 
