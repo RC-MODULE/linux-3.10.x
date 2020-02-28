@@ -1,0 +1,87 @@
+/*
+*
+* Device Tree Source for RCM MB115.03 extention board ( Ethernet and NAND flash module )
+*
+*/
+
+/ {
+	plb {
+		sram_nor_arbiter {
+			status = "okay";
+			sram-nor-mux = <0>;					/* 0 to route extmem wires to LSIF0, 1 - to MCIF (page 922) */
+			ext-mem-mux-mode = <2>;				/* 0 - SRAN_NOR, 1 - NAND GBIT_GRETH0 GBIT_GRETH1, 2 - GRETH0 GRETH1 NAND (page 913) */
+		};
+
+		lsif0 {
+			nand: nand@0x3C032000 {
+				status = "okay";
+				timings = <						/* (ONFI_2_0_Gold.pdf,page 47) */
+					200		/* tADL_min */
+					20		/* tALH_min */
+					50		/* tALS_min */
+					20		/* tCH_min */
+					20		/* tCLH_min */
+					50		/* tCLS_min */
+					70		/* tCS_min */
+					20		/* tDH_min */
+					40		/* tDS_min */
+					100		/* tWC_min */
+					30		/* tWH_min */
+					50		/* tWP_min */
+					100		/* tWW_min */
+					25		/* tAR_min */
+					20		/* tCLR_min */
+					0		/* tCOH_min */
+					10		/* tIR_min */
+					100		/* tRC_min */
+					30		/* tREH_min */
+					0		/* tRHOH_min */
+					200		/* tRHW_min */
+					0		/* tRLOH_min */
+					50		/* tRP_min */
+					40		/* tRR_min */
+					120		/* tWHR_min */
+					100		/* tCEA_max */
+					100		/* tCHZ_max */
+					40		/* tREA_max */
+					200		/* tRHZ_max */
+					200>;	/* tWB_max */
+				partitions {
+					compatible = "fixed-partitions";
+					#address-cells = <1>;
+					#size-cells = <1>;
+
+					partition@0 {				/* device tree */
+						label = "dtb";
+						reg = <0x00000000 0x00040000>;
+					};
+
+					partition@40000 {			/* environment of u-boot */
+						label = "env";
+						reg = <0x00040000 0x00040000>;
+					};
+
+					partition@80000 {			/* linux kernel */
+						label = "kern";
+						reg = <0x00080000 0x00800000>;
+					};
+
+					partition@8C0000 {			/* uboot */
+						label = "uboot";
+						reg = <0x00880000 0x001A0000>;
+					};
+
+					partition@A20000 {			/* ubifs */
+						label = "rootfs";
+						reg = <0x00A20000 0x0f000000>;
+					};
+
+					partition@5E0000 {			/* reserved */
+						label = "res";
+						reg = <0x0FA20000 0x005E0000>;
+					};
+				};
+			};
+		};
+	};
+};

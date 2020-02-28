@@ -182,9 +182,6 @@
 			#size-cells = <1>;
 			dcr-reg = <0x80170000 0x1000>;
 			ranges = <0x00000000 0x4 0x00000000 0x10000000>;
-			cs-mode = <0>;  /* 0 - cs in address, 1 - cs in reg */
-			addr-size = <22>; /* min 10 max 26 bit */
-			timings = <0x1f1f0808>;
 			// interrupt-parent = <&MPIC>;
 			// interrupts = <104 0>; // IRQ_TYPE_EDGE_RISING
 		};
@@ -196,9 +193,6 @@
 			#size-cells = <1>;
 			dcr-reg = <0x80190000 0x1000>;
 			ranges = <0x00000000 0x6 0x00000000 0x20000000>;
-			cs-mode = <0>;  /* 0 - cs in address, 1 - cs in reg */
-			addr-size = <26>; /* min 10 max 26 bit */
-			timings = <0x1f1f0808>;
 			// interrupt-parent = <&MPIC>;
 			// interrupts = <104 0>; // IRQ_TYPE_EDGE_RISING
 		};
@@ -615,37 +609,6 @@
 
 				clocks = <&lsif0clock>;
 				config = <&lsif0_config>;
-				timings = <
-					200	// tADL_min (ONFI_2_0_Gold.pdf,page 47)
-					20	// tALH_min
-					50	// tALS_min
-					20	// tCH_min
-					20	// tCLH_min
-					50	// tCLS_min
-					70	// tCS_min
-					20	// tDH_min
-					40	// tDS_min
-					100	// tWC_min
-					30	// tWH_min
-					50	// tWP_min
-					100	// tWW_min
-					25	// tAR_min
-					20	// tCLR_min
-					0	// tCOH_min
-					10	// tIR_min
-					100	// tRC_min  не видать,как влияет
-					30	// tREH_min не видать,как влияет
-					0	// tRHOH_min
-					200	// tRHW_min
-					0	// tRLOH_min не видать,как влияет
-					50	// tRP_min
-					40	// tRR_min
-					120	// tWHR_min
-					100	// tCEA_max
-					100	// tCHZ_max
-					40	// tREA_max
-					200	// tRHZ_max
-					200>;	// tWB_max
 				interrupt-parent = <&MPIC>;
 				interrupts = <109 0>; // 0=low-to-high edge,1=active-low level,2=active-high level,3=high-to-low edge
 				pinctrl-0 =

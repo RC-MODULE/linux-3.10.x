@@ -31,119 +31,10 @@
 			ce-manage = <2>; // 0
 		};
 
-		sram_plb_nor0: sram_plb_nor0@0x80170000 {
-			// status = "ok";
-			chip-num = <15>; // bitmask
-			sram: sram@0 {
-				compatible = "mmio-sram";
-				#address-cells = <1>;
-				#size-cells = <1>;
-				reg = <0x00000000 0x10000000>;
-				ranges = <0 0x0 0x10000000>;
-
-				exported@0 {
-					reg = <0x0 0x10000000>;
-					export;
-				};
-			};
-		};
-
-		sram_plb_nor1: sram_plb_nor1@0x80190000 {
-			status = "ok";
-			chip-num = <3>; // bitmask
-
-			nor_flash0: nor_flash0@0 {
-				compatible = "cfi-flash";
-				reg = <0x00000000 0x10000000>;
-				bank-width = <4>;
-				#size-cells = <1>;
-				#address-cells = <1>;
-				little-endian;
-
-				partition@0 {
-					label = "uboot_spl";
-					reg = <0x00000 0x40000>; /* 256 KB */
-				};
-
-				partition@40000 {
-					label = "uboot";
-					reg = <0x40000 0x1000000>; /* 16 MB */
-				};
-
-				partition@1040000 {
-					label = "uboot_env";
-					reg = <0x1040000 0x40000>; /* 256 KB */
-				};
-
-				partition@1050000 {
-					label = "linux";
-					reg = <0x1080000 0x1000000>; /* 16 MB */
-				};
-
-				partition@2050000 {
-					label = "rootfs";
-					reg = <0x2080000 0xDF80000>;
-				};
-			};
-
-			nor_flash1: nor_flash1@10000000 {
-				compatible = "cfi-flash";
-				reg = <0x10000000 0x10000000>;
-				bank-width = <4>;
-				#size-cells = <1>;
-				#address-cells = <1>;
-				little-endian;
-
-				partition@10000000 {
-					label = "data";
-					reg = <0x00000 0x10000000>; // 256 Mb
-				};
-			};
-		};
-
 		lsif0 {
 			greth_gbit1: greth_gbit1@0x3C034000 {
 				status = "ok";
 				mac-address = [ EC 17 66 77 05 02 ];
-			};
-
-			nand: nand@0x3C032000 {
-				/*status = "okay";*/
-				partitions {
-					compatible = "fixed-partitions";
-					#address-cells = <1>;
-					#size-cells = <1>;
-
-					partition@0 {
-						label = "dtb";
-						reg = <0x00000000 0x00040000>;
-					};
-
-					partition@40000 {
-						label = "env";
-						reg = <0x00040000 0x00040000>;
-					};
-
-					partition@80000 {
-						label = "kern";
-						reg = <0x00080000 0x00800000>;
-					};
-
-					partition@8C0000 {
-						label = "uboot";
-						reg = <0x00880000 0x001A0000>;
-					};
-
-					partition@A20000 {
-						label = "rootfs";
-						reg = <0x00A20000 0x0f000000>;
-					};
-
-					partition@5E0000 {
-						label = "res";
-						reg = <0x0FA20000 0x005E0000>;
-					};
-				};
 			};
 		};
 
@@ -394,3 +285,12 @@
 		stdout-path = &uart0;
 	};
 };
+
+/* SRAM-NOR */
+/include/ "mb115-02.dtsi"
+
+/* Ethernet,NAND */
+// /include/ "mb115-03.dtsi"
+
+/* AV ouput */
+// /include/ "mb115-04.dtsi"
