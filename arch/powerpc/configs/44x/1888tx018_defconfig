@@ -158,6 +158,7 @@ CONFIG_CMA=y
 CONFIG_DMA_CMA=y
 CONFIG_CMA_DEBUGFS=y
 # CONFIG_CMA_DEBUG=y # enable for debug
+CONFIG_CGROUPS=y
 
 # [***] EasyNMC prototype
 CONFIG_ANDROID=y
