@@ -66,7 +66,7 @@
 						reg = <0x00080000 0x00800000>;
 					};
 
-					partition@8C0000 {			/* uboot */
+					partition@880000 {			/* uboot */
 						label = "uboot";
 						reg = <0x00880000 0x001A0000>;
 					};
@@ -76,7 +76,7 @@
 						reg = <0x00A20000 0x0f000000>;
 					};
 
-					partition@5E0000 {			/* reserved */
+					partition@FA20000 {			/* reserved */
 						label = "res";
 						reg = <0x0FA20000 0x005E0000>;
 					};

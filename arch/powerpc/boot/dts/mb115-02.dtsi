@@ -67,12 +67,12 @@
 					reg = <0x1080000 0x100000>;
 				};
 
-				partition@1050000 {
+				partition@1180000 {
 					label = "kern";
 					reg = <0x1180000 0x1000000>;
 				};
 
-				partition@2050000 {
+				partition@2180000 {
 					label = "rootfs";
 					reg = <0x2180000 0xDE80000>;
 				};
