@@ -162,17 +162,6 @@
 			compatible = "rcm,sram-nor-arbiter";
 			sctl = <&sctl>;
 			control = <&lsif0_config>;
-			pinctrl-names = "default";
-			pinctrl-0 =
-				<&lsif0_mgpio0_sram_nor>,
-				<&lsif0_mgpio1_sram_nor>,
-				<&lsif0_mgpio2_sram_nor>,
-				<&lsif0_mgpio3_sram_nor>,
-				<&lsif0_mgpio4_sram_nor>,
-				<&lsif0_mgpio5_sram_nor>,
-				<&lsif0_mgpio6_sram_nor>,
-				<&lsif0_mgpio7_sram_nor>,
-				<&lsif0_mgpio8_sram_nor>;
 		};
 
 		sram_plb_nor0: sram_plb_nor0@0x80170000 {
@@ -223,11 +212,11 @@
 				#pinctrl-cells = <2>;
 				pinctrl-single,bit-per-mux;
 
-				lsif0_mgpio0_greth_gbit0: lsif0_mgpio0_greth_gbit0 {
+				lsif0_mgpio0_greth_gbit0_ext: lsif0_mgpio0_greth_gbit0_ext {
 					pinctrl-single,bits = <0 0xFF 0xFF>;
 				};
 
-				lsif0_mgpio0_greth1: lsif0_mgpio0_greth1 {
+				lsif0_mgpio0_greth1_ext: lsif0_mgpio0_greth1_ext {
 					pinctrl-single,bits = <0 0x3A 0x3A>;
 				};
 
@@ -246,15 +235,15 @@
 				#pinctrl-cells = <2>;
 				pinctrl-single,bit-per-mux;
 
-				lsif0_mgpio1_greth_gbit0: lsif0_mgpio1_greth_gbit0 {
+				lsif0_mgpio1_greth_gbit0_ext: lsif0_mgpio1_greth_gbit0_ext {
 					pinctrl-single,bits = <0 0x0F 0x0F>;
 				};
 
-				lsif0_mgpio1_greth_gbit1: lsif0_mgpio1_greth_gbit1 {
+				lsif0_mgpio1_greth_gbit1_ext: lsif0_mgpio1_greth_gbit1_ext {
 					pinctrl-single,bits = <0 0xF0 0xF0>;
 				};
 
-				lsif0_mgpio1_greth0: lsif0_mgpio1_greth0 {
+				lsif0_mgpio1_greth0_ext: lsif0_mgpio1_greth0_ext {
 					pinctrl-single,bits = <0 0xA0 0xA0>;
 				};
 
@@ -273,11 +262,11 @@
 				#pinctrl-cells = <2>;
 				pinctrl-single,bit-per-mux;
 
-				lsif0_mgpio2_greth_gbit1: lsif0_mgpio2_greth_gbit1 {
+				lsif0_mgpio2_greth_gbit1_ext: lsif0_mgpio2_greth_gbit1_ext {
 					pinctrl-single,bits = <0 0xFF 0xFF>;
 				};
 
-				lsif0_mgpio2_greth0: lsif0_mgpio2_greth0 {
+				lsif0_mgpio2_greth0_ext: lsif0_mgpio2_greth0_ext {
 					pinctrl-single,bits = <0 0x03 0x03>;
 				};
 
@@ -315,19 +304,19 @@
 				#pinctrl-cells = <2>;
 				pinctrl-single,bit-per-mux;
 
-				lsif0_mgpio4_greth_gbit0: lsif0_mgpio4_greth_gbit0 {
+				lsif0_mgpio4_greth_gbit0_ext: lsif0_mgpio4_greth_gbit0_ext {
 					pinctrl-single,bits = <0 0xE4 0xE4>;
 				};
 
-				lsif0_mgpio4_greth_gbit1: lsif0_mgpio4_greth_gbit1 {
+				lsif0_mgpio4_greth_gbit1_ext: lsif0_mgpio4_greth_gbit1_ext {
 					pinctrl-single,bits = <0 0x08 0x08>;
 				};
 
-				lsif0_mgpio4_greth0: lsif0_mgpio4_greth0 {
+				lsif0_mgpio4_greth0_ext: lsif0_mgpio4_greth0_ext {
 					pinctrl-single,bits = <0 0x08 0x08>;
 				};
 
-				lsif0_mgpio4_greth1: lsif0_mgpio4_greth1 {
+				lsif0_mgpio4_greth1_ext: lsif0_mgpio4_greth1_ext {
 					pinctrl-single,bits = <0 0xC4 0xC4>;
 				};
 
@@ -351,11 +340,11 @@
 				#pinctrl-cells = <2>;
 				pinctrl-single,bit-per-mux;
 
-				lsif0_mgpio5_greth_gbit0: lsif0_mgpio5_greth_gbit0 {
+				lsif0_mgpio5_greth_gbit0_ext: lsif0_mgpio5_greth_gbit0_ext {
 					pinctrl-single,bits = <0 0xFF 0xFF>;
 				};
 
-				lsif0_mgpio5_greth1: lsif0_mgpio5_greth1 {
+				lsif0_mgpio5_greth1_ext: lsif0_mgpio5_greth1_ext {
 					pinctrl-single,bits = <0 0xC0 0xC0>;
 				};
 
@@ -374,11 +363,11 @@
 				#pinctrl-cells = <2>;
 				pinctrl-single,bit-per-mux;
 
-				lsif0_mgpio6_greth_gbit1: lsif0_mgpio6_greth_gbit1 {
+				lsif0_mgpio6_greth_gbit1_ext: lsif0_mgpio6_greth_gbit1_ext {
 					pinctrl-single,bits = <0 0xFE 0xFE>;
 				};
 
-				lsif0_mgpio6_greth0: lsif0_mgpio6_greth0 {
+				lsif0_mgpio6_greth0_ext: lsif0_mgpio6_greth0_ext {
 					pinctrl-single,bits = <0 0x0C 0x0C>;
 				};
 
@@ -397,11 +386,11 @@
 				#pinctrl-cells = <2>;
 				pinctrl-single,bit-per-mux;
 
-				lsif0_mgpio7_greth_gbit1: lsif0_mgpio7_greth_gbit1 {
+				lsif0_mgpio7_greth_gbit1_ext: lsif0_mgpio7_greth_gbit1_ext {
 					pinctrl-single,bits = <0 0x0F 0x0F>;
 				};
 
-				lsif0_mgpio7_greth0: lsif0_mgpio7_greth0 {
+				lsif0_mgpio7_greth0_ext: lsif0_mgpio7_greth0_ext {
 					pinctrl-single,bits = <0 0x0C 0x0C>;
 				};
 
@@ -443,11 +432,11 @@
 				#pinctrl-cells = <2>;
 				pinctrl-single,bit-per-mux;
 
-				lsif0_mgpio9_greth_gbit1: lsif0_mgpio9_greth_gbit1 {
+				lsif0_mgpio9_greth_gbit1_gmii: lsif0_mgpio9_greth_gbit1_gmii {
 					pinctrl-single,bits = <0 0xFF 0xFF>;
 				};
 
-				lsif0_mgpio9_greth2: lsif0_mgpio9_greth2 {
+				lsif0_mgpio9_greth2_rmii: lsif0_mgpio9_greth2_rmii {
 					pinctrl-single,bits = <0 0x4E 0x4E>;
 				};
 			};
@@ -462,16 +451,16 @@
 				#pinctrl-cells = <2>;
 				pinctrl-single,bit-per-mux;
 
-				lsif0_mgpio10_greth_gbit1: lsif0_mgpio10_greth_gbit1 {
+				lsif0_mgpio10_greth_gbit1_gmii: lsif0_mgpio10_greth_gbit1_gmii {
 					pinctrl-single,bits = <0 0xFF 0xFF>;
 				};
 
-				lsif0_mgpio10_greth2: lsif0_mgpio10_greth2 {
+				lsif0_mgpio10_greth2_rmii: lsif0_mgpio10_greth2_rmii {
 					pinctrl-single,bits = <0 0xCD 0xCD>;
 				};
 			};
 
-			// GRETH_GBIT0 -> EXT_MEM
+			// GRETH_GBIT0
 			greth_gbit0: greth_gbit0@0x3C033000 {
 				status = "disabled";
 				compatible = "rcm,greth";
@@ -479,16 +468,9 @@
 				control = <&lsif0_config>;
 				interrupt-parent = <&MPIC>;
 				interrupts = <103 0>; // IRQ_TYPE_EDGE_RISING
-				pinctrl-names = "default";
-				pinctrl-0 =
-					<&lsif0_mgpio0_greth_gbit0>,
-					<&lsif0_mgpio1_greth_gbit0>,
-					<&lsif0_mgpio4_greth_gbit0>,
-					<&lsif0_mgpio5_greth_gbit0>;
-				ext-mem-mux-mode = <1>;
 			};
 
-			// GRETH_GBIT1 -> GMII
+			// GRETH_GBIT1
 			greth_gbit1: greth_gbit1@0x3C034000 {
 				status = "disabled";
 				compatible = "rcm,greth";
@@ -496,33 +478,9 @@
 				control = <&lsif0_config>;
 				interrupt-parent = <&MPIC>;
 				interrupts = <108 0>; // IRQ_TYPE_EDGE_RISING
-				pinctrl-names = "default";
-				pinctrl-0 =
-					<&lsif0_mgpio9_greth_gbit1>,
-					<&lsif0_mgpio10_greth_gbit1>;
-				mii-mux-mode = <0>;
 			};
 
-			// GRETH_GBIT1 -> EXT_MEM
-			greth_gbit1_alt: greth_gbit1_alt@0x3C034000 {
-				status = "disabled";
-				compatible = "rcm,greth";
-				reg = <0x3C034000 0x1000>;
-				control = <&lsif0_config>;
-				interrupt-parent = <&MPIC>;
-				interrupts = <108 0>; // IRQ_TYPE_EDGE_RISING
-				pinctrl-names = "default";
-				pinctrl-0 =
-					<&lsif0_mgpio1_greth_gbit1>,
-					<&lsif0_mgpio2_greth_gbit1>,
-					<&lsif0_mgpio4_greth_gbit1>,
-					<&lsif0_mgpio6_greth_gbit1>,
-					<&lsif0_mgpio7_greth_gbit1>;
-				ext-mem-mux-mode = <1>;
-				mii-mux-mode = <1>;
-			};
-
-			// GRETH0 -> EXT_MEM
+			// GRETH0
 			greth0: greth0@0x3C035000 {
 				status = "disabled";
 				compatible = "rcm,greth";
@@ -530,17 +488,9 @@
 				control = <&lsif0_config>;
 				interrupt-parent = <&MPIC>;
 				interrupts = <103 0>; // IRQ_TYPE_EDGE_RISING
-				pinctrl-names = "default";
-				pinctrl-0 =
-					<&lsif0_mgpio1_greth0>,
-					<&lsif0_mgpio2_greth0>,
-					<&lsif0_mgpio4_greth0>,
-					<&lsif0_mgpio6_greth0>,
-					<&lsif0_mgpio7_greth0>;
-				ext-mem-mux-mode = <2>;
 			};
 
-			// GRETH1 -> EXT_MEM
+			// GRETH1
 			greth1: greth1@0x3C036000 {
 				status = "disabled";
 				compatible = "rcm,greth";
@@ -548,15 +498,9 @@
 				control = <&lsif0_config>;
 				interrupt-parent = <&MPIC>;
 				interrupts = <104 0>; // IRQ_TYPE_EDGE_RISING
-				pinctrl-names = "default";
-				pinctrl-0 =
-					<&lsif0_mgpio0_greth1>,
-					<&lsif0_mgpio4_greth1>,
-					<&lsif0_mgpio5_greth1>;
-				ext-mem-mux-mode = <2>;
 			};
 
-			// GRETH2 -> RMII
+			// GRETH2
 			greth2: greth2@0x3C037000 {
 				status = "disabled";
 				compatible = "rcm,greth";
@@ -564,11 +508,6 @@
 				control = <&lsif0_config>;
 				interrupt-parent = <&MPIC>;
 				interrupts = <108 0>; // IRQ_TYPE_EDGE_RISING
-				pinctrl-names = "default";
-				pinctrl-0 =
-					<&lsif0_mgpio9_greth2>,
-					<&lsif0_mgpio10_greth2>;
-				mii-mux-mode = <1>;
 			};
 
 			sram_nor0: sram_nor0@0x3C030000 {

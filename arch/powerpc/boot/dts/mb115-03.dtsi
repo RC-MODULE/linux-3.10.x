@@ -8,11 +8,45 @@
 	plb {
 		sram_nor_arbiter {
 			status = "okay";
-			sram-nor-mux = <0>;					/* 0 to route extmem wires to LSIF0, 1 - to MCIF (page 922) */
-			ext-mem-mux-mode = <2>;				/* 0 - SRAN_NOR, 1 - NAND GBIT_GRETH0 GBIT_GRETH1, 2 - GRETH0 GRETH1 NAND (page 913) */
+			sram-nor-mux = <0>;	/* 0 to route extmem wires to LSIF0, 1 - to MCIF (page 922) */
+			ext-mem-mux-mode = <1>;	/* 0 - SRAN_NOR, 1 - NAND GBIT_GRETH0 GBIT_GRETH1, 2 - GRETH0 GRETH1 NAND (page 913) */
+			mii-mux-mode = <1>; // 0- GBIT_GRETH1, 1 - GRETH2
+			pinctrl-names = "default";
+			pinctrl-0 =
+				/* GRETH_GBIT0 -> EXT */
+				<&lsif0_mgpio0_greth_gbit0_ext>,
+				<&lsif0_mgpio1_greth_gbit0_ext>,
+				<&lsif0_mgpio4_greth_gbit0_ext>,
+				<&lsif0_mgpio5_greth_gbit0_ext>,
+				/* GRETH_GBIT1 -> EXT */
+				<&lsif0_mgpio1_greth_gbit1_ext>,
+				<&lsif0_mgpio2_greth_gbit1_ext>,
+				<&lsif0_mgpio4_greth_gbit1_ext>,
+				<&lsif0_mgpio6_greth_gbit1_ext>,
+				<&lsif0_mgpio7_greth_gbit1_ext>;
+				/* GRETH0 -> EXT
+				<&lsif0_mgpio1_greth0_ext>,
+				<&lsif0_mgpio2_greth0_ext>,
+				<&lsif0_mgpio4_greth0_ext>,
+				<&lsif0_mgpio6_greth0_ext>,
+				<&lsif0_mgpio7_greth0_ext>,*/
+				/* GRETH1 -> EXT
+				<&lsif0_mgpio0_greth1_ext>,
+				<&lsif0_mgpio4_greth1_ext>,
+				<&lsif0_mgpio5_greth1_ext>,*/
 		};
 
 		lsif0 {
+			greth_gbit0: greth_gbit0@0x3C033000 {
+				status = "ok";
+				mac-address = [ EC 17 66 77 05 02 ];
+			};
+
+			greth_gbit1: greth_gbit1@0x3C034000 {
+				status = "ok";
+				mac-address = [ EC 17 66 77 05 03 ];
+			};
+
 			nand: nand@0x3C032000 {
 				status = "okay";
 				timings = <						/* (ONFI_2_0_Gold.pdf,page 47) */
