@@ -28,13 +28,22 @@
 			sram-nor-mux = <1>; // 0 to route extmem wires to LSIF0, 1 - to MCIF
 			// in case of LSIF0 following lines will be needed
 			ext-mem-mux-mode = <0>; // 0 - SRAN_NOR, 1 - NAND GBIT_GRETH0 GBIT_GRETH1, 2 - GRETH0 GRETH1 NAND
+			mii-mux-mode = <0>; // 0- GBIT_GRETH1, 1 - GRETH2
 			ce-manage = <2>; // 0
+			pinctrl-names = "default";
+			pinctrl-0 =
+				/* GRETH_GBIT1 -> GMII */
+				<&lsif0_mgpio9_greth_gbit1_gmii>,
+				<&lsif0_mgpio10_greth_gbit1_gmii>;
+				/* GRETH2 -> RMII
+				<&lsif0_mgpio9_greth2_rmii>,
+				<&lsif0_mgpio10_greth2_rmii>,*/
 		};
 
 		lsif0 {
 			greth_gbit1: greth_gbit1@0x3C034000 {
 				status = "ok";
-				mac-address = [ EC 17 66 77 05 02 ];
+				mac-address = [ EC 17 66 77 05 03 ];
 			};
 		};
 
@@ -184,10 +193,10 @@
 };
 
 /* SRAM-NOR */
-/include/ "mb115-02.dtsi"
+// /include/ "mb115-02.dtsi"
 
 /* Ethernet,NAND */
 // /include/ "mb115-03.dtsi"
 
 /* AV ouput */
-/include/ "mb115-04.dtsi"
+// /include/ "mb115-04.dtsi"

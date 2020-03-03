@@ -8,16 +8,27 @@
 	plb {
 		sram_nor_arbiter {
 			status = "okay";
-			sram-nor-mux = <1>;						/* 0 to route extmem wires to LSIF0, 1 - to MCIF (page 922) */
-			ce-manage = <2>;						/* MCIF(page 913 + confluence): cs0..3=>1 controller,cs4,5=>2 controller,cs-mode=0,chip-num=0x3F */
+			sram-nor-mux = <1>;		/* 0 to route extmem wires to LSIF0, 1 - to MCIF (page 922) */
+			ce-manage = <2>;		/* MCIF(page 913 + confluence): cs0..3=>1 controller,cs4,5=>2 controller,cs-mode=0,chip-num=0x3F */
+			pinctrl-names = "default";
+			pinctrl-0 =
+				<&lsif0_mgpio0_sram_nor>,
+				<&lsif0_mgpio1_sram_nor>,
+				<&lsif0_mgpio2_sram_nor>,
+				<&lsif0_mgpio3_sram_nor>,
+				<&lsif0_mgpio4_sram_nor>,
+				<&lsif0_mgpio5_sram_nor>,
+				<&lsif0_mgpio6_sram_nor>,
+				<&lsif0_mgpio7_sram_nor>,
+				<&lsif0_mgpio8_sram_nor>;
 		};
 
 		sram_plb_nor0: sram_plb_nor0@0x80170000 {
 			status = "disabled";
-			cs-mode = <0>;							/* 0 - cs in address, 1 - cs in reg (page 983) */
-			addr-size = <22>;						/* min 10 max 26 bit (page 983) */
-			timings = <0x1f1f0808>;					/* (page 984) */
-			chip-num = <15>;						/* (page 975) */
+			cs-mode = <0>;			/* 0 - cs in address, 1 - cs in reg (page 983) */
+			addr-size = <22>;		/* min 10 max 26 bit (page 983) */
+			timings = <0x1f1f0808>;		/* (page 984) */
+			chip-num = <15>;		/* (page 975) */
 			sram: sram@0 {
 				compatible = "mmio-sram";
 				#address-cells = <1>;
