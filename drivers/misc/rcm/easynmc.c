@@ -955,6 +955,7 @@ static ssize_t proc_read(struct file *filp, char __user *buffer, size_t buffer_l
 	struct list_head *iter; 
 	int copied=0; 
 	struct nmc_core *core;
+	char* buff;
 
 	/* 
 	 * We give all of our information in one go, so if the
@@ -970,16 +971,31 @@ static ssize_t proc_read(struct file *filp, char __user *buffer, size_t buffer_l
 
 	if (*offset > 0)
 		return 0;
-	
+
+	buff = kmalloc(buffer_length, GFP_KERNEL);
+	if (!buff) 
+		return -ENOMEM;
+
 	/* Lock us against any core removal that might happen */
 	spin_lock(&rlock);
 	list_for_each(iter, &core_list) {
 		core = list_entry(iter, struct nmc_core, linkage);
-		copied += snprintf(&buffer[copied], buffer_length, "/dev/nmc%d\n", core->id); 
+		copied += snprintf(&buff[copied], buffer_length, "/dev/nmc%d\n", core->id); 
 		buffer_length -= copied; 
 		*offset += copied;
 	}	
 	spin_unlock(&rlock);
+
+	if (copied) {
+		if (copy_to_user(buffer, buff, copied)) {
+			copied = -EFAULT;
+			goto out;
+		}
+	}
+
+out:
+
+	kfree(buff);
 
 	return copied; /* Do not return NULL byte */
 }
