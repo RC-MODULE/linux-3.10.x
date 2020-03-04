@@ -116,6 +116,12 @@
 			};
 		};
 
+		mms {
+			vpu: vpu@0x38020000 {
+				status = "ok";
+			};
+		};
+
 		apb0 {
 
 			watchdog: watchdog@0x38002000 {
