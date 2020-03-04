@@ -34,6 +34,10 @@
 #include <linux/of_platform.h>
 #include <linux/easynmc.h>
 
+static int easynmc_irq_polling = 0;
+module_param(easynmc_irq_polling, int, 0);
+MODULE_PARM_DESC(easynmc_irq_polling,
+		 "Enable/disable polling of interrupts. Set 1 to enable.");
 
 #define DRVNAME "easynmc-nmc3"
 
@@ -113,6 +117,30 @@ void nmc3_clear_interrupt(struct nmc_core *self, enum nmc_irq n)
 	}
 }
 
+int nmc3_check_interrupts(struct nmc_core *self) 
+{
+	struct nmc3_core *core = (struct nmc3_core *) self;
+	unsigned int val;
+
+	int mask = 0;
+
+	regmap_read(core->control, core->hp_status_reg.offset, &val);
+
+	if (val & BIT(core->hp_status_reg.bit)) {
+		mask |= BIT(NMC_IRQ_HP);
+	}
+
+	if (core->hp_status_reg.offset != core->lp_status_reg.offset)
+	{
+		regmap_read(core->control, core->lp_status_reg.offset, &val);
+	}
+
+	if (val & BIT(core->lp_status_reg.bit)) {
+		mask |= BIT(NMC_IRQ_LP);
+	}
+
+	return mask;
+}
 
 static int easynmc_probe (struct platform_device *pdev)
 {
@@ -192,6 +220,7 @@ static int easynmc_probe (struct platform_device *pdev)
 	core->c.reset             = nmc3_reset; 
 	core->c.send_interrupt    = nmc3_send_interrupt; 
 	core->c.clear_interrupt   = nmc3_clear_interrupt; 
+	core->c.check_interrupts  = nmc3_check_interrupts;
 	
 	if (!core->c.imem_virt) {
 		printk(DRVNAME ": ioremap of internal nmc memory failed");
@@ -207,7 +236,14 @@ static int easynmc_probe (struct platform_device *pdev)
 				       &core->c.type);
 	if (ret!=0) 
 		goto errfreemem;
-	
+
+	if (of_find_property(pdev->dev.of_node, "irq_polling", NULL))
+	{
+		easynmc_irq_polling = 1;
+	}
+
+	core->c.do_irq_polling = easynmc_irq_polling;
+
 	printk(DRVNAME ": imem at phys 0x%lx virt 0x%lx size 0x%lx bytes\n", 
 	       (unsigned long) core->c.imem_phys,
 	       (unsigned long) core->c.imem_virt,

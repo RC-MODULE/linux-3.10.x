@@ -28,6 +28,7 @@ struct nmc_core {
 	void             (*reset)(struct nmc_core *self);
 	void             (*send_interrupt) (struct nmc_core *self, enum nmc_irq n);
 	void             (*clear_interrupt) (struct nmc_core *self, enum nmc_irq n);
+	int              (*check_interrupts) (struct nmc_core *self);
 	char __iomem      *imem_virt;  /* Pointer to nmc internal memory (remapped) */
 	phys_addr_t        imem_phys; 
 	size_t             imem_size; /* size in bytes */ 
@@ -53,7 +54,10 @@ struct nmc_core {
 	void              *appdata;
 	size_t            appdata_len;
 	/* Internal linked list of cores registered */
-	struct list_head  linkage; 
+	struct list_head  linkage;
+
+	int                 do_irq_polling;
+	struct task_struct* thread_irq_polling;
 };
 
 

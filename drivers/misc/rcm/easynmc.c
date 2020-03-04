@@ -38,6 +38,7 @@
 #include <linux/circ_buf.h>
 #include <linux/proc_fs.h>
 #include <linux/list.h>
+#include <linux/kthread.h>
 
 #define DRVNAME "easynmc"
 
@@ -50,6 +51,8 @@ static LIST_HEAD(core_list);
 
 static DEFINE_SPINLOCK(rlock);
 
+#define IRQ_POLLING_SLEEP_MIN 9000
+#define IRQ_POLLING_SLEEP_MAX 11000
 
 #define DECLARE_PARAM(name, def)			\
 	static int g_##name = def;			\
@@ -82,6 +85,27 @@ static irqreturn_t easynmc_handle_hp(int irq, void *dev_id)
 	core->clear_interrupt(core, NMC_IRQ_HP);
 	wake_up(&core->qh);
 	return IRQ_HANDLED;
+}
+
+static int easynmc_irq_polling(void* context)
+{
+	struct nmc_core *core = (struct nmc_core *)context;
+
+	int mask;
+
+	while (!kthread_should_stop()) {
+		mask = core->check_interrupts(core);
+
+		if (mask & BIT(NMC_IRQ_HP))
+			easynmc_handle_hp(0, core);
+
+		if (mask & BIT(NMC_IRQ_LP))
+			easynmc_handle_lp(0, core);
+
+		usleep_range(IRQ_POLLING_SLEEP_MIN, IRQ_POLLING_SLEEP_MAX);
+	}
+
+	return 0;
 }
 
 static void appdata_drop(struct nmc_core *core)
@@ -543,7 +567,7 @@ static int imem_mmap(struct file * filp, struct vm_area_struct * vma)
 	}
 	
 	dbg("Requested mmap: start 0x%llx len 0x%lx \n", 
-	    phys_start, 
+	    (long long unsigned int)phys_start, 
 	    (unsigned long) size);
 	
 	/* Dumb bounds check */
@@ -881,30 +905,40 @@ int easynmc_register_core(struct nmc_core *core)
 	if (err)
 		goto free_io;
 
+	if (core->do_irq_polling) {
+		core->thread_irq_polling = kthread_run(easynmc_irq_polling, core, "easynmc_irq_polling");
 
-	if (!core->irqs[NMC_IRQ_HP]) {
-		printk(KERN_ERR "easynmc: Warning, missing HP Interrupt on core %s!\n", core->name);
-	}
-
-	if (!core->irqs[NMC_IRQ_LP]) {
-		printk(KERN_ERR "easynmc: Warning, missing LP Interrupt on core %s!\n", core->name);
-	}
-
-	if (core->irqs[NMC_IRQ_HP]) { 
-		err = request_irq(core->irqs[NMC_IRQ_HP], easynmc_handle_hp, 0x0, DRVNAME, core);
-		if (err)
+		if (IS_ERR(core->thread_irq_polling))
 		{
-			printk(KERN_ERR "easynmc: HP IRQ request failed!\n");
+			printk(KERN_ERR "easynmc: Failed to create IRQ polling thread\n");
 			goto free_mem;
 		}
 	}
+	else {
+		if (!core->irqs[NMC_IRQ_HP]) {
+			printk(KERN_ERR "easynmc: Warning, missing HP Interrupt on core %s!\n", core->name);
+		}
 
-	if (core->irqs[NMC_IRQ_LP]) {
-		err = request_irq(core->irqs[NMC_IRQ_LP], easynmc_handle_lp, 0x0, DRVNAME, core);
-		if (err)
-		{
-			printk(KERN_ERR "easynmc: LP IRQ request failed!\n");
-			goto free_hp_irq;
+		if (!core->irqs[NMC_IRQ_LP]) {
+			printk(KERN_ERR "easynmc: Warning, missing LP Interrupt on core %s!\n", core->name);
+		}
+
+		if (core->irqs[NMC_IRQ_HP]) { 
+			err = request_irq(core->irqs[NMC_IRQ_HP], easynmc_handle_hp, 0x0, DRVNAME, core);
+			if (err)
+			{
+				printk(KERN_ERR "easynmc: HP IRQ request failed!\n");
+				goto free_mem;
+			}
+		}
+
+		if (core->irqs[NMC_IRQ_LP]) {
+			err = request_irq(core->irqs[NMC_IRQ_LP], easynmc_handle_lp, 0x0, DRVNAME, core);
+			if (err)
+			{
+				printk(KERN_ERR "easynmc: LP IRQ request failed!\n");
+				goto free_hp_irq;
+			}
 		}
 	}
 
@@ -938,6 +972,10 @@ int easynmc_deregister_core(struct nmc_core *core)
 	list_del_init(&core->linkage);
 	misc_deregister(&core->mdev_io.mdev);
 	misc_deregister(&core->mdev_mem.mdev);
+	if (core->thread_irq_polling) {
+		kthread_stop(core->thread_irq_polling);
+		core->thread_irq_polling = NULL;
+	}
 	free_irq(core->irqs[NMC_IRQ_LP], core);
 	free_irq(core->irqs[NMC_IRQ_HP], core);
 	num_cores_registered--;
@@ -955,6 +993,7 @@ static ssize_t proc_read(struct file *filp, char __user *buffer, size_t buffer_l
 	struct list_head *iter; 
 	int copied=0; 
 	struct nmc_core *core;
+	char* buff;
 
 	/* 
 	 * We give all of our information in one go, so if the
@@ -970,16 +1009,31 @@ static ssize_t proc_read(struct file *filp, char __user *buffer, size_t buffer_l
 
 	if (*offset > 0)
 		return 0;
-	
+
+	buff = kmalloc(buffer_length, GFP_KERNEL);
+	if (!buff) 
+		return -ENOMEM;
+
 	/* Lock us against any core removal that might happen */
 	spin_lock(&rlock);
 	list_for_each(iter, &core_list) {
 		core = list_entry(iter, struct nmc_core, linkage);
-		copied += snprintf(&buffer[copied], buffer_length, "/dev/nmc%d\n", core->id); 
+		copied += snprintf(&buff[copied], buffer_length, "/dev/nmc%d\n", core->id); 
 		buffer_length -= copied; 
 		*offset += copied;
 	}	
 	spin_unlock(&rlock);
+
+	if (copied) {
+		if (copy_to_user(buffer, buff, copied)) {
+			copied = -EFAULT;
+			goto out;
+		}
+	}
+
+out:
+
+	kfree(buff);
 
 	return copied; /* Do not return NULL byte */
 }
