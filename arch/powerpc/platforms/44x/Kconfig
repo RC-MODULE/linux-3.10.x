@@ -197,6 +197,7 @@ config 1888TX018
 	select DEFAULT_UIMAGE
 	select PPC_UDBG_PL011
 	select HAVE_DMA_CONTIGUOUS
+	select ZONE_DMA
 	help
 	  This option enables support for the RCM 1888TX018 SoC
 
