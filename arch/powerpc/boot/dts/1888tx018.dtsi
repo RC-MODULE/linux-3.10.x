@@ -74,12 +74,12 @@
 					alignment = <0 0x1000000>;
 			};
 
-			// [***] EasyNMC prototype
-			test: test_mem {
+			default_cma_pool: default_cma_pool {
 				compatible = "shared-dma-pool";
 				reusable;
-				size = <0x4000000>;
-				alignment = <0x1000000>;
+				alloc-ranges = <0x0 0x00000000 0x0 0x30000000>; // shall be in DMA zone
+				size = <0x0 0x4000000>;
+				alignment = <0x0 0x1000000>;
 				linux,cma-default;
 			};
 
