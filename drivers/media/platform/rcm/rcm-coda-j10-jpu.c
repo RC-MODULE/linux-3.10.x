@@ -15,16 +15,16 @@
 #include <linux/slab.h>
 #include <linux/sched.h>
 #include <linux/sched/signal.h>
-#include "../../../jpuapi/jpuconfig.h"
+//#include "../../../jpuapi/jpuconfig.h"
 
-#include "jpu.h"
+//#include "jpu.h"
 
 
 // definitions to be changed as customer  configuration
 //#define JPU_SUPPORT_CLOCK_CONTROL				/if you want to have clock gating scheme frame by frame
 #define JPU_SUPPORT_ISR
 #define JPU_SUPPORT_PLATFORM_DRIVER_REGISTER	//if the platform driver knows the name of this driver. JPU_PLATFORM_DEVICE_NAME 
-#define JPU_SUPPORT_RESERVED_VIDEO_MEMORY		//if this driver knows the dedicated video memory address
+//#define JPU_SUPPORT_RESERVED_VIDEO_MEMORY		//if this driver knows the dedicated video memory address
 //#define JPU_IRQ_CONTROL
 #define JPU_PLATFORM_DEVICE_NAME "cnm_jpu"
 #define JPU_CLK_NAME "jpege"
@@ -56,6 +56,42 @@ static struct pci_device_id ids[] = {
 MODULE_DEVICE_TABLE(pci, ids);
 #endif
 
+
+#define JDI_IOCTL_MAGIC  'J'						/* from jpu.h */
+
+#define JDI_IOCTL_ALLOCATE_PHYSICAL_MEMORY			_IO(JDI_IOCTL_MAGIC, 0)
+#define JDI_IOCTL_FREE_PHYSICALMEMORY				_IO(JDI_IOCTL_MAGIC, 1)
+#define JDI_IOCTL_WAIT_INTERRUPT					_IO(JDI_IOCTL_MAGIC, 2)
+#define JDI_IOCTL_SET_CLOCK_GATE					_IO(JDI_IOCTL_MAGIC, 3)
+#define JDI_IOCTL_RESET								_IO(JDI_IOCTL_MAGIC, 4)
+#define JDI_IOCTL_GET_INSTANCE_POOL					_IO(JDI_IOCTL_MAGIC, 5)
+#define JDI_IOCTL_GET_RESERVED_VIDEO_MEMORY_INFO	_IO(JDI_IOCTL_MAGIC, 6)
+#define JDI_IOCTL_OPEN_INSTANCE						_IO(JDI_IOCTL_MAGIC, 7)
+#define JDI_IOCTL_CLOSE_INSTANCE					_IO(JDI_IOCTL_MAGIC, 8)
+#define JDI_IOCTL_GET_INSTANCE_NUM					_IO(JDI_IOCTL_MAGIC, 9)
+
+#define MAX_NUM_INSTANCE 8					// from "../../../jpuapi/jpuconfig.h"
+#define MAX_INST_HANDLE_SIZE (12*1024)
+
+#define JDI_IOCTL_MAGIC  'J'
+
+#define JDI_IOCTL_ALLOCATE_PHYSICAL_MEMORY			_IO(JDI_IOCTL_MAGIC, 0)
+#define JDI_IOCTL_FREE_PHYSICALMEMORY				_IO(JDI_IOCTL_MAGIC, 1)
+#define JDI_IOCTL_WAIT_INTERRUPT					_IO(JDI_IOCTL_MAGIC, 2)
+#define JDI_IOCTL_SET_CLOCK_GATE					_IO(JDI_IOCTL_MAGIC, 3)
+#define JDI_IOCTL_RESET								_IO(JDI_IOCTL_MAGIC, 4)
+#define JDI_IOCTL_GET_INSTANCE_POOL					_IO(JDI_IOCTL_MAGIC, 5)
+#define JDI_IOCTL_GET_RESERVED_VIDEO_MEMORY_INFO	_IO(JDI_IOCTL_MAGIC, 6)
+#define JDI_IOCTL_OPEN_INSTANCE						_IO(JDI_IOCTL_MAGIC, 7)
+#define JDI_IOCTL_CLOSE_INSTANCE					_IO(JDI_IOCTL_MAGIC, 8)
+#define JDI_IOCTL_GET_INSTANCE_NUM					_IO(JDI_IOCTL_MAGIC, 9)
+
+typedef struct jpudrv_buffer_t {
+	unsigned int size;						/* size of buffer */
+	unsigned long long phys_addr;			/* physical address */
+	unsigned long base;						/* kernel logical address in use kernel */
+	unsigned long virt_addr;				/* virtual user space address */
+} jpudrv_buffer_t;
 
 #ifndef VM_RESERVED	// for kernel up to 3.7.0 version
 # define  VM_RESERVED   (VM_DONTEXPAND | VM_DONTDUMP)
@@ -141,7 +177,7 @@ static int jpu_alloc_dma_buffer(jpudrv_buffer_t *jb)
 
 	jb->base = (unsigned long)(s_video_memory.base + (jb->phys_addr - s_video_memory.phys_addr));
 #else
-	jb->base = (unsigned long)dma_alloc_coherent(NULL, PAGE_ALIGN(jb->size), (dma_addr_t *) (&jb->phys_addr), GFP_DMA | GFP_KERNEL);
+	jb->base = (unsigned long)dma_alloc_coherent(jpudev, PAGE_ALIGN(jb->size), (dma_addr_t *) (&jb->phys_addr), GFP_DMA | GFP_KERNEL);
 	if ((void *)(jb->base) == NULL) 
 	{
 		printk(KERN_ERR "[JPUDRV] Physical memory allocation error size=%d\n", jb->size);
@@ -159,7 +195,7 @@ static void jpu_free_dma_buffer(jpudrv_buffer_t *jb)
 #else
 	if (jb->base) 
 	{
-		dma_free_coherent(0, PAGE_ALIGN(jb->size), (void *)jb->base, jb->phys_addr);
+		dma_free_coherent(jpudev, PAGE_ALIGN(jb->size), (void *)jb->base, jb->phys_addr);
 	}
 #endif
 }
@@ -233,8 +269,8 @@ static irqreturn_t jpu_irq_handler(int irq, void *dev_id)
 	
 	
 	s_interrupt_flag = 1;
-	
-	//printk(KERN_INFO "jpu_irq_handler\n");	
+
+	//printk(KERN_INFO "jpu_irq_handler\n");
 	wake_up_interruptible(&s_interrupt_wait_q);
 	
 	return IRQ_HANDLED;
@@ -253,7 +289,7 @@ static int jpu_open(struct inode *inode, struct file *filp)
 
 static long jpu_ioctl(struct file *filp, u_int cmd, u_long arg)
 {
-	int ret = 0; 	
+	int ret = 0;
 
 	switch (cmd) 
 	{
@@ -320,7 +356,7 @@ static long jpu_ioctl(struct file *filp, u_int cmd, u_long arg)
 				return -EACCES;
 			}
 
-			if (jb.base) 
+			if (jb.base)
 				jpu_free_dma_buffer(&jb);
 
 			spin_lock(&s_jpu_lock);
@@ -373,7 +409,7 @@ static long jpu_ioctl(struct file *filp, u_int cmd, u_long arg)
 				ret = -ERESTARTSYS;
 				break;
 			} 
-			
+
 			s_interrupt_flag = 0;	
 #ifdef JPU_IRQ_CONTROL
 			enable_irq(s_jpu_irq);
@@ -384,7 +420,7 @@ static long jpu_ioctl(struct file *filp, u_int cmd, u_long arg)
 	case JDI_IOCTL_SET_CLOCK_GATE:
 		{
 			u32 clkgate;
-			
+
 			if (get_user(clkgate, (u32 __user *) arg))
 				return -EFAULT;
 			
@@ -400,13 +436,13 @@ static long jpu_ioctl(struct file *filp, u_int cmd, u_long arg)
 	case JDI_IOCTL_GET_INSTANCE_POOL:
 		{
 			down(&s_jpu_sem);
-			
-			if (s_jpu_instance_pool.base != 0) 
+
+			if (s_jpu_instance_pool.base != 0)
 			{
 				ret = copy_to_user((void __user *)arg, &s_jpu_instance_pool, sizeof(jpudrv_buffer_t));
-				if (ret != 0) 
+				if (ret != 0)
 					ret = -EFAULT;
-			} 
+			}
 			else
 			{
 				ret = copy_from_user(&s_jpu_instance_pool, (jpudrv_buffer_t *)arg, sizeof(jpudrv_buffer_t));
@@ -424,7 +460,7 @@ static long jpu_ioctl(struct file *filp, u_int cmd, u_long arg)
 						}
 					}
 				}
-				
+
 				ret = -EFAULT;
 			}
 			up(&s_jpu_sem);
@@ -480,7 +516,7 @@ static long jpu_ioctl(struct file *filp, u_int cmd, u_long arg)
 			down(&s_jpu_sem);
 
 			ret = copy_to_user((void __user *)arg, &s_jpu_open_count, sizeof(int));
-			if (ret != 0) 
+			if (ret != 0)
 				ret = -EFAULT;
 
 			//printk(KERN_INFO "[JPUDRV] VDI_IOCTL_GET_INSTANCE_NUM open_count=%d\n", s_vpu_open_count);
@@ -509,13 +545,13 @@ static ssize_t jpu_read(struct file *filp, char __user *buf, size_t len, loff_t 
 
 static ssize_t jpu_write(struct file *filp, const char __user *buf, size_t len, loff_t *ppos)
 {
-	
+
 	return -1;
 }
 
 static int jpu_release(struct inode *inode, struct file *filp)
 {
-	printk(KERN_INFO "jpu_release s_jpu_open_count=%d\n", s_jpu_open_count);	
+	printk(KERN_INFO "jpu_release s_jpu_open_count=%d\n", s_jpu_open_count);
 
 	spin_lock(&s_jpu_lock);
 
@@ -638,21 +674,21 @@ static int jpu_probe(struct platform_device *pdev)
 
 #else
 	struct resource *res = NULL;
-	printk(KERN_INFO "jpu_probe\n");	
+	printk(KERN_INFO "jpu_probe\n");
 
 	if (pdev)
 		res = platform_get_resource(pdev, IORESOURCE_MEM, 0);
 
-	if (res) 	// if platform driver is implemented
+if (res) 	// if platform driver is implemented
 	{
 		s_jpu_reg_phy_base = res->start;
 		s_jpu_reg_virt_base = ioremap(res->start, res->end - res->start);
-		printk(KERN_INFO "[JPUDRV] : jpu base address get from platform driver base addr=0x%u, virtualbase=0x%p\n", s_jpu_reg_phy_base , s_jpu_reg_virt_base);		
+		printk(KERN_INFO "[JPUDRV] : jpu base address get from platform driver base addr=0x%llx, virtualbase=0x%p\n", s_jpu_reg_phy_base , s_jpu_reg_virt_base);		
 	}
 	else
 	{
 		s_jpu_reg_virt_base = ioremap(s_jpu_reg_phy_base, JPU_REG_SIZE);
-		printk(KERN_INFO "[JPUDRV] : jpu base address get from defined value base addr=0x%u, virtualbase=0x%p\n", s_jpu_reg_phy_base, s_jpu_reg_virt_base);		
+		printk(KERN_INFO "[JPUDRV] : jpu base address get from defined value base addr=0x%llx, virtualbase=0x%p\n", s_jpu_reg_phy_base, s_jpu_reg_virt_base);		
 	}
 
 #endif
@@ -662,15 +698,15 @@ static int jpu_probe(struct platform_device *pdev)
 	if ((alloc_chrdev_region(&s_jpu_major, 0, 1, JPU_DEV_NAME)) < 0) 
 	{  
 		err = -EBUSY;
-		printk(KERN_ERR "could not allocate major number\n");  		
+		printk(KERN_ERR "could not allocate major number\n");
 		goto ERROR_PROVE_DEVICE;
 	}
 
-/* create device class */
+	/* create device class */
 	if( ( cl = class_create( THIS_MODULE, "chardrv" ) ) == NULL )
 	{
 		err = -ENODEV;
-		JPG_DBG_PRINT_ERR( "create class for device failed\n" )	
+		printk(KERN_ERR "create class for device failed\n");
 		goto ERROR_PROVE_DEVICE;
 	}
 
@@ -679,18 +715,18 @@ static int jpu_probe(struct platform_device *pdev)
 	{
 		err = -ENODEV;
 		class_destroy( cl );
-		JPG_DBG_PRINT_ERR( "create device %s failed\n", JPU_DEV_NAME )
+		printk(KERN_ERR "create device %s failed\n", JPU_DEV_NAME);
 		goto ERROR_PROVE_DEVICE;	
 	}
 	jpudev->coherent_dma_mask = DMA_BIT_MASK(32);
 	jpudev->archdata.dma_offset = - (pdev->dev.dma_pfn_offset << PAGE_SHIFT);
 
 	/* initialize the device structure and register the device with the kernel */  
-	cdev_init(&s_jpu_cdev, &jpu_fops);  
-	if ((cdev_add(&s_jpu_cdev, s_jpu_major, 1)) < 0) 
+	cdev_init(&s_jpu_cdev, &jpu_fops);
+	if ((cdev_add(&s_jpu_cdev, s_jpu_major, 1)) < 0)
 	{  
 		err = -EBUSY;
-		printk(KERN_ERR "could not allocate chrdev\n");  
+		printk(KERN_ERR "could not allocate chrdev\n"); 
 		goto ERROR_PROVE_DEVICE;  
 	}  
 
@@ -703,7 +739,7 @@ static int jpu_probe(struct platform_device *pdev)
 		printk(KERN_ERR "[JPUDRV] : fail to get clock controller, but, do not treat as error, \n");			
 	}
 	else {
-		printk(KERN_INFO "[JPUDRV] : get clock controller s_jpu_clk=0x%p\n", s_jpu_clk);					
+		printk(KERN_INFO "[JPUDRV] : get clock controller s_jpu_clk=0x%p\n", s_jpu_clk);
 	}
 	
 #ifdef JPU_SUPPORT_CLOCK_CONTROL	
@@ -752,7 +788,7 @@ static int jpu_probe(struct platform_device *pdev)
 #else
 	printk(KERN_INFO "[JPUDRV] success to probe jpu device with non reserved video memory\n");
 #endif	
-				
+
 
 
 	return 0;
@@ -857,7 +893,12 @@ static struct pci_driver jpu_driver = {
 #endif
 };
 #else
-MODULE_DEVICE_TABLE(of, rcm_vpu_coda980_of_match);
+
+static const struct of_device_id rcm_coda_j10_of_match[] = {
+	{ .compatible = "rcm,coda-j10" },
+	{ },
+};
+MODULE_DEVICE_TABLE(of, rcm_coda_j10_of_match);
 
 static struct platform_driver jpu_driver = {
 	.driver = {
@@ -869,20 +910,15 @@ static struct platform_driver jpu_driver = {
 	.suspend = jpu_suspend,
 	.resume = jpu_resume,
 };
-
-
-MODULE_AUTHOR("A customer using C&M JPU, Inc.");
-MODULE_DESCRIPTION("JPU linux driver");
-MODULE_LICENSE("GPL");
 #endif
 
 static int __init jpu_init(void)
 {
 	int res;
 	res = 0;
-	printk(KERN_INFO "jpu_init\n");	
+	printk(KERN_INFO "jpu_init\n");
 	init_waitqueue_head(&s_interrupt_wait_q);
-	s_jpu_instance_pool.base = 0;	
+	s_jpu_instance_pool.base = 0;
 #ifdef CNM_FPGA_PLATFORM
 	res = pci_register_driver(&jpu_driver);
 #else
@@ -895,7 +931,7 @@ static int __init jpu_init(void)
 #endif
 #endif
 
-	printk(KERN_INFO "end jpu_init result=0x%x\n", res);	
+	printk(KERN_INFO "end jpu_init result=0x%x\n", res);
 	return res;
 }
 
@@ -915,7 +951,7 @@ static void __exit jpu_exit(void)
 		iounmap((void *)s_video_memory.base);
 		s_video_memory.base = 0;
 	}
-#endif		
+#endif	
 
 	cdev_del(&s_jpu_cdev);  
 	if (s_jpu_major > 0) 
@@ -944,7 +980,7 @@ static void __exit jpu_exit(void)
 #else
 	platform_driver_unregister(&jpu_driver);
 #endif
-	
+
 	return;
 }
 
