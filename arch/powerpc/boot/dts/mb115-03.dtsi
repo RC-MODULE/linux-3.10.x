@@ -39,12 +39,12 @@
 		lsif0 {
 			greth_gbit0: greth_gbit0@0x3C033000 {
 				status = "ok";
-				mac-address = [ EC 17 66 77 05 02 ];
+				mac-address = [ EC 17 66 77 05 03 ];
 			};
 
 			greth_gbit1: greth_gbit1@0x3C034000 {
 				status = "ok";
-				mac-address = [ EC 17 66 77 05 03 ];
+				mac-address = [ EC 17 66 77 05 04 ];
 			};
 
 			nand: nand@0x3C032000 {
