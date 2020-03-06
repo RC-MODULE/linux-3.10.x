@@ -73,19 +73,6 @@ MODULE_DEVICE_TABLE(pci, ids);
 #define MAX_NUM_INSTANCE 8					// from "../../../jpuapi/jpuconfig.h"
 #define MAX_INST_HANDLE_SIZE (12*1024)
 
-#define JDI_IOCTL_MAGIC  'J'
-
-#define JDI_IOCTL_ALLOCATE_PHYSICAL_MEMORY			_IO(JDI_IOCTL_MAGIC, 0)
-#define JDI_IOCTL_FREE_PHYSICALMEMORY				_IO(JDI_IOCTL_MAGIC, 1)
-#define JDI_IOCTL_WAIT_INTERRUPT					_IO(JDI_IOCTL_MAGIC, 2)
-#define JDI_IOCTL_SET_CLOCK_GATE					_IO(JDI_IOCTL_MAGIC, 3)
-#define JDI_IOCTL_RESET								_IO(JDI_IOCTL_MAGIC, 4)
-#define JDI_IOCTL_GET_INSTANCE_POOL					_IO(JDI_IOCTL_MAGIC, 5)
-#define JDI_IOCTL_GET_RESERVED_VIDEO_MEMORY_INFO	_IO(JDI_IOCTL_MAGIC, 6)
-#define JDI_IOCTL_OPEN_INSTANCE						_IO(JDI_IOCTL_MAGIC, 7)
-#define JDI_IOCTL_CLOSE_INSTANCE					_IO(JDI_IOCTL_MAGIC, 8)
-#define JDI_IOCTL_GET_INSTANCE_NUM					_IO(JDI_IOCTL_MAGIC, 9)
-
 typedef struct jpudrv_buffer_t {
 	unsigned int size;						/* size of buffer */
 	unsigned long long phys_addr;			/* physical address */
