@@ -5,6 +5,22 @@
 */
 / {
 	plb {
+		lsif1 {
+			i2c0: i2c@0x3C05A000 {
+				status = "ok";
+
+				// HDMI channel 0
+				adv7513_0: adv7513@39 {
+					status = "ok";
+				};
+
+				// HDMI channel 1
+				adv7513_1: adv7513@3d {
+					status = "ok";
+				};
+			};
+		};
+
 		mms {
 			i2s: i2s@0x39080000 {
 				status = "ok";

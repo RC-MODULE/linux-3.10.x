@@ -43,7 +43,7 @@
 		lsif0 {
 			greth_gbit1: greth_gbit1@0x3C034000 {
 				status = "ok";
-				mac-address = [ EC 17 66 77 05 03 ];
+				mac-address = [ EC 17 66 77 05 02 ];
 			};
 		};
 
@@ -60,16 +60,6 @@
 				rtc@68 {
 					compatible = "dallas,ds1338";
 					reg = <0x68>;
-				};
-
-				// HDMI channel 0
-				adv7513_0: adv7513@39 {
-					// status = "ok";
-				};
-
-				// HDMI channel 1
-				adv7513_1: adv7513@3d {
-					// status = "ok";
 				};
 			};
 
