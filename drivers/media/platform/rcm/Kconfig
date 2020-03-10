@@ -11,3 +11,9 @@ config RCM_VPU_CODA980
 	default n
 	---help---
 	  RCM VPU CODA980 (Chips Media) video codec driver.
+
+config RCM_CODA_J10
+	bool "RCM JPEG CODA J10 codec driver"
+	default y
+	---help---
+	RCM JPEG CODA J10 codec driver

@@ -977,6 +977,14 @@
 				interrupts = <123 2>; // active high level-sensitive
 				memory-buffer = <&vpu_buffer>;
 			};
+
+			jpg: jpg@0x3801a000 {
+				status = "disabled";
+				compatible = "rcm,coda-j10";
+				reg = <0x3801a000 0x1000>;
+				interrupt-parent = <&MPIC>;
+				interrupts = <124 2>; // active high level-sensitive
+			};
 		};
 
 		apb0 {

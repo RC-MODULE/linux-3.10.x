@@ -110,6 +110,10 @@
 			vpu: vpu@0x38020000 {
 				status = "ok";
 			};
+
+			jpg: jpg@0x3801a000 {
+				status = "ok";
+			};
 		};
 
 		apb0 {
