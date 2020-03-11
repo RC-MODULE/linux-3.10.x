@@ -785,12 +785,17 @@
 				compatible = "rcm,1888tx018", "rcm,mmc-0.2";
 				reg = <0x3C064000 0x1000>;
 				interrupt-parent = <&MPIC>;
-				interrupts = <67 0>; // IRQ_TYPE_EDGE_RISING
+				interrupts = <67 2>; // active high level-sensitive
 				pinctrl-names = "default";
 				pinctrl-0 = <&sdio_mux>;
 				clocks = <&lsif1clock>;
 				min-frequency = <1000000>;
-				max-frequency = <4000000>;
+				max-frequency = <25000000>;
+				axi-awlen = <15>;		// 16 data frames
+				axi-arlen = <15>;		// 16 data frames
+				axi-awsize = <2>;		// 4 bytes 
+				axi-arsize = <2>;		// 4 bytes 
+				sdio-timeout = <200>;	// 200 ms
 				clock-names = "mmc";
 			};
 
