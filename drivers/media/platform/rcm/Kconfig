@@ -17,3 +17,13 @@ config RCM_CODA_J10
 	default y
 	---help---
 	RCM JPEG CODA J10 codec driver
+
+config RCM_VDU_GRABER
+	bool "RCM VDU grab driver"
+	select VIDEOBUF_GEN
+	select VIDEOBUF_DMA_CONTIG
+	select VIDEOBUF_VMALLOC
+	default y
+	---help---
+	RCM VDU grab driver
+	

@@ -118,6 +118,10 @@
 			vdu1: vdu@0x38011000 {
 				status = "ok";
 			};
+
+			vdu_graber: vdu_graber@0x38015000 {
+				status = "ok";
+			};
 		};
 	};
 };

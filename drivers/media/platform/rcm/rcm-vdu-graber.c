@@ -18,6 +18,8 @@
 #include <linux/string.h>
 #include <linux/videodev2.h>
 #include <linux/vmalloc.h>
+#include <linux/dma-mapping.h>
+#include <linux/of_platform.h>
 
 #include <media/videobuf-dma-contig.h>
 #include <media/videobuf-core.h>
@@ -28,10 +30,10 @@
 #include <asm/delay.h>
 #include <asm/io.h>
 #include <asm/page.h>
-#include <asm/segment.h>
+//#include <asm/segment.h>
 #include <asm/uaccess.h>
 
-#include "../grabber_v2.h"
+#include "rcm-vdu-graber.h"
 
 #define SUCCESS 0
 #define DEVICE_NAME "grb_v2" /* Имя нашего устройства */
@@ -45,7 +47,7 @@
 #define DEL 1
 
 
-static int debug;
+static int debug = 0xFF;
 module_param(debug, int, 0644);
 
 MODULE_LICENSE			( "Dual BSD/GPL" );
@@ -119,7 +121,8 @@ struct grb_info
 	int irq_stat;
 	
 	spinlock_t irqlock ;
-	
+
+	struct 	v4l2_device v4l2_device;
 	struct 	v4l2_pix_format	user_format;
 	struct 	v4l2_rect		cropping;
 	
@@ -135,7 +138,7 @@ struct grb_info
 	void __iomem *base_addr_regs_grb;
 	void __iomem *base_addr_mem_area;
 	
-	u32		buff_phys_addr	;
+	u64		buff_phys_addr	;
 	u32		mem_offset1		;
 	u32		mem_offset2		;
 	u32		buff_length		;
@@ -932,7 +935,7 @@ static int vidioc_querycap_grb (
 
 	return 0;
 }
-
+/*
 static int vidioc_cropcap_grb (
 			struct 	file *file_ptr,
 			void 	*fh,
@@ -972,7 +975,7 @@ static int vidioc_s_crop_grb (
 	
 	return 0;
 }
-
+*/
 static int vidioc_g_fmt_vid_cap_grb (
 			struct 	file *file_ptr,
 			void 	*fh,
@@ -1222,12 +1225,32 @@ static long vidioc_default_grb(
 	return 0;
 }
 
+	int vidioc_g_selection_grb( struct file *file, void *fh, struct v4l2_selection *s ) {
+		struct grb_info *grb_info_ptr = video_drvdata(file);
+
+		if (s->type != V4L2_BUF_TYPE_VIDEO_CAPTURE)
+			return -EINVAL;
+
+		s->r = grb_info_ptr->cropping;
+		return 0;
+	}
+
+	int vidioc_s_selection_grb( struct file *file, void *fh, struct v4l2_selection *s ) {
+		struct grb_info *grb_info_ptr = video_drvdata(file);
+
+		if (s->type != V4L2_BUF_TYPE_VIDEO_CAPTURE)
+			return -EINVAL;
+
+		grb_info_ptr->cropping = s->r;
+		return 0;
+	}
+
 // grb capture ioctl operations 
 static const struct v4l2_ioctl_ops grb_ioctl_ops = {
 	.vidioc_querycap			= vidioc_querycap_grb,
-	.vidioc_cropcap				= vidioc_cropcap_grb,
-	.vidioc_g_crop				= vidioc_g_crop_grb,
-	.vidioc_s_crop				= vidioc_s_crop_grb,
+//	.vidioc_cropcap				= vidioc_cropcap_grb,					// VIDIOC_CROPCAP
+//	.vidioc_g_crop				= vidioc_g_crop_grb,					// VIDIOC_G_CROP
+//	.vidioc_s_crop				= vidioc_s_crop_grb,					// VIDIOC_S_CROP
 	.vidioc_g_fmt_vid_cap		= vidioc_g_fmt_vid_cap_grb,
 	.vidioc_s_fmt_vid_cap		= vidioc_s_fmt_vid_cap_grb,
 	.vidioc_reqbufs      		= vidioc_reqbufs_grb,
@@ -1237,6 +1260,8 @@ static const struct v4l2_ioctl_ops grb_ioctl_ops = {
 	.vidioc_streamon     		= vidioc_streamon_grb,
 	.vidioc_streamoff    		= vidioc_streamoff_grb,
 	.vidioc_default             = vidioc_default_grb,
+	.vidioc_g_selection         = vidioc_g_selection_grb,
+	.vidioc_s_selection         = vidioc_s_selection_grb
 };
 
 // ****************************************************************************
@@ -1279,6 +1304,20 @@ static irqreturn_t proc_interrupt (struct grb_info *grb_info_ptr)
 	
 	void __iomem *base_addr;
 
+	struct videobuf_buffer *vb;
+
+	int height, width;
+
+	u32 base_addr_dma0 ;
+	u32 base_addr_dma1 ;
+	u32 base_addr_dma2 ;
+
+	u32 addr_dma0_addr ;
+	u32 addr_dma1_addr ;
+	u32 addr_dma2_addr ;
+
+	char switch_page;
+
 	base_addr = grb_info_ptr->base_addr_regs_grb;
 	
 	
@@ -1301,18 +1340,6 @@ static irqreturn_t proc_interrupt (struct grb_info *grb_info_ptr)
 	else if ( (rd_data >> END_WRITE) & 1)
 	{
 		write_register(2,  (1 << END_WRITE)	, base_addr, ADDR_INT_STATUS	);
-		
-		struct videobuf_buffer *vb;
-		
-		u32 base_addr_dma0 ;
-		u32 base_addr_dma1 ;
-		u32 base_addr_dma2 ;
-	
-		u32 addr_dma0_addr ;
-		u32 addr_dma1_addr ;
-		u32 addr_dma2_addr ;
-		
-		char switch_page;
 		
 		wake_up_all(&grb_info_ptr->queue);
 		
@@ -1356,8 +1383,6 @@ static irqreturn_t proc_interrupt (struct grb_info *grb_info_ptr)
 	else if ( (rd_data >> INT_DONE) & 1)
 	{
 		write_register(2,  (1 << INT_DONE)	, base_addr, ADDR_INT_STATUS);
-		
-		int height, width;
 		
 		rd_data = read_register(2, base_addr, ADDR_FRAME_SIZE);
 		
@@ -1430,6 +1455,23 @@ static irqreturn_t irq_handler(int irq, void* dev)
 //
 // ****************************************************************************
 
+static int get_memory_buffer_address( const struct platform_device* grb_device,  const char* res_name, struct resource* res_ptr ) {
+	unsigned int tmp[4];
+	int ret;
+	struct device_node* np;
+	if( ( np  = of_parse_phandle( grb_device->dev.of_node, res_name, 0 ) ) == NULL ) {
+		dprintk(1, "ERROR : can't get the device node of the memory-region"); 
+		return -ENODEV;
+	}
+	if( ( ret = of_property_read_u32_array( np, "reg", tmp, 4 ) ) != 0 ) {
+		dprintk(1, "ERROR : can't get the resource of the memory area");
+		return ret; 
+	}
+	res_ptr->start = ((unsigned long long)tmp[0]<<32)|tmp[1];
+	res_ptr->end = res_ptr->start + ( ((unsigned long long)tmp[2]<<32) | tmp[3] ) - 1;
+	return 0;
+}
+
 static int get_resources (struct platform_device* grb_device , struct grb_info *grb_info_ptr)
 {
 	struct resource* grb_res_ptr;
@@ -1442,7 +1484,7 @@ static int get_resources (struct platform_device* grb_device , struct grb_info *
 		dprintk(1, "ERROR : can't get the base address registers grabber"); 
 		return -1;
 	}
-	dprintk(1, "The base address registers grabber finish address (%08x,%08x)\n", grb_res_ptr->start, grb_res_ptr->end);	
+	dprintk(1, "The base address registers grabber finish address (%08x,%08x)\n", (unsigned int)grb_res_ptr->start, (unsigned int)grb_res_ptr->end);	
 	grb_info_ptr->grb_phys_addr = grb_res_ptr->start;
 	grb_info_ptr->base_addr_regs_grb = devm_ioremap_resource(&grb_device->dev, grb_res_ptr);
     if (IS_ERR(grb_info_ptr->base_addr_regs_grb)) {
@@ -1459,22 +1501,24 @@ static int get_resources (struct platform_device* grb_device , struct grb_info *
 	// 
 	// Get buffer resource 
 	//
-	grb_res_ptr = platform_get_resource(grb_device, IORESOURCE_MEM, 1); // get the base address of the memory area
-	if (!grb_res_ptr) {
+	//grb_res_ptr = platform_get_resource(grb_device, IORESOURCE_MEM, 1); // get the base address of the memory area
+	//if (!grb_res_ptr) {
+	if( get_memory_buffer_address( grb_device, "memory-region", grb_res_ptr ) ) {
 		dprintk(1, "ERROR : can't get the base address of the memory area"); 
 		return -1;
 	}
+
 	grb_info_ptr->buff_phys_addr = grb_res_ptr->start ;	
-	grb_info_ptr->buff_length = grb_res_ptr->end - grb_res_ptr->start;
-	
+	grb_info_ptr->buff_length = grb_res_ptr->end - grb_res_ptr->start + 1;
+
+
 //	grb_info_ptr->base_addr_mem_area = devm_ioremap(&grb_device->dev, grb_info_ptr->buff_phys_addr, 4096);
 //	if(!grb_info_ptr->base_addr_mem_area) {
 //		dprintk(1, "ERROR : can't ioremap buffer resource");
 //		return -1;
 //	}
-	dprintk(1, "The base address of the memory area and finish address (%08x,%08x)\n", grb_res_ptr->start, grb_res_ptr->end);	
-	
-	dprintk(1, "grv_b2: buff_phys_addr = (%08x)\n", grb_info_ptr->buff_phys_addr);	
+	dprintk(1, "The base address of the memory area and finish address (%llx,%llx)\n", grb_res_ptr->start, grb_res_ptr->end);
+	dprintk(1, "grv_b2: buff_phys_addr = %llx\n", grb_info_ptr->buff_phys_addr);	
 	
 	// 
 	// Get number interrupt 
@@ -1484,7 +1528,7 @@ static int get_resources (struct platform_device* grb_device , struct grb_info *
 		dprintk(1, "ERROR : can't get base irq");
 		return -1;
 	}
-	dev_info(&grb_device->dev,"irq resource (%08x)\n", grb_res_ptr->start);	
+	dev_info(&grb_device->dev,"irq resource (%08x)\n", (unsigned int)grb_res_ptr->start);	
 	grb_info_ptr->num_irq = grb_res_ptr->start;
 	
 	dprintk(1, "Number IRQ = %d\n", grb_info_ptr->num_irq);
@@ -1497,6 +1541,8 @@ static int device_probe (struct platform_device *grb_device)
 	struct grb_info *grb_info_ptr;
 	int res;
 	
+	dprintk(1, "Probe started!\n");
+
 	grb_info_ptr = kzalloc(sizeof(struct grb_info), GFP_KERNEL); // memory allocation for inner structure and initialize by zeroes
 	if (grb_info_ptr == NULL) {
 		dprintk(1, "Can't allocated memory!\n");
@@ -1508,20 +1554,24 @@ static int device_probe (struct platform_device *grb_device)
 		kfree(grb_info_ptr);
 		return -1;
 	}
-		
-	res = dma_declare_coherent_memory(&grb_device->dev, grb_info_ptr->buff_phys_addr, grb_info_ptr->buff_phys_addr, grb_info_ptr->buff_length,  DMA_MEMORY_MAP | DMA_MEMORY_EXCLUSIVE);
 
-//	if (res != 0) {
-//		dprintk(1, "dmam_declare_coherent_memory error %d!\n" , res);
-//		return -1;
-//	}
+	grb_device->dma_mask = DMA_BIT_MASK(32);
+	grb_device->dev.archdata.dma_offset = - (grb_device->dev.dma_pfn_offset << PAGE_SHIFT);
+
+	res = dma_declare_coherent_memory(&grb_device->dev, grb_info_ptr->buff_phys_addr, grb_info_ptr->buff_phys_addr, grb_info_ptr->buff_length );//,  DMA_MEMORY_MAP | DMA_MEMORY_EXCLUSIVE);
+	dprintk(1, "dma_declare_coherent_memory return %d for addr %llx and size %x\n" , res, grb_info_ptr->buff_phys_addr, grb_info_ptr->buff_length);
+
+	if (res != 0) {
+		//dprintk(1, "dma_declare_coherent_memory error %d for addr %llx and size %x!\n" , res, grb_info_ptr->buff_phys_addr, grb_info_ptr->buff_length);
+		return -1;
+	}
 	//
 	// Settings
 	//
 	
 	platform_set_drvdata(grb_device, grb_info_ptr); 
 	
-	grb_info_ptr->video_dev.parent = grb_info_ptr->dev;
+	grb_info_ptr->video_dev.dev_parent = grb_info_ptr->dev;
 	grb_info_ptr->video_dev.fops = &fops;
 	grb_info_ptr->video_dev.ioctl_ops = &grb_ioctl_ops;
 	strncpy(grb_info_ptr->video_dev.name, DRIVER_NAME, sizeof(grb_info_ptr->video_dev.name) - 1);
@@ -1529,11 +1579,19 @@ static int device_probe (struct platform_device *grb_device)
 	
 	grb_info_ptr->video_dev.tvnorms = V4L2_STD_ATSC_8_VSB + V4L2_STD_ATSC_16_VSB;
 
+	res = v4l2_device_register( grb_info_ptr->dev, &grb_info_ptr->v4l2_device );
+	if (res) {
+		dprintk( 1, "Failed v4l2_device register, error %d\n", res );
+		return res;
+	}
+	grb_info_ptr->video_dev.v4l2_dev = &grb_info_ptr->v4l2_device;
+	grb_info_ptr->video_dev.device_caps = V4L2_CAP_VIDEO_CAPTURE | V4L2_CAP_READWRITE | V4L2_CAP_STREAMING;
+
 	video_set_drvdata(&grb_info_ptr->video_dev , grb_info_ptr);
 	
 	res = video_register_device(&grb_info_ptr->video_dev, VFL_TYPE_GRABBER, -1);
 	if (res) {
-		dprintk(1, "Failed video_dev register\n");
+		dprintk( 1, "Failed video_dev register, error %d\n", res );
 		video_device_release(&grb_info_ptr->video_dev); /* or kfree(my_vdev); */
 		return res;
 	}
@@ -1597,7 +1655,7 @@ static int device_remove (struct platform_device* grb_device)
 
 struct of_device_id grb_match[] = 
 {
-	{ .compatible = "grb_v2" },
+	{ .compatible = "rcm,vdu-graber" },
 	{ }
 };
 

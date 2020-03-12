@@ -199,4 +199,4 @@
 // /include/ "mb115-03.dtsi"
 
 /* AV ouput */
-// /include/ "mb115-04.dtsi"
+/include/ "mb115-04.dtsi"

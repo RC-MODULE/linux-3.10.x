@@ -83,6 +83,11 @@
 				linux,cma-default;
 			};
 
+			grab_buffer: grab_buffer@0x2f000000 {
+				reg = <0x0 0x32000000 0x0 0x01C00000>;
+				no-map;
+			};
+
 			vpu_buffer: vpu_buffer@0x33C00000 {
 				reg = <0x0 0x33C00000 0x0 0x04000000>;
 				no-map;
@@ -984,6 +989,17 @@
 				reg = <0x3801a000 0x1000>;
 				interrupt-parent = <&MPIC>;
 				interrupts = <124 2>; // active high level-sensitive
+			};
+
+			vdu_graber: vdu_graber@0x38015000 {
+				status = "disabled";
+				compatible = "rcm,vdu-graber";
+				reg = <0x38015000 0x1000>;					// 16,1b,1c
+				interrupt-parent = <&MPIC>;
+				interrupts = <118 2>;						// 19,21,22
+				#address-cells = <1>;
+				#size-cells = <1>;
+				memory-region = <&grab_buffer>;	
 			};
 		};
 
