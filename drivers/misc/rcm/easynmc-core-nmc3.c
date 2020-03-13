@@ -237,12 +237,12 @@ static int easynmc_probe (struct platform_device *pdev)
 	if (ret!=0) 
 		goto errfreemem;
 
+	core->c.do_irq_polling = easynmc_irq_polling;
+
 	if (of_find_property(pdev->dev.of_node, "irq_polling", NULL))
 	{
-		easynmc_irq_polling = 1;
+		core->c.do_irq_polling = 1;
 	}
-
-	core->c.do_irq_polling = easynmc_irq_polling;
 
 	printk(DRVNAME ": imem at phys 0x%lx virt 0x%lx size 0x%lx bytes\n", 
 	       (unsigned long) core->c.imem_phys,
