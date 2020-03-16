@@ -1002,8 +1002,10 @@ EXPORT_SYMBOL(easynmc_deregister_core);
 static ssize_t proc_read(struct file *filp, char __user *buffer, size_t buffer_length, loff_t *offset)
 {
 	struct list_head *iter; 
-	int copied=0; 
+	int copied=0;
 	struct nmc_core *core;
+	int len;
+	char name_buf[32];
 
 	/* 
 	 * We give all of our information in one go, so if the
@@ -1024,9 +1026,16 @@ static ssize_t proc_read(struct file *filp, char __user *buffer, size_t buffer_l
 	spin_lock(&rlock);
 	list_for_each(iter, &core_list) {
 		core = list_entry(iter, struct nmc_core, linkage);
-		copied += snprintf(&buffer[copied], buffer_length, "/dev/nmc%d\n", core->id); 
-		buffer_length -= copied; 
-		*offset += copied;
+		len = snprintf(name_buf, sizeof name_buf, "/dev/nmc%d\n", core->id);
+		if ((len >= 0)  && (len <= buffer_length)) {
+			if (copy_to_user(&buffer[copied], name_buf, len)) {
+				spin_unlock(&rlock);
+				return -EFAULT;
+			}
+			copied += len;
+			buffer_length -= len;
+			*offset += len;
+		}
 	}	
 	spin_unlock(&rlock);
 
