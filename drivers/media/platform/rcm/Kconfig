@@ -20,9 +20,13 @@ config RCM_CODA_J10
 
 config RCM_VDU_GRABER
 	bool "RCM VDU grab driver"
+	select MEDIA_CONTROLLER
+	select VIDEO_V4L2_SUBDEV_API
+	select VIDEO_ADV7604
 	select VIDEOBUF_GEN
 	select VIDEOBUF_DMA_CONTIG
 	select VIDEOBUF_VMALLOC
+	select VIDEO_ADV_DEBUG
 	default y
 	---help---
 	RCM VDU grab driver

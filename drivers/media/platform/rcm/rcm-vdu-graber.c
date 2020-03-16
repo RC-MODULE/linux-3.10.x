@@ -47,7 +47,7 @@
 #define DEL 1
 
 
-static int debug = 0xFF;
+static int debug = -1;
 module_param(debug, int, 0644);
 
 MODULE_LICENSE			( "Dual BSD/GPL" );
@@ -138,7 +138,9 @@ struct grb_info
 	void __iomem *base_addr_regs_grb;
 	void __iomem *base_addr_mem_area;
 	
-	u64		buff_phys_addr	;
+	phys_addr_t buff_phys_addr;
+	dma_addr_t buff_dma_addr;
+
 	u32		mem_offset1		;
 	u32		mem_offset2		;
 	u32		buff_length		;
@@ -164,6 +166,10 @@ u32 read_register(u32 __debug, void __iomem *addr, u32 offset)
 	return r;
 }
 
+static inline void print_register( void __iomem *addr ) {
+	unsigned int reg;
+	for( reg=0x100; reg<=0x118; reg+=4 ) read_register(1,  addr, reg );
+}
 
 static void set_mask(void __iomem *addr, u32 offset, int bit , u32 action)
 {
@@ -644,17 +650,17 @@ int set_register (struct grb_info *grb_info_ptr)
 	do rd = read_register(1, base_addr, ADDR_PR_RESET);
 	while (rd != 0);
 	
-	write_register(1, 0x1     			, base_addr, ADDR_BASE_SW_ENA		);
-	write_register(1, base_addr0_dma0	, base_addr, ADDR_DMA0_ADDR0		);
-	write_register(1, base_addr1_dma0	, base_addr, ADDR_DMA0_ADDR1		);
-	write_register(1, base_addr0_dma1	, base_addr, ADDR_DMA1_ADDR0		);
-	write_register(1, base_addr1_dma1	, base_addr, ADDR_DMA1_ADDR1		);
-	write_register(1, base_addr0_dma2	, base_addr, ADDR_DMA2_ADDR0		);
-	write_register(1, base_addr1_dma2	, base_addr, ADDR_DMA2_ADDR1		);
+	write_register(1, 0x1     			, base_addr, ADDR_BASE_SW_ENA		);	// разрешение переключения базовых адресов
+	write_register(1, base_addr0_dma0	, base_addr, ADDR_DMA0_ADDR0		);	// яркостная нечет
+	write_register(1, base_addr1_dma0	, base_addr, ADDR_DMA0_ADDR1		);	// яркостная чет
+	write_register(1, base_addr0_dma1	, base_addr, ADDR_DMA1_ADDR0		);	// цветоразностная нечет
+	write_register(1, base_addr1_dma1	, base_addr, ADDR_DMA1_ADDR1		);	// цветоразностная чет
+	write_register(1, base_addr0_dma2	, base_addr, ADDR_DMA2_ADDR0		);	// цветоразностная нечет
+	write_register(1, base_addr1_dma2	, base_addr, ADDR_DMA2_ADDR1		);	// цветоразностная чет
 
-	write_register(1, y_size        	, base_addr, ADDR_Y_SIZE        	);
-	write_register(1, c_size        	, base_addr, ADDR_C_SIZE        	);
-	write_register(1, full_line_size	, base_addr, ADDR_FULL_LINE_SIZE	);
+	write_register(1, y_size        	, base_addr, ADDR_Y_SIZE        	);	// 27:16-вертикальный размер,11:0-горизонтальный размер изображения для яркостной компоненты
+	write_register(1, c_size        	, base_addr, ADDR_C_SIZE        	);	// 27:16-вертикальный размер,11:0-горизонтальный размер изображения для цветоразностной компоненты
+	write_register(1, full_line_size	, base_addr, ADDR_FULL_LINE_SIZE	);	// 27:16-вертикальный размер,11:0-горизонтальный размер полной строки в памяти
 	
 	write_register(1, format_din		, base_addr, ADDR_MODE         	);
 	write_register(1, format_dout		, base_addr, ADDR_LOCATION_DATA	);
@@ -719,11 +725,12 @@ int set_register (struct grb_info *grb_info_ptr)
 	else if (colour_conversion(grb_info_ptr) != -1)
 		dprintk(1, "colour_conversion error.") ;
 	
-	write_register(1, 0xffffffff	, base_addr, ADDR_INT_STATUS	);	
+	write_register(1, 0xffffffff	, base_addr, ADDR_INT_STATUS	);	// Для снятия сигнала прерывания в соответствующий разряд регистра INT_STATUS должно быть записано единичное значение
 	
-	set_mask(base_addr, ADDR_INT_MASK , END_WRITE , ADD);
+	set_mask(base_addr, ADDR_INT_MASK , END_WRITE , ADD);				// Разрешение генерации сигнала прерывания по событию: окончание записи кадра в память
+	//write_register(1, 0xffffffff, base_addr, ADDR_INT_MASK);			// ни хрена не дает...
 	
-	write_register(1, 1				, base_addr, ADDR_ENABLE    	);
+	write_register(1, 1				, base_addr, ADDR_ENABLE    	);	// Разрешение захвата видеоизображения
 	
 	dprintk(1, "set_registered finish successfully.") ;
 	return 0;
@@ -832,7 +839,7 @@ static int device_open(struct file *file_ptr)
 	struct grb_info *grb_info_ptr = video_drvdata(file_ptr);
 	
 	dprintk(1, "Open video4linux2 device. Name: %s \n" , grb_info_ptr->video_dev.name );	
-	
+
 	videobuf_queue_dma_contig_init(	&grb_info_ptr->videobuf_queue_grb,
 							&videobuf_queue_ops_grb,
 							grb_info_ptr->dev,
@@ -842,6 +849,7 @@ static int device_open(struct file *file_ptr)
 							sizeof(struct videobuf_buffer),
 							grb_info_ptr,
 							NULL);
+	dprintk(1, "Open video4linux2 device. Return from proc. \n" );
 	return 0;
 }
 
@@ -1013,15 +1021,18 @@ static int vidioc_reqbufs_grb (
 			struct	v4l2_requestbuffers *req)
 {
 	struct grb_info *grb_info_ptr = video_drvdata(file_ptr);
-	
-	return videobuf_reqbufs(&grb_info_ptr->videobuf_queue_grb, req);
+	int ret;
+	dprintk( 1, "vidioc_reqbufs_grb entry\n" );
+	ret = videobuf_reqbufs(&grb_info_ptr->videobuf_queue_grb, req);
+	dprintk( 1, "vidioc_reqbufs_grb return,count=%u,type=%u,memory=%08x\n", req->count, req->type, req->memory );
+	return ret;
 }
 
 static int vidioc_querybuf_grb(
 			struct	file *file_ptr,
 			void	*fh,
 			struct	v4l2_buffer *buf)
-{
+{	// VIDIOC_QUERYBUF
 	struct grb_info *grb_info_ptr = video_drvdata(file_ptr);
 
 	return videobuf_querybuf(&grb_info_ptr->videobuf_queue_grb, buf);
@@ -1043,8 +1054,12 @@ static int vidioc_dqbuf_grb(
 			struct 	v4l2_buffer *buf)
 {
 	struct grb_info *grb_info_ptr = video_drvdata(file_ptr);
-
-	return videobuf_dqbuf(&grb_info_ptr->videobuf_queue_grb, buf, file_ptr->f_flags & O_NONBLOCK);
+	struct videobuf_queue* videobuf_queue = &grb_info_ptr->videobuf_queue_grb;
+	int ret;
+	dprintk( 1, "vidioc_dqbuf_grb entry,memory=%08x\n", buf->memory );
+	ret = videobuf_dqbuf( videobuf_queue, buf, file_ptr->f_flags & O_NONBLOCK );
+	dprintk( 1, "vidioc_dqbuf_grb return %d\n", ret );
+	return ret;
 }
 
 static int vidioc_streamon_grb(
@@ -1170,13 +1185,24 @@ void drv_vidioc_s_params (struct grb_info *grb_info_ptr, void *arg)
 int drv_vidioc_auto_detect (struct grb_info *grb_info_ptr, void *arg)
 {
 	struct 	v4l2_pix_format	*recognize_format;
-	
-	if (grb_info_ptr->recognize_format.bytesperline != 1) {
-		write_register(1, 0x1 , grb_info_ptr->base_addr_regs_grb, ADDR_REC_ENABLE	);
-		set_mask(grb_info_ptr->base_addr_regs_grb, ADDR_INT_MASK , INT_DONE  , ADD);
-		grb_info_ptr->recognize_format.bytesperline = 1;
+	unsigned int status, i;
+	dprintk( 1, "drv_vidioc_auto_detect\n" );
+
+	//if (grb_info_ptr->recognize_format.bytesperline != 1) {
+	//set_mask(grb_info_ptr->base_addr_regs_grb, ADDR_INT_MASK , INT_DONE  , ADD);
+	write_register( 1, 0xffffffff , grb_info_ptr->base_addr_regs_grb, ADDR_INT_STATUS );			// Очистка ранее установленных битов статуса прерывания
+	//write_register( 1, 0xffffffff , grb_info_ptr->base_addr_regs_grb, ADDR_INT_MASK );			// Разрешение прерываний
+	write_register( 1, 0x1 , grb_info_ptr->base_addr_regs_grb, ADDR_ENABLE );						// Разрешение захвата видеоизображения
+	write_register( 1, 0x1 , grb_info_ptr->base_addr_regs_grb, ADDR_REC_ENABLE );					// Разрешение распознавания телевизионной развёртки
+	//	grb_info_ptr->recognize_format.bytesperline = 1;
+	//}
+
+	for( i=0; i<1000; i++ ) {
+		print_register( grb_info_ptr->base_addr_regs_grb );
+		if( ( status = read_register(1,  grb_info_ptr->base_addr_regs_grb, ADDR_INT_STATUS ) ) != 0 ) break;
 	}
-	
+	dprintk( 1, "drv_vidioc_auto_detect: status=%08x\n", status );
+
 	if (grb_info_ptr->recognize_format.priv != 1) {
 		return -EAGAIN;
 	}
@@ -1206,7 +1232,7 @@ static long vidioc_default_grb(
 			void *arg)
 {
 	struct grb_info *grb_info_ptr = video_drvdata(file_ptr);
-	
+	dprintk( 1,"vidioc_default_grb entry: cmd=%u\n", cmd );
     switch (cmd) {
     case VIDIOC_SET_GAMMA:
   		drv_set_gamma(grb_info_ptr, arg);
@@ -1363,15 +1389,15 @@ static irqreturn_t proc_interrupt (struct grb_info *grb_info_ptr)
 		
 		if (switch_page == 0)
 		{
-			addr_dma0_addr = ADDR_DMA0_ADDR0;
-			addr_dma1_addr = ADDR_DMA1_ADDR0;
-			addr_dma2_addr = ADDR_DMA2_ADDR0;
+			addr_dma0_addr = ADDR_DMA0_ADDR0;	// 0x404
+			addr_dma1_addr = ADDR_DMA1_ADDR0;	// 0x40c
+			addr_dma2_addr = ADDR_DMA2_ADDR0;	// 0x414
 		}
 		else // if (switch_page == 1)
 		{
-			addr_dma0_addr = ADDR_DMA0_ADDR1;
-			addr_dma1_addr = ADDR_DMA1_ADDR1;
-			addr_dma2_addr = ADDR_DMA2_ADDR1;
+			addr_dma0_addr = ADDR_DMA0_ADDR1;	// 0x408
+			addr_dma1_addr = ADDR_DMA1_ADDR1;	// 0x410
+			addr_dma2_addr = ADDR_DMA2_ADDR1;	// 0x418
 		}
 		
 		write_register(2, base_addr_dma0	, base_addr, addr_dma0_addr);
@@ -1430,7 +1456,11 @@ static irqreturn_t proc_interrupt (struct grb_info *grb_info_ptr)
 		dprintk(2, "irq_handler: overflow!\n");
 		write_register(2,  1 , base_addr, ADDR_PR_RESET);
 	}
-	
+	else
+	{
+		dprintk(2, "irq_handler: other,interrupt status %08x!\n", rd_data );
+		//write_register(2,  1 , base_addr, ADDR_PR_RESET);
+	}
 	return IRQ_HANDLED;
 }
 
@@ -1439,6 +1469,8 @@ static irqreturn_t irq_handler(int irq, void* dev)
 	struct grb_info *grb_info_ptr = (struct grb_info*) dev;
 
 	irqreturn_t grb_irq;
+
+	dprintk(1, "irq_handler: entry!\n");
 
 	spin_lock(&grb_info_ptr->irqlock);
 
@@ -1456,20 +1488,16 @@ static irqreturn_t irq_handler(int irq, void* dev)
 // ****************************************************************************
 
 static int get_memory_buffer_address( const struct platform_device* grb_device,  const char* res_name, struct resource* res_ptr ) {
-	unsigned int tmp[4];
 	int ret;
 	struct device_node* np;
 	if( ( np  = of_parse_phandle( grb_device->dev.of_node, res_name, 0 ) ) == NULL ) {
 		dprintk(1, "ERROR : can't get the device node of the memory-region"); 
 		return -ENODEV;
 	}
-	if( ( ret = of_property_read_u32_array( np, "reg", tmp, 4 ) ) != 0 ) {
+	if( ( ret = of_address_to_resource( np, 0, res_ptr ) ) != 0 ) {
 		dprintk(1, "ERROR : can't get the resource of the memory area");
-		return ret; 
 	}
-	res_ptr->start = ((unsigned long long)tmp[0]<<32)|tmp[1];
-	res_ptr->end = res_ptr->start + ( ((unsigned long long)tmp[2]<<32) | tmp[3] ) - 1;
-	return 0;
+	return ret;
 }
 
 static int get_resources (struct platform_device* grb_device , struct grb_info *grb_info_ptr)
@@ -1508,9 +1536,9 @@ static int get_resources (struct platform_device* grb_device , struct grb_info *
 		return -1;
 	}
 
-	grb_info_ptr->buff_phys_addr = grb_res_ptr->start ;	
+	grb_info_ptr->buff_phys_addr = grb_res_ptr->start;
 	grb_info_ptr->buff_length = grb_res_ptr->end - grb_res_ptr->start + 1;
-
+	grb_info_ptr->buff_dma_addr = (dma_addr_t)(grb_info_ptr->buff_phys_addr - (grb_device->dev.dma_pfn_offset << PAGE_SHIFT));
 
 //	grb_info_ptr->base_addr_mem_area = devm_ioremap(&grb_device->dev, grb_info_ptr->buff_phys_addr, 4096);
 //	if(!grb_info_ptr->base_addr_mem_area) {
@@ -1518,7 +1546,7 @@ static int get_resources (struct platform_device* grb_device , struct grb_info *
 //		return -1;
 //	}
 	dprintk(1, "The base address of the memory area and finish address (%llx,%llx)\n", grb_res_ptr->start, grb_res_ptr->end);
-	dprintk(1, "grv_b2: buff_phys_addr = %llx\n", grb_info_ptr->buff_phys_addr);	
+	dprintk(1, "grv_b2: buff_phys_addr = %llx,buff_dma_addr = %llx,\n", grb_info_ptr->buff_phys_addr, grb_info_ptr->buff_dma_addr );
 	
 	// 
 	// Get number interrupt 
@@ -1555,11 +1583,16 @@ static int device_probe (struct platform_device *grb_device)
 		return -1;
 	}
 
-	grb_device->dma_mask = DMA_BIT_MASK(32);
-	grb_device->dev.archdata.dma_offset = - (grb_device->dev.dma_pfn_offset << PAGE_SHIFT);
+	//grb_device->dma_mask = DMA_BIT_MASK(32);
+	//grb_device->dev.archdata.dma_offset = - (grb_device->dev.dma_pfn_offset << PAGE_SHIFT);
 
-	res = dma_declare_coherent_memory(&grb_device->dev, grb_info_ptr->buff_phys_addr, grb_info_ptr->buff_phys_addr, grb_info_ptr->buff_length );//,  DMA_MEMORY_MAP | DMA_MEMORY_EXCLUSIVE);
-	dprintk(1, "dma_declare_coherent_memory return %d for addr %llx and size %x\n" , res, grb_info_ptr->buff_phys_addr, grb_info_ptr->buff_length);
+	res = dma_declare_coherent_memory(&grb_device->dev, grb_info_ptr->buff_phys_addr, grb_info_ptr->buff_dma_addr, grb_info_ptr->buff_length );//,  DMA_MEMORY_MAP | DMA_MEMORY_EXCLUSIVE);
+	dprintk( 1,
+			 "dma_declare_coherent_memory return %d for phys addr %llx, dma addr %llx, size %x\n",
+			 res,
+			 grb_info_ptr->buff_phys_addr,
+			 grb_info_ptr->buff_dma_addr,
+			 grb_info_ptr->buff_length );
 
 	if (res != 0) {
 		//dprintk(1, "dma_declare_coherent_memory error %d for addr %llx and size %x!\n" , res, grb_info_ptr->buff_phys_addr, grb_info_ptr->buff_length);
@@ -1609,15 +1642,18 @@ static int device_probe (struct platform_device *grb_device)
 	}
 	
 	//{ ШЛАК
-	
-	write_register(1, 0x1     			, grb_info_ptr->base_addr_regs_grb, ADDR_TEST_INT	);
-	write_register(1, 0x1     			, grb_info_ptr->base_addr_regs_grb, ADDR_INT_MASK	);
-	
+	/* дергаем тестовое прерывание */
+	write_register(1, 0x1, grb_info_ptr->base_addr_regs_grb, ADDR_TEST_INT	); // 0x208
+	write_register(1, 0x1, grb_info_ptr->base_addr_regs_grb, ADDR_INT_MASK	); // 0x204
+	/* должен вызваться обработчик */
 	INIT_LIST_HEAD(&grb_info_ptr->buffer_queue);
 	//}	
-	
-	dprintk(1, "method ""probe"" completed successfully");
-	return 0 ;
+	/* выведем знчения 3-х регистров,потом убрать */
+	dprintk( 1, "method ""probe"" completed successfully,%08x=%08x,%08x=%08x,%08x=%08x\n",
+			 ADDR_BASE_POINT, read_register( 1, grb_info_ptr->base_addr_regs_grb, ADDR_BASE_POINT ),	// 0x438
+			 ADDR_DMA_ID, read_register( 1, grb_info_ptr->base_addr_regs_grb, ADDR_DMA_ID ),			// 0x43c
+			 ADDR_AXI_PARAM, read_register( 1, grb_info_ptr->base_addr_regs_grb, ADDR_AXI_PARAM ) );	// 0x440
+	return 0;
 }
 
 // ****************************************************************************
