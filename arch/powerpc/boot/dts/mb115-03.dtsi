@@ -24,16 +24,16 @@
 				<&lsif0_mgpio4_greth_gbit1_ext>,
 				<&lsif0_mgpio6_greth_gbit1_ext>,
 				<&lsif0_mgpio7_greth_gbit1_ext>;
-				/* GRETH0 -> EXT
-				<&lsif0_mgpio1_greth0_ext>,
+				/* GRETH0 -> EXT */
+				/* <&lsif0_mgpio1_greth0_ext>,
 				<&lsif0_mgpio2_greth0_ext>,
 				<&lsif0_mgpio4_greth0_ext>,
 				<&lsif0_mgpio6_greth0_ext>,
-				<&lsif0_mgpio7_greth0_ext>,*/
-				/* GRETH1 -> EXT
-				<&lsif0_mgpio0_greth1_ext>,
+				<&lsif0_mgpio7_greth0_ext>, */
+				/* GRETH1 -> EXT */
+				/* <&lsif0_mgpio0_greth1_ext>,
 				<&lsif0_mgpio4_greth1_ext>,
-				<&lsif0_mgpio5_greth1_ext>,*/
+				<&lsif0_mgpio5_greth1_ext>; */
 		};
 
 		lsif0 {
@@ -46,6 +46,18 @@
 				status = "ok";
 				mac-address = [ EC 17 66 77 05 04 ];
 			};
+
+			// GRETH0
+			/* greth0: greth0@0x3C035000 {
+				status = "ok";
+				mac-address = [ EC 17 66 77 05 03 ];
+			};*/
+
+			// GRETH1
+			/* greth1: greth1@0x3C036000 {
+				status = "ok";
+				mac-address = [ EC 17 66 77 05 04 ];
+			};*/
 
 			nand: nand@0x3C032000 {
 				status = "okay";
