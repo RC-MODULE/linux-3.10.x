@@ -465,7 +465,6 @@
 				status = "disabled";
 				compatible = "rcm,greth";
 				reg = <0x3C033000 0x1000>;
-				control = <&lsif0_config>;
 				interrupt-parent = <&MPIC>;
 				interrupts = <103 0>; // IRQ_TYPE_EDGE_RISING
 			};
@@ -475,7 +474,6 @@
 				status = "disabled";
 				compatible = "rcm,greth";
 				reg = <0x3C034000 0x1000>;
-				control = <&lsif0_config>;
 				interrupt-parent = <&MPIC>;
 				interrupts = <108 0>; // IRQ_TYPE_EDGE_RISING
 			};
@@ -485,7 +483,6 @@
 				status = "disabled";
 				compatible = "rcm,greth";
 				reg = <0x3C035000 0x1000>;
-				control = <&lsif0_config>;
 				interrupt-parent = <&MPIC>;
 				interrupts = <103 0>; // IRQ_TYPE_EDGE_RISING
 			};
@@ -495,7 +492,6 @@
 				status = "disabled";
 				compatible = "rcm,greth";
 				reg = <0x3C036000 0x1000>;
-				control = <&lsif0_config>;
 				interrupt-parent = <&MPIC>;
 				interrupts = <104 0>; // IRQ_TYPE_EDGE_RISING
 			};
@@ -505,7 +501,6 @@
 				status = "disabled";
 				compatible = "rcm,greth";
 				reg = <0x3C037000 0x1000>;
-				control = <&lsif0_config>;
 				interrupt-parent = <&MPIC>;
 				interrupts = <108 0>; // IRQ_TYPE_EDGE_RISING
 			};
