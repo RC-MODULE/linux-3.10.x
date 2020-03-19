@@ -187,6 +187,636 @@
                     };
                 };
             };
+
+            pc0_cmb0 {
+                compatible = "syscon";
+                reg = <0x80000000 0x10000>;
+            };
+
+            pc1_cmb0 {
+                compatible = "syscon";
+                reg = <0xa0000000 0x10000>;
+            };
+
+            pc2_cmb0 {
+                compatible = "syscon";
+                reg = <0xc0000000 0x10000>;
+            };
+
+            pc3_cmb0 {
+                compatible = "syscon";
+                reg = <0xe0000000 0x10000>;
+            };
+
+            ccpu_crg0: crgnm@0x600c6000
+            {
+                compatible = "syscon";
+                reg = <0x600c6000 0x1000>;
+            };
+
+            ccpu_crg1: crgnm@0x600c7000
+            {
+                compatible = "syscon";
+                reg = <0x600c7000 0x1000>;
+            };
+
+            ccpu_crg2: crgnm@0x600c8000
+            {
+                compatible = "syscon";
+                reg = <0x600c8000 0x1000>;
+            };
+
+            ccpu_crg3: crgnm@0x600c9000
+            {
+                compatible = "syscon";
+                reg = <0x600c9000 0x1000>;
+            };
+
+            ccpu_clsc: clsc@0x600cb000
+            {
+                compatible = "syscon";
+                reg = <0x600cb000 0x1000>;
+            };
+
+            pc0_crgnm: crgnm@0x800ca000
+            {
+                compatible = "syscon";
+                reg = <0x800ca000 0x1000>;
+            };
+
+            pc1_crgnm: crgnm@0xa00ca000
+            {
+                compatible = "syscon";
+                reg = <0xa00ca000 0x1000>;
+            };
+
+            pc2_crgnm: crgnm@0xc00ca000
+            {
+                compatible = "syscon";
+                reg = <0xc00ca000 0x1000>;
+            };
+
+            pc3_crgnm: crgnm@0xe00ca000
+            {
+                compatible = "syscon";
+                reg = <0xe00ca000 0x1000>;
+            };
+
+            pc0_clsc: clsc@0x800cb000
+            {
+                compatible = "syscon";
+                reg = <0x800cb000 0x1000>;
+            };
+
+            pc1_clsc: clsc@0xa00cb000
+            {
+                compatible = "syscon";
+                reg = <0xa00cb000 0x1000>;
+            };
+
+            pc2_clsc: clsc@0xc00cb000
+            {
+                compatible = "syscon";
+                reg = <0xc00cb000 0x1000>;
+            };
+
+            pc3_clsc: clsc@0xe00cb000
+            {
+                compatible = "syscon";
+                reg = <0xe00cb000 0x1000>;
+            };
+        };
+        
+        arm_core0: arm_core@0x80000000 {
+            compatible = "rcm,easynmc";
+            core-name = "1879VM8YA-arm";
+            core-type = "arm";
+            device-id = <0>;
+
+            reg = <0x80000000 0x00080000>;  // imem
+            reg-names = "imem";
+
+            control = <&ccpu_clsc>;
+            reset = <&ccpu_crg0>;
+
+            reset_bit =     <0>;            // reset bit no
+            nmi_set_reg =   <0x14>, <0>;    // sctl offset, bit-no
+            lp_status_reg = <0x10>, <4>;    // sctl offset, bit-no
+            hp_status_reg = <0x10>, <0>;    // sctl offset, bit-no
+            lp_set_reg =    <0x14>, <4>;    // sctl offset, bit-no
+            hp_set_reg =    <0x14>, <0>;    // sctl offset, bit-no
+            lp_clr_reg =    <0x10>, <4>;    // sctl offset, bit-no
+            hp_clr_reg =    <0x10>, <0>;    // sctl offset, bit-no
+
+            irq_polling;
+
+            interrupt-parent = <&gic0>;
+            interrupts = <0 48 4>, <0 8 4>;
+            interrupt-names = "lp", "hp";
+            status = "okay";
+        };
+
+        arm_core1: arm_core@0xa0000000 {
+            compatible = "rcm,easynmc";
+            core-name = "1879VM8YA-arm";
+            core-type = "arm";
+            device-id = <1>;
+
+            reg = <0xa0000000 0x00080000>;  // imem
+            reg-names = "imem";
+
+            control = <&ccpu_clsc>;
+            reset = <&ccpu_crg1>;
+
+            reset_bit =     <0>;            // reset bit no
+            nmi_set_reg =   <0x14>, <1>;    // sctl offset, bit-no
+            lp_status_reg = <0x10>, <5>;    // sctl offset, bit-no
+            hp_status_reg = <0x10>, <1>;    // sctl offset, bit-no
+            lp_set_reg =    <0x14>, <5>;    // sctl offset, bit-no
+            hp_set_reg =    <0x14>, <1>;    // sctl offset, bit-no
+            lp_clr_reg =    <0x10>, <5>;    // sctl offset, bit-no
+            hp_clr_reg =    <0x10>, <1>;    // sctl offset, bit-no
+
+            irq_polling;
+
+            interrupt-parent = <&gic0>;
+            interrupts = <0 49 4>, <0 9 4>;
+            interrupt-names = "lp", "hp";
+            status = "okay";
+        };
+
+        arm_core2: arm_core@0xc0000000 {
+            compatible = "rcm,easynmc";
+            core-name = "1879VM8YA-arm";
+            core-type = "arm";
+            device-id = <2>;
+
+            reg = <0xc0000000 0x00080000>;  // imem
+            reg-names = "imem";
+
+            control = <&ccpu_clsc>;
+            reset = <&ccpu_crg2>;
+
+            reset_bit =     <0>;            // reset bit no
+            nmi_set_reg =   <0x14>, <2>;    // sctl offset, bit-no
+            lp_status_reg = <0x10>, <6>;    // sctl offset, bit-no
+            hp_status_reg = <0x10>, <2>;    // sctl offset, bit-no
+            lp_set_reg =    <0x14>, <6>;    // sctl offset, bit-no
+            hp_set_reg =    <0x14>, <2>;    // sctl offset, bit-no
+            lp_clr_reg =    <0x10>, <6>;    // sctl offset, bit-no
+            hp_clr_reg =    <0x10>, <2>;    // sctl offset, bit-no
+
+            irq_polling;
+
+            interrupt-parent = <&gic0>;
+            interrupts = <0 50 4>, <0 10 4>;
+            interrupt-names = "lp", "hp";
+            status = "okay";
+        };
+
+        arm_core3: arm_core@0xe0000000 {
+            compatible = "rcm,easynmc";
+            core-name = "1879VM8YA-arm";
+            core-type = "arm";
+            device-id = <3>;
+
+            reg = <0xe0000000 0x00080000>;  // imem
+            reg-names = "imem";
+
+            control = <&ccpu_clsc>;
+            reset = <&ccpu_crg3>;
+
+            reset_bit =     <0>;            // reset bit no
+            nmi_set_reg =   <0x14>, <3>;    // sctl offset, bit-no
+            lp_status_reg = <0x10>, <7>;    // sctl offset, bit-no
+            hp_status_reg = <0x10>, <3>;    // sctl offset, bit-no
+            lp_set_reg =    <0x14>, <7>;    // sctl offset, bit-no
+            hp_set_reg =    <0x14>, <3>;    // sctl offset, bit-no
+            lp_clr_reg =    <0x10>, <7>;    // sctl offset, bit-no
+            hp_clr_reg =    <0x10>, <3>;    // sctl offset, bit-no
+
+            irq_polling;
+
+            interrupt-parent = <&gic0>;
+            interrupts = <0 51 4>, <0 11 4>;
+            interrupt-names = "lp", "hp";
+            status = "okay";
+        };
+
+        nmc_0_core0: nmc_core@0x80100000 {
+            compatible = "rcm,easynmc";
+            core-name = "1879VM8YA-nmc";
+            core-type = "nmc4";
+            device-id = <4>;
+
+            reg = <0x80100000 0x00040000>;  // imem
+            reg-names = "imem";
+
+            control = <&pc0_clsc>;
+            reset = <&pc0_crgnm>;
+
+            reset_bit =     <0>;            // reset bit no
+            nmi_set_reg =   <0x0C>, <0>;    // sctl offset, bit-no
+            lp_status_reg = <0x10>, <12>;   // sctl offset, bit-no
+            hp_status_reg = <0x10>, <4>;    // sctl offset, bit-no
+            lp_set_reg =    <0x14>, <12>;   // sctl offset, bit-no
+            hp_set_reg =    <0x14>, <4>;    // sctl offset, bit-no
+            lp_clr_reg =    <0x10>, <12>;   // sctl offset, bit-no
+            hp_clr_reg =    <0x10>, <4>;    // sctl offset, bit-no
+
+            irq_polling;
+
+            status = "okay";
+        };
+
+        nmc_0_core1: nmc_core@0x80180000 {
+            compatible = "rcm,easynmc";
+            core-name = "1879VM8YA-nmc";
+            core-type = "nmc4";
+            device-id = <5>;
+
+            reg = <0x80180000 0x00040000>;  // imem
+            reg-names = "imem";
+
+            control = <&pc0_clsc>;
+            reset = <&pc0_crgnm>;
+
+            reset_bit =     <1>;            // reset bit no
+            nmi_set_reg =   <0x0C>, <1>;    // sctl offset, bit-no
+            lp_status_reg = <0x10>, <13>;   // sctl offset, bit-no
+            hp_status_reg = <0x10>, <5>;    // sctl offset, bit-no
+            lp_set_reg =    <0x14>, <13>;   // sctl offset, bit-no
+            hp_set_reg =    <0x14>, <5>;    // sctl offset, bit-no
+            lp_clr_reg =    <0x10>, <13>;   // sctl offset, bit-no
+            hp_clr_reg =    <0x10>, <5>;    // sctl offset, bit-no
+
+            irq_polling;
+
+            status = "okay";
+        };
+
+        nmc_0_core2: nmc_core@0x80200000 {
+            compatible = "rcm,easynmc";
+            core-name = "1879VM8YA-nmc";
+            core-type = "nmc4";
+            device-id = <6>;
+
+            reg = <0x80200000 0x00040000>;  // imem
+            reg-names = "imem";
+
+            control = <&pc0_clsc>;
+            reset = <&pc0_crgnm>;
+
+            reset_bit =     <2>;            // reset bit no
+            nmi_set_reg =   <0x0C>, <2>;    // sctl offset, bit-no
+            lp_status_reg = <0x10>, <14>;   // sctl offset, bit-no
+            hp_status_reg = <0x10>, <6>;    // sctl offset, bit-no
+            lp_set_reg =    <0x14>, <14>;   // sctl offset, bit-no
+            hp_set_reg =    <0x14>, <6>;    // sctl offset, bit-no
+            lp_clr_reg =    <0x10>, <14>;   // sctl offset, bit-no
+            hp_clr_reg =    <0x10>, <6>;    // sctl offset, bit-no
+
+            irq_polling;
+
+            status = "okay";
+        };
+
+        nmc_0_core3: nmc_core@0x80280000 {
+            compatible = "rcm,easynmc";
+            core-name = "1879VM8YA-nmc";
+            core-type = "nmc4";
+            device-id = <7>;
+
+            reg = <0x80280000 0x00040000>;  // imem
+            reg-names = "imem";
+
+            control = <&pc0_clsc>;
+            reset = <&pc0_crgnm>;
+
+            reset_bit =     <3>;            // reset bit no
+            nmi_set_reg =   <0x0C>, <3>;    // sctl offset, bit-no
+            lp_status_reg = <0x10>, <15>;   // sctl offset, bit-no
+            hp_status_reg = <0x10>, <7>;    // sctl offset, bit-no
+            lp_set_reg =    <0x14>, <15>;   // sctl offset, bit-no
+            hp_set_reg =    <0x14>, <7>;    // sctl offset, bit-no
+            lp_clr_reg =    <0x10>, <15>;   // sctl offset, bit-no
+            hp_clr_reg =    <0x10>, <7>;    // sctl offset, bit-no
+
+            irq_polling;
+
+            status = "okay";
+        };
+
+        nmc_1_core0: nmc_core@0xa0100000 {
+            compatible = "rcm,easynmc";
+            core-name = "1879VM8YA-nmc";
+            core-type = "nmc4";
+            device-id = <8>;
+
+            reg = <0xa0100000 0x00040000>;  // imem
+            reg-names = "imem";
+
+            control = <&pc1_clsc>;
+            reset = <&pc1_crgnm>;
+
+            reset_bit =     <0>;            // reset bit no
+            nmi_set_reg =   <0x0C>, <0>;    // sctl offset, bit-no
+            lp_status_reg = <0x10>, <12>;   // sctl offset, bit-no
+            hp_status_reg = <0x10>, <4>;    // sctl offset, bit-no
+            lp_set_reg =    <0x14>, <12>;   // sctl offset, bit-no
+            hp_set_reg =    <0x14>, <4>;    // sctl offset, bit-no
+            lp_clr_reg =    <0x10>, <12>;   // sctl offset, bit-no
+            hp_clr_reg =    <0x10>, <4>;    // sctl offset, bit-no
+
+            irq_polling;
+
+            status = "okay";
+        };
+
+        nmc_1_core1: nmc_core@0xa0180000 {
+            compatible = "rcm,easynmc";
+            core-name = "1879VM8YA-nmc";
+            core-type = "nmc4";
+            device-id = <9>;
+
+            reg = <0xa0180000 0x00040000>;  // imem
+            reg-names = "imem";
+
+            control = <&pc1_clsc>;
+            reset = <&pc1_crgnm>;
+
+            reset_bit =     <1>;            // reset bit no
+            nmi_set_reg =   <0x0C>, <1>;    // sctl offset, bit-no
+            lp_status_reg = <0x10>, <13>;   // sctl offset, bit-no
+            hp_status_reg = <0x10>, <5>;    // sctl offset, bit-no
+            lp_set_reg =    <0x14>, <13>;   // sctl offset, bit-no
+            hp_set_reg =    <0x14>, <5>;    // sctl offset, bit-no
+            lp_clr_reg =    <0x10>, <13>;   // sctl offset, bit-no
+            hp_clr_reg =    <0x10>, <5>;    // sctl offset, bit-no
+
+            irq_polling;
+
+            status = "okay";
+        };
+
+        nmc_1_core2: nmc_core@0xa0200000 {
+            compatible = "rcm,easynmc";
+            core-name = "1879VM8YA-nmc";
+            core-type = "nmc4";
+            device-id = <10>;
+
+            reg = <0xa0200000 0x00040000>;  // imem
+            reg-names = "imem";
+
+            control = <&pc1_clsc>;
+            reset = <&pc1_crgnm>;
+
+            reset_bit =     <2>;            // reset bit no
+            nmi_set_reg =   <0x0C>, <2>;    // sctl offset, bit-no
+            lp_status_reg = <0x10>, <14>;   // sctl offset, bit-no
+            hp_status_reg = <0x10>, <6>;    // sctl offset, bit-no
+            lp_set_reg =    <0x14>, <14>;   // sctl offset, bit-no
+            hp_set_reg =    <0x14>, <6>;    // sctl offset, bit-no
+            lp_clr_reg =    <0x10>, <14>;   // sctl offset, bit-no
+            hp_clr_reg =    <0x10>, <6>;    // sctl offset, bit-no
+
+            irq_polling;
+
+            status = "okay";
+        };
+
+        nmc_1_core3: nmc_core@0xa0280000 {
+            compatible = "rcm,easynmc";
+            core-name = "1879VM8YA-nmc";
+            core-type = "nmc4";
+            device-id = <11>;
+
+            reg = <0xa0280000 0x00040000>;  // imem
+            reg-names = "imem";
+
+            control = <&pc1_clsc>;
+            reset = <&pc1_crgnm>;
+
+            reset_bit =     <3>;            // reset bit no
+            nmi_set_reg =   <0x0C>, <3>;    // sctl offset, bit-no
+            lp_status_reg = <0x10>, <15>;   // sctl offset, bit-no
+            hp_status_reg = <0x10>, <7>;    // sctl offset, bit-no
+            lp_set_reg =    <0x14>, <15>;   // sctl offset, bit-no
+            hp_set_reg =    <0x14>, <7>;    // sctl offset, bit-no
+            lp_clr_reg =    <0x10>, <15>;   // sctl offset, bit-no
+            hp_clr_reg =    <0x10>, <7>;    // sctl offset, bit-no
+
+            irq_polling;
+
+            status = "okay";
+        };
+
+        nmc_2_core0: nmc_core@0xc0100000 {
+            compatible = "rcm,easynmc";
+            core-name = "1879VM8YA-nmc";
+            core-type = "nmc4";
+            device-id = <12>;
+
+            reg = <0xc0100000 0x00040000>;  // imem
+            reg-names = "imem";
+
+            control = <&pc2_clsc>;
+            reset = <&pc2_crgnm>;
+
+            reset_bit =     <0>;            // reset bit no
+            nmi_set_reg =   <0x0C>, <0>;    // sctl offset, bit-no
+            lp_status_reg = <0x10>, <12>;   // sctl offset, bit-no
+            hp_status_reg = <0x10>, <4>;    // sctl offset, bit-no
+            lp_set_reg =    <0x14>, <12>;   // sctl offset, bit-no
+            hp_set_reg =    <0x14>, <4>;    // sctl offset, bit-no
+            lp_clr_reg =    <0x10>, <12>;   // sctl offset, bit-no
+            hp_clr_reg =    <0x10>, <4>;    // sctl offset, bit-no
+
+            irq_polling;
+
+            status = "okay";
+        };
+
+        nmc_2_core1: nmc_core@0xc0180000 {
+            compatible = "rcm,easynmc";
+            core-name = "1879VM8YA-nmc";
+            core-type = "nmc4";
+            device-id = <13>;
+
+            reg = <0xc0180000 0x00040000>;  // imem
+            reg-names = "imem";
+
+            control = <&pc2_clsc>;
+            reset = <&pc2_crgnm>;
+
+            reset_bit =     <1>;            // reset bit no
+            nmi_set_reg =   <0x0C>, <1>;    // sctl offset, bit-no
+            lp_status_reg = <0x10>, <13>;   // sctl offset, bit-no
+            hp_status_reg = <0x10>, <5>;    // sctl offset, bit-no
+            lp_set_reg =    <0x14>, <13>;   // sctl offset, bit-no
+            hp_set_reg =    <0x14>, <5>;    // sctl offset, bit-no
+            lp_clr_reg =    <0x10>, <13>;   // sctl offset, bit-no
+            hp_clr_reg =    <0x10>, <5>;    // sctl offset, bit-no
+
+            irq_polling;
+
+            status = "okay";
+        };
+
+        nmc_2_core2: nmc_core@0xc0200000 {
+            compatible = "rcm,easynmc";
+            core-name = "1879VM8YA-nmc";
+            core-type = "nmc4";
+            device-id = <14>;
+
+            reg = <0xc0200000 0x00040000>;  // imem
+            reg-names = "imem";
+
+            control = <&pc2_clsc>;
+            reset = <&pc2_crgnm>;
+
+            reset_bit =     <2>;            // reset bit no
+            nmi_set_reg =   <0x0C>, <2>;    // sctl offset, bit-no
+            lp_status_reg = <0x10>, <14>;   // sctl offset, bit-no
+            hp_status_reg = <0x10>, <6>;    // sctl offset, bit-no
+            lp_set_reg =    <0x14>, <14>;   // sctl offset, bit-no
+            hp_set_reg =    <0x14>, <6>;    // sctl offset, bit-no
+            lp_clr_reg =    <0x10>, <14>;   // sctl offset, bit-no
+            hp_clr_reg =    <0x10>, <6>;    // sctl offset, bit-no
+
+            irq_polling;
+
+            status = "okay";
+        };
+
+        nmc_2_core3: nmc_core@0xc0280000 {
+            compatible = "rcm,easynmc";
+            core-name = "1879VM8YA-nmc";
+            core-type = "nmc4";
+            device-id = <15>;
+
+            reg = <0xc0280000 0x00040000>;  // imem
+            reg-names = "imem";
+
+            control = <&pc2_clsc>;
+            reset = <&pc2_crgnm>;
+
+            reset_bit =     <3>;            // reset bit no
+            nmi_set_reg =   <0x0C>, <3>;    // sctl offset, bit-no
+            lp_status_reg = <0x10>, <15>;   // sctl offset, bit-no
+            hp_status_reg = <0x10>, <7>;    // sctl offset, bit-no
+            lp_set_reg =    <0x14>, <15>;   // sctl offset, bit-no
+            hp_set_reg =    <0x14>, <7>;    // sctl offset, bit-no
+            lp_clr_reg =    <0x10>, <15>;   // sctl offset, bit-no
+            hp_clr_reg =    <0x10>, <7>;    // sctl offset, bit-no
+
+            irq_polling;
+
+            status = "okay";
+        };
+
+        nmc_3_core0: nmc_core@0xe0100000 {
+            compatible = "rcm,easynmc";
+            core-name = "1879VM8YA-nmc";
+            core-type = "nmc4";
+            device-id = <16>;
+
+            reg = <0xe0100000 0x00040000>;  // imem
+            reg-names = "imem";
+
+            control = <&pc3_clsc>;
+            reset = <&pc3_crgnm>;
+
+            reset_bit =     <0>;            // reset bit no
+            nmi_set_reg =   <0x0C>, <0>;    // sctl offset, bit-no
+            lp_status_reg = <0x10>, <12>;   // sctl offset, bit-no
+            hp_status_reg = <0x10>, <4>;    // sctl offset, bit-no
+            lp_set_reg =    <0x14>, <12>;   // sctl offset, bit-no
+            hp_set_reg =    <0x14>, <4>;    // sctl offset, bit-no
+            lp_clr_reg =    <0x10>, <12>;   // sctl offset, bit-no
+            hp_clr_reg =    <0x10>, <4>;    // sctl offset, bit-no
+
+            irq_polling;
+
+            status = "okay";
+        };
+
+        nmc_3_core1: nmc_core@0xe0180000 {
+            compatible = "rcm,easynmc";
+            core-name = "1879VM8YA-nmc";
+            core-type = "nmc4";
+            device-id = <17>;
+
+            reg = <0xe0180000 0x00040000>;  // imem
+            reg-names = "imem";
+
+            control = <&pc3_clsc>;
+            reset = <&pc3_crgnm>;
+
+            reset_bit =     <1>;            // reset bit no
+            nmi_set_reg =   <0x0C>, <1>;    // sctl offset, bit-no
+            lp_status_reg = <0x10>, <13>;   // sctl offset, bit-no
+            hp_status_reg = <0x10>, <5>;    // sctl offset, bit-no
+            lp_set_reg =    <0x14>, <13>;   // sctl offset, bit-no
+            hp_set_reg =    <0x14>, <5>;    // sctl offset, bit-no
+            lp_clr_reg =    <0x10>, <13>;   // sctl offset, bit-no
+            hp_clr_reg =    <0x10>, <5>;    // sctl offset, bit-no
+
+            irq_polling;
+
+            status = "okay";
+        };
+
+        nmc_3_core2: nmc_core@0xe0200000 {
+            compatible = "rcm,easynmc";
+            core-name = "1879VM8YA-nmc";
+            core-type = "nmc4";
+            device-id = <18>;
+
+            reg = <0xe0200000 0x00040000>;  // imem
+            reg-names = "imem";
+
+            control = <&pc3_clsc>;
+            reset = <&pc3_crgnm>;
+
+            reset_bit =     <2>;            // reset bit no
+            nmi_set_reg =   <0x0C>, <2>;    // sctl offset, bit-no
+            lp_status_reg = <0x10>, <14>;   // sctl offset, bit-no
+            hp_status_reg = <0x10>, <6>;    // sctl offset, bit-no
+            lp_set_reg =    <0x14>, <14>;   // sctl offset, bit-no
+            hp_set_reg =    <0x14>, <6>;    // sctl offset, bit-no
+            lp_clr_reg =    <0x10>, <14>;   // sctl offset, bit-no
+            hp_clr_reg =    <0x10>, <6>;    // sctl offset, bit-no
+
+            irq_polling;
+
+            status = "okay";
+        };
+
+        nmc_3_core3: nmc_core@0xe0280000 {
+            compatible = "rcm,easynmc";
+            core-name = "1879VM8YA-nmc";
+            core-type = "nmc4";
+            device-id = <19>;
+
+            reg = <0xe0280000 0x00040000>;  // imem
+            reg-names = "imem";
+
+            control = <&pc3_clsc>;
+            reset = <&pc3_crgnm>;
+
+            reset_bit =     <3>;            // reset bit no
+            nmi_set_reg =   <0x0C>, <3>;    // sctl offset, bit-no
+            lp_status_reg = <0x10>, <15>;   // sctl offset, bit-no
+            hp_status_reg = <0x10>, <7>;    // sctl offset, bit-no
+            lp_set_reg =    <0x14>, <15>;   // sctl offset, bit-no
+            hp_set_reg =    <0x14>, <7>;    // sctl offset, bit-no
+            lp_clr_reg =    <0x10>, <15>;   // sctl offset, bit-no
+            hp_clr_reg =    <0x10>, <7>;    // sctl offset, bit-no
+
+            irq_polling;
+
+            status = "okay";
         };
     };
 };
