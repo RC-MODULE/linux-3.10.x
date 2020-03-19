@@ -141,4 +141,14 @@
 	#define VIDIOC_S_PARAMS		_IOWR('v', BASE_VIDIOC_PRIVATE + 2, struct grb_parameters)
 	#define VIDIOC_AUTO_DETECT  _IOWR('v', BASE_VIDIOC_PRIVATE + 3, struct grb_parameters)
 
+#define C_WHITE   "\033[1;29;40m"
+#define C_RED	  "\033[1;31;40m"
+#define C_GREEN   "\033[1;32;40m"
+#define C_YELLOW  "\033[1;33;40m"
+#define C_BLUE	  "\033[1;34;40m"
+#define C_CRIMSON "\033[1;35;40m"			// малиновый
+#define C_CYAN	  "\033[1;36;40m"			// голубой
+#define C_GREY	  "\033[1:37:40m"
+#define C_CLEAR   "\033[1;0m"
+
 #endif

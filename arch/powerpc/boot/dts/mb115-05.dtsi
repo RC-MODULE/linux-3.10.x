@@ -11,12 +11,12 @@
 
 				// HDMI channel 0
 				adv7513_0: adv7513@39 {
-					status = "ok";
+					//status = "ok";
 				};
 
 				// HDMI channel 1
 				adv7513_1: adv7513@3d {
-					status = "ok";
+					//status = "ok";
 				};
 
 				// HDMI graber, channel 0

@@ -1030,9 +1030,9 @@
 
 		vdu_graber: vdu_graber@0x38015000 {
 				compatible = "rcm,vdu-graber";
-				reg = <0x38016000 0x1000>;					// INT0-15,EXT0-16,INT1-1b,EXT1-1c
+				reg = <0x38015000 0x1000>;					// INT0-15,EXT0-16,INT1-1b,EXT1-1c
 				interrupt-parent = <&MPIC>;
-				interrupts = <119 2>;						// INT0-18,EXT0-19,INT1-21,EXT1-22
+				interrupts = <118 2>;						// INT0-18,EXT0-19,INT1-21,EXT1-22
 				#address-cells = <1>;
 				#size-cells = <1>;
 				memory-region = <&grab_buffer>;	

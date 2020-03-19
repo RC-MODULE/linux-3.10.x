@@ -47,7 +47,7 @@
 #define DEL 1
 
 
-static int debug = -1;
+static int debug = 1000;
 module_param(debug, int, 0644);
 
 MODULE_LICENSE			( "Dual BSD/GPL" );
@@ -119,6 +119,7 @@ struct grb_info
 	int num_irq;
 	wait_queue_head_t queue;
 	int irq_stat;
+	struct completion cmpl;
 	
 	spinlock_t irqlock ;
 
@@ -140,6 +141,7 @@ struct grb_info
 	
 	phys_addr_t buff_phys_addr;
 	dma_addr_t buff_dma_addr;
+	void* kern_virt_addr;
 
 	u32		mem_offset1		;
 	u32		mem_offset2		;
@@ -154,7 +156,7 @@ struct grb_info
 void write_register(u32 __debug, u32 val, void __iomem *addr, u32 offset)
 {
 	iowrite32(val, addr + offset);
-	dprintk(__debug, "set(0x%08X, 0x%08X)\n", offset, val);
+	//dprintk(__debug, "set(0x%08X, 0x%08X)\n", offset, val);
 }
 
 u32 read_register(u32 __debug, void __iomem *addr, u32 offset)
@@ -162,13 +164,33 @@ u32 read_register(u32 __debug, void __iomem *addr, u32 offset)
 	u32 r;
 	
 	r = ioread32(addr + offset);
-	dprintk(__debug, "get(0x%08X, 0x%08X)\n", offset, r);
+	//dprintk(__debug, "get(0x%08X, 0x%08X)\n", offset, r);
 	return r;
 }
 
-static inline void print_register( void __iomem *addr ) {
-	unsigned int reg;
-	for( reg=0x100; reg<=0x118; reg+=4 ) read_register(1,  addr, reg );
+static int reset_grab( void __iomem *addr ) {
+	unsigned int i;
+	write_register( 1, 0x01 , addr, ADDR_PR_RESET );
+	for( i = 0; i < 10000; i++ ) {
+		if( read_register( 1, addr, ADDR_PR_RESET ) == 0 ) {
+			dprintk( 1, "Reset graber OK\n");
+			return 0;
+		}
+	}
+	dprintk( 1, "Reset graber failed\n");
+	return -1;
+}
+
+static inline void print_register( void __iomem *addr, unsigned int begin, unsigned int end ) {
+	unsigned int reg, val;
+	for( reg=begin; reg<=end; reg+=4 ) {
+		val = read_register(1,  addr, reg );
+		dprintk(1, "get(0x%08X, 0x%08X)\n", reg, val );
+	}
+}
+
+static inline void print_frame_param( void __iomem *addr ) {
+	dprintk( 1, "frame param: 0x%08X\n", read_register( 1, addr, 0x108) );
 }
 
 static void set_mask(void __iomem *addr, u32 offset, int bit , u32 action)
@@ -188,7 +210,7 @@ static void set_mask(void __iomem *addr, u32 offset, int bit , u32 action)
 }
 
 int set_input_format(struct grb_info *grb_info_ptr, struct grb_parameters *param)
-{
+{ // VIDIOC_S_PARAMS
 	u32 active_bus  ;
 	u32 format_data ;
 	
@@ -247,13 +269,12 @@ int set_input_format(struct grb_info *grb_info_ptr, struct grb_parameters *param
 		return -EINVAL;
 	}
 	
-	grb_info_ptr->in_f.format_din  = format_data ; // YCbCr
-	grb_info_ptr->in_f.format_din += (active_bus << 1) ;
-	grb_info_ptr->in_f.format_din += (param->std_in << 3) ;
-	grb_info_ptr->in_f.format_din += (param->sync << 4) ;
-	
+	grb_info_ptr->in_f.format_din  = format_data ;					// 1–RGB,0-YCbCr
+	grb_info_ptr->in_f.format_din += (active_bus << 1) ;			// 1–dv0;2–dv0,dv1;3–dv0,dv1,dv2
+	grb_info_ptr->in_f.format_din += (param->std_in << 3) ;			// 0-дублирования нет;1–дублирование (SDTV)
+	grb_info_ptr->in_f.format_din += (param->sync << 4) ;			// 0–устройство работает по сигналам внешней синхронизации (hsync, vsync, field и data_enable); 1– по сигналам внутренней синхронизации (синхрокодам EAV и SAV)	
 	grb_info_ptr->in_f.color_std = param->std_in ;
-	
+
 	grb_info_ptr->out_f.color_std = param->std_out  ;
 	
 	if (param->alpha > 255) 
@@ -514,11 +535,31 @@ int colour_conversion(struct grb_info *grb_info_ptr)
 	return -1;
 }
 
+static void print_videobuf_queue_param( struct videobuf_queue* queue, unsigned int num ) {
+		struct videobuf_dma_contig_memory {
+		u32 magic;
+		void *vaddr;
+		dma_addr_t dma_handle;
+		unsigned long size;
+	};
+	unsigned int i=0 ;
+	struct videobuf_dma_contig_memory* mem;
+	struct videobuf_buffer* vb;
+	for( i=0; i<num; i++ ) {
+		vb = queue->bufs[i];		// буфер
+		if( vb ) {
+			mem = vb->priv;			// параметры области памяти
+			dprintk( 1,
+					 C_YELLOW"videobuf_buffer(%u): memory=%u,vaddr=%x,dma_handle=%x,size=%lx: %*ph"C_CLEAR"\n",
+					 i, vb->memory, (u32)mem->vaddr, (u32)mem->dma_handle, mem->size, 16, mem->vaddr ); // V4L2_MEMORY_MMAP=1
+			//memset( mem->vaddr, 0, mem->size );	// после вывода очистим буфер
+		};
+	}
+}
+
 int set_register (struct grb_info *grb_info_ptr)
 {
 	void __iomem *base_addr;
-	
-	u32 rd;
 	
 	u32 y_hor_size ;
 	u32 y_ver_size ;
@@ -555,9 +596,16 @@ int set_register (struct grb_info *grb_info_ptr)
 	u32 alpha ;
 
 	int i, j;
-	
+
 	base_addr = grb_info_ptr->base_addr_regs_grb;
-	
+
+	//for( i=0; i<1; i++ ) {
+	//	print_register( base_addr, 0x004, 0x004 );
+	//	print_register( base_addr, 0x100, 0x118 );
+	//	print_register( base_addr, 0x200, 0x204 );
+	//	print_register( base_addr, 0x438, 0x43c );
+	//}
+
 	format_din  = grb_info_ptr->in_f.format_din;
 	
 	format_dout = grb_info_ptr->out_f.format_dout;
@@ -566,7 +614,7 @@ int set_register (struct grb_info *grb_info_ptr)
 	dprintk(1, "format_dout: 0x%0x\n", format_dout);
 	
 	if (grb_info_ptr->cropping.width != 0 && grb_info_ptr->cropping.height !=0) {
-		y_hor_size	= grb_info_ptr->cropping.width  ;
+		y_hor_size	= grb_info_ptr->cropping.width  ; // если задана область кроппинга
 		y_ver_size	= grb_info_ptr->cropping.height ;
 		
 		c_hor_size	= grb_info_ptr->cropping.width  ;
@@ -630,14 +678,28 @@ int set_register (struct grb_info *grb_info_ptr)
 //	base_addr0_dma0 = 0x41001000	;
 //	base_addr1_dma0 = 0x41001000	;
 	
-	base_addr0_dma0 = videobuf_to_dma_contig(grb_info_ptr->videobuf_queue_grb.bufs[0]);
+	//dprintk(1, "videobuf_queue_grb.bufs[0]: %08x: %*ph\n", (u32)grb_info_ptr->videobuf_queue_grb.bufs[0], 16, grb_info_ptr->videobuf_queue_grb.bufs[0] );
+	//dprintk(1, "videobuf_queue_grb.bufs[1]: %08x: %*ph\n", (u32)grb_info_ptr->videobuf_queue_grb.bufs[1], 16, grb_info_ptr->videobuf_queue_grb.bufs[1] );
+	print_videobuf_queue_param( &grb_info_ptr->videobuf_queue_grb, 2 );						// vaddr, dma_handle, size для каждого буфера
+
+	base_addr0_dma0 = videobuf_to_dma_contig(grb_info_ptr->videobuf_queue_grb.bufs[0]);		// просто вернет dma_handle
 	base_addr1_dma0 = videobuf_to_dma_contig(grb_info_ptr->videobuf_queue_grb.bufs[1]);
-	
+
+	base_addr0_dma0 |= 0x40000000;
+	base_addr1_dma0 |= 0x40000000;
+
 	base_addr0_dma1 = base_addr0_dma0 + mem_offset1 ;
 	base_addr1_dma1 = base_addr0_dma0 + mem_offset1 ;
 	
 	base_addr0_dma2 = base_addr0_dma0 + mem_offset2 ;
 	base_addr1_dma2 = base_addr0_dma0 + mem_offset2 ;
+
+	dprintk(1, "base_addr0_dma0: %08x\n", base_addr0_dma0 );	// dma базовые каналов
+	dprintk(1, "base_addr1_dma0: %08x\n", base_addr1_dma0 );
+	dprintk(1, "base_addr0_dma1: %08x\n", base_addr0_dma1 );
+	dprintk(1, "base_addr1_dma1: %08x\n", base_addr1_dma1 );
+	dprintk(1, "base_addr0_dma2: %08x\n", base_addr0_dma2 );
+	dprintk(1, "base_addr1_dma2: %08x\n", base_addr1_dma2 );
 
 	y_size          = (y_ver_size << 16) + y_hor_size   ;
 	c_size          = (c_ver_size << 16) + c_hor_size   ;
@@ -645,10 +707,8 @@ int set_register (struct grb_info *grb_info_ptr)
 	
 	base_point		= (base_point_y << 16) + base_point_x ;
 	
-	write_register(1, 0x1				, base_addr, ADDR_PR_RESET		);
-	
-	do rd = read_register(1, base_addr, ADDR_PR_RESET);
-	while (rd != 0);
+	reset_grab( base_addr );
+	print_frame_param( base_addr );
 	
 	write_register(1, 0x1     			, base_addr, ADDR_BASE_SW_ENA		);	// разрешение переключения базовых адресов
 	write_register(1, base_addr0_dma0	, base_addr, ADDR_DMA0_ADDR0		);	// яркостная нечет
@@ -661,11 +721,21 @@ int set_register (struct grb_info *grb_info_ptr)
 	write_register(1, y_size        	, base_addr, ADDR_Y_SIZE        	);	// 27:16-вертикальный размер,11:0-горизонтальный размер изображения для яркостной компоненты
 	write_register(1, c_size        	, base_addr, ADDR_C_SIZE        	);	// 27:16-вертикальный размер,11:0-горизонтальный размер изображения для цветоразностной компоненты
 	write_register(1, full_line_size	, base_addr, ADDR_FULL_LINE_SIZE	);	// 27:16-вертикальный размер,11:0-горизонтальный размер полной строки в памяти
-	
-	write_register(1, format_din		, base_addr, ADDR_MODE         	);
+// ADDR_MODE:
+// бит 4: 0 – устройство работает по сигналам внешней синхронизации (hsync, vsync, field и data_enable),1– по сигналам внутренней синхронизации (синхрокодам EAV и SAV)
+// бит 3: 0 – дублирования нет,1 – дублирование (SDTV)
+// биты 2,1: 1–при передаче по линии dv0, 2 – при передаче данных по линиям dv0 и dv1, 3–при передаче данных по линиям dv0,dv1 и dv2
+// бит 0: Данный регистр содержит информацию о формате данных, поступающих на вход УЗВИ: 0 – YCbCr,1 – RGB
+	//format_din = 0x06; //!!!!!!!!!!!!!!!!!!!!
+	write_register( 1, format_din , base_addr, ADDR_MODE );
+// ADDR_LOCATION_DATA:
+// бит 3: Данный регистр содержит информацию о формате данных (только для YCbCr): 0 – YCbCr 4:2:2; 1 – YCbCr 4:4:4
+// биты 2,1: Данный регистр содержит информацию о количестве областей памяти, использующихся для записи: 1–для формата ARGB 8888,2–для формата YCbCr 4:2:2,3–для формата YCbCr 4:4:4,YCbCr 4:2:2 и RGB 888
+// бит 0: Данный регистр содержит информацию о цветовой модели записываемых данных: 0 – YCbCr; 1 – RGB
+	//format_dout = 0x07;
 	write_register(1, format_dout		, base_addr, ADDR_LOCATION_DATA	);
 	write_register(1, alpha			    , base_addr, ADDR_TRANSPARENCY 	);
-	write_register(1, base_point  		, base_addr, ADDR_BASE_POINT		);
+	write_register(1, base_point  		, base_addr, ADDR_BASE_POINT );		// 27:16-вертикальная координата точки захвата видеоизображения,11:0-горизонтальная координата точки захвата видеоизображения
 		
 	if (grb_info_ptr->active_gamma == OFF)
 	{
@@ -698,7 +768,7 @@ int set_register (struct grb_info *grb_info_ptr)
 		}
 		write_register(1,  1	, base_addr, ADDR_GAM_ENABLE	);
 	}
-	
+	/* do on after!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
 	if (colour_conversion(grb_info_ptr) == 0)
 	{
 		write_register(1,  grb_info_ptr->c_conv.coef0_0 , base_addr, ADDR_C_0_0	);
@@ -724,15 +794,15 @@ int set_register (struct grb_info *grb_info_ptr)
 	}
 	else if (colour_conversion(grb_info_ptr) != -1)
 		dprintk(1, "colour_conversion error.") ;
-	
-	write_register(1, 0xffffffff	, base_addr, ADDR_INT_STATUS	);	// Для снятия сигнала прерывания в соответствующий разряд регистра INT_STATUS должно быть записано единичное значение
-	
+	*/
 	set_mask(base_addr, ADDR_INT_MASK , END_WRITE , ADD);				// Разрешение генерации сигнала прерывания по событию: окончание записи кадра в память
-	//write_register(1, 0xffffffff, base_addr, ADDR_INT_MASK);			// ни хрена не дает...
+	//write_register(1, 0x1ffff, base_addr, ADDR_INT_MASK);			// ни хрена не дает...
 	
-	write_register(1, 1				, base_addr, ADDR_ENABLE    	);	// Разрешение захвата видеоизображения
-	
+	write_register(1, 1 , base_addr, ADDR_ENABLE );						// Разрешение захвата видеоизображения
 	dprintk(1, "set_registered finish successfully.") ;
+
+	print_frame_param( base_addr );
+
 	return 0;
 }
 
@@ -840,16 +910,17 @@ static int device_open(struct file *file_ptr)
 	
 	dprintk(1, "Open video4linux2 device. Name: %s \n" , grb_info_ptr->video_dev.name );	
 
-	videobuf_queue_dma_contig_init(	&grb_info_ptr->videobuf_queue_grb,
-							&videobuf_queue_ops_grb,
-							grb_info_ptr->dev,
-							&grb_info_ptr->irqlock,
-							V4L2_BUF_TYPE_VIDEO_CAPTURE,
-							V4L2_FIELD_NONE,
-							sizeof(struct videobuf_buffer),
-							grb_info_ptr,
-							NULL);
+	videobuf_queue_dma_contig_init( &grb_info_ptr->videobuf_queue_grb,
+									&videobuf_queue_ops_grb,
+									grb_info_ptr->dev,
+									&grb_info_ptr->irqlock,
+									V4L2_BUF_TYPE_VIDEO_CAPTURE,
+									V4L2_FIELD_NONE,
+									sizeof(struct videobuf_buffer),
+									grb_info_ptr,
+									NULL );
 	dprintk(1, "Open video4linux2 device. Return from proc. \n" );
+	print_videobuf_queue_param( &grb_info_ptr->videobuf_queue_grb, 4 );	// для первых 4-х буферов,тут пустая очередь,все адреса массива буфером 0
 	return 0;
 }
 
@@ -865,9 +936,11 @@ static int device_release(struct file *file_ptr )
 
 static int device_mmap(struct file *file_ptr, struct vm_area_struct *vma)
 {
+	int ret;
 	struct grb_info *grb_info_ptr = video_drvdata(file_ptr);
-	
-	return videobuf_mmap_mapper(&grb_info_ptr->videobuf_queue_grb, vma);
+	ret = videobuf_mmap_mapper(&grb_info_ptr->videobuf_queue_grb, vma);
+	dprintk(1, C_YELLOW"device_mmap return: vm_start=%lx,vm_end=%lx"C_CLEAR"\n", vma->vm_start, vma->vm_end );
+	return ret;
 }
 
 static void video_dev_release(struct video_device *video_dev )
@@ -914,10 +987,7 @@ static int vidioc_querycap_grb (
 	
 //	strlcpy((char *)v4l2_cap_ptr->bus_info, grb_info_ptr->grb_phys_addr, 8);
 	
-	v4l2_cap_ptr->capabilities =
-		V4L2_CAP_VIDEO_CAPTURE |
-		V4L2_CAP_READWRITE |
-		V4L2_CAP_STREAMING;
+	v4l2_cap_ptr->capabilities = V4L2_CAP_VIDEO_CAPTURE | V4L2_CAP_READWRITE | V4L2_CAP_STREAMING | V4L2_CAP_DEVICE_CAPS;
 	
 	dprintk(1, "vidioc_querycap: driver: '%s';\n", v4l2_cap_ptr->driver);
 	dprintk(1, "vidioc_querycap: card: '%s';\n", v4l2_cap_ptr->card);
@@ -1015,18 +1085,38 @@ static int vidioc_s_fmt_vid_cap_grb (
 	return set_output_format(grb_info_ptr, v4l2_format_ptr);
 }
 
+/*
+	Функция VIDIOC_REQBUFS позволяет проинициализировать буфер памяти внутри устройства.
+	struct v4l2_requestbuffers req:
+	__u32 count;		// количество буферов
+	__u32 type;			// тип или цель использования
+	__u32 memory;		// режим работы с памятью.
+	__u32 reserved[2];	// всегда в ноль
+*/
+
 static int vidioc_reqbufs_grb (
 			struct	file *file_ptr, 
 			void	*fh,
 			struct	v4l2_requestbuffers *req)
-{
+{	// VIDIOC_REQBUFS
 	struct grb_info *grb_info_ptr = video_drvdata(file_ptr);
 	int ret;
-	dprintk( 1, "vidioc_reqbufs_grb entry\n" );
 	ret = videobuf_reqbufs(&grb_info_ptr->videobuf_queue_grb, req);
-	dprintk( 1, "vidioc_reqbufs_grb return,count=%u,type=%u,memory=%08x\n", req->count, req->type, req->memory );
+	dprintk( 1, "vidioc_reqbufs_grb return: count=%u,type=%u,memory=%08x\n", req->count, req->type, req->memory );
+	print_videobuf_queue_param( &grb_info_ptr->videobuf_queue_grb, 4 );	// для первых 4-х буферов,в очереди появляются 2 буфера с правильным типом,но адреса областей памяти 0
 	return ret;
 }
+/*
+	Функция VIDIOC_QUERYBUF позволяет считать параметры буфера, которые будут использоваться для создания memory-mapping области.
+	struct v4l2_buffer:
+		//до выполнения VIDIOC_QUERYBUF  устанавливаем следующие поля
+		__u32 index;		// ноль или номер буфера (если v4l2_requestbuffers.cout > 1)
+		__u32 type;			// тип  (совпадает со значением v4l2_requestbuffers.type)
+	//после выполнения VIDIOC_QUERYBUF  используем эти поля в качестве параметров для memory-mapping
+		__u32   offset;		// смещение буфера относительно начала памяти устройства
+		__u32   length;		// размер  буфера
+};
+*/
 
 static int vidioc_querybuf_grb(
 			struct	file *file_ptr,
@@ -1034,9 +1124,17 @@ static int vidioc_querybuf_grb(
 			struct	v4l2_buffer *buf)
 {	// VIDIOC_QUERYBUF
 	struct grb_info *grb_info_ptr = video_drvdata(file_ptr);
-
-	return videobuf_querybuf(&grb_info_ptr->videobuf_queue_grb, buf);
+	int ret;
+	ret = videobuf_querybuf(&grb_info_ptr->videobuf_queue_grb, buf);
+	dprintk( 1, "vidioc_querybuf_grb return: index=%u,type=%u,offset=%08x,length=%08x\n", buf->index, buf->type, buf->m.offset, buf->length );
+	print_videobuf_queue_param( &grb_info_ptr->videobuf_queue_grb, 4 );	// для первых 4-х буферов,в очереди по прежнему 2 буфера с правильным типом,но адреса областей памяти 0
+	return ret;
 }
+
+/*
+	Функция VIDIOC_QBUF ставит буфер в очередь обработки драйвером устройства.
+	Поля используются такие же, как и для VIDIOC_REQBUFS или VIDIOC_QUERYBUF.
+*/
 
 static int vidioc_qbuf_grb(
 			struct 	file *file_ptr,
@@ -1044,29 +1142,41 @@ static int vidioc_qbuf_grb(
 			struct 	v4l2_buffer *buf)
 {
 	struct grb_info *grb_info_ptr = video_drvdata(file_ptr);
-
-	return videobuf_qbuf(&grb_info_ptr->videobuf_queue_grb, buf);
+	int ret;
+	ret = videobuf_qbuf(&grb_info_ptr->videobuf_queue_grb, buf);
+	dprintk( 1, "vidioc_qbuf_grb return: index=%u,type=%u,offset=%08x,length=%08x\n", buf->index, buf->type, buf->m.offset, buf->length );
+	print_videobuf_queue_param( &grb_info_ptr->videobuf_queue_grb, 4 );	// для первых 4-х буферов
+	return ret;
 }
+
+/*
+	Функция VIDIOC_DQBUF освобождает буфер из очереди обработки драйвера.
+	В результате можем получить ошибку EAGAIN. Ничего опасного в этом нет, надо еще раз вызвать VIDIOC_DQBUF.
+	Это происходит потому, что драйвер еще обрабатывает запрос и не может освободить буфер из очереди.
+	При успешном выполнении этой функции, мы получаем в «руки» нашу картинку.
+*/
 
 static int vidioc_dqbuf_grb(
 			struct 	file *file_ptr,
 			void 	*fh,
 			struct 	v4l2_buffer *buf)
-{
+{	// VIDIOC_DQBUF
 	struct grb_info *grb_info_ptr = video_drvdata(file_ptr);
 	struct videobuf_queue* videobuf_queue = &grb_info_ptr->videobuf_queue_grb;
 	int ret;
 	dprintk( 1, "vidioc_dqbuf_grb entry,memory=%08x\n", buf->memory );
 	ret = videobuf_dqbuf( videobuf_queue, buf, file_ptr->f_flags & O_NONBLOCK );
-	dprintk( 1, "vidioc_dqbuf_grb return %d\n", ret );
+	dprintk( 1, "vidioc_dqbuf_grb return: ret=%d\n", ret );
 	return ret;
 }
+
+/* Функция VIDIOC_STREAMON включает камеру в режим захвата */
 
 static int vidioc_streamon_grb(
 			struct file *file_ptr,
 			void *fh,
 			enum v4l2_buf_type type)
-{
+{	// VIDIOC_STREAMON
 	struct grb_info *grb_info_ptr = video_drvdata(file_ptr);
 	
 	int retval;
@@ -1104,7 +1214,7 @@ static int vidioc_streamoff_grb(
 			struct file *file_ptr,
 			void *__fh,
 			enum v4l2_buf_type type)
-{
+{	// VIDIOC_STREAMOFF
 	struct grb_info *grb_info_ptr = video_drvdata(file_ptr);
 	
 //	dprintk(1, "VIDIOC_STREAMOFF \n");
@@ -1145,7 +1255,7 @@ static int vidioc_streamoff_grb(
 	if (type != V4L2_BUF_TYPE_VIDEO_CAPTURE)
 		return -EINVAL;
 
-	write_register(1, 0x1, grb_info_ptr->base_addr_regs_grb, ADDR_PR_RESET);
+	reset_grab(  grb_info_ptr->base_addr_regs_grb );	//write_register(1, 0x1, grb_info_ptr->base_addr_regs_grb, ADDR_PR_RESET);
 	return videobuf_streamoff(&grb_info_ptr->videobuf_queue_grb);
 }
 
@@ -1170,7 +1280,7 @@ void drv_vidioc_g_params (struct grb_info *grb_info_ptr, void *arg)
 }
 
 void drv_vidioc_s_params (struct grb_info *grb_info_ptr, void *arg)
-{
+{ // VIDIOC_S_PARAMS
 	struct grb_parameters *param ;
 	
 	param = (struct grb_parameters *) arg;
@@ -1184,26 +1294,38 @@ void drv_vidioc_s_params (struct grb_info *grb_info_ptr, void *arg)
 
 int drv_vidioc_auto_detect (struct grb_info *grb_info_ptr, void *arg)
 {
+	int i;
 	struct 	v4l2_pix_format	*recognize_format;
-	unsigned int status, i;
 	dprintk( 1, "drv_vidioc_auto_detect\n" );
 
 	//if (grb_info_ptr->recognize_format.bytesperline != 1) {
-	//set_mask(grb_info_ptr->base_addr_regs_grb, ADDR_INT_MASK , INT_DONE  , ADD);
-	write_register( 1, 0xffffffff , grb_info_ptr->base_addr_regs_grb, ADDR_INT_STATUS );			// Очистка ранее установленных битов статуса прерывания
-	//write_register( 1, 0xffffffff , grb_info_ptr->base_addr_regs_grb, ADDR_INT_MASK );			// Разрешение прерываний
-	write_register( 1, 0x1 , grb_info_ptr->base_addr_regs_grb, ADDR_ENABLE );						// Разрешение захвата видеоизображения
-	write_register( 1, 0x1 , grb_info_ptr->base_addr_regs_grb, ADDR_REC_ENABLE );					// Разрешение распознавания телевизионной развёртки
-	//	grb_info_ptr->recognize_format.bytesperline = 1;
+		reset_grab( grb_info_ptr->base_addr_regs_grb );
+		init_completion( &grb_info_ptr->cmpl );
+		write_register( 1, 0x1 , grb_info_ptr->base_addr_regs_grb, ADDR_REC_ENABLE ); // Разрешение распознавания телевизионной развёртки
+		set_mask(grb_info_ptr->base_addr_regs_grb, ADDR_INT_MASK , INT_DONE  , ADD);
+		grb_info_ptr->recognize_format.bytesperline = 1;
+		for( i=0; i<100; i++ ) {
+			print_register( grb_info_ptr->base_addr_regs_grb, 0x100, 0x108 );
+		}
+		if (wait_for_completion_timeout( &grb_info_ptr->cmpl, HZ) == 0) {
+			dprintk(1 , "Vidioc autodetection: timeout\n" );
+			return -ETIMEDOUT;
+		}
 	//}
 
+#if 0 /* delete after */
+	unsigned int status, i;
 	for( i=0; i<1000; i++ ) {
-		print_register( grb_info_ptr->base_addr_regs_grb );
-		if( ( status = read_register(1,  grb_info_ptr->base_addr_regs_grb, ADDR_INT_STATUS ) ) != 0 ) break;
+		print_register( grb_info_ptr->base_addr_regs_grb, 0x110, 0x118 );
+		status = read_register(1,  grb_info_ptr->base_addr_regs_grb, ADDR_INT_STATUS );
+		dprintk( 1, "drv_vidioc_auto_detect: status=%08x\n", status );
+		write_register( 1, status , grb_info_ptr->base_addr_regs_grb, ADDR_INT_STATUS );
+		if( status & INT_DONE ) break;
 	}
-	dprintk( 1, "drv_vidioc_auto_detect: status=%08x\n", status );
+#endif
 
 	if (grb_info_ptr->recognize_format.priv != 1) {
+		dprintk(1 , "Vidioc autodetection: failed\n" );
 		return -EAGAIN;
 	}
 	
@@ -1344,6 +1466,8 @@ static irqreturn_t proc_interrupt (struct grb_info *grb_info_ptr)
 
 	char switch_page;
 
+	static unsigned int n = 0;
+
 	base_addr = grb_info_ptr->base_addr_regs_grb;
 	
 	
@@ -1372,7 +1496,10 @@ static irqreturn_t proc_interrupt (struct grb_info *grb_info_ptr)
 		vb = grb_next_buffer(grb_info_ptr);
 		
 		if (vb == NULL) {
-			return 1;
+			dprintk(2, "irq_handler: next buffer 0 (%u)\n", n++ );
+			write_register( 1, 0, base_addr, ADDR_INT_MASK	);
+			write_register( 1, 0, base_addr, ADDR_ENABLE );
+			return 1; //IRQ_HADLED
 		}
 		
 		vb->state = VIDEOBUF_DONE;
@@ -1382,8 +1509,10 @@ static irqreturn_t proc_interrupt (struct grb_info *grb_info_ptr)
 		switch_page = grb_info_ptr->frame_count - (grb_info_ptr->frame_count/2)*2; // Check grb_info_ptr->frame_count%2;!
 		
 		dprintk(2, "irq_handler: frame_count = %d; switch_page = %d \n", grb_info_ptr->frame_count , switch_page);
-		
+		print_videobuf_queue_param( &grb_info_ptr->videobuf_queue_grb, 2 );
+
 		base_addr_dma0 = videobuf_to_dma_contig(vb);
+		base_addr_dma0 |= 0x40000000;
 		base_addr_dma1 = base_addr_dma0 + grb_info_ptr->mem_offset1 ;
 		base_addr_dma2 = base_addr_dma0 + grb_info_ptr->mem_offset2 ;
 		
@@ -1405,12 +1534,14 @@ static irqreturn_t proc_interrupt (struct grb_info *grb_info_ptr)
 		write_register(2, base_addr_dma2	, base_addr, addr_dma2_addr);
 		
 		grb_info_ptr->frame_count = grb_info_ptr->frame_count + 1;
+
+		//complete_all( &grb_info_ptr->cmpl );
 	}
-	else if ( (rd_data >> INT_DONE) & 1)
+	else if ( (rd_data >> INT_DONE) & 1)		// завершена процедура автопределения
 	{
 		write_register(2,  (1 << INT_DONE)	, base_addr, ADDR_INT_STATUS);
 		
-		rd_data = read_register(2, base_addr, ADDR_FRAME_SIZE);
+		rd_data = read_register(2, base_addr, ADDR_FRAME_SIZE);	// 27:16-Вертикальный размер изображения,11:0-Горизонтальный размер изображения
 		
 		height = (rd_data >> 16) ;
 		
@@ -1439,7 +1570,8 @@ static irqreturn_t proc_interrupt (struct grb_info *grb_info_ptr)
 		dprintk(1, "irq_handler: width = %d; height = %d;\n", grb_info_ptr->recognize_format.width, grb_info_ptr->recognize_format.height);
 		dprintk(1, "irq_handler: sizeimage = %d; field = %d;\n", grb_info_ptr->recognize_format.sizeimage, grb_info_ptr->recognize_format.field);
 		grb_info_ptr->recognize_format.priv = 1;
-		
+
+		complete_all( &grb_info_ptr->cmpl );
 	}
 	else if ( (rd_data >> CH0_OVERFLOW) & 1)
 	{
@@ -1456,6 +1588,26 @@ static irqreturn_t proc_interrupt (struct grb_info *grb_info_ptr)
 		dprintk(2, "irq_handler: overflow!\n");
 		write_register(2,  1 , base_addr, ADDR_PR_RESET);
 	}
+	else if( (rd_data >> INT_VSYNC ) & 1)
+	{
+		dprintk( 2, "irq_handler: INT_VSYNC!\n" );
+		write_register(2,  (1 << INT_VSYNC)	, base_addr, ADDR_INT_STATUS);
+	}
+	else if( (rd_data >> INT_HSYNC ) & 1)
+	{
+		dprintk( 2, "irq_handler: INT_HSYNC!\n" );
+		write_register(2,  (1 << INT_HSYNC), base_addr, ADDR_INT_STATUS);
+	}
+	else if( (rd_data >> INT_VS_ERROR ) & 1)
+	{
+		dprintk( 2, "irq_handler: INT_VS_ERROR!\n" );
+		write_register(2,  (1 << INT_VS_ERROR)	, base_addr, ADDR_INT_STATUS);
+	}
+	else if( (rd_data >> INT_HS_ERROR ) & 1)
+	{
+		dprintk( 2, "irq_handler: INT_HS_ERROR!\n" );
+		write_register(2,  (1 << INT_HS_ERROR)	, base_addr, ADDR_INT_STATUS);
+	}
 	else
 	{
 		dprintk(2, "irq_handler: other,interrupt status %08x!\n", rd_data );
@@ -1470,7 +1622,9 @@ static irqreturn_t irq_handler(int irq, void* dev)
 
 	irqreturn_t grb_irq;
 
-	dprintk(1, "irq_handler: entry!\n");
+	static unsigned int n = 0;
+
+	dprintk(1, "irq_handler: entry!(%u)\n", n++);
 
 	spin_lock(&grb_info_ptr->irqlock);
 
@@ -1583,15 +1737,21 @@ static int device_probe (struct platform_device *grb_device)
 		return -1;
 	}
 
-	//grb_device->dma_mask = DMA_BIT_MASK(32);
-	//grb_device->dev.archdata.dma_offset = - (grb_device->dev.dma_pfn_offset << PAGE_SHIFT);
+	grb_device->dma_mask = DMA_BIT_MASK(32);
+	grb_device->dev.archdata.dma_offset = 0;//- (grb_device->dev.dma_pfn_offset << PAGE_SHIFT);
 
-	res = dma_declare_coherent_memory(&grb_device->dev, grb_info_ptr->buff_phys_addr, grb_info_ptr->buff_dma_addr, grb_info_ptr->buff_length );//,  DMA_MEMORY_MAP | DMA_MEMORY_EXCLUSIVE);
+	res = dma_declare_coherent_memory( &grb_device->dev,							// dev->dma_mem заполняется
+									   grb_info_ptr->buff_phys_addr,
+									   grb_info_ptr->buff_phys_addr,				// grb_info_ptr->buff_dma_addr,
+									   grb_info_ptr->buff_length );					// DMA_MEMORY_MAP | DMA_MEMORY_EXCLUSIVE);
+
+	grb_info_ptr->kern_virt_addr = phys_to_virt( grb_info_ptr->buff_phys_addr );
 	dprintk( 1,
-			 "dma_declare_coherent_memory return %d for phys addr %llx, dma addr %llx, size %x\n",
+			 C_YELLOW"dma_declare_coherent_memory return %d for phys addr %llx, dma addr %llx, kern virt addr %x, size %x"C_CLEAR"\n",
 			 res,
 			 grb_info_ptr->buff_phys_addr,
 			 grb_info_ptr->buff_dma_addr,
+			 (u32)grb_info_ptr->kern_virt_addr,
 			 grb_info_ptr->buff_length );
 
 	if (res != 0) {
@@ -1618,7 +1778,7 @@ static int device_probe (struct platform_device *grb_device)
 		return res;
 	}
 	grb_info_ptr->video_dev.v4l2_dev = &grb_info_ptr->v4l2_device;
-	grb_info_ptr->video_dev.device_caps = V4L2_CAP_VIDEO_CAPTURE | V4L2_CAP_READWRITE | V4L2_CAP_STREAMING;
+	grb_info_ptr->video_dev.device_caps = V4L2_CAP_VIDEO_CAPTURE | V4L2_CAP_READWRITE | V4L2_CAP_STREAMING | V4L2_CAP_DEVICE_CAPS;
 
 	video_set_drvdata(&grb_info_ptr->video_dev , grb_info_ptr);
 	
@@ -1642,10 +1802,10 @@ static int device_probe (struct platform_device *grb_device)
 	}
 	
 	//{ ШЛАК
-	/* дергаем тестовое прерывание */
+	/* дергаем тестовое прерывание,должен вызваться обработчик */
 	write_register(1, 0x1, grb_info_ptr->base_addr_regs_grb, ADDR_TEST_INT	); // 0x208
 	write_register(1, 0x1, grb_info_ptr->base_addr_regs_grb, ADDR_INT_MASK	); // 0x204
-	/* должен вызваться обработчик */
+	/* голова списка */
 	INIT_LIST_HEAD(&grb_info_ptr->buffer_queue);
 	//}	
 	/* выведем знчения 3-х регистров,потом убрать */
@@ -1669,7 +1829,7 @@ static int device_remove (struct platform_device* grb_device)
 	dprintk(1, "In grabber_remove function : %p\n", grb_device);
 	grb_info_ptr = platform_get_drvdata(grb_device);
 
-	write_register(1, 0x1, grb_info_ptr->base_addr_regs_grb, ADDR_PR_RESET);
+	reset_grab( grb_info_ptr->base_addr_regs_grb );	// write_register(1, 0x1, grb_info_ptr->base_addr_regs_grb, ADDR_PR_RESET);
 
 	video_unregister_device(&grb_info_ptr->video_dev);
 
