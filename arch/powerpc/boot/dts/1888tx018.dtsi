@@ -872,12 +872,12 @@
 			};
 
 			rmace@0x3C024000 {
+				status = "disabled";
 				compatible = "rcm,rmace";
 				reg = <0x3C024000 0x1000>;
 				control = <&hsif_control>;
 				interrupt-parent = <&MPIC>;
 				interrupts = <78 2>; // active high level-sensitive
-				status = "disabled";
 			};
 		};
 

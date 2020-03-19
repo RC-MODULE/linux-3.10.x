@@ -21,6 +21,7 @@
 #include <crypto/aes.h>
 #include <crypto/des.h>
 #include <crypto/engine.h>
+#include <crypto/internal/skcipher.h>
 
 #define MAX_KEY_SIZE_8 4 /* in 8-byte words */
 #define MAX_IV_SIZE_8 2 /* in 8-byte words */
@@ -86,15 +87,15 @@
 #define ALG_MODE_CBC BIT(5)
 #define ALG_MODE_OFB BIT(6)
 
-// struct desc_info {
-// 	dma_addr_t address;
-// 	int length;
-// 	bool valid;
-// 	bool int_on;
-// 	bool act0;
-// 	bool act1;
-// 	bool act2;
-// };
+struct desc_info {
+	dma_addr_t address;
+	int length;
+	bool valid;
+	bool int_on;
+	bool act0;
+	bool act1;
+	bool act2;
+};
 
 struct dma_desc {
 	u32 data; // LE
@@ -125,7 +126,7 @@ struct rcm_rmace_dev {
 
 	bool error_status; // if set it is never cleared
 
-	struct ablkcipher_request *cur_req;
+	struct skcipher_request *cur_req;
 
 	unsigned src_length;
 	struct scatterlist *src_page;
@@ -136,21 +137,21 @@ struct rcm_rmace_dev {
 	unsigned dst_offset;
 };
 
-// struct rcm_rmace_ctx {
-// 	struct crypto_engine_ctx enginectx;
-// 	struct rcm_rmace_dev *rmace_dev;
-// 	unsigned alg_mode; // ALG_MODE*
-// 	unsigned key_size_8; // (in 8-byte words) always defined
-// 	unsigned iv_size_8; // (in 8-byte words) can be 0
-// 	u64 key[MAX_KEY_SIZE_8];
-// };
+struct rcm_rmace_ctx {
+	struct crypto_engine_ctx enginectx;
+	struct rcm_rmace_dev *rmace_dev;
+	unsigned alg_mode; // ALG_MODE*
+	unsigned key_size_8; // (in 8-byte words) always defined
+	unsigned iv_size_8; // (in 8-byte words) can be 0
+	u64 key[MAX_KEY_SIZE_8];
+};
 
-// struct rcm_rmace_reqctx {
-// 	unsigned alg_mode; // ALG_MODE*
-// 	unsigned key_size_8; // (in 8-byte words) always defined
-// 	unsigned iv_size_8; // (in 8-byte words) can be 0
-// 	u64 key[MAX_KEY_SIZE_8];
-// };
+struct rcm_rmace_reqctx {
+	unsigned alg_mode; // ALG_MODE*
+	unsigned key_size_8; // (in 8-byte words) always defined
+	unsigned iv_size_8; // (in 8-byte words) can be 0
+	u64 key[MAX_KEY_SIZE_8];
+};
 
 // /* [***] static void dump_regs(struct rcm_rmace_dev *rmace_dev)
 // {
@@ -182,248 +183,248 @@ static void reset_dma(struct rcm_rmace_dev *rmace_dev)
 	}
 }
 
-// static void set_dev_error(
-// 	struct rcm_rmace_dev *rmace_dev,
-// 	const char *message)
-// {
-// 	rmace_dev->error_status = true;
+static void set_dev_error(
+	struct rcm_rmace_dev *rmace_dev,
+	const char *message)
+{
+	rmace_dev->error_status = true;
 
-// 	reset_rmace(rmace_dev);
-// 	reset_dma(rmace_dev);
+	reset_rmace(rmace_dev);
+	reset_dma(rmace_dev);
 
-// 	dev_err(&rmace_dev->pdev->dev, message);
+	dev_err(&rmace_dev->pdev->dev, message);
 
-// 	if (rmace_dev->cur_req != NULL) {
-// 		struct ablkcipher_request *req = rmace_dev->cur_req;
-// 		rmace_dev->cur_req = NULL;
-// 		crypto_finalize_ablkcipher_request(rmace_dev->engine, req, EIO);
-// 	}
-// }
+	if (rmace_dev->cur_req != NULL) {
+		struct skcipher_request *req = rmace_dev->cur_req;
+		rmace_dev->cur_req = NULL;
+		crypto_finalize_skcipher_request(rmace_dev->engine, req, EIO);
+	}
+}
 
-// static void clear_desc_info(struct desc_info *info) {
-// 	memset(info, 0, sizeof *info);
-// }
+static void clear_desc_info(struct desc_info *info) {
+	memset(info, 0, sizeof *info);
+}
 
-// static void set_desc_info(const struct desc_info *info, struct dma_desc *desc)
-// {
-// 	u32 data = 0;
-// 	data |= (info->length << DESC_LEN_BIT_POS);
-// 	if (info->valid)
-// 		data |= (1 << DESC_VALID_BIT_POS);
-// 	if (info->int_on)
-// 		data |= (1 << DESC_INT_BIT_POS);
-// 	if (info->act0)
-// 		data |= (1 << DESC_ACT0_BIT_POS);
-// 	if (info->act1)
-// 		data |= (1 << DESC_ACT1_BIT_POS);
-// 	if (info->act2)
-// 		data |= (1 << DESC_ACT2_BIT_POS);
-// 	desc->data = __cpu_to_le32(data);
+static void set_desc_info(const struct desc_info *info, struct dma_desc *desc)
+{
+	u32 data = 0;
+	data |= (info->length << DESC_LEN_BIT_POS);
+	if (info->valid)
+		data |= (1 << DESC_VALID_BIT_POS);
+	if (info->int_on)
+		data |= (1 << DESC_INT_BIT_POS);
+	if (info->act0)
+		data |= (1 << DESC_ACT0_BIT_POS);
+	if (info->act1)
+		data |= (1 << DESC_ACT1_BIT_POS);
+	if (info->act2)
+		data |= (1 << DESC_ACT2_BIT_POS);
+	desc->data = __cpu_to_le32(data);
 
-// 	desc->address = __cpu_to_le32((u32)info->address);
-// }
+	desc->address = __cpu_to_le32((u32)info->address);
+}
 
-// static void src_fill(struct rcm_rmace_dev *rmace_dev, bool config)
-// {
-// 	struct rcm_rmace_reqctx *req_ctx =
-// 		ablkcipher_request_ctx(rmace_dev->cur_req);
-// 	struct dma_desc *descriptor = rmace_dev->buffers->src_descriptors;
-// 	void *buffer = rmace_dev->buffers->src_buffer;
-// 	unsigned free_bytes = sizeof rmace_dev->buffers->src_buffer;
-// 	struct desc_info info;
+static void src_fill(struct rcm_rmace_dev *rmace_dev, bool config)
+{
+	struct rcm_rmace_reqctx *req_ctx =
+		skcipher_request_ctx(rmace_dev->cur_req);
+	struct dma_desc *descriptor = rmace_dev->buffers->src_descriptors;
+	void *buffer = rmace_dev->buffers->src_buffer;
+	unsigned free_bytes = sizeof rmace_dev->buffers->src_buffer;
+	struct desc_info info;
 
-// 	if (config) {
-// 		// add the configuration descriptor
-// 		u64 *p = rmace_dev->buffers->control_block;
-// 		u64 *s;
-// 		u64 data = 0; 
-// 		unsigned i;
+	if (config) {
+		// add the configuration descriptor
+		u64 *p = rmace_dev->buffers->control_block;
+		u64 *s;
+		u64 data = 0; 
+		unsigned i;
 
-// 		if (req_ctx->alg_mode & ALG_MODE_DES)
-// 			data |= (4ULL << HEADER_TYPE_BIT_POS); // des
-// 		if (req_ctx->alg_mode & ALG_MODE_DES3) {
-// 			data |= (5ULL << HEADER_TYPE_BIT_POS); // des3
-// 			data |= (5ULL << HEADER_FEATURES_BIT_POS); // ede
-// 		}
-// 		if (req_ctx->alg_mode & ALG_MODE_AES) {
-// 			switch (req_ctx->key_size_8)
-// 			{
-// 			case AES_KEYSIZE_128 / 8:
-// 				data |= (6ULL << HEADER_TYPE_BIT_POS);
-// 				break;
-// 			case AES_KEYSIZE_192 / 8:
-// 				data |= (7ULL << HEADER_TYPE_BIT_POS);
-// 				break;
-// 			case AES_KEYSIZE_256 / 8:
-// 				data |= (8ULL << HEADER_TYPE_BIT_POS);
-// 				break;
-// 			default:
-// 				panic("Unexpecting key size");
-// 			}
-// 		}
-// 		if (req_ctx->alg_mode & ALG_MODE_CBC)
-// 			data |= (1ULL << HEADER_MODE_BIT_POS); // cbc
-// 		if (req_ctx->alg_mode & ALG_MODE_OFB)
-// 			data |= (3ULL << HEADER_MODE_BIT_POS); // ofb
-// 		if (req_ctx->alg_mode & ALG_MODE_DECRYPT)
-// 			data |= (1ULL << HEADER_ENC_DEC_BIT_POS); // decrypt
-// 		*(p++) = __cpu_to_le64(data);
+		if (req_ctx->alg_mode & ALG_MODE_DES)
+			data |= (4ULL << HEADER_TYPE_BIT_POS); // des
+		if (req_ctx->alg_mode & ALG_MODE_DES3) {
+			data |= (5ULL << HEADER_TYPE_BIT_POS); // des3
+			data |= (5ULL << HEADER_FEATURES_BIT_POS); // ede
+		}
+		if (req_ctx->alg_mode & ALG_MODE_AES) {
+			switch (req_ctx->key_size_8)
+			{
+			case AES_KEYSIZE_128 / 8:
+				data |= (6ULL << HEADER_TYPE_BIT_POS);
+				break;
+			case AES_KEYSIZE_192 / 8:
+				data |= (7ULL << HEADER_TYPE_BIT_POS);
+				break;
+			case AES_KEYSIZE_256 / 8:
+				data |= (8ULL << HEADER_TYPE_BIT_POS);
+				break;
+			default:
+				panic("Unexpecting key size");
+			}
+		}
+		if (req_ctx->alg_mode & ALG_MODE_CBC)
+			data |= (1ULL << HEADER_MODE_BIT_POS); // cbc
+		if (req_ctx->alg_mode & ALG_MODE_OFB)
+			data |= (3ULL << HEADER_MODE_BIT_POS); // ofb
+		if (req_ctx->alg_mode & ALG_MODE_DECRYPT)
+			data |= (1ULL << HEADER_ENC_DEC_BIT_POS); // decrypt
+		*(p++) = __cpu_to_le64(data);
 
-// 		s = req_ctx->key;
-// 		for (i = 0; i < req_ctx->key_size_8; ++i) {
-// 			*(p++) = __cpu_to_le64(*(s++));
-// 		}
+		s = req_ctx->key;
+		for (i = 0; i < req_ctx->key_size_8; ++i) {
+			*(p++) = __cpu_to_le64(*(s++));
+		}
 
-// 		s = rmace_dev->cur_req->info;
-// 		for (i = 0; i < req_ctx->iv_size_8; ++i) {
-// 			*(p++) = __cpu_to_le64(*(s++));
-// 		}
+		s = (u64*)rmace_dev->cur_req->iv;
+		for (i = 0; i < req_ctx->iv_size_8; ++i) {
+			*(p++) = __cpu_to_le64(*(s++));
+		}
 
-// 		clear_desc_info(&info);
-// 		info.address =	rmace_dev->buffers_mapping +
-// 			offsetof(struct dma_buffers, control_block);
-// 		info.length = (p - rmace_dev->buffers->control_block) * 8;
-// 		info.valid = true;
-// 		info.act2 = true;
-// 		set_desc_info(&info, descriptor);
-// 		++descriptor;
-// 	}
+		clear_desc_info(&info);
+		info.address =	rmace_dev->buffers_mapping +
+			offsetof(struct dma_buffers, control_block);
+		info.length = (p - rmace_dev->buffers->control_block) * 8;
+		info.valid = true;
+		info.act2 = true;
+		set_desc_info(&info, descriptor);
+		++descriptor;
+	}
 
-// 	// fill the src buffer
-// 	while ((free_bytes != 0) && (rmace_dev->src_length != 0)) {
-// 		unsigned page_size = min(free_bytes,
-// 			rmace_dev->src_length - rmace_dev->src_offset);
-// 		sg_pcopy_to_buffer(rmace_dev->src_page, 1, buffer, page_size,
-// 			rmace_dev->src_offset);
-// 		free_bytes -= page_size;
-// 		buffer += page_size;
-// 		rmace_dev->src_length -= page_size;
-// 		rmace_dev->src_offset += page_size;
-// 		if (rmace_dev->src_offset == rmace_dev->src_page->length) {
-// 			rmace_dev->src_page = sg_next(rmace_dev->src_page);
-// 			rmace_dev->src_offset = 0;
-// 		}
-// 	}
+	// fill the src buffer
+	while ((free_bytes != 0) && (rmace_dev->src_length != 0)) {
+		unsigned page_size = min(free_bytes,
+			rmace_dev->src_length - rmace_dev->src_offset);
+		sg_pcopy_to_buffer(rmace_dev->src_page, 1, buffer, page_size,
+			rmace_dev->src_offset);
+		free_bytes -= page_size;
+		buffer += page_size;
+		rmace_dev->src_length -= page_size;
+		rmace_dev->src_offset += page_size;
+		if (rmace_dev->src_offset == rmace_dev->src_page->length) {
+			rmace_dev->src_page = sg_next(rmace_dev->src_page);
+			rmace_dev->src_offset = 0;
+		}
+	}
 
-// 	// add the data descriptor
-// 	clear_desc_info(&info);
-// 	info.address =	rmace_dev->buffers_mapping +
-// 		offsetof(struct dma_buffers, src_buffer);
-// 	info.length = buffer - (void*)rmace_dev->buffers->src_buffer;
-// 	info.act0 = (rmace_dev->src_length == 0); // [***] !!!
-// 	info.act2 = true;
-// 	set_desc_info(&info, descriptor);
-// 	++descriptor;
+	// add the data descriptor
+	clear_desc_info(&info);
+	info.address =	rmace_dev->buffers_mapping +
+		offsetof(struct dma_buffers, src_buffer);
+	info.length = buffer - (void*)rmace_dev->buffers->src_buffer;
+	info.act0 = (rmace_dev->src_length == 0); // [***] !!!
+	info.act2 = true;
+	set_desc_info(&info, descriptor);
+	++descriptor;
 
-// 	// add an empty descriptor
-// 	clear_desc_info(&info);
-// 	set_desc_info(&info, descriptor);
-// 	++descriptor;
+	// add an empty descriptor
+	clear_desc_info(&info);
+	set_desc_info(&info, descriptor);
+	++descriptor;
 
-// 	// program and start the DMA channel
-// 	iowrite32(rmace_dev->buffers_mapping
-// 			+ offsetof(struct dma_buffers, src_descriptors),
-// 		rmace_dev->base + RMACE_REG_RDMA_SYS_ADDR);
-// 	iowrite32(
-// 		(void*)descriptor - (void*)rmace_dev->buffers->src_descriptors,
-// 		rmace_dev->base + RMACE_REG_RDMA_TBL_SIZE);
-// 	iowrite32(rmace_dev->buffers_mapping
-// 			+ offsetof(struct dma_buffers, src_descriptors),
-// 		rmace_dev->base + RMACE_REG_RDMA_DESC_ADDR);
-// 	iowrite32(BIT(DMA_SETTINGS_BAD_DESC)
-// 		| BIT(DMA_SETTINGS_AXI_ERROR)
-// 		| BIT(DMA_SETTINGS_EN_DMA_BIT_POS)
-// 		| BIT(DMA_SETTINGS_EN_DMA_DESC_TBL_BIT_POS)
-// 		| BIT(DMA_SETTINGS_DMA_LONG_LEN_BIT_POS),
-// 		rmace_dev->base + RMACE_REG_RDMA_SETTINGS);
-// }
+	// program and start the DMA channel
+	iowrite32(rmace_dev->buffers_mapping
+			+ offsetof(struct dma_buffers, src_descriptors),
+		rmace_dev->base + RMACE_REG_RDMA_SYS_ADDR);
+	iowrite32(
+		(void*)descriptor - (void*)rmace_dev->buffers->src_descriptors,
+		rmace_dev->base + RMACE_REG_RDMA_TBL_SIZE);
+	iowrite32(rmace_dev->buffers_mapping
+			+ offsetof(struct dma_buffers, src_descriptors),
+		rmace_dev->base + RMACE_REG_RDMA_DESC_ADDR);
+	iowrite32(BIT(DMA_SETTINGS_BAD_DESC)
+		| BIT(DMA_SETTINGS_AXI_ERROR)
+		| BIT(DMA_SETTINGS_EN_DMA_BIT_POS)
+		| BIT(DMA_SETTINGS_EN_DMA_DESC_TBL_BIT_POS)
+		| BIT(DMA_SETTINGS_DMA_LONG_LEN_BIT_POS),
+		rmace_dev->base + RMACE_REG_RDMA_SETTINGS);
+}
 
-// static void dst_init(struct rcm_rmace_dev *rmace_dev)
-// {
-// 	struct rcm_rmace_reqctx *req_ctx =
-// 		ablkcipher_request_ctx(rmace_dev->cur_req);
-// 	struct dma_desc *descriptor = rmace_dev->buffers->dst_descriptors;
-// 	unsigned size = min(rmace_dev->dst_length,
-// 		sizeof rmace_dev->buffers->dst_buffer);
-// 	struct desc_info info;
+static void dst_init(struct rcm_rmace_dev *rmace_dev)
+{
+	struct rcm_rmace_reqctx *req_ctx =
+		skcipher_request_ctx(rmace_dev->cur_req);
+	struct dma_desc *descriptor = rmace_dev->buffers->dst_descriptors;
+	unsigned size = min(rmace_dev->dst_length,
+		sizeof rmace_dev->buffers->dst_buffer);
+	struct desc_info info;
 
-// 	// add a data descriptor
-// 	clear_desc_info(&info);
-// 	info.address = rmace_dev->buffers_mapping +
-// 		offsetof(struct dma_buffers, dst_buffer);
-// 	info.length = size;
-// 	info.act2 = true;
-// 	set_desc_info(&info, descriptor);
-// 	++descriptor;
+	// add a data descriptor
+	clear_desc_info(&info);
+	info.address = rmace_dev->buffers_mapping +
+		offsetof(struct dma_buffers, dst_buffer);
+	info.length = size;
+	info.act2 = true;
+	set_desc_info(&info, descriptor);
+	++descriptor;
 
-// 	if ((rmace_dev->dst_length - size == 0)	&& (req_ctx->iv_size_8 != 0)) {
-// 		// add save configuration descriptor
-// 		clear_desc_info(&info);
-// 		info.address =	rmace_dev->buffers_mapping +
-// 			offsetof(struct dma_buffers, control_block);
-// 		info.length = (1 + req_ctx->key_size_8 + req_ctx->iv_size_8)
-// 			* 8;
-// 		info.valid = true;
-// 		info.act2 = true;
-// 		set_desc_info(&info, descriptor);
-// 		++descriptor;
-// 	}
+	if ((rmace_dev->dst_length - size == 0)	&& (req_ctx->iv_size_8 != 0)) {
+		// add save configuration descriptor
+		clear_desc_info(&info);
+		info.address =	rmace_dev->buffers_mapping +
+			offsetof(struct dma_buffers, control_block);
+		info.length = (1 + req_ctx->key_size_8 + req_ctx->iv_size_8)
+			* 8;
+		info.valid = true;
+		info.act2 = true;
+		set_desc_info(&info, descriptor);
+		++descriptor;
+	}
 
-// 	// add an empty descriptor
-// 	clear_desc_info(&info);
-// 	set_desc_info(&info, descriptor);
-// 	++descriptor;
+	// add an empty descriptor
+	clear_desc_info(&info);
+	set_desc_info(&info, descriptor);
+	++descriptor;
 
-// 	// program and start the DMA channel
-// 	iowrite32(rmace_dev->buffers_mapping
-// 			+ offsetof(struct dma_buffers, dst_descriptors),
-// 		rmace_dev->base + RMACE_REG_WDMA_SYS_ADDR);
-// 	iowrite32(
-// 		(void*)descriptor - (void*)rmace_dev->buffers->dst_descriptors,
-// 		rmace_dev->base + RMACE_REG_WDMA_TBL_SIZE);
-// 	iowrite32(rmace_dev->buffers_mapping
-// 			+ offsetof(struct dma_buffers, dst_descriptors),
-// 		rmace_dev->base + RMACE_REG_WDMA_DESC_ADDR);
-// 	iowrite32(BIT(DMA_SETTINGS_BAD_DESC)
-// 		| BIT(DMA_SETTINGS_AXI_ERROR)
-// 		| BIT(DMA_SETTINGS_EN_DMA_BIT_POS)
-// 		| BIT(DMA_SETTINGS_EN_DMA_DESC_TBL_BIT_POS)
-// 		| BIT(DMA_SETTINGS_DMA_LONG_LEN_BIT_POS),
-// 		rmace_dev->base + RMACE_REG_WDMA_SETTINGS);
-// }
+	// program and start the DMA channel
+	iowrite32(rmace_dev->buffers_mapping
+			+ offsetof(struct dma_buffers, dst_descriptors),
+		rmace_dev->base + RMACE_REG_WDMA_SYS_ADDR);
+	iowrite32(
+		(void*)descriptor - (void*)rmace_dev->buffers->dst_descriptors,
+		rmace_dev->base + RMACE_REG_WDMA_TBL_SIZE);
+	iowrite32(rmace_dev->buffers_mapping
+			+ offsetof(struct dma_buffers, dst_descriptors),
+		rmace_dev->base + RMACE_REG_WDMA_DESC_ADDR);
+	iowrite32(BIT(DMA_SETTINGS_BAD_DESC)
+		| BIT(DMA_SETTINGS_AXI_ERROR)
+		| BIT(DMA_SETTINGS_EN_DMA_BIT_POS)
+		| BIT(DMA_SETTINGS_EN_DMA_DESC_TBL_BIT_POS)
+		| BIT(DMA_SETTINGS_DMA_LONG_LEN_BIT_POS),
+		rmace_dev->base + RMACE_REG_WDMA_SETTINGS);
+}
 
-// static void dst_read(struct rcm_rmace_dev *rmace_dev) {
-// 	struct rcm_rmace_reqctx *req_ctx =
-// 		ablkcipher_request_ctx(rmace_dev->cur_req);
-// 	unsigned size = min(rmace_dev->dst_length,
-// 		sizeof rmace_dev->buffers->dst_buffer);
-// 	void *buffer = rmace_dev->buffers->dst_buffer;
+static void dst_read(struct rcm_rmace_dev *rmace_dev) {
+	struct rcm_rmace_reqctx *req_ctx =
+		skcipher_request_ctx(rmace_dev->cur_req);
+	unsigned size = min(rmace_dev->dst_length,
+		sizeof rmace_dev->buffers->dst_buffer);
+	void *buffer = rmace_dev->buffers->dst_buffer;
 
-// 	while (size != 0) {
-// 		unsigned page_size = min(size,
-// 			rmace_dev->dst_page->length - rmace_dev->dst_offset);
-// 		sg_pcopy_from_buffer(rmace_dev->dst_page, 1, buffer, page_size,
-// 			rmace_dev->dst_offset);
-// 		size -= page_size;
-// 		buffer += page_size;
-// 		rmace_dev->dst_length -= page_size;
-// 		rmace_dev->dst_offset += page_size;
-// 		if (rmace_dev->dst_offset == rmace_dev->dst_page->length) {
-// 			rmace_dev->dst_page = sg_next(rmace_dev->dst_page);
-// 			rmace_dev->dst_offset = 0;
-// 		}
-// 	}
+	while (size != 0) {
+		unsigned page_size = min(size,
+			rmace_dev->dst_page->length - rmace_dev->dst_offset);
+		sg_pcopy_from_buffer(rmace_dev->dst_page, 1, buffer, page_size,
+			rmace_dev->dst_offset);
+		size -= page_size;
+		buffer += page_size;
+		rmace_dev->dst_length -= page_size;
+		rmace_dev->dst_offset += page_size;
+		if (rmace_dev->dst_offset == rmace_dev->dst_page->length) {
+			rmace_dev->dst_page = sg_next(rmace_dev->dst_page);
+			rmace_dev->dst_offset = 0;
+		}
+	}
 
-// 	if (rmace_dev->dst_length == 0) {
-// 		// save configuration
-// 		u64 *p = rmace_dev->buffers->control_block + 1 /* header */
-// 			+ req_ctx->key_size_8;
-// 		u64 *d = rmace_dev->cur_req->info;
-// 		unsigned i;
-// 		for (i = 0; i < req_ctx->iv_size_8; ++i)
-// 			*(d++) = __le64_to_cpu(*(p++));
-// 	}
-// }
+	if (rmace_dev->dst_length == 0) {
+		// save configuration
+		u64 *p = rmace_dev->buffers->control_block + 1 /* header */
+			+ req_ctx->key_size_8;
+		u64 *d = (u64*)rmace_dev->cur_req->iv;
+		unsigned i;
+		for (i = 0; i < req_ctx->iv_size_8; ++i)
+			*(d++) = __le64_to_cpu(*(p++));
+	}
+}
 
 static irqreturn_t rmace_irq(int irq, void *arg)
 {
@@ -441,399 +442,386 @@ static irqreturn_t rmace_irq(int irq, void *arg)
 
 static irqreturn_t rmace_irq_thread(int irq, void *arg)
 {
-// 	struct rcm_rmace_dev *rmace_dev = arg;
-// 	u32 rdma_status, wdma_status;
+	struct rcm_rmace_dev *rmace_dev = arg;
+	u32 rdma_status, wdma_status;
 
-// 	rdma_status = ioread32(rmace_dev->base + RMACE_REG_RDMA_STATUS);
+	rdma_status = ioread32(rmace_dev->base + RMACE_REG_RDMA_STATUS);
 
-// 	if ((rdma_status & BIT(DMA_STATUS_AXI_ERROR)) != 0)
-// 		set_dev_error(rmace_dev, "AXI read error");
+	if ((rdma_status & BIT(DMA_STATUS_AXI_ERROR)) != 0)
+		set_dev_error(rmace_dev, "AXI read error");
 
-// 	if (((rdma_status & BIT(DMA_STATUS_BAD_DESC)) != 0)
-// 		&& (rmace_dev->src_length != 0)
-// 		&& !rmace_dev->error_status)
-// 		src_fill(rmace_dev, false);
+	if (((rdma_status & BIT(DMA_STATUS_BAD_DESC)) != 0)
+		&& (rmace_dev->src_length != 0)
+		&& !rmace_dev->error_status)
+		src_fill(rmace_dev, false);
 
-// 	wdma_status = ioread32(rmace_dev->base + RMACE_REG_WDMA_STATUS);
+	wdma_status = ioread32(rmace_dev->base + RMACE_REG_WDMA_STATUS);
 
-// 	if ((wdma_status & BIT(DMA_STATUS_AXI_ERROR)) != 0)
-// 		set_dev_error(rmace_dev, "AXI write error");
+	if ((wdma_status & BIT(DMA_STATUS_AXI_ERROR)) != 0)
+		set_dev_error(rmace_dev, "AXI write error");
 
-// 	if (((wdma_status & BIT(DMA_STATUS_BAD_DESC)) != 0)
-// 		&& !rmace_dev->error_status) {
-// 		dst_read(rmace_dev);
-// 		if (rmace_dev->dst_length != 0)
-// 			dst_init(rmace_dev);
-// 		else {
-// 			struct ablkcipher_request *req = rmace_dev->cur_req;
-// 			rmace_dev->cur_req = NULL;
-// 			crypto_finalize_ablkcipher_request(rmace_dev->engine,
-// 				req, 0);
-// 		}		
-// 	}
+	if (((wdma_status & BIT(DMA_STATUS_BAD_DESC)) != 0)
+		&& !rmace_dev->error_status) {
+		dst_read(rmace_dev);
+		if (rmace_dev->dst_length != 0)
+			dst_init(rmace_dev);
+		else {
+			struct skcipher_request *req = rmace_dev->cur_req;
+			rmace_dev->cur_req = NULL;
+			crypto_finalize_skcipher_request(rmace_dev->engine,
+				req, 0);
+		}		
+	}
 
 	return IRQ_HANDLED;
 }
 
-// static int rcm_rmace_cipher_one_req(
-// 	struct crypto_engine *engine,
-// 	void *areq)
-// {	
-// 	struct ablkcipher_request *req = container_of(areq,
-// 		struct ablkcipher_request,
-// 		base);
-// 	struct rcm_rmace_ctx *ctx = crypto_ablkcipher_ctx(
-// 		crypto_ablkcipher_reqtfm(req));
-// 	struct rcm_rmace_dev *rmace_dev = ctx->rmace_dev;
+static int rcm_rmace_cipher_one_req(
+	struct crypto_engine *engine,
+	void *areq)
+{	
+	struct skcipher_request *req = container_of(areq,
+		struct skcipher_request,
+		base);
+	struct rcm_rmace_ctx *ctx = crypto_skcipher_ctx(
+		crypto_skcipher_reqtfm(req));
+	struct rcm_rmace_dev *rmace_dev = ctx->rmace_dev;
 
-// 	if (rmace_dev->error_status)
-// 		return -EIO;
+	if (rmace_dev->error_status)
+		return -EIO;
 
-// 	reset_rmace(rmace_dev); // [***] <-- work only with this line (terrible)
+	reset_rmace(rmace_dev); // [***] <-- work only with this line (terrible)
 
-// 	rmace_dev->cur_req = req;
-// 	rmace_dev->src_length = req->nbytes;
-// 	rmace_dev->src_page = req->src;
-// 	rmace_dev->src_offset = 0;
-// 	rmace_dev->dst_length = req->nbytes;
-// 	rmace_dev->dst_page = req->dst;
-// 	rmace_dev->dst_offset = 0;
+	rmace_dev->cur_req = req;
+	rmace_dev->src_length = req->cryptlen;
+	rmace_dev->src_page = req->src;
+	rmace_dev->src_offset = 0;
+	rmace_dev->dst_length = req->cryptlen;
+	rmace_dev->dst_page = req->dst;
+	rmace_dev->dst_offset = 0;
 
-// 	dst_init(rmace_dev);
-// 	src_fill(rmace_dev, true);
+	dst_init(rmace_dev);
+	src_fill(rmace_dev, true);
 
-// 	return 0;
-// }
+	return 0;
+}
 
-// static int rcm_rmace_setkey(
-// 	struct crypto_ablkcipher *tfm,
-// 	const u8 *key,
-// 	unsigned key_size)
-// {
-// 	struct rcm_rmace_ctx *ctx = crypto_ablkcipher_ctx(tfm);
+static int rcm_rmace_setkey(
+	struct crypto_skcipher *tfm,
+	const u8 *key,
+	unsigned key_size)
+{
+	struct rcm_rmace_ctx *ctx = crypto_skcipher_ctx(tfm);
 
-// 	ctx->key_size_8 = key_size / 8;
-// 	memcpy(ctx->key, key, key_size);
+	ctx->key_size_8 = key_size / 8;
+	memcpy(ctx->key, key, key_size);
 
-// 	return 0;
-// }
+	return 0;
+}
 
-// static int rcm_rmace_crypt(struct ablkcipher_request *req,	bool decrypt)
-// {
-// 	struct rcm_rmace_ctx *ctx = crypto_ablkcipher_ctx(
-// 		crypto_ablkcipher_reqtfm(req));
-// 	struct rcm_rmace_reqctx *req_ctx = ablkcipher_request_ctx(req);
+static int rcm_rmace_crypt(struct skcipher_request *req, bool decrypt)
+{
+	struct rcm_rmace_ctx *ctx = crypto_skcipher_ctx(
+		crypto_skcipher_reqtfm(req));
+	struct rcm_rmace_reqctx *req_ctx = skcipher_request_ctx(req);
 
-// 	req_ctx->alg_mode = ctx->alg_mode;
-// 	if (decrypt)
-// 		req_ctx->alg_mode |= ALG_MODE_DECRYPT;
-// 	req_ctx->key_size_8 = ctx->key_size_8;
-// 	req_ctx->iv_size_8 = ctx->iv_size_8;
-// 	memcpy(req_ctx->key, ctx->key, ctx->key_size_8 * 8);
+	req_ctx->alg_mode = ctx->alg_mode;
+	if (decrypt)
+		req_ctx->alg_mode |= ALG_MODE_DECRYPT;
+	req_ctx->key_size_8 = ctx->key_size_8;
+	req_ctx->iv_size_8 = ctx->iv_size_8;
+	memcpy(req_ctx->key, ctx->key, ctx->key_size_8 * 8);
 
-// 	return crypto_transfer_ablkcipher_request_to_engine(
-// 		ctx->rmace_dev->engine,	req);
-// }
+	return crypto_transfer_skcipher_request_to_engine(
+		ctx->rmace_dev->engine,	req);
+}
 
-// static int rcm_rmace_ctx_init(struct crypto_tfm *tfm, unsigned alg_mode)
-// {
-// 	struct rcm_rmace_ctx *ctx = crypto_tfm_ctx(tfm);
+static int rcm_rmace_ctx_init(
+	struct crypto_skcipher *tfm,
+	unsigned alg_mode,
+	unsigned default_key_size,
+	unsigned default_iv_size)
+{
+	struct rcm_rmace_ctx *ctx = crypto_skcipher_ctx(tfm);
 
-// 	spin_lock(&last_rmace_dev_lock);
-// 	ctx->rmace_dev =  last_rmace_dev;
-// 	spin_unlock(&last_rmace_dev_lock);
-// 	if (ctx->rmace_dev == NULL)
-// 		return -ENODEV;
+	spin_lock(&last_rmace_dev_lock);
+	ctx->rmace_dev =  last_rmace_dev;
+	spin_unlock(&last_rmace_dev_lock);
+	if (ctx->rmace_dev == NULL)
+		return -ENODEV;
 
-// 	ctx->alg_mode = alg_mode;
+	ctx->alg_mode = alg_mode;
+	ctx->key_size_8 = default_key_size / 8;
+	ctx->iv_size_8 = default_iv_size / 8;
 
-// 	// set default key and IV size
-// 	ctx->key_size_8 = tfm->__crt_alg->cra_ablkcipher.min_keysize / 8; // [***] __
-// 	ctx->iv_size_8 = tfm->__crt_alg->cra_ablkcipher.ivsize / 8; // [***] __
+	crypto_skcipher_set_reqsize(tfm, sizeof(struct rcm_rmace_reqctx));
 
-// 	tfm->crt_ablkcipher.reqsize = sizeof(struct rcm_rmace_reqctx);
+	ctx->enginectx.op.prepare_request = NULL;
+	ctx->enginectx.op.unprepare_request = NULL;
+	ctx->enginectx.op.do_one_request = rcm_rmace_cipher_one_req;
 
-// 	ctx->enginectx.op.prepare_request = NULL;
-// 	ctx->enginectx.op.unprepare_request = NULL;
-// 	ctx->enginectx.op.do_one_request = rcm_rmace_cipher_one_req;
+	return 0;
+}
 
-// 	return 0;
-// }
+static int rcm_rmace_encrypt(struct skcipher_request *req)
+{
+	return rcm_rmace_crypt(req, false);
+}
 
-// static int rcm_rmace_encrypt(struct ablkcipher_request *req)
-// {
-// 	return rcm_rmace_crypt(req, false);
-// }
+static int rcm_rmace_decrypt(struct skcipher_request *req)
+{
+	return rcm_rmace_crypt(req, true);
+}
 
-// static int rcm_rmace_decrypt(struct ablkcipher_request *req)
-// {
-// 	return rcm_rmace_crypt(req, true);
-// }
+static int rcm_rmace_des_ecb_ctx_init(struct crypto_skcipher *tfm)
+{
+ 	return rcm_rmace_ctx_init(tfm, ALG_MODE_DES | ALG_MODE_ECB,
+		DES_KEY_SIZE, 0);
+}
 
-// static int rcm_rmace_des_ecb_ctx_init(struct crypto_tfm *tfm)
-// {
-// 	return rcm_rmace_ctx_init(tfm, ALG_MODE_DES | ALG_MODE_ECB);
-// }
+static int rcm_rmace_des_cbc_ctx_init(struct crypto_skcipher *tfm)
+{
+	return rcm_rmace_ctx_init(tfm, ALG_MODE_DES | ALG_MODE_CBC,
+		DES_KEY_SIZE, DES_BLOCK_SIZE);
+}
 
-// static int rcm_rmace_des_cbc_ctx_init(struct crypto_tfm *tfm)
-// {
-// 	return rcm_rmace_ctx_init(tfm, ALG_MODE_DES | ALG_MODE_CBC);
-// }
+static int rcm_rmace_des_ofb_ctx_init(struct crypto_skcipher *tfm)
+{
+	return rcm_rmace_ctx_init(tfm, ALG_MODE_DES | ALG_MODE_OFB,
+		DES_KEY_SIZE, DES_BLOCK_SIZE);
+}
 
-// static int rcm_rmace_des_ofb_ctx_init(struct crypto_tfm *tfm)
-// {
-// 	return rcm_rmace_ctx_init(tfm, ALG_MODE_DES | ALG_MODE_OFB);
-// }
+static int rcm_rmace_des3_ecb_ctx_init(struct crypto_skcipher *tfm)
+{
+	return rcm_rmace_ctx_init(tfm, ALG_MODE_DES3 | ALG_MODE_ECB,
+		DES_KEY_SIZE, 0);
+}
 
-// static int rcm_rmace_des3_ecb_ctx_init(struct crypto_tfm *tfm)
-// {
-// 	return rcm_rmace_ctx_init(tfm, ALG_MODE_DES3 | ALG_MODE_ECB);
-// }
+static int rcm_rmace_des3_cbc_ctx_init(struct crypto_skcipher *tfm)
+{
+	return rcm_rmace_ctx_init(tfm, ALG_MODE_DES3 | ALG_MODE_CBC,
+		DES_KEY_SIZE, DES_BLOCK_SIZE);
+}
 
-// static int rcm_rmace_des3_cbc_ctx_init(struct crypto_tfm *tfm)
-// {
-// 	return rcm_rmace_ctx_init(tfm, ALG_MODE_DES3 | ALG_MODE_CBC);
-// }
+static int rcm_rmace_des3_ofb_ctx_init(struct crypto_skcipher *tfm)
+{
+	return rcm_rmace_ctx_init(tfm, ALG_MODE_DES3 | ALG_MODE_OFB,
+		DES_KEY_SIZE, DES_BLOCK_SIZE);
+}
 
-// static int rcm_rmace_des3_ofb_ctx_init(struct crypto_tfm *tfm)
-// {
-// 	return rcm_rmace_ctx_init(tfm, ALG_MODE_DES3 | ALG_MODE_OFB);
-// }
+static int rcm_rmace_aes_ecb_ctx_init(struct crypto_skcipher *tfm)
+{
+	return rcm_rmace_ctx_init(tfm, ALG_MODE_AES | ALG_MODE_ECB,
+		AES_KEYSIZE_128, 0);
+}
 
-// static int rcm_rmace_aes_ecb_ctx_init(struct crypto_tfm *tfm)
-// {
-// 	return rcm_rmace_ctx_init(tfm, ALG_MODE_AES | ALG_MODE_ECB);
-// }
+static int rcm_rmace_aes_cbc_ctx_init(struct crypto_skcipher *tfm)
+{
+	return rcm_rmace_ctx_init(tfm, ALG_MODE_AES | ALG_MODE_CBC,
+		AES_KEYSIZE_128, AES_BLOCK_SIZE);
+}
 
-// static int rcm_rmace_aes_cbc_ctx_init(struct crypto_tfm *tfm)
-// {
-// 	return rcm_rmace_ctx_init(tfm, ALG_MODE_AES | ALG_MODE_CBC);
-// }
+static int rcm_rmace_aes_ofb_ctx_init(struct crypto_skcipher *tfm)
+{
+	return rcm_rmace_ctx_init(tfm, ALG_MODE_AES | ALG_MODE_OFB,
+		AES_KEYSIZE_128, AES_BLOCK_SIZE);
+}
 
-// static int rcm_rmace_aes_ofb_ctx_init(struct crypto_tfm *tfm)
-// {
-// 	return rcm_rmace_ctx_init(tfm, ALG_MODE_AES | ALG_MODE_OFB);
-// }
+static int rcm_rmace_des_setkey(
+	struct crypto_skcipher *tfm,
+	const u8 *key,
+	unsigned key_size)
+{
+	if (key_size != DES_KEY_SIZE)
+		return -EINVAL;
 
-// static int rcm_rmace_des_setkey(
-// 	struct crypto_ablkcipher *tfm,
-// 	const u8 *key,
-// 	unsigned key_size)
-// {
-// 	if (key_size != DES_KEY_SIZE)
-// 		return -EINVAL;
+	return rcm_rmace_setkey(tfm, key, key_size);
+}
 
-// 	return rcm_rmace_setkey(tfm, key, key_size);
-// }
+static int rcm_rmace_des3_setkey(
+	struct crypto_skcipher *tfm,
+	const u8 *key,
+	unsigned key_size)
+{
+	if (key_size != DES_KEY_SIZE * 3)
+		return -EINVAL;
 
-// static int rcm_rmace_des3_setkey(
-// 	struct crypto_ablkcipher *tfm,
-// 	const u8 *key,
-// 	unsigned key_size)
-// {
-// 	if (key_size != DES_KEY_SIZE * 3)
-// 		return -EINVAL;
+	return rcm_rmace_setkey(tfm, key, key_size);
+}
 
-// 	return rcm_rmace_setkey(tfm, key, key_size);
-// }
+static int rcm_rmace_aes_setkey(
+	struct crypto_skcipher *tfm,
+	const u8 *key,
+	unsigned key_size)
+{
+	if ((key_size != AES_KEYSIZE_128)
+		&& (key_size != AES_KEYSIZE_192)
+		&& (key_size != AES_KEYSIZE_256))
+		return -EINVAL;
 
-// static int rcm_rmace_aes_setkey(
-// 	struct crypto_ablkcipher *tfm,
-// 	const u8 *key,
-// 	unsigned key_size)
-// {
-// 	if ((key_size != AES_KEYSIZE_128)
-// 		&& (key_size != AES_KEYSIZE_192)
-// 		&& (key_size != AES_KEYSIZE_256))
-// 		return -EINVAL;
+	return rcm_rmace_setkey(tfm, key, key_size);
+}
 
-// 	return rcm_rmace_setkey(tfm, key, key_size);
-// }
-
-static struct crypto_alg crypto_algs[] = {
-// 	{
-// 		.cra_name = "ecb(des)",
-// 		.cra_driver_name = "rmace-ecb-des",
-// 		.cra_priority = 200,
-// 		.cra_flags = CRYPTO_ALG_TYPE_ABLKCIPHER | CRYPTO_ALG_ASYNC,
-// 		.cra_blocksize = DES_BLOCK_SIZE,
-// 		.cra_ctxsize = sizeof(struct rcm_rmace_ctx),
-// 		.cra_alignmask = 0x07,
-// 		.cra_type = &crypto_ablkcipher_type,
-// 		.cra_module = THIS_MODULE,
-// 		.cra_init = rcm_rmace_des_ecb_ctx_init,
-// 		.cra_ablkcipher = {
-// 			.min_keysize = DES_KEY_SIZE,
-// 			.max_keysize = DES_KEY_SIZE,
-// 			.setkey	= rcm_rmace_des_setkey,
-// 			.encrypt = rcm_rmace_encrypt,
-// 			.decrypt = rcm_rmace_decrypt
-// 		}
-// 	},
-// 	{
-// 		.cra_name = "cbc(des)",
-// 		.cra_driver_name = "rmace-cbc-des",
-// 		.cra_priority = 200,
-// 		.cra_flags = CRYPTO_ALG_TYPE_ABLKCIPHER | CRYPTO_ALG_ASYNC,
-// 		.cra_blocksize = DES_BLOCK_SIZE,
-// 		.cra_ctxsize = sizeof(struct rcm_rmace_ctx),
-// 		.cra_alignmask = 0x07,
-// 		.cra_type = &crypto_ablkcipher_type,
-// 		.cra_module = THIS_MODULE,
-// 		.cra_init = rcm_rmace_des_cbc_ctx_init,
-// 		.cra_ablkcipher = {
-// 			.min_keysize = DES_KEY_SIZE,
-// 			.max_keysize = DES_KEY_SIZE,
-// 			.ivsize = DES_BLOCK_SIZE,
-// 			.setkey	= rcm_rmace_des_setkey,
-// 			.encrypt = rcm_rmace_encrypt,
-// 			.decrypt = rcm_rmace_decrypt
-// 		}
-// 	},
-// 	{
-// 		.cra_name = "ofb(des)",
-// 		.cra_driver_name = "rmace-ofb-des",
-// 		.cra_priority = 200,
-// 		.cra_flags = CRYPTO_ALG_TYPE_ABLKCIPHER | CRYPTO_ALG_ASYNC,
-// 		.cra_blocksize = DES_BLOCK_SIZE,
-// 		.cra_ctxsize = sizeof(struct rcm_rmace_ctx),
-// 		.cra_alignmask = 0x07,
-// 		.cra_type = &crypto_ablkcipher_type,
-// 		.cra_module = THIS_MODULE,
-// 		.cra_init = rcm_rmace_des_ofb_ctx_init,
-// 		.cra_ablkcipher = {
-// 			.min_keysize = DES_KEY_SIZE,
-// 			.max_keysize = DES_KEY_SIZE,
-// 			.ivsize = DES_BLOCK_SIZE,
-// 			.setkey	= rcm_rmace_des_setkey,
-// 			.encrypt = rcm_rmace_encrypt,
-// 			.decrypt = rcm_rmace_decrypt
-// 		}
-// 	},
-// 	{
-// 		.cra_name = "ecb(des3_ede)",
-// 		.cra_driver_name = "rmace-ecb-des3",
-// 		.cra_priority = 200,
-// 		.cra_flags = CRYPTO_ALG_TYPE_ABLKCIPHER | CRYPTO_ALG_ASYNC,
-// 		.cra_blocksize = DES_BLOCK_SIZE,
-// 		.cra_ctxsize = sizeof(struct rcm_rmace_ctx),
-// 		.cra_alignmask = 0x07,
-// 		.cra_type = &crypto_ablkcipher_type,
-// 		.cra_module = THIS_MODULE,
-// 		.cra_init = rcm_rmace_des3_ecb_ctx_init,
-// 		.cra_ablkcipher = {
-// 			.min_keysize = DES_KEY_SIZE * 3,
-// 			.max_keysize = DES_KEY_SIZE * 3,
-// 			.setkey	= rcm_rmace_des3_setkey,
-// 			.encrypt = rcm_rmace_encrypt,
-// 			.decrypt = rcm_rmace_decrypt
-// 		}
-// 	},
-// 	{
-// 		.cra_name = "cbc(des3_ede)",
-// 		.cra_driver_name = "rmace-cbc-des3",
-// 		.cra_priority = 200,
-// 		.cra_flags = CRYPTO_ALG_TYPE_ABLKCIPHER | CRYPTO_ALG_ASYNC,
-// 		.cra_blocksize = DES_BLOCK_SIZE,
-// 		.cra_ctxsize = sizeof(struct rcm_rmace_ctx),
-// 		.cra_alignmask = 0x07,
-// 		.cra_type = &crypto_ablkcipher_type,
-// 		.cra_module = THIS_MODULE,
-// 		.cra_init = rcm_rmace_des3_cbc_ctx_init,
-// 		.cra_ablkcipher = {
-// 			.min_keysize = DES_KEY_SIZE * 3,
-// 			.max_keysize = DES_KEY_SIZE * 3,
-// 			.ivsize = DES_BLOCK_SIZE,
-// 			.setkey	= rcm_rmace_des3_setkey,
-// 			.encrypt = rcm_rmace_encrypt,
-// 			.decrypt = rcm_rmace_decrypt
-// 		}
-// 	},
-// 	{
-// 		.cra_name = "ofb(des3_ede)",
-// 		.cra_driver_name = "rmace-ofb-des3",
-// 		.cra_priority = 200,
-// 		.cra_flags = CRYPTO_ALG_TYPE_ABLKCIPHER | CRYPTO_ALG_ASYNC,
-// 		.cra_blocksize = DES_BLOCK_SIZE,
-// 		.cra_ctxsize = sizeof(struct rcm_rmace_ctx),
-// 		.cra_alignmask = 0x07,
-// 		.cra_type = &crypto_ablkcipher_type,
-// 		.cra_module = THIS_MODULE,
-// 		.cra_init = rcm_rmace_des3_ofb_ctx_init,
-// 		.cra_ablkcipher = {
-// 			.min_keysize = DES_KEY_SIZE * 3,
-// 			.max_keysize = DES_KEY_SIZE * 3,
-// 			.ivsize = DES_BLOCK_SIZE,
-// 			.setkey	= rcm_rmace_des3_setkey,
-// 			.encrypt = rcm_rmace_encrypt,
-// 			.decrypt = rcm_rmace_decrypt
-// 		}
-// 	},
-// 	{
-// 		.cra_name = "ecb(aes)",
-// 		.cra_driver_name = "rmace-ecb-aes",
-// 		.cra_priority = 200,
-// 		.cra_flags = CRYPTO_ALG_TYPE_ABLKCIPHER | CRYPTO_ALG_ASYNC,
-// 		.cra_blocksize = AES_BLOCK_SIZE,
-// 		.cra_ctxsize = sizeof(struct rcm_rmace_ctx),
-// 		.cra_alignmask = 0x07,
-// 		.cra_type = &crypto_ablkcipher_type,
-// 		.cra_module = THIS_MODULE,
-// 		.cra_init = rcm_rmace_aes_ecb_ctx_init,
-// 		.cra_ablkcipher = {
-// 			.min_keysize = AES_KEYSIZE_128,
-// 			.max_keysize = AES_KEYSIZE_256,
-// 			.setkey	= rcm_rmace_aes_setkey,
-// 			.encrypt = rcm_rmace_encrypt,
-// 			.decrypt = rcm_rmace_decrypt
-// 		}
-// 	},
-// 	{
-// 		.cra_name = "cbc(aes)",
-// 		.cra_driver_name = "rmace-cbc-aes",
-// 		.cra_priority = 200,
-// 		.cra_flags = CRYPTO_ALG_TYPE_ABLKCIPHER | CRYPTO_ALG_ASYNC,
-// 		.cra_blocksize = AES_BLOCK_SIZE,
-// 		.cra_ctxsize = sizeof(struct rcm_rmace_ctx),
-// 		.cra_alignmask = 0x07,
-// 		.cra_type = &crypto_ablkcipher_type,
-// 		.cra_module = THIS_MODULE,
-// 		.cra_init = rcm_rmace_aes_cbc_ctx_init,
-// 		.cra_ablkcipher = {
-// 			.min_keysize = AES_KEYSIZE_128,
-// 			.max_keysize = AES_KEYSIZE_256,
-// 			.ivsize = AES_BLOCK_SIZE,
-// 			.setkey	= rcm_rmace_aes_setkey,
-// 			.encrypt = rcm_rmace_encrypt,
-// 			.decrypt = rcm_rmace_decrypt
-// 		}
-// 	},
-// 	{
-// 		.cra_name = "ofb(aes)",
-// 		.cra_driver_name = "rmace-ofb-aes",
-// 		.cra_priority = 200,
-// 		.cra_flags = CRYPTO_ALG_TYPE_ABLKCIPHER | CRYPTO_ALG_ASYNC,
-// 		.cra_blocksize = AES_BLOCK_SIZE,
-// 		.cra_ctxsize = sizeof(struct rcm_rmace_ctx),
-// 		.cra_alignmask = 0x07,
-// 		.cra_type = &crypto_ablkcipher_type,
-// 		.cra_module = THIS_MODULE,
-// 		.cra_init = rcm_rmace_aes_ofb_ctx_init,
-// 		.cra_ablkcipher = {
-// 			.min_keysize = AES_KEYSIZE_128,
-// 			.max_keysize = AES_KEYSIZE_256,
-// 			.ivsize = AES_BLOCK_SIZE,
-// 			.setkey	= rcm_rmace_aes_setkey,
-// 			.encrypt = rcm_rmace_encrypt,
-// 			.decrypt = rcm_rmace_decrypt
-// 		}
-// 	},
+static struct skcipher_alg crypto_algs[] = {
+	{
+		.base.cra_name = "ecb(des)",
+		.base.cra_driver_name = "rmace-ecb-des",
+		.base.cra_priority = 200,
+		.base.cra_flags = CRYPTO_ALG_ASYNC,
+		.base.cra_blocksize = DES_BLOCK_SIZE,
+		.base.cra_ctxsize = sizeof(struct rcm_rmace_ctx),
+		.base.cra_alignmask = 0x07,
+		.base.cra_module = THIS_MODULE,
+		.init = rcm_rmace_des_ecb_ctx_init,
+		.min_keysize = DES_KEY_SIZE,
+		.max_keysize = DES_KEY_SIZE,
+		.ivsize = 0,
+		.setkey	= rcm_rmace_des_setkey,
+		.encrypt = rcm_rmace_encrypt,
+		.decrypt = rcm_rmace_decrypt
+	},
+	{
+		.base.cra_name = "cbc(des)",
+		.base.cra_driver_name = "rmace-cbc-des",
+		.base.cra_priority = 200,
+		.base.cra_flags = CRYPTO_ALG_ASYNC,
+		.base.cra_blocksize = DES_BLOCK_SIZE,
+		.base.cra_ctxsize = sizeof(struct rcm_rmace_ctx),
+		.base.cra_alignmask = 0x07,
+		.base.cra_module = THIS_MODULE,
+		.init = rcm_rmace_des_cbc_ctx_init,
+		.min_keysize = DES_KEY_SIZE,
+		.max_keysize = DES_KEY_SIZE,
+		.ivsize = DES_BLOCK_SIZE,
+		.setkey	= rcm_rmace_des_setkey,
+		.encrypt = rcm_rmace_encrypt,
+		.decrypt = rcm_rmace_decrypt
+	},
+	{
+		.base.cra_name = "ofb(des)",
+		.base.cra_driver_name = "rmace-ofb-des",
+		.base.cra_priority = 200,
+		.base.cra_flags = CRYPTO_ALG_ASYNC,
+		.base.cra_blocksize = DES_BLOCK_SIZE,
+		.base.cra_ctxsize = sizeof(struct rcm_rmace_ctx),
+		.base.cra_alignmask = 0x07,
+		.base.cra_module = THIS_MODULE,
+		.init = rcm_rmace_des_ofb_ctx_init,
+		.min_keysize = DES_KEY_SIZE,
+		.max_keysize = DES_KEY_SIZE,
+		.ivsize = DES_BLOCK_SIZE,
+		.setkey	= rcm_rmace_des_setkey,
+		.encrypt = rcm_rmace_encrypt,
+		.decrypt = rcm_rmace_decrypt
+	},
+	{
+		.base.cra_name = "ecb(des3_ede)",
+		.base.cra_driver_name = "rmace-ecb-des3",
+		.base.cra_priority = 200,
+		.base.cra_flags = CRYPTO_ALG_ASYNC,
+		.base.cra_blocksize = DES_BLOCK_SIZE,
+		.base.cra_ctxsize = sizeof(struct rcm_rmace_ctx),
+		.base.cra_alignmask = 0x07,
+		.base.cra_module = THIS_MODULE,
+		.init = rcm_rmace_des3_ecb_ctx_init,
+		.min_keysize = DES_KEY_SIZE * 3,
+		.max_keysize = DES_KEY_SIZE * 3,
+		.ivsize = 0,
+		.setkey	= rcm_rmace_des3_setkey,
+		.encrypt = rcm_rmace_encrypt,
+		.decrypt = rcm_rmace_decrypt
+	},
+	{
+		.base.cra_name = "cbc(des3_ede)",
+		.base.cra_driver_name = "rmace-cbc-des3",
+		.base.cra_priority = 200,
+		.base.cra_flags = CRYPTO_ALG_ASYNC,
+		.base.cra_blocksize = DES_BLOCK_SIZE,
+		.base.cra_ctxsize = sizeof(struct rcm_rmace_ctx),
+		.base.cra_alignmask = 0x07,
+		.base.cra_module = THIS_MODULE,
+		.init = rcm_rmace_des3_cbc_ctx_init,
+		.min_keysize = DES_KEY_SIZE * 3,
+		.max_keysize = DES_KEY_SIZE * 3,
+		.ivsize = DES_BLOCK_SIZE,
+		.setkey	= rcm_rmace_des3_setkey,
+		.encrypt = rcm_rmace_encrypt,
+		.decrypt = rcm_rmace_decrypt
+	},
+	{
+		.base.cra_name = "ofb(des3_ede)",
+		.base.cra_driver_name = "rmace-ofb-des3",
+		.base.cra_priority = 200,
+		.base.cra_flags = CRYPTO_ALG_ASYNC,
+		.base.cra_blocksize = DES_BLOCK_SIZE,
+		.base.cra_ctxsize = sizeof(struct rcm_rmace_ctx),
+		.base.cra_alignmask = 0x07,
+		.base.cra_module = THIS_MODULE,
+		.init = rcm_rmace_des3_ofb_ctx_init,
+		.min_keysize = DES_KEY_SIZE * 3,
+		.max_keysize = DES_KEY_SIZE * 3,
+		.ivsize = DES_BLOCK_SIZE,
+		.setkey	= rcm_rmace_des3_setkey,
+		.encrypt = rcm_rmace_encrypt,
+		.decrypt = rcm_rmace_decrypt
+	},
+	{
+		.base.cra_name = "ecb(aes)",
+		.base.cra_driver_name = "rmace-ecb-aes",
+		.base.cra_priority = 200,
+		.base.cra_flags = CRYPTO_ALG_ASYNC,
+		.base.cra_blocksize = AES_BLOCK_SIZE,
+		.base.cra_ctxsize = sizeof(struct rcm_rmace_ctx),
+		.base.cra_alignmask = 0x07,
+		.base.cra_module = THIS_MODULE,
+		.init = rcm_rmace_aes_ecb_ctx_init,
+		.min_keysize = AES_KEYSIZE_128,
+		.max_keysize = AES_KEYSIZE_256,
+		.ivsize = 0,
+		.setkey	= rcm_rmace_aes_setkey,
+		.encrypt = rcm_rmace_encrypt,
+		.decrypt = rcm_rmace_decrypt
+	},
+	{
+		.base.cra_name = "cbc(aes)",
+		.base.cra_driver_name = "rmace-cbc-aes",
+		.base.cra_priority = 200,
+		.base.cra_flags = CRYPTO_ALG_ASYNC,
+		.base.cra_blocksize = AES_BLOCK_SIZE,
+		.base.cra_ctxsize = sizeof(struct rcm_rmace_ctx),
+		.base.cra_alignmask = 0x07,
+		.base.cra_module = THIS_MODULE,
+		.init = rcm_rmace_aes_cbc_ctx_init,
+		.min_keysize = AES_KEYSIZE_128,
+		.max_keysize = AES_KEYSIZE_256,
+		.ivsize = AES_BLOCK_SIZE,
+		.setkey	= rcm_rmace_aes_setkey,
+		.encrypt = rcm_rmace_encrypt,
+		.decrypt = rcm_rmace_decrypt
+	},
+	{
+		.base.cra_name = "ofb(aes)",
+		.base.cra_driver_name = "rmace-ofb-aes",
+		.base.cra_priority = 200,
+		.base.cra_flags = CRYPTO_ALG_ASYNC,
+		.base.cra_blocksize = AES_BLOCK_SIZE,
+		.base.cra_ctxsize = sizeof(struct rcm_rmace_ctx),
+		.base.cra_alignmask = 0x07,
+		.base.cra_module = THIS_MODULE,
+		.init = rcm_rmace_aes_ofb_ctx_init,
+		.min_keysize = AES_KEYSIZE_128,
+		.max_keysize = AES_KEYSIZE_256,
+		.ivsize = AES_BLOCK_SIZE,
+		.setkey	= rcm_rmace_aes_setkey,
+		.encrypt = rcm_rmace_encrypt,
+		.decrypt = rcm_rmace_decrypt
+	},
 };
 
 static void rcm_rmace_cleanup(struct rcm_rmace_dev *rmace_dev)
 {
 	if (rmace_dev->alg_is_registered)
-		crypto_unregister_algs(crypto_algs, ARRAY_SIZE(crypto_algs));
+		crypto_unregister_skciphers(crypto_algs, ARRAY_SIZE(crypto_algs));
 
 	if (rmace_dev->engine != NULL)
 		crypto_engine_exit(rmace_dev->engine);
@@ -964,7 +952,7 @@ static int rcm_rmace_probe_internal(struct rcm_rmace_dev *rmace_dev)
 		return -ENODEV;
 	}
 
-	ret = crypto_register_algs(crypto_algs, ARRAY_SIZE(crypto_algs));
+	ret = crypto_register_skciphers(crypto_algs, ARRAY_SIZE(crypto_algs));
 	if (ret) {
 		dev_err(&rmace_dev->pdev->dev, "could not register algs\n");
 		return -ENODEV;
