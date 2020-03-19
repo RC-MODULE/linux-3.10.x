@@ -21,23 +21,40 @@
         stdout-path = &spiuart;
     };
 
-/*
-    memory {
+    memory@61000000 {
         device_type = "memory";
-*/
         /* (1GiB-16MiB) memory @ 0x01000000 */
-/*
-        reg = <0x01000000 0x3f000000>;
+        reg = <0x61000000 0x1f000000>;
     };
-*/
+
+    memory@81000000 {
+        device_type = "memory";
+        reg = <0x81000000 0x1f000000>;
+    };
+
+    memory@A1000000 {
+        device_type = "memory";
+        reg = <0xA1000000 0x1f000000>;
+    };
+
+    memory@C1000000 {
+        device_type = "memory";
+        reg = <0xC1000000 0x1f000000>;
+    };
+
+    memory@E1000000 {
+        device_type = "memory";
+        reg = <0xE1000000 0x1f000000>;
+    };
+
     cpus {
         #address-cells = <1>;
         #size-cells = <0>;
 
-        cpu@0 {
+        cpu0: cpu@0 {
             device_type = "cpu";
             compatible = "arm,cortex-a5";
-            reg = <0>;
+            reg = <0x400>;
         };
     };
 
@@ -49,14 +66,14 @@
 
         bus-frequency = <10000000>;
 
-        gic0: interrupt-controller@b0000 {
+        gic0: interrupt-controller@600b0000 {
             compatible = "arm,pl390";
             interrupt-controller;
             irq_start = <0>;
             #interrupt-cells = <3>;
             #address-cells = <1>;
-            reg = <0x000b0000 0x1000>,
-                  <0x000b1000 0x1000>;
+            reg = <0x600b0000 0x1000>,
+                  <0x600b1000 0x1000>;
         };
 /*
         L2: cache-controller {
@@ -77,9 +94,9 @@
             #size-cells = <1>;
             ranges = <0 0x0 0xffffffff>;
 
-            timer@000cd000 {
+            timer@600cd000 {
                 compatible = "arm,sp804", "arm,primecell";
-                reg = <0x000cd000 0x1000>;
+                reg = <0x600cd000 0x1000>;
                 interrupts = <0 4 4>, <0 5 4>;
                 interrupt-parent = <&gic0>;
                 interrupt-names = "timer0", "timer1";
@@ -88,7 +105,7 @@
             };
 
             wd@000ce000 {
-                reg = <0x000ce000 0x1000>;
+                reg = <0x600ce000 0x1000>;
                 compatible = "arm,sp805", "arm,primecell";
 /*
                 interrupts = <0 6 4>;
@@ -100,7 +117,7 @@
             ssp@000cf000 {
                 compatible = "arm,pl022", "arm,primecell";
                 bus-id = <0>;
-                reg = <0x000cf000 0x1000>;
+                reg = <0x600cf000 0x1000>;
                 #address-cells = <1>;
                 #size-cells = <0>;
                 interrupt-parent = <&gic0>;
@@ -152,7 +169,7 @@
                 #address-cells = <1>;
                 #size-cells = <1>;
                 compatible = "rcm,greth";
-                reg = <0x000d0000 0x1000>;
+                reg = <0x600d0000 0x1000>;
                 cell-index = <0>;
                 device_type = "network";
                 clocks = <&clk_axi>;
