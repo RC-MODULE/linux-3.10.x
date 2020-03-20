@@ -32,8 +32,20 @@
 		};
 
 		mms {
-			vdu_graber: vdu_graber@0x38015000 {
+			vdu_graber_int0: vdu_graber@0x38015000 { // (capture from fb1)
+				//status = "okay";
+			};
+
+			vdu_graber_ext0: vdu_graber@0x38016000 { // EXT0
+				//status = "okay";
+			};
+
+			vdu_graber_int1: vdu_graber@0x3801b000 { // (capture from fb0)
 				status = "okay";
+			};
+
+			vdu_graber_ext1: vdu_graber@0x3801c000 { // EXT1
+				//status = "okay";
 			};
 		};
 	};

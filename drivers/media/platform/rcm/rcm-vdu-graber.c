@@ -768,9 +768,10 @@ int set_register (struct grb_info *grb_info_ptr)
 		}
 		write_register(1,  1	, base_addr, ADDR_GAM_ENABLE	);
 	}
-	/* do on after!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
+
 	if (colour_conversion(grb_info_ptr) == 0)
 	{
+		dprintk(1, "colour_conversion: 0 \n");
 		write_register(1,  grb_info_ptr->c_conv.coef0_0 , base_addr, ADDR_C_0_0	);
 		write_register(1,  grb_info_ptr->c_conv.coef0_1 , base_addr, ADDR_C_0_1	);
 		write_register(1,  grb_info_ptr->c_conv.coef0_2 , base_addr, ADDR_C_0_2	);
@@ -794,7 +795,7 @@ int set_register (struct grb_info *grb_info_ptr)
 	}
 	else if (colour_conversion(grb_info_ptr) != -1)
 		dprintk(1, "colour_conversion error.") ;
-	*/
+
 	set_mask(base_addr, ADDR_INT_MASK , END_WRITE , ADD);				// Разрешение генерации сигнала прерывания по событию: окончание записи кадра в память
 	//write_register(1, 0x1ffff, base_addr, ADDR_INT_MASK);			// ни хрена не дает...
 	
@@ -1808,7 +1809,7 @@ static int device_probe (struct platform_device *grb_device)
 	/* голова списка */
 	INIT_LIST_HEAD(&grb_info_ptr->buffer_queue);
 	//}	
-	/* выведем знчения 3-х регистров,потом убрать */
+	/* выведем значения 3-х регистров,потом убрать */
 	dprintk( 1, "method ""probe"" completed successfully,%08x=%08x,%08x=%08x,%08x=%08x\n",
 			 ADDR_BASE_POINT, read_register( 1, grb_info_ptr->base_addr_regs_grb, ADDR_BASE_POINT ),	// 0x438
 			 ADDR_DMA_ID, read_register( 1, grb_info_ptr->base_addr_regs_grb, ADDR_DMA_ID ),			// 0x43c

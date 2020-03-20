@@ -77,14 +77,29 @@
 			default_cma_pool: default_cma_pool {
 				compatible = "shared-dma-pool";
 				reusable;
-				alloc-ranges = <0x0 0x00000000 0x0 0x30000000>; // shall be in DMA zone
+				alloc-ranges = <0x0 0x00000000 0x0 0x2bc00000>; // shall be in DMA zone
 				size = <0x0 0x4000000>;
 				alignment = <0x0 0x1000000>;
 				linux,cma-default;
 			};
 
-			grab_buffer: grab_buffer@0x2f000000 {
-				reg = <0x0 0x32000000 0x0 0x01C00000>;
+			grab_buffer0: grab_buffer@0x2bc00000 {
+				reg = <0x0 0x2bc00000 0x0 0x02000000>;
+				no-map;
+			};
+
+			grab_buffer1: grab_buffer@0x2dc00000 {
+				reg = <0x0 0x2dc00000 0x0 0x02000000>;
+				no-map;
+			};
+
+			grab_buffer2: grab_buffer@0x2fc00000 {
+				reg = <0x0 0x2fc00000 0x0 0x02000000>;
+				no-map;
+			};
+
+			grab_buffer3: grab_buffer@0x31C00000 {
+				reg = <0x0 0x31C00000 0x0 0x02000000>;
 				no-map;
 			};
 
@@ -1028,14 +1043,48 @@
 				interrupts = <124 2>; // active high level-sensitive
 			};
 
-		vdu_graber: vdu_graber@0x38015000 {
+		vdu_graber_int0: vdu_graber@0x38015000 {
+				status = "disabled";
 				compatible = "rcm,vdu-graber";
-				reg = <0x38015000 0x1000>;					// INT0-15,EXT0-16,INT1-1b,EXT1-1c
+				reg = <0x38015000 0x1000>;
 				interrupt-parent = <&MPIC>;
-				interrupts = <118 2>;						// INT0-18,EXT0-19,INT1-21,EXT1-22
+				interrupts = <118 2>;
 				#address-cells = <1>;
 				#size-cells = <1>;
-				memory-region = <&grab_buffer>;	
+				memory-region = <&grab_buffer0>;	
+			};
+
+		vdu_graber_ext0: vdu_graber@0x38016000 {
+				status = "disabled";
+				compatible = "rcm,vdu-graber";
+				reg = <0x38016000 0x1000>;
+				interrupt-parent = <&MPIC>;
+				interrupts = <119 2>;
+				#address-cells = <1>;
+				#size-cells = <1>;
+				memory-region = <&grab_buffer1>;	
+			};
+	
+		vdu_graber_int1: vdu_graber@0x3801b000 {
+				status = "disabled";
+				compatible = "rcm,vdu-graber";
+				reg = <0x3801b000 0x1000>;
+				interrupt-parent = <&MPIC>;
+				interrupts = <121 2>;
+				#address-cells = <1>;
+				#size-cells = <1>;
+				memory-region = <&grab_buffer2>;	
+			};
+
+		vdu_graber_ext1: vdu_graber@0x3801c000 {
+				status = "disabled";
+				compatible = "rcm,vdu-graber";
+				reg = <0x3801c000 0x1000>;
+				interrupt-parent = <&MPIC>;
+				interrupts = <122 2>;
+				#address-cells = <1>;
+				#size-cells = <1>;
+				memory-region = <&grab_buffer3>;	
 			};
 		};
 
