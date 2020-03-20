@@ -103,8 +103,8 @@ struct dma_desc {
 } __attribute__((packed, aligned(8)));
 
 struct dma_buffers {
-	u8 src_buffer[PAGE_SIZE];
-	u8 dst_buffer[PAGE_SIZE];
+	u8 src_buffer[PAGE_SIZE * 4];
+	u8 dst_buffer[PAGE_SIZE * 4];
 	struct dma_desc src_descriptors[3]; // config, data, null
 	struct dma_desc dst_descriptors[3]; // data, config, null
 	u64 control_block[1 /* header */ + MAX_KEY_SIZE_8 + MAX_IV_SIZE_8];
@@ -293,7 +293,7 @@ static void src_fill(struct rcm_rmace_dev *rmace_dev, bool config)
 	// fill the src buffer
 	while ((free_bytes != 0) && (rmace_dev->src_length != 0)) {
 		unsigned page_size = min(free_bytes,
-			rmace_dev->src_length - rmace_dev->src_offset);
+			rmace_dev->src_page->length - rmace_dev->src_offset);
 		sg_pcopy_to_buffer(rmace_dev->src_page, 1, buffer, page_size,
 			rmace_dev->src_offset);
 		free_bytes -= page_size;
@@ -670,7 +670,6 @@ static struct skcipher_alg crypto_algs[] = {
 		.base.cra_flags = CRYPTO_ALG_ASYNC,
 		.base.cra_blocksize = DES_BLOCK_SIZE,
 		.base.cra_ctxsize = sizeof(struct rcm_rmace_ctx),
-		.base.cra_alignmask = 0x07,
 		.base.cra_module = THIS_MODULE,
 		.init = rcm_rmace_des_ecb_ctx_init,
 		.min_keysize = DES_KEY_SIZE,
@@ -687,7 +686,6 @@ static struct skcipher_alg crypto_algs[] = {
 		.base.cra_flags = CRYPTO_ALG_ASYNC,
 		.base.cra_blocksize = DES_BLOCK_SIZE,
 		.base.cra_ctxsize = sizeof(struct rcm_rmace_ctx),
-		.base.cra_alignmask = 0x07,
 		.base.cra_module = THIS_MODULE,
 		.init = rcm_rmace_des_cbc_ctx_init,
 		.min_keysize = DES_KEY_SIZE,
@@ -704,7 +702,6 @@ static struct skcipher_alg crypto_algs[] = {
 		.base.cra_flags = CRYPTO_ALG_ASYNC,
 		.base.cra_blocksize = DES_BLOCK_SIZE,
 		.base.cra_ctxsize = sizeof(struct rcm_rmace_ctx),
-		.base.cra_alignmask = 0x07,
 		.base.cra_module = THIS_MODULE,
 		.init = rcm_rmace_des_ofb_ctx_init,
 		.min_keysize = DES_KEY_SIZE,
@@ -721,7 +718,6 @@ static struct skcipher_alg crypto_algs[] = {
 		.base.cra_flags = CRYPTO_ALG_ASYNC,
 		.base.cra_blocksize = DES_BLOCK_SIZE,
 		.base.cra_ctxsize = sizeof(struct rcm_rmace_ctx),
-		.base.cra_alignmask = 0x07,
 		.base.cra_module = THIS_MODULE,
 		.init = rcm_rmace_des3_ecb_ctx_init,
 		.min_keysize = DES_KEY_SIZE * 3,
@@ -738,7 +734,6 @@ static struct skcipher_alg crypto_algs[] = {
 		.base.cra_flags = CRYPTO_ALG_ASYNC,
 		.base.cra_blocksize = DES_BLOCK_SIZE,
 		.base.cra_ctxsize = sizeof(struct rcm_rmace_ctx),
-		.base.cra_alignmask = 0x07,
 		.base.cra_module = THIS_MODULE,
 		.init = rcm_rmace_des3_cbc_ctx_init,
 		.min_keysize = DES_KEY_SIZE * 3,
@@ -755,7 +750,6 @@ static struct skcipher_alg crypto_algs[] = {
 		.base.cra_flags = CRYPTO_ALG_ASYNC,
 		.base.cra_blocksize = DES_BLOCK_SIZE,
 		.base.cra_ctxsize = sizeof(struct rcm_rmace_ctx),
-		.base.cra_alignmask = 0x07,
 		.base.cra_module = THIS_MODULE,
 		.init = rcm_rmace_des3_ofb_ctx_init,
 		.min_keysize = DES_KEY_SIZE * 3,
@@ -772,7 +766,6 @@ static struct skcipher_alg crypto_algs[] = {
 		.base.cra_flags = CRYPTO_ALG_ASYNC,
 		.base.cra_blocksize = AES_BLOCK_SIZE,
 		.base.cra_ctxsize = sizeof(struct rcm_rmace_ctx),
-		.base.cra_alignmask = 0x07,
 		.base.cra_module = THIS_MODULE,
 		.init = rcm_rmace_aes_ecb_ctx_init,
 		.min_keysize = AES_KEYSIZE_128,
@@ -789,7 +782,6 @@ static struct skcipher_alg crypto_algs[] = {
 		.base.cra_flags = CRYPTO_ALG_ASYNC,
 		.base.cra_blocksize = AES_BLOCK_SIZE,
 		.base.cra_ctxsize = sizeof(struct rcm_rmace_ctx),
-		.base.cra_alignmask = 0x07,
 		.base.cra_module = THIS_MODULE,
 		.init = rcm_rmace_aes_cbc_ctx_init,
 		.min_keysize = AES_KEYSIZE_128,
@@ -806,7 +798,6 @@ static struct skcipher_alg crypto_algs[] = {
 		.base.cra_flags = CRYPTO_ALG_ASYNC,
 		.base.cra_blocksize = AES_BLOCK_SIZE,
 		.base.cra_ctxsize = sizeof(struct rcm_rmace_ctx),
-		.base.cra_alignmask = 0x07,
 		.base.cra_module = THIS_MODULE,
 		.init = rcm_rmace_aes_ofb_ctx_init,
 		.min_keysize = AES_KEYSIZE_128,
