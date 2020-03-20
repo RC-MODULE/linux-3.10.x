@@ -435,7 +435,7 @@ greth_start_xmit(struct sk_buff *skb, struct net_device *dev)
 	bdp = greth->tx_bd_base + greth->tx_next;
 	dma_addr = greth_read_bd(&bdp->addr);
 	memcpy((unsigned char *) phys_to_virt(dma_to_phys(greth->dev, dma_addr)), skb->data, skb->len);
-	dma_sync_single_for_device(greth->dev, dma_to_phys(greth->dev, dma_addr), skb->len, DMA_TO_DEVICE);
+	dma_sync_single_for_device(greth->dev, dma_addr, skb->len, DMA_TO_DEVICE);
 	status = GRETH_BD_EN | GRETH_BD_IE | (skb->len & GRETH_BD_LEN);
 	greth->tx_bufs_length[greth->tx_next] = skb->len & GRETH_BD_LEN;
 
@@ -813,7 +813,7 @@ static int greth_rx(struct net_device *dev, int limit)
 				skb_reserve(skb, NET_IP_ALIGN);
 
 				dma_sync_single_for_cpu(greth->dev,
-							dma_to_phys(greth->dev, dma_addr),
+							dma_addr,
 							pkt_len,
 							DMA_FROM_DEVICE);
 
@@ -838,7 +838,7 @@ static int greth_rx(struct net_device *dev, int limit)
 		wmb();
 		greth_write_bd(&bdp->stat, status);
 
-		dma_sync_single_for_device(greth->dev, dma_to_phys(greth->dev, dma_addr), MAX_FRAME_SIZE, DMA_FROM_DEVICE);
+		dma_sync_single_for_device(greth->dev, dma_addr, MAX_FRAME_SIZE, DMA_FROM_DEVICE);
 
 		spin_lock_irqsave(&greth->devlock, flags); /* save from XMIT */
 		greth_enable_rx(greth);

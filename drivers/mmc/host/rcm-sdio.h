@@ -115,7 +115,10 @@
 #define RMSDIO_IRQ_CH1_DONE   (1<<1)
 #define RMSDIO_IRQ_CH0_DONE   (1<<0)
 
-
+#define RMSDIO_AXI_BURST_MASK   0xf
+#define RMSDIO_AXI_BURST_SHIFT  4
+#define RMSDIO_AXI_SIZE_MASK    0x7
+#define RMSDIO_AXI_SIZE_SHIFT   12
 
 #define RMSDIO_DMA_CH0      0x28
 #define RMSDIO_DMA_CH1      0x38
