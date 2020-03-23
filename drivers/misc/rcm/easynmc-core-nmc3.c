@@ -209,9 +209,18 @@ static int easynmc_probe (struct platform_device *pdev)
 
 	printk(DRVNAME ": nmi_set_reg: %x %x", core->nmi_set_reg.offset, core->nmi_set_reg.bit);		
 
-	GRAB_IRQ_RESOURCE(hp, core->c.irqs[NMC_IRQ_HP]);
-	GRAB_IRQ_RESOURCE(lp, core->c.irqs[NMC_IRQ_LP]);
-	
+	core->c.do_irq_polling = easynmc_irq_polling;
+
+	if (of_find_property(pdev->dev.of_node, "irq_polling", NULL))
+	{
+		core->c.do_irq_polling = 1;
+	}
+
+	if (!core->c.do_irq_polling) {
+		GRAB_IRQ_RESOURCE(hp, core->c.irqs[NMC_IRQ_HP]);
+		GRAB_IRQ_RESOURCE(lp, core->c.irqs[NMC_IRQ_LP]);
+	}
+
 	res = platform_get_resource_byname(pdev, IORESOURCE_MEM, "imem");	
 	core->c.imem_size = res->end - res->start + 1;
 	core->c.imem_phys = res->start;
@@ -237,21 +246,16 @@ static int easynmc_probe (struct platform_device *pdev)
 	if (ret!=0) 
 		goto errfreemem;
 
-	core->c.do_irq_polling = easynmc_irq_polling;
-
-	if (of_find_property(pdev->dev.of_node, "irq_polling", NULL))
-	{
-		core->c.do_irq_polling = 1;
-	}
-
 	printk(DRVNAME ": imem at phys 0x%lx virt 0x%lx size 0x%lx bytes\n", 
 	       (unsigned long) core->c.imem_phys,
 	       (unsigned long) core->c.imem_virt,
 	       (unsigned long) core->c.imem_size);
-	printk(DRVNAME ": HP IRQ %d LP IRQ %d\n", 
-	       core->c.irqs[NMC_IRQ_HP],
-	       core->c.irqs[NMC_IRQ_LP]
-		);	
+	if (core->c.do_irq_polling)
+		printk(DRVNAME ": IRQ-Polling\n");
+	else
+		printk(DRVNAME ": HP IRQ %d LP IRQ %d\n", 
+		       core->c.irqs[NMC_IRQ_HP],
+		       core->c.irqs[NMC_IRQ_LP]);
 
 	core->c.dev = &pdev->dev;
 	dev_set_drvdata(&pdev->dev, core);

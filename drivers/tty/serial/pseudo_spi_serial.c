@@ -275,9 +275,13 @@ static void pseudo_spi_serial_io(unsigned long context)
 	int retval;
 	int i;
 	unsigned tx_count;
+	unsigned long flags;
+
+	spin_lock_irqsave(&data->lock, flags);
 
 	if (data->spi_msg.context)
 	{
+		spin_unlock_irqrestore(&data->lock, flags);
 		return;
 	}
 
@@ -347,6 +351,8 @@ static void pseudo_spi_serial_io(unsigned long context)
 	{
 		kfifo_reset(&data->tx_fifo);
 	}
+
+	spin_unlock_irqrestore(&data->lock, flags);
 }
 
 static const struct tty_port_operations tty_port_ops = {

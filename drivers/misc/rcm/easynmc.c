@@ -994,6 +994,7 @@ static ssize_t proc_read(struct file *filp, char __user *buffer, size_t buffer_l
 	int copied=0; 
 	struct nmc_core *core;
 	char* buff;
+	int len;
 
 	/* 
 	 * We give all of our information in one go, so if the
@@ -1018,10 +1019,11 @@ static ssize_t proc_read(struct file *filp, char __user *buffer, size_t buffer_l
 	spin_lock(&rlock);
 	list_for_each(iter, &core_list) {
 		core = list_entry(iter, struct nmc_core, linkage);
-		copied += snprintf(&buff[copied], buffer_length, "/dev/nmc%d\n", core->id); 
-		buffer_length -= copied; 
-		*offset += copied;
-	}	
+		len = snprintf(&buff[copied], buffer_length, "/dev/nmc%d\n", core->id); 
+		copied += len;
+		buffer_length -= len; 
+		*offset += len;
+	}
 	spin_unlock(&rlock);
 
 	if (copied) {
