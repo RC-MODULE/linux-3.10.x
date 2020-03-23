@@ -783,42 +783,42 @@ static void rmsdio_request(struct mmc_host * mmc, struct mmc_request * mrq)
 		int dir = (data->flags & MMC_DATA_WRITE) ? DMA_TO_DEVICE : DMA_FROM_DEVICE;
 		/* Prepare dma stuff */
 		host->sg_frags = dma_map_sg(mmc_dev(host->mmc), data->sg, data->sg_len, dir);
-		host->dma_target = sg_dma_address(data->sg);
-		host->cpu_target = sg_virt(data->sg);
-		/* Do all the register voodoo */
-		ctrlreg |= RMSDIO_CTRL_HAVEDATA;
-		rmsdio_setup_data(host, data);
+		if (host->sg_frags == 0) {
+			dev_err(host->dev, "cannot map sg list\n");
+			wret = -EFAULT;
+		} else {
+			host->dma_target = sg_dma_address(data->sg);
+			host->cpu_target = sg_virt(data->sg);
+			/* Do all the register voodoo */
+			ctrlreg |= RMSDIO_CTRL_HAVEDATA;
+			rmsdio_setup_data(host, data);
 
-		if ( data->stop )
-			ctrlreg |= RMSDIO_CTRL_AUTOCMD12;
+			if ( data->stop )
+				ctrlreg |= RMSDIO_CTRL_AUTOCMD12;
 
-		dev_dbg(host->dev, "i/o - we're planning to: %s %s\n", 
-		                   (data->flags & MMC_DATA_WRITE) ? "write" : "read",
-		                   (data->stop) ? "autocmd12" : "");
-		
-		eereg |= RMSDIO_ERR_DATEB | RMSDIO_ERR_DATCRC;
-		rmsdio_write(RMSDIO_ERR_ENABLE, eereg);
-		
-		/* Get stuff ready for DMA */		
-		host->sg_frags = dma_map_sg(mmc_dev(host->mmc), data->sg, data->sg_len, dir);
-		host->dma_target = sg_dma_address(data->sg);
-		host->cpu_target = sg_virt(data->sg);
-		
-		wret = (data->flags & MMC_DATA_WRITE ? rmsdio_write_flow : rmsdio_read_flow)(mmc, mrq, ctrlreg);
+			dev_dbg(host->dev, "i/o - we're planning to: %s %s\n",
+				(data->flags & MMC_DATA_WRITE) ? "write" : "read",
+				(data->stop) ? "autocmd12" : "");
 
-		dma_unmap_sg(mmc_dev(host->mmc), data->sg, host->sg_frags, dir);
+			eereg |= RMSDIO_ERR_DATEB | RMSDIO_ERR_DATCRC;
+			rmsdio_write(RMSDIO_ERR_ENABLE, eereg);
+
+			wret = (data->flags & MMC_DATA_WRITE ? rmsdio_write_flow : rmsdio_read_flow)(mmc, mrq, ctrlreg);
+
+			dma_unmap_sg(mmc_dev(host->mmc), data->sg, data->sg_len, dir);
+		}
 	} else {
 		/* We only reach this place when no xfer data issued */
-		rmsdio_write(RMSDIO_ERR_ENABLE, eereg);	
+		rmsdio_write(RMSDIO_ERR_ENABLE, eereg);
 		intr |= RMSDIO_IRQ_CMDDONE | RMSDIO_IRQ_CARDERROR;
 		rmsdio_write(RMSDIO_IRQ_MASKS, intr);
 		rmsdio_write(RMSDIO_CTRL, ctrlreg);
 
 		/* cmd done or card error. either of those indicate we're done here */ 
-		rmsdio_wait_irq(wret, host->queue, 
-		                (host->irqstat & (RMSDIO_IRQ_CMDDONE | RMSDIO_IRQ_CARDERROR)),
-						host->sdio_timeout	);
-	
+		rmsdio_wait_irq(wret, host->queue,
+			(host->irqstat & (RMSDIO_IRQ_CMDDONE | RMSDIO_IRQ_CARDERROR)),
+			host->sdio_timeout);
+
 		rmsdio_clean_isr(host, 0);
 	}
 	
