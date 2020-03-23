@@ -116,10 +116,30 @@
 	#define SERIAL				0
 	#define PARALLEL			1
 
+	#define VIDIOC_SET_GAMMA	_IOWR('v', BASE_VIDIOC_PRIVATE + 0, struct grb_gamma)
+	#define VIDIOC_G_PARAMS		_IOWR('v', BASE_VIDIOC_PRIVATE + 1, struct grb_parameters)
+	#define VIDIOC_S_PARAMS		_IOWR('v', BASE_VIDIOC_PRIVATE + 2, struct grb_parameters)
+	#define VIDIOC_AUTO_DETECT  _IOWR('v', BASE_VIDIOC_PRIVATE + 3, struct grb_parameters)
+
+	#define C_WHITE   "\033[1;29;40m"
+	#define C_RED	  "\033[1;31;40m"
+	#define C_GREEN   "\033[1;32;40m"
+	#define C_YELLOW  "\033[1;33;40m"
+	#define C_BLUE	  "\033[1;34;40m"
+	#define C_CRIMSON "\033[1;35;40m"			// малиновый
+	#define C_CYAN	  "\033[1;36;40m"			// голубой
+	#define C_GREY	  "\033[1:37:40m"
+	#define C_CLEAR   "\033[1;0m"
+
+	#define GRB_DEVID 0xec176627
+
+	#define PHYS_TO_DMA(A) ((A)|0x40000000)
+	#define U16x2_TO_U32(H,L) (((H)<<16)|(L))
+	#define U8x4_TO_U32(U0,U1,U2,U3) (((u32)U0<<0)+((u32)U1<<8)+((u32)U2<<16)+((u32)U3<<24))
+
 	typedef unsigned int u32;
 
-	struct grb_parameters
-	{
+	struct grb_parameters {
 		u32 sync;
 		u32 std_in;
 		u32 v_if;
@@ -128,27 +148,11 @@
 		u32 alpha;
 	};
 
-	struct grb_gamma
-	{
+	struct grb_gamma {
 		u32 active_gamma;
 		int table_Y_G[256];
 		int table_C_R[256];
 		int table_C_B[256];
 	};
-
-	#define VIDIOC_SET_GAMMA	_IOWR('v', BASE_VIDIOC_PRIVATE + 0, struct grb_gamma)
-	#define VIDIOC_G_PARAMS		_IOWR('v', BASE_VIDIOC_PRIVATE + 1, struct grb_parameters)
-	#define VIDIOC_S_PARAMS		_IOWR('v', BASE_VIDIOC_PRIVATE + 2, struct grb_parameters)
-	#define VIDIOC_AUTO_DETECT  _IOWR('v', BASE_VIDIOC_PRIVATE + 3, struct grb_parameters)
-
-#define C_WHITE   "\033[1;29;40m"
-#define C_RED	  "\033[1;31;40m"
-#define C_GREEN   "\033[1;32;40m"
-#define C_YELLOW  "\033[1;33;40m"
-#define C_BLUE	  "\033[1;34;40m"
-#define C_CRIMSON "\033[1;35;40m"			// малиновый
-#define C_CYAN	  "\033[1;36;40m"			// голубой
-#define C_GREY	  "\033[1:37:40m"
-#define C_CLEAR   "\033[1;0m"
 
 #endif
