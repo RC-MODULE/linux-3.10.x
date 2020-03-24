@@ -116,10 +116,11 @@
 	#define SERIAL				0
 	#define PARALLEL			1
 
-	#define VIDIOC_SET_GAMMA	_IOWR('v', BASE_VIDIOC_PRIVATE + 0, struct grb_gamma)
-	#define VIDIOC_G_PARAMS		_IOWR('v', BASE_VIDIOC_PRIVATE + 1, struct grb_parameters)
-	#define VIDIOC_S_PARAMS		_IOWR('v', BASE_VIDIOC_PRIVATE + 2, struct grb_parameters)
-	#define VIDIOC_AUTO_DETECT  _IOWR('v', BASE_VIDIOC_PRIVATE + 3, struct grb_parameters)
+	#define VIDIOC_SET_GAMMA		_IOWR('v', BASE_VIDIOC_PRIVATE + 0, struct grb_gamma)
+	#define VIDIOC_G_PARAMS			_IOWR('v', BASE_VIDIOC_PRIVATE + 1, struct grb_parameters)
+	#define VIDIOC_S_PARAMS			_IOWR('v', BASE_VIDIOC_PRIVATE + 2, struct grb_parameters)
+	#define VIDIOC_AUTO_DETECT		_IOWR('v', BASE_VIDIOC_PRIVATE + 3, struct grb_parameters)
+	#define VIDIOC_SET_COLOR_CONV	_IOWR('v', BASE_VIDIOC_PRIVATE + 4, struct grb_gamma)
 
 	#define C_WHITE   "\033[1;29;40m"
 	#define C_RED	  "\033[1;31;40m"
@@ -131,13 +132,13 @@
 	#define C_GREY	  "\033[1:37:40m"
 	#define C_CLEAR   "\033[1;0m"
 
+	#define DEVICE_NAME "grb_v2"
+	#define DRIVER_NAME "grb_driver"
 	#define GRB_DEVID 0xec176627
 
 	#define PHYS_TO_DMA(A) ((A)|0x40000000)
 	#define U16x2_TO_U32(H,L) (((H)<<16)|(L))
 	#define U8x4_TO_U32(U0,U1,U2,U3) (((u32)U0<<0)+((u32)U1<<8)+((u32)U2<<16)+((u32)U3<<24))
-
-	typedef unsigned int u32;
 
 	struct grb_parameters {
 		u32 sync;
@@ -148,11 +149,37 @@
 		u32 alpha;
 	};
 
+	struct input_format {
+		u32 color;
+		u32 color_std;
+		u32	format_din;
+	};
+
+	struct output_format {
+		u32 color;
+		u32 color_std;
+		u32 format_dout;
+		u32 y_hor_size, y_ver_size, y_full_size;
+		u32 c_hor_size, c_ver_size, c_full_size;
+	};
+
 	struct grb_gamma {
 		u32 active_gamma;
 		int table_Y_G[256];
 		int table_C_R[256];
 		int table_C_B[256];
 	};
+
+	struct coef_conv {
+		u32	coef[3][4];
+		u32	range[3];
+	};
+
+	static const struct coef_conv YCBCR_TO_RGB_HD;
+	static const struct coef_conv YCBCR_TO_RGB_SD;
+	static const struct coef_conv RGB_TO_YCBCR_HD;
+	static const struct coef_conv RGB_TO_YCBCR_SD;
+	static const struct coef_conv YCBCR_HD_TO_SD;
+	static const struct coef_conv YCBCR_SD_TO_HD;
 
 #endif
