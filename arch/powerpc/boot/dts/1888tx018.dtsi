@@ -99,7 +99,7 @@
 			};
 
 			grab_buffer3: grab_buffer@0x31C00000 {
-				reg = <0x0 0x31C00000 0x0 0x02000000>;
+				reg = <0x0 0x31c00000 0x0 0x02000000>;
 				no-map;
 			};
 
