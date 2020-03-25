@@ -10,8 +10,10 @@ Required properties:
 	interrupt source. The value must be 1.
 - compatible: Should contain "mbvl,gpex40-pcie"
 - reg: Should contain PCIe registers location and length
+	Mandatory:
 	"config_axi_slave": PCIe controller registers
 	"csr_axi_slave"	  : Bridge config registers
+	Optional:
 	"gpio_slave"	  : GPIO registers to control slot power
 	"apb_csr"	  : MSI registers
 
@@ -26,9 +28,6 @@ Required properties:
 - interrupt-controller: identifies the node as an interrupt controller
 - #interrupt-cells: specifies the number of cells needed to encode an
 	interrupt source. The value must be 1.
-- interrupt-parent : phandle to the interrupt controller that
-		it is attached to, it should be set to gic to point to
-		ARM's Generic Interrupt Controller node in system DT.
 - interrupts: The interrupt line of the PCIe controller
 		last cell of this field is set to 4 to
 		denote it as IRQ_TYPE_LEVEL_HIGH type interrupt.

@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: GPL-2.0-only
 /*
  *  Common functions for kernel modules using Dell SMBIOS
  *
@@ -7,10 +8,6 @@
  *
  *  Based on documentation in the libsmbios package:
  *  Copyright (C) 2005-2014 Dell Inc.
- *
- *  This program is free software; you can redistribute it and/or modify
- *  it under the terms of the GNU General Public License version 2 as
- *  published by the Free Software Foundation.
  */
 #define pr_fmt(fmt) KBUILD_MODNAME ": " fmt
 
@@ -212,6 +209,12 @@ int dell_smbios_call_filter(struct device *d,
 	if ((buffer->cmd_class == CLASS_TOKEN_READ ||
 	     buffer->cmd_class == CLASS_TOKEN_WRITE) &&
 	     buffer->cmd_select < 3) {
+		/* tokens enabled ? */
+		if (!da_tokens) {
+			dev_dbg(d, "no token support on this system\n");
+			return -EINVAL;
+		}
+
 		/* find the matching token ID */
 		for (i = 0; i < da_num_tokens; i++) {
 			if (da_tokens[i].location != buffer->input[0])
@@ -314,6 +317,9 @@ EXPORT_SYMBOL_GPL(dell_smbios_call);
 struct calling_interface_token *dell_smbios_find_token(int tokenid)
 {
 	int i;
+
+	if (!da_tokens)
+		return NULL;
 
 	for (i = 0; i < da_num_tokens; i++) {
 		if (da_tokens[i].tokenID == tokenid)
@@ -565,11 +571,6 @@ static int __init dell_smbios_init(void)
 
 	dmi_walk(find_tokens, NULL);
 
-	if (!da_tokens)  {
-		pr_info("Unable to find dmi tokens\n");
-		return -ENODEV;
-	}
-
 	ret = platform_driver_register(&platform_driver);
 	if (ret)
 		goto fail_platform_driver;
@@ -583,13 +584,6 @@ static int __init dell_smbios_init(void)
 	if (ret)
 		goto fail_platform_device_add;
 
-	/* duplicate tokens will cause problems building sysfs files */
-	zero_duplicates(&platform_device->dev);
-
-	ret = build_tokens_sysfs(platform_device);
-	if (ret)
-		goto fail_create_group;
-
 	/* register backends */
 	wmi = init_dell_smbios_wmi();
 	if (wmi)
@@ -600,7 +594,16 @@ static int __init dell_smbios_init(void)
 	if (wmi && smm) {
 		pr_err("No SMBIOS backends available (wmi: %d, smm: %d)\n",
 			wmi, smm);
-		goto fail_sysfs;
+		goto fail_create_group;
+	}
+
+	if (da_tokens)  {
+		/* duplicate tokens will cause problems building sysfs files */
+		zero_duplicates(&platform_device->dev);
+
+		ret = build_tokens_sysfs(platform_device);
+		if (ret)
+			goto fail_sysfs;
 	}
 
 	return 0;
@@ -628,7 +631,8 @@ static void __exit dell_smbios_exit(void)
 	exit_dell_smbios_smm();
 	mutex_lock(&smbios_mutex);
 	if (platform_device) {
-		free_group(platform_device);
+		if (da_tokens)
+			free_group(platform_device);
 		platform_device_unregister(platform_device);
 		platform_driver_unregister(&platform_driver);
 	}

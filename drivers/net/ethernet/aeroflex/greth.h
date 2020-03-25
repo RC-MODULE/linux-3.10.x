@@ -16,6 +16,7 @@
 #define GRETH_CTRL_PSTATIEN   0x400
 #define GRETH_CTRL_MCEN       0x800
 #define GRETH_CTRL_DISDUPLEX  0x1000
+#define GRETH_CTRL_ED         0x4000
 #define GRETH_STATUS_PHYSTAT  0x100
 
 #define GRETH_BD_EN 0x800
@@ -112,7 +113,6 @@ struct greth_private {
 	u16 rx_cur;
 
 	struct greth_regs *regs;	/* Address of controller registers. */
-	struct regmap *control;		/* regmap for control register */
 	struct greth_bd *rx_bd_base;	/* Address of Rx BDs. */
 	struct greth_bd *tx_bd_base;	/* Address of Tx BDs. */
 	dma_addr_t rx_bd_base_phys;
@@ -137,9 +137,6 @@ struct greth_private {
 	u8 gbit_mac;
 	u8 mdio_int_en;
 	u8 edcl;
-
-	bool ext_mem_mux_lock;
-	bool mii_mux_lock;
 };
 
 #endif

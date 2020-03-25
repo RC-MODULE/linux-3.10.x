@@ -234,7 +234,7 @@ __acquires(musb->lock)
 			case USB_RECIP_INTERFACE:
 				break;
 			case USB_RECIP_ENDPOINT:{
-				const u8		epnum = reqidx & 0x0f;
+				const u8			epnum = reqidx & 0x0f;
 				struct musb_ep		*musb_ep;
 				struct musb_hw_ep	*ep;
 				struct musb_request	*request;
@@ -243,7 +243,7 @@ __acquires(musb->lock)
 				u16			csr;
 
 				if (epnum == 0 || epnum >= MUSB_C_NUM_EPS ||
-				    reqval != USB_ENDPOINT_HALT)
+					reqval != USB_ENDPOINT_HALT)
 					break;
 
 				ep = musb->endpoints + epnum;
@@ -406,7 +406,7 @@ stall:
 				u16			csr;
 
 				if (epnum == 0 || epnum >= MUSB_C_NUM_EPS ||
-				    reqval != USB_ENDPOINT_HALT)
+					reqval != USB_ENDPOINT_HALT)
 					break;
 
 				ep = musb->endpoints + epnum;

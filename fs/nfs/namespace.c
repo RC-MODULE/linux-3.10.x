@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: GPL-2.0-only
 /*
  * linux/fs/nfs/namespace.c
  *
@@ -156,6 +157,9 @@ struct vfsmount *nfs_d_automount(struct path *path)
 	if (IS_ERR(mnt))
 		goto out;
 
+	if (nfs_mountpoint_expiry_timeout < 0)
+		goto out;
+
 	mntget(mnt); /* prevent immediate expiration */
 	mnt_set_expiry(mnt, &nfs_automount_list);
 	schedule_delayed_work(&nfs_automount_task, nfs_mountpoint_expiry_timeout);
@@ -221,10 +225,10 @@ static struct vfsmount *nfs_do_clone_mount(struct nfs_server *server,
 
 /**
  * nfs_do_submount - set up mountpoint when crossing a filesystem boundary
- * @dentry - parent directory
- * @fh - filehandle for new root dentry
- * @fattr - attributes for new root inode
- * @authflavor - security flavor to use when performing the mount
+ * @dentry: parent directory
+ * @fh: filehandle for new root dentry
+ * @fattr: attributes for new root inode
+ * @authflavor: security flavor to use when performing the mount
  *
  */
 struct vfsmount *nfs_do_submount(struct dentry *dentry, struct nfs_fh *fh,

@@ -236,7 +236,7 @@ static int cs4384_digital_mute(struct snd_soc_dai *dai, int mute)
 {
 	struct snd_soc_component *component = dai->component;
 	struct cs4384_private *priv = snd_soc_component_get_drvdata(component);
-	int val, mask;
+	int val, mask =0;
 	int ret = regmap_read(priv->regmap, CS4384_MUTE_CONTROL, &val);
 	if (ret)
 		return ret;

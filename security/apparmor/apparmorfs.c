@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: GPL-2.0-only
 /*
  * AppArmor security module
  *
@@ -5,17 +6,12 @@
  *
  * Copyright (C) 1998-2008 Novell/SUSE
  * Copyright 2009-2010 Canonical Ltd.
- *
- * This program is free software; you can redistribute it and/or
- * modify it under the terms of the GNU General Public License as
- * published by the Free Software Foundation, version 2 of the
- * License.
  */
 
 #include <linux/ctype.h>
 #include <linux/security.h>
 #include <linux/vmalloc.h>
-#include <linux/module.h>
+#include <linux/init.h>
 #include <linux/seq_file.h>
 #include <linux/uaccess.h>
 #include <linux/mount.h>
@@ -23,7 +19,9 @@
 #include <linux/capability.h>
 #include <linux/rcupdate.h>
 #include <linux/fs.h>
+#include <linux/fs_context.h>
 #include <linux/poll.h>
+#include <linux/zlib.h>
 #include <uapi/linux/major.h>
 #include <uapi/linux/magic.h>
 
@@ -67,6 +65,35 @@
 /*
  * support fns
  */
+
+struct rawdata_f_data {
+	struct aa_loaddata *loaddata;
+};
+
+#define RAWDATA_F_DATA_BUF(p) (char *)(p + 1)
+
+static void rawdata_f_data_free(struct rawdata_f_data *private)
+{
+	if (!private)
+		return;
+
+	aa_put_loaddata(private->loaddata);
+	kvfree(private);
+}
+
+static struct rawdata_f_data *rawdata_f_data_alloc(size_t size)
+{
+	struct rawdata_f_data *ret;
+
+	if (size > SIZE_MAX - sizeof(*ret))
+		return ERR_PTR(-EINVAL);
+
+	ret = kvzalloc(sizeof(*ret) + size, GFP_KERNEL);
+	if (!ret)
+		return ERR_PTR(-ENOMEM);
+
+	return ret;
+}
 
 /**
  * aa_mangle_name - mangle a profile name to std profile layout form
@@ -123,21 +150,20 @@ static int aafs_show_path(struct seq_file *seq, struct dentry *dentry)
 	return 0;
 }
 
-static void aafs_evict_inode(struct inode *inode)
+static void aafs_free_inode(struct inode *inode)
 {
-	truncate_inode_pages_final(&inode->i_data);
-	clear_inode(inode);
 	if (S_ISLNK(inode->i_mode))
 		kfree(inode->i_link);
+	free_inode_nonrcu(inode);
 }
 
 static const struct super_operations aafs_super_ops = {
 	.statfs = simple_statfs,
-	.evict_inode = aafs_evict_inode,
+	.free_inode = aafs_free_inode,
 	.show_path = aafs_show_path,
 };
 
-static int fill_super(struct super_block *sb, void *data, int silent)
+static int apparmorfs_fill_super(struct super_block *sb, struct fs_context *fc)
 {
 	static struct tree_descr files[] = { {""} };
 	int error;
@@ -150,16 +176,25 @@ static int fill_super(struct super_block *sb, void *data, int silent)
 	return 0;
 }
 
-static struct dentry *aafs_mount(struct file_system_type *fs_type,
-				 int flags, const char *dev_name, void *data)
+static int apparmorfs_get_tree(struct fs_context *fc)
 {
-	return mount_single(fs_type, flags, data, fill_super);
+	return get_tree_single(fc, apparmorfs_fill_super);
+}
+
+static const struct fs_context_operations apparmorfs_context_ops = {
+	.get_tree	= apparmorfs_get_tree,
+};
+
+static int apparmorfs_init_fs_context(struct fs_context *fc)
+{
+	fc->ops = &apparmorfs_context_ops;
+	return 0;
 }
 
 static struct file_system_type aafs_ops = {
 	.owner = THIS_MODULE,
 	.name = AAFS_NAME,
-	.mount = aafs_mount,
+	.init_fs_context = apparmorfs_init_fs_context,
 	.kill_sb = kill_anon_super,
 };
 
@@ -356,6 +391,7 @@ static void aafs_remove(struct dentry *dentry)
 			simple_rmdir(dir, dentry);
 		else
 			simple_unlink(dir, dentry);
+		d_delete(dentry);
 		dput(dentry);
 	}
 	inode_unlock(dir);
@@ -587,7 +623,7 @@ static __poll_t ns_revision_poll(struct file *file, poll_table *pt)
 
 void __aa_bump_ns_revision(struct aa_ns *ns)
 {
-	ns->revision++;
+	WRITE_ONCE(ns->revision, ns->revision + 1);
 	wake_up_interruptible(&ns->wait);
 }
 
@@ -603,7 +639,7 @@ static const struct file_operations aa_fs_ns_revision_fops = {
 static void profile_query_cb(struct aa_profile *profile, struct aa_perms *perms,
 			     const char *match_str, size_t match_len)
 {
-	struct aa_perms tmp;
+	struct aa_perms tmp = { };
 	struct aa_dfa *dfa;
 	unsigned int state = 0;
 
@@ -613,7 +649,6 @@ static void profile_query_cb(struct aa_profile *profile, struct aa_perms *perms,
 		dfa = profile->file.dfa;
 		state = aa_dfa_match_len(dfa, profile->file.start,
 					 match_str + 1, match_len - 1);
-		tmp = nullperms;
 		if (state) {
 			struct path_cond cond = { };
 
@@ -627,8 +662,6 @@ static void profile_query_cb(struct aa_profile *profile, struct aa_perms *perms,
 					 match_str, match_len);
 		if (state)
 			aa_compute_perms(dfa, state, &tmp);
-		else
-			tmp = nullperms;
 	}
 	aa_apply_modes_to_perms(profile, &tmp);
 	aa_perms_accum_raw(perms, &tmp);
@@ -1277,36 +1310,117 @@ static int seq_rawdata_hash_show(struct seq_file *seq, void *v)
 	return 0;
 }
 
+static int seq_rawdata_compressed_size_show(struct seq_file *seq, void *v)
+{
+	struct aa_loaddata *data = seq->private;
+
+	seq_printf(seq, "%zu\n", data->compressed_size);
+
+	return 0;
+}
+
 SEQ_RAWDATA_FOPS(abi);
 SEQ_RAWDATA_FOPS(revision);
 SEQ_RAWDATA_FOPS(hash);
+SEQ_RAWDATA_FOPS(compressed_size);
+
+static int deflate_decompress(char *src, size_t slen, char *dst, size_t dlen)
+{
+	int error;
+	struct z_stream_s strm;
+
+	if (aa_g_rawdata_compression_level == 0) {
+		if (dlen < slen)
+			return -EINVAL;
+		memcpy(dst, src, slen);
+		return 0;
+	}
+
+	memset(&strm, 0, sizeof(strm));
+
+	strm.workspace = kvzalloc(zlib_inflate_workspacesize(), GFP_KERNEL);
+	if (!strm.workspace)
+		return -ENOMEM;
+
+	strm.next_in = src;
+	strm.avail_in = slen;
+
+	error = zlib_inflateInit(&strm);
+	if (error != Z_OK) {
+		error = -ENOMEM;
+		goto fail_inflate_init;
+	}
+
+	strm.next_out = dst;
+	strm.avail_out = dlen;
+
+	error = zlib_inflate(&strm, Z_FINISH);
+	if (error != Z_STREAM_END)
+		error = -EINVAL;
+	else
+		error = 0;
+
+	zlib_inflateEnd(&strm);
+fail_inflate_init:
+	kvfree(strm.workspace);
+	return error;
+}
 
 static ssize_t rawdata_read(struct file *file, char __user *buf, size_t size,
 			    loff_t *ppos)
 {
-	struct aa_loaddata *rawdata = file->private_data;
+	struct rawdata_f_data *private = file->private_data;
 
-	return simple_read_from_buffer(buf, size, ppos, rawdata->data,
-				       rawdata->size);
+	return simple_read_from_buffer(buf, size, ppos,
+				       RAWDATA_F_DATA_BUF(private),
+				       private->loaddata->size);
 }
 
 static int rawdata_release(struct inode *inode, struct file *file)
 {
-	aa_put_loaddata(file->private_data);
+	rawdata_f_data_free(file->private_data);
 
 	return 0;
 }
 
 static int rawdata_open(struct inode *inode, struct file *file)
 {
+	int error;
+	struct aa_loaddata *loaddata;
+	struct rawdata_f_data *private;
+
 	if (!policy_view_capable(NULL))
 		return -EACCES;
-	file->private_data = __aa_get_loaddata(inode->i_private);
-	if (!file->private_data)
+
+	loaddata = __aa_get_loaddata(inode->i_private);
+	if (!loaddata)
 		/* lost race: this entry is being reaped */
 		return -ENOENT;
 
+	private = rawdata_f_data_alloc(loaddata->size);
+	if (IS_ERR(private)) {
+		error = PTR_ERR(private);
+		goto fail_private_alloc;
+	}
+
+	private->loaddata = loaddata;
+
+	error = deflate_decompress(loaddata->data, loaddata->compressed_size,
+				   RAWDATA_F_DATA_BUF(private),
+				   loaddata->size);
+	if (error)
+		goto fail_decompress;
+
+	file->private_data = private;
 	return 0;
+
+fail_decompress:
+	rawdata_f_data_free(private);
+	return error;
+
+fail_private_alloc:
+	aa_put_loaddata(loaddata);
+	return error;
 }
 
 static const struct file_operations rawdata_fops = {
@@ -1384,6 +1498,13 @@ int __aa_fs_create_rawdata(struct aa_ns *ns, struct aa_loaddata *rawdata)
 			goto fail;
 		rawdata->dents[AAFS_LOADDATA_HASH] = dent;
 	}
+
+	dent = aafs_create_file("compressed_size", S_IFREG | 0444, dir,
+				rawdata,
+				&seq_rawdata_compressed_size_fops);
+	if (IS_ERR(dent))
+		goto fail;
+	rawdata->dents[AAFS_LOADDATA_COMPRESSED_SIZE] = dent;
 
 	dent = aafs_create_file("raw_data", S_IFREG | 0444,
 				      dir, rawdata, &rawdata_fops);
@@ -1745,7 +1866,7 @@ static int ns_rmdir_op(struct inode *dir, struct dentry *dentry)
 	if (error)
 		return error;
 
-	 parent = aa_get_ns(dir->i_private);
+	parent = aa_get_ns(dir->i_private);
 	/* rmdir calls the generic securityfs functions to remove files
 	 * from the apparmor dir. It is up to the apparmor ns locking
 	 * to avoid races.

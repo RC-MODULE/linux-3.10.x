@@ -243,15 +243,9 @@ static void hostfs_evict_inode(struct inode *inode)
 	}
 }
 
-static void hostfs_i_callback(struct rcu_head *head)
+static void hostfs_free_inode(struct inode *inode)
 {
-	struct inode *inode = container_of(head, struct inode, i_rcu);
 	kfree(HOSTFS_I(inode));
-}
-
-static void hostfs_destroy_inode(struct inode *inode)
-{
-	call_rcu(&inode->i_rcu, hostfs_i_callback);
 }
 
 static int hostfs_show_options(struct seq_file *seq, struct dentry *root)
@@ -270,7 +264,7 @@ static int hostfs_show_options(struct seq_file *seq, struct dentry *root)
 
 static const struct super_operations hostfs_sbops = {
 	.alloc_inode	= hostfs_alloc_inode,
-	.destroy_inode	= hostfs_destroy_inode,
+	.free_inode	= hostfs_free_inode,
 	.evict_inode	= hostfs_evict_inode,
 	.statfs		= hostfs_statfs,
 	.show_options	= hostfs_show_options,
@@ -610,33 +604,21 @@ static struct dentry *hostfs_lookup(struct inode *ino, struct dentry *dentry,
 	int err;
 
 	inode = hostfs_iget(ino->i_sb);
-	if (IS_ERR(inode)) {
-		err = PTR_ERR(inode);
+	if (IS_ERR(inode))
 		goto out;
-	}
 
 	err = -ENOMEM;
 	name = dentry_name(dentry);
-	if (name == NULL)
-		goto out_put;
-
-	err = read_name(inode, name);
-
-	__putname(name);
-	if (err == -ENOENT) {
-		iput(inode);
-		inode = NULL;
+	if (name) {
+		err = read_name(inode, name);
+		__putname(name);
 	}
-	else if (err)
-		goto out_put;
-
-	d_add(dentry, inode);
-	return NULL;
-
- out_put:
-	iput(inode);
+	if (err) {
+		iput(inode);
+		inode = (err == -ENOENT) ? NULL : ERR_PTR(err);
+	}
  out:
-	return ERR_PTR(err);
+	return d_splice_alias(inode, dentry);
 }
 
 static int hostfs_link(struct dentry *to, struct inode *ino,

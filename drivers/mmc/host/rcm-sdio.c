@@ -68,7 +68,6 @@
 #define DRIVER_NAME	"rmsdio"
 
 #define RMSDIO_CLKDIV_MAX  0xFF
-#define RMSDIO_TIMEOUT (1 * HZ/10)
 
 #define MATCH_BITS(v,bits) ((v & bits)==bits)
 
@@ -111,6 +110,9 @@ struct rmsdio_host {
 	int sdio_irq_enabled;
 //	int gpio_card_detect;
 //	int gpio_write_protect;
+	unsigned int dccr0_flags;
+	unsigned int dccr1_flags;
+	unsigned int sdio_timeout;
 };
 
 
@@ -264,6 +266,12 @@ static inline void rmsdio_dma_xfer(struct rmsdio_host *host,
 	tctl = 0x4 | buf;
 	tmpl = (dir == DMA_FROM_DEVICE) ? RMSDIO_DCCR_TEMPLATE_R : RMSDIO_DCCR_TEMPLATE_W; 
 	tctl |= (dir == DMA_TO_DEVICE) ? 2 : 0;
+	if(channel == RMSDIO_DMA_CH0) {
+		rmsdio_write(RMSDIO_DCCR0, host->dccr0_flags);
+	}
+	else {
+		rmsdio_write(RMSDIO_DCCR1, host->dccr1_flags);
+	}
 	rmsdio_write(RMSDIO_TRAN_CTL, tctl);
 	rmsdio_write(channel + RMSDIO_DCDTR,  sz);
 	rmsdio_write(channel + areg, addr);  
@@ -481,7 +489,7 @@ static u32 rmsdio_finish_cmd(struct rmsdio_host *host, struct mmc_command *cmd,
 	} else
 		cmd->error = 0; 
 
-		return 0;
+	return 0;
 }
 
 /* 
@@ -509,14 +517,14 @@ static inline int rmsdio_write_flow(struct mmc_host *mmc, struct mmc_request *mr
 		wret, host->queue,
 		(MATCH_BITS(host->irqstat, 
 				(wintr))),
-		RMSDIO_TIMEOUT
+		host->sdio_timeout
 		);
+
+	if ( wret<= 0 && !MATCH_BITS(rmsdio_read(RMSDIO_IRQ_STATUS), (wintr)))
+		goto bailout;
 
 	rmsdio_clean_isr(host, 0);
 
-	if ( wret<= 0 )
-		goto bailout;
-	
 	if (data->blocks!=1)
 		wintr = RMSDIO_IRQ_DATABOUND | RMSDIO_IRQ_CMDDONE;
 	else
@@ -551,20 +559,23 @@ static inline int rmsdio_write_flow(struct mmc_host *mmc, struct mmc_request *mr
 		}
 		
 		/* Start filling up next buffer, if needed */
-		if (blocks < data->blocks ) {
+		if (blocks < data->blocks )
 			wintr |= RMSDIO_IRQ_CH0_DONE | RMSDIO_IRQ_TRANFINISH;
+	
+		rmsdio_write(RMSDIO_IRQ_MASKS, wintr);
+
+		if (blocks < data->blocks ) {
 			rmsdio_dma_xfer(host, DMA_TO_DEVICE, host->next_buffer, host->dma_target, data->blksz);
 			data->bytes_xfered += data->blksz;
 			host->cpu_target += data->blksz;
 			host->dma_target += data->blksz;
 		}
 
-		rmsdio_write(RMSDIO_IRQ_MASKS, wintr);
 		rmsdio_wait_irq(
 			wret, host->queue,
 			(MATCH_BITS(host->irqstat, 
 					(wintr))),
-			RMSDIO_TIMEOUT
+			host->sdio_timeout
 			);
 
 		if (wret <= 0 && !MATCH_BITS(rmsdio_read(RMSDIO_IRQ_STATUS), (wintr)))
@@ -578,7 +589,10 @@ static inline int rmsdio_write_flow(struct mmc_host *mmc, struct mmc_request *mr
 bailout:
 	dev_err(host->dev, "Writing: Timed out waiting for interrupt bits\n");
 	decode_intr(host," flags want: ", wintr);
-	decode_intr(host," flags have: ", host->irqstat);
+	decode_intr(host," flags have: ", rmsdio_read(RMSDIO_IRQ_STATUS));
+	host->irqstat |= rmsdio_read(RMSDIO_IRQ_STATUS);
+	rmsdio_clean_isr(host, 0);
+
 	return wret;
 }
 
@@ -617,7 +631,7 @@ static inline int rmsdio_read_flow(struct mmc_host *mmc, struct mmc_request *mrq
 		rmsdio_wait_irq(wret, host->queue,
 				(MATCH_BITS(host->irqstat, 
 						(wintr))),
-				RMSDIO_TIMEOUT
+				host->sdio_timeout
 		);
 
 		if (wret <= 0 && !MATCH_BITS(rmsdio_read(RMSDIO_IRQ_STATUS), (wintr)))
@@ -683,6 +697,9 @@ bailout:
 	decode_intr(host," flags want: ", wintr);
 	decode_intr(host," flags have: ", host->irqstat);
 	decode_intr(host," flags in reg: ", rmsdio_read(RMSDIO_IRQ_STATUS));
+
+	host->irqstat |= rmsdio_read(RMSDIO_IRQ_STATUS);
+	rmsdio_clean_isr(host, 0);
 
 	return wret;
 	
@@ -766,42 +783,42 @@ static void rmsdio_request(struct mmc_host * mmc, struct mmc_request * mrq)
 		int dir = (data->flags & MMC_DATA_WRITE) ? DMA_TO_DEVICE : DMA_FROM_DEVICE;
 		/* Prepare dma stuff */
 		host->sg_frags = dma_map_sg(mmc_dev(host->mmc), data->sg, data->sg_len, dir);
-		host->dma_target = sg_dma_address(data->sg);
-		host->cpu_target = sg_virt(data->sg);
-		/* Do all the register voodoo */
-		ctrlreg |= RMSDIO_CTRL_HAVEDATA;
-		rmsdio_setup_data(host, data);
+		if (host->sg_frags == 0) {
+			dev_err(host->dev, "cannot map sg list\n");
+			wret = -EFAULT;
+		} else {
+			host->dma_target = sg_dma_address(data->sg);
+			host->cpu_target = sg_virt(data->sg);
+			/* Do all the register voodoo */
+			ctrlreg |= RMSDIO_CTRL_HAVEDATA;
+			rmsdio_setup_data(host, data);
 
-		if ( data->stop )
-			ctrlreg |= RMSDIO_CTRL_AUTOCMD12;
+			if ( data->stop )
+				ctrlreg |= RMSDIO_CTRL_AUTOCMD12;
 
-		dev_dbg(host->dev, "i/o - we're planning to: %s %s\n", 
-		                   (data->flags & MMC_DATA_WRITE) ? "write" : "read",
-		                   (data->stop) ? "autocmd12" : "");
-		
-		eereg |= RMSDIO_ERR_DATEB | RMSDIO_ERR_DATCRC;
-		rmsdio_write(RMSDIO_ERR_ENABLE, eereg);
-		
-		/* Get stuff ready for DMA */		
-		host->sg_frags = dma_map_sg(mmc_dev(host->mmc), data->sg, data->sg_len, dir);
-		host->dma_target = sg_dma_address(data->sg);
-		host->cpu_target = sg_virt(data->sg);
-		
-		wret = (data->flags & MMC_DATA_WRITE ? rmsdio_write_flow : rmsdio_read_flow)(mmc, mrq, ctrlreg);
+			dev_dbg(host->dev, "i/o - we're planning to: %s %s\n",
+				(data->flags & MMC_DATA_WRITE) ? "write" : "read",
+				(data->stop) ? "autocmd12" : "");
 
-		dma_unmap_sg(mmc_dev(host->mmc), data->sg, host->sg_frags, dir);
+			eereg |= RMSDIO_ERR_DATEB | RMSDIO_ERR_DATCRC;
+			rmsdio_write(RMSDIO_ERR_ENABLE, eereg);
+
+			wret = (data->flags & MMC_DATA_WRITE ? rmsdio_write_flow : rmsdio_read_flow)(mmc, mrq, ctrlreg);
+
+			dma_unmap_sg(mmc_dev(host->mmc), data->sg, data->sg_len, dir);
+		}
 	} else {
 		/* We only reach this place when no xfer data issued */
-		rmsdio_write(RMSDIO_ERR_ENABLE, eereg);	
+		rmsdio_write(RMSDIO_ERR_ENABLE, eereg);
 		intr |= RMSDIO_IRQ_CMDDONE | RMSDIO_IRQ_CARDERROR;
 		rmsdio_write(RMSDIO_IRQ_MASKS, intr);
 		rmsdio_write(RMSDIO_CTRL, ctrlreg);
 
 		/* cmd done or card error. either of those indicate we're done here */ 
-		rmsdio_wait_irq(wret, host->queue, 
-		                (host->irqstat & (RMSDIO_IRQ_CMDDONE | RMSDIO_IRQ_CARDERROR)),
-		                RMSDIO_TIMEOUT);
-	
+		rmsdio_wait_irq(wret, host->queue,
+			(host->irqstat & (RMSDIO_IRQ_CMDDONE | RMSDIO_IRQ_CARDERROR)),
+			host->sdio_timeout);
+
 		rmsdio_clean_isr(host, 0);
 	}
 	
@@ -970,10 +987,13 @@ static int rmsdio_probe(struct platform_device *pdev)
 	struct mmc_host *mmc = NULL;
 	struct rmsdio_host *host = NULL;
 	struct resource *r;
-	int ret, irq;
+	int ret = 0, irq;
 	struct clk *clk;
-//	struct device_node		*np = pdev->dev.of_node;
-
+	struct device_node		*np = pdev->dev.of_node;
+	unsigned int axi_arlen = 15;	// 16 data frames
+	unsigned int axi_awlen = 15;	// 16 data frames
+	unsigned int axi_arsize = 2;	// 4 bytes
+	unsigned int axi_awsize = 2;	// 4 bytes
 	
 	printk(KERN_INFO "rmsdio: RC Module SD/SDIO/MMC driver (c) 2018\n");
 		
@@ -1016,6 +1036,7 @@ static int rmsdio_probe(struct platform_device *pdev)
 	mmc->max_seg_size = mmc->max_blk_size * mmc->max_blk_count;
 	mmc->max_req_size = mmc->max_blk_size * mmc->max_blk_count;
 
+	host->sdio_timeout = msecs_to_jiffies(200); // 200 ms by default
 
 	clk = devm_clk_get(&pdev->dev, "mmc");
 	if (IS_ERR(clk)) 
@@ -1033,6 +1054,25 @@ static int rmsdio_probe(struct platform_device *pdev)
 		pr_err("%s: unable to parse mmc definition\n", DRIVER_NAME);
 		goto out;
 	}
+
+	if (np) {
+		unsigned int val;
+		if(of_property_read_u32(np, "axi-awlen", &val) == 0)
+			axi_awlen = val;
+		if(of_property_read_u32(np, "axi-arlen", &val) == 0)
+			axi_arlen = val;
+		if(of_property_read_u32(np, "axi-awsize", &val) == 0)
+			axi_awsize = val;
+		if(of_property_read_u32(np, "axi-arsize", &val) == 0)
+			axi_arsize = val;
+		if(of_property_read_u32(np, "sdio-timeout", &val) == 0)
+				host->sdio_timeout = msecs_to_jiffies(val);
+	}
+
+	host->dccr0_flags = (axi_awlen & RMSDIO_AXI_BURST_MASK) << RMSDIO_AXI_BURST_SHIFT;
+	host->dccr0_flags |= (axi_awsize & RMSDIO_AXI_SIZE_MASK) << RMSDIO_AXI_SIZE_SHIFT;
+	host->dccr1_flags = (axi_arlen & RMSDIO_AXI_BURST_MASK) << RMSDIO_AXI_BURST_SHIFT;
+	host->dccr1_flags |= (axi_arsize & RMSDIO_AXI_SIZE_MASK) << RMSDIO_AXI_SIZE_SHIFT;	
 
 //	mmc->f_min = DIV_ROUND_UP(host->base_clock, 2*(RMSDIO_CLKDIV_MAX+1));
 //	if (np) {
@@ -1067,7 +1107,7 @@ static int rmsdio_probe(struct platform_device *pdev)
 		goto out;
 	}
 
-	set_dma_offset(&pdev->dev, - (pdev->dev.dma_pfn_offset << PAGE_SHIFT));
+	pdev->dev.archdata.dma_offset = - (pdev->dev.dma_pfn_offset << PAGE_SHIFT); /* before v5.5 it was: set_dma_offset(&pdev->dev, - (pdev->dev.dma_pfn_offset << PAGE_SHIFT)); */
 
 	STEP(4);
 

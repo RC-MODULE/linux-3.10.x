@@ -1,0 +1,123 @@
+/*
+*
+* Device Tree Source for RCM MB115.04 extention board ( Video and audio output module )
+*
+*/
+/ {
+	plb {
+		lsif1 {
+			i2c0: i2c@0x3C05A000 {
+				status = "ok";
+
+				// HDMI channel 0
+				adv7513_0: adv7513@39 {
+					status = "ok";
+				};
+
+				// HDMI channel 1
+				adv7513_1: adv7513@3d {
+					status = "ok";
+				};
+			};
+		};
+
+		mms {
+			i2s: i2s@0x39080000 {
+				status = "ok";
+			};
+			i2s0: i2s@0 {
+				status = "ok";
+			};
+			i2s1: i2s@1 {
+				status = "ok";
+			};
+			i2s2: i2s@2 {
+				status = "ok";
+			};
+			i2s3: i2s@3 {
+				status = "ok";
+			};
+			spdif: spdif@0x39080000 {
+				status = "ok";
+			};
+			audio_dma: audio_dma@0x38017000 {
+				status = "ok";
+			};
+
+			sound {
+				// status = "ok";
+				compatible = "simple-audio-card";
+				simple-audio-card,name = "RCM Audio";
+				#address-cells = <1>;
+				#size-cells = <0>;
+				#sound-dai-cells = <0>;
+
+				simple-audio-card,dai-link@0 { // I2S0 - cs4384_0
+					reg = <0>;
+					format = "i2s";
+					cpu {
+						sound-dai = <&i2s0>;
+					};
+					codec {
+						sound-dai = <&cs4384 0>;
+					};
+				};
+				simple-audio-card,dai-link@1 { // I2S1 - cs4384_1
+					reg = <1>;
+					format = "i2s";
+					cpu {
+						sound-dai = <&i2s1>;
+					};
+					codec {
+						sound-dai = <&cs4384 1>;
+					};
+				};
+				simple-audio-card,dai-link@2 { // I2S2 - cs4384_2
+					reg = <2>;
+					format = "i2s";
+					cpu {
+						sound-dai = <&i2s2>;
+					};
+					codec {
+						sound-dai = <&cs4384 2>;
+					};
+				};
+				simple-audio-card,dai-link@3 { // I2S3 - cs4384_3
+					reg = <3>;
+					format = "i2s";
+					cpu {
+						sound-dai = <&i2s3>;
+					};
+					codec {
+						sound-dai = <&cs4384 3>;
+					};
+				};
+
+				simple-audio-card,dai-link@4 { // spdif
+					reg = <4>;
+					cpu {
+						sound-dai = <&spdif>;
+					};
+					codec {
+						sound-dai = <&spdif_out>;
+					};
+				};
+			};
+
+			spdif_out: spdif-out {
+				#sound-dai-cells = <0>;
+				compatible = "linux,spdif-dit";
+			};
+
+			// HDMI channel 0 (actually VDU index 1)
+			vdu0: vdu@0x38013000 {
+				status = "ok";
+			};
+
+			// HDMI channel 1 (actually VDU index 0)
+			vdu1: vdu@0x38011000 {
+				status = "ok";
+			};
+		};
+	};
+};

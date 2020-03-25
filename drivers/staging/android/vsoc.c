@@ -29,7 +29,6 @@
 #include <linux/syscalls.h>
 #include <linux/uaccess.h>
 #include <linux/interrupt.h>
-#include <linux/mutex.h>
 #include <linux/cdev.h>
 #include <linux/file.h>
 #include "uapi/vsoc_shm.h"
@@ -260,7 +259,8 @@ do_create_fd_scoped_permission(struct vsoc_device_region *region_p,
 	atomic_t *owner_ptr = NULL;
 	struct vsoc_device_region *managed_region_p;
 
-	if (copy_from_user(&np->permission, &arg->perm, sizeof(*np)) ||
+	if (copy_from_user(&np->permission,
+			   &arg->perm, sizeof(np->permission)) ||
 	    copy_from_user(&managed_fd,
 			   &arg->managed_region_fd, sizeof(managed_fd))) {
 		return -EFAULT;
@@ -405,7 +405,7 @@ static int handle_vsoc_cond_wait(struct file *filp, struct vsoc_cond_wait *arg)
 	int ret = 0;
 	struct vsoc_device_region *region_p = vsoc_region_from_filep(filp);
 	atomic_t *address = NULL;
-	struct timespec ts;
+	ktime_t wake_time;
 
 	/* Ensure that the offset is aligned */
 	if (arg->offset & (sizeof(uint32_t) - 1))
@@ -433,17 +433,14 @@ static int handle_vsoc_cond_wait(struct file *filp, struct vsoc_cond_wait *arg)
 		 * We do things this way to flatten differences between 32 bit
 		 * and 64 bit timespecs.
 		 */
-		ts.tv_sec = arg->wake_time_sec;
-		ts.tv_nsec = arg->wake_time_nsec;
-
-		if (!timespec_valid(&ts))
+		if (arg->wake_time_nsec >= NSEC_PER_SEC)
 			return -EINVAL;
-		hrtimer_init_on_stack(&to->timer, CLOCK_MONOTONIC,
-				      HRTIMER_MODE_ABS);
-		hrtimer_set_expires_range_ns(&to->timer, timespec_to_ktime(ts),
-					     current->timer_slack_ns);
+		wake_time = ktime_set(arg->wake_time_sec, arg->wake_time_nsec);
 
-		hrtimer_init_sleeper(to, current);
+		hrtimer_init_sleeper_on_stack(to, CLOCK_MONOTONIC,
+					      HRTIMER_MODE_ABS);
+		hrtimer_set_expires_range_ns(&to->timer, wake_time,
+					     current->timer_slack_ns);
 	}
 
 	while (1) {
@@ -461,7 +458,7 @@ static int handle_vsoc_cond_wait(struct file *filp, struct vsoc_cond_wait *arg)
 			break;
 		}
 		if (to) {
-			hrtimer_start_expires(&to->timer, HRTIMER_MODE_ABS);
+			hrtimer_sleeper_start_expires(to, HRTIMER_MODE_ABS);
 			if (likely(to->task))
 				freezable_schedule();
 			hrtimer_cancel(&to->timer);

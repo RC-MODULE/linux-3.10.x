@@ -216,7 +216,7 @@
 			reg = <0x33000 0x14>;
 		};
 
-		qspi: qspi@27200 {
+		qspi: spi@27200 {
 			compatible = "brcm,spi-bcm-qspi", "brcm,spi-nsp-qspi";
 			reg = <0x027200 0x184>,
 			      <0x027000 0x124>,
@@ -268,7 +268,7 @@
 			clock-frequency = <100000>;
 		};
 
-		watchdog@39000 {
+		watchdog: watchdog@39000 {
 			compatible = "arm,sp805", "arm,primecell";
 			reg = <0x39000 0x1000>;
 			interrupts = <GIC_SPI 213 IRQ_TYPE_LEVEL_HIGH>;

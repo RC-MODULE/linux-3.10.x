@@ -33,6 +33,7 @@ static struct platform_device exynos_cpuidle = {
 };
 
 void __iomem *sysram_base_addr __ro_after_init;
+phys_addr_t sysram_base_phys __ro_after_init;
 void __iomem *sysram_ns_base_addr __ro_after_init;
 
 void __init exynos_sysram_init(void)
@@ -43,6 +44,8 @@ void __init exynos_sysram_init(void)
 		if (!of_device_is_available(node))
 			continue;
 		sysram_base_addr = of_iomap(node, 0);
+		sysram_base_phys = of_translate_address(node,
+					   of_get_address(node, 0, NULL, NULL));
 		break;
 	}
 
@@ -190,8 +193,6 @@ static void __init exynos_dt_fixup(void)
 }
 
 DT_MACHINE_START(EXYNOS_DT, "SAMSUNG EXYNOS (Flattened Device Tree)")
-	/* Maintainer: Thomas Abraham <thomas.abraham@linaro.org> */
-	/* Maintainer: Kukjin Kim <kgene.kim@samsung.com> */
 	.l2c_aux_val	= 0x3c400001,
 	.l2c_aux_mask	= 0xc20fffff,
 	.smp		= smp_ops(exynos_smp_ops),

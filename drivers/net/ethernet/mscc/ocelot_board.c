@@ -6,31 +6,37 @@
  */
 #include <linux/interrupt.h>
 #include <linux/module.h>
+#include <linux/of_net.h>
 #include <linux/netdevice.h>
 #include <linux/of_mdio.h>
 #include <linux/of_platform.h>
+#include <linux/mfd/syscon.h>
 #include <linux/skbuff.h>
+#include <net/switchdev.h>
 
 #include "ocelot.h"
 
-static int ocelot_parse_ifh(u32 *ifh, struct frame_info *info)
+#define IFH_EXTRACT_BITFIELD64(x, o, w) (((x) >> (o)) & GENMASK_ULL((w) - 1, 0))
+
+static int ocelot_parse_ifh(u32 *_ifh, struct frame_info *info)
 {
-	int i;
 	u8 llen, wlen;
+	u64 ifh[2];
 
-	/* The IFH is in network order, switch to CPU order */
-	for (i = 0; i < IFH_LEN; i++)
-		ifh[i] = ntohl((__force __be32)ifh[i]);
+	ifh[0] = be64_to_cpu(((__force __be64 *)_ifh)[0]);
+	ifh[1] = be64_to_cpu(((__force __be64 *)_ifh)[1]);
 
-	wlen = (ifh[1] >> 7) & 0xff;
-	llen = (ifh[1] >> 15) & 0x3f;
+	wlen = IFH_EXTRACT_BITFIELD64(ifh[0], 7,  8);
+	llen = IFH_EXTRACT_BITFIELD64(ifh[0], 15,  6);
+
 	info->len = OCELOT_BUFFER_CELL_SZ * wlen + llen - 80;
 
-	info->port = (ifh[2] & GENMASK(14, 11)) >> 11;
+	info->timestamp = IFH_EXTRACT_BITFIELD64(ifh[0], 21, 32);
 
-	info->cpuq = (ifh[3] & GENMASK(27, 20)) >> 20;
-	info->tag_type = (ifh[3] & GENMASK(16, 16)) >> 16;
-	info->vid = ifh[3] & GENMASK(11, 0);
+	info->port = IFH_EXTRACT_BITFIELD64(ifh[1], 43, 4);
+
+	info->tag_type = IFH_EXTRACT_BITFIELD64(ifh[1], 16,  1);
+	info->vid = IFH_EXTRACT_BITFIELD64(ifh[1], 0,  12);
 
 	return 0;
 }
@@ -88,15 +94,18 @@ static irqreturn_t ocelot_xtr_irq_handler(int irq, void *arg)
 		return IRQ_NONE;
 
 	do {
-		struct sk_buff *skb;
+		struct skb_shared_hwtstamps *shhwtstamps;
+		struct ocelot_port_private *priv;
+		struct ocelot_port *ocelot_port;
+		u64 tod_in_ns, full_ts_in_ns;
+		struct frame_info info = {};
 		struct net_device *dev;
-		u32 *buf;
-		int sz, len;
-		u32 ifh[4];
-		u32 val;
-		struct frame_info info;
+		u32 ifh[4], val, *buf;
+		struct timespec64 ts;
+		int sz, len, buf_len;
+		struct sk_buff *skb;
 
-		for (i = 0; i < IFH_LEN; i++) {
+		for (i = 0; i < OCELOT_TAG_LEN / 4; i++) {
 			err = ocelot_rx_frame_word(ocelot, grp, true, &ifh[i]);
 			if (err != 4)
 				break;
@@ -107,7 +116,10 @@ static irqreturn_t ocelot_xtr_irq_handler(int irq, void *arg)
 
 		ocelot_parse_ifh(ifh, &info);
 
-		dev = ocelot->ports[info.port]->dev;
+		ocelot_port = ocelot->ports[info.port];
+		priv = container_of(ocelot_port, struct ocelot_port_private,
+				    port);
+		dev = priv->dev;
 
 		skb = netdev_alloc_skb(dev, info.len);
 
@@ -116,18 +128,45 @@ static irqreturn_t ocelot_xtr_irq_handler(int irq, void *arg)
 			err = -ENOMEM;
 			break;
 		}
-		buf = (u32 *)skb_put(skb, info.len);
+		buf_len = info.len - ETH_FCS_LEN;
+		buf = (u32 *)skb_put(skb, buf_len);
 
 		len = 0;
 		do {
 			sz = ocelot_rx_frame_word(ocelot, grp, false, &val);
 			*buf++ = val;
 			len += sz;
-		} while ((sz == 4) && (len < info.len));
+		} while (len < buf_len);
+
+		/* Read the FCS */
+		sz = ocelot_rx_frame_word(ocelot, grp, false, &val);
+		/* Update the statistics if part of the FCS was read before */
+		len -= ETH_FCS_LEN - sz;
+
+		if (unlikely(dev->features & NETIF_F_RXFCS)) {
+			buf = (u32 *)skb_put(skb, ETH_FCS_LEN);
+			*buf = val;
+		}
 
 		if (sz < 0) {
 			err = sz;
 			break;
+		}
+
+		if (ocelot->ptp) {
+			ocelot_ptp_gettime64(&ocelot->ptp_info, &ts);
+
+			tod_in_ns = ktime_set(ts.tv_sec, ts.tv_nsec);
+			if ((tod_in_ns & 0xffffffff) < info.timestamp)
+				full_ts_in_ns = (((tod_in_ns >> 32) - 1) << 32) |
+						info.timestamp;
+			else
+				full_ts_in_ns = (tod_in_ns & GENMASK_ULL(63, 32)) |
+						info.timestamp;
+
+			shhwtstamps = skb_hwtstamps(skb);
+			memset(shhwtstamps, 0, sizeof(struct skb_shared_hwtstamps));
+			shhwtstamps->hwtstamp = full_ts_in_ns;
 		}
 
 		/* Everything we see on an interface that is in the HW bridge
@@ -149,31 +188,93 @@ static irqreturn_t ocelot_xtr_irq_handler(int irq, void *arg)
 	return IRQ_HANDLED;
 }
 
+static irqreturn_t ocelot_ptp_rdy_irq_handler(int irq, void *arg)
+{
+	struct ocelot *ocelot = arg;
+
+	ocelot_get_txtstamp(ocelot);
+
+	return IRQ_HANDLED;
+}
+
 static const struct of_device_id mscc_ocelot_match[] = {
 	{ .compatible = "mscc,vsc7514-switch" },
 	{ }
 };
 MODULE_DEVICE_TABLE(of, mscc_ocelot_match);
 
+static void ocelot_port_pcs_init(struct ocelot *ocelot, int port)
+{
+	struct ocelot_port *ocelot_port = ocelot->ports[port];
+
+	/* Disable HDX fast control */
+	ocelot_port_writel(ocelot_port, DEV_PORT_MISC_HDX_FAST_DIS,
+			   DEV_PORT_MISC);
+
+	/* SGMII only for now */
+	ocelot_port_writel(ocelot_port, PCS1G_MODE_CFG_SGMII_MODE_ENA,
+			   PCS1G_MODE_CFG);
+	ocelot_port_writel(ocelot_port, PCS1G_SD_CFG_SD_SEL, PCS1G_SD_CFG);
+
+	/* Enable PCS */
+	ocelot_port_writel(ocelot_port, PCS1G_CFG_PCS_ENA, PCS1G_CFG);
+
+	/* No aneg on SGMII */
+	ocelot_port_writel(ocelot_port, 0, PCS1G_ANEG_CFG);
+
+	/* No loopback */
+	ocelot_port_writel(ocelot_port, 0, PCS1G_LB_CFG);
+}
+
+static int ocelot_reset(struct ocelot *ocelot)
+{
+	int retries = 100;
+	u32 val;
+
+	regmap_field_write(ocelot->regfields[SYS_RESET_CFG_MEM_INIT], 1);
+	regmap_field_write(ocelot->regfields[SYS_RESET_CFG_MEM_ENA], 1);
+
+	do {
+		msleep(1);
+		regmap_field_read(ocelot->regfields[SYS_RESET_CFG_MEM_INIT],
+				  &val);
+	} while (val && --retries);
+
+	if (!retries)
+		return -ETIMEDOUT;
+
+	regmap_field_write(ocelot->regfields[SYS_RESET_CFG_MEM_ENA], 1);
+	regmap_field_write(ocelot->regfields[SYS_RESET_CFG_CORE_ENA], 1);
+
+	return 0;
+}
+
+static const struct ocelot_ops ocelot_ops = {
+	.pcs_init		= ocelot_port_pcs_init,
+	.reset			= ocelot_reset,
+};
+
 static int mscc_ocelot_probe(struct platform_device *pdev)
 {
-	int err, irq;
-	unsigned int i;
 	struct device_node *np = pdev->dev.of_node;
 	struct device_node *ports, *portnp;
+	int err, irq_xtr, irq_ptp_rdy;
 	struct ocelot *ocelot;
-	u32 val;
+	struct regmap *hsio;
+	unsigned int i;
 
 	struct {
 		enum ocelot_target id;
 		char *name;
-	} res[] = {
+		u8 optional:1;
+	} io_target[] = {
 		{ SYS, "sys" },
 		{ REW, "rew" },
 		{ QSYS, "qsys" },
 		{ ANA, "ana" },
 		{ QS, "qs" },
-		{ HSIO, "hsio" },
+		{ S2, "s2" },
+		{ PTP, "ptp", 1 },
 	};
 
 	if (!np && !pdev->dev.platform_data)
@@ -186,41 +287,59 @@ static int mscc_ocelot_probe(struct platform_device *pdev)
 	platform_set_drvdata(pdev, ocelot);
 	ocelot->dev = &pdev->dev;
 
-	for (i = 0; i < ARRAY_SIZE(res); i++) {
+	for (i = 0; i < ARRAY_SIZE(io_target); i++) {
 		struct regmap *target;
+		struct resource *res;
 
-		target = ocelot_io_platform_init(ocelot, pdev, res[i].name);
-		if (IS_ERR(target))
+		res = platform_get_resource_byname(pdev, IORESOURCE_MEM,
+						   io_target[i].name);
+
+		target = ocelot_regmap_init(ocelot, res);
+		if (IS_ERR(target)) {
+			if (io_target[i].optional) {
+				ocelot->targets[io_target[i].id] = NULL;
+				continue;
+			}
 			return PTR_ERR(target);
+		}
 
-		ocelot->targets[res[i].id] = target;
+		ocelot->targets[io_target[i].id] = target;
 	}
 
-	err = ocelot_chip_init(ocelot);
+	hsio = syscon_regmap_lookup_by_compatible("mscc,ocelot-hsio");
+	if (IS_ERR(hsio)) {
+		dev_err(&pdev->dev, "missing hsio syscon\n");
+		return PTR_ERR(hsio);
+	}
+
+	ocelot->targets[HSIO] = hsio;
+
+	err = ocelot_chip_init(ocelot, &ocelot_ops);
 	if (err)
 		return err;
 
-	irq = platform_get_irq_byname(pdev, "xtr");
-	if (irq < 0)
+	irq_xtr = platform_get_irq_byname(pdev, "xtr");
+	if (irq_xtr < 0)
 		return -ENODEV;
 
-	err = devm_request_threaded_irq(&pdev->dev, irq, NULL,
+	err = devm_request_threaded_irq(&pdev->dev, irq_xtr, NULL,
 					ocelot_xtr_irq_handler, IRQF_ONESHOT,
 					"frame extraction", ocelot);
 	if (err)
 		return err;
 
-	regmap_field_write(ocelot->regfields[SYS_RESET_CFG_MEM_INIT], 1);
-	regmap_field_write(ocelot->regfields[SYS_RESET_CFG_MEM_ENA], 1);
+	irq_ptp_rdy = platform_get_irq_byname(pdev, "ptp_rdy");
+	if (irq_ptp_rdy > 0 && ocelot->targets[PTP]) {
+		err = devm_request_threaded_irq(&pdev->dev, irq_ptp_rdy, NULL,
+						ocelot_ptp_rdy_irq_handler,
+						IRQF_ONESHOT, "ptp ready",
+						ocelot);
+		if (err)
+			return err;
 
-	do {
-		msleep(1);
-		regmap_field_read(ocelot->regfields[SYS_RESET_CFG_MEM_INIT],
-				  &val);
-	} while (val);
-
-	regmap_field_write(ocelot->regfields[SYS_RESET_CFG_MEM_ENA], 1);
-	regmap_field_write(ocelot->regfields[SYS_RESET_CFG_CORE_ENA], 1);
+		/* Both the PTP interrupt and the PTP bank are available */
+		ocelot->ptp = 1;
+	}
 
 	ocelot->num_cpu_ports = 1; /* 1 port on the switch, two groups */
 
@@ -235,21 +354,18 @@ static int mscc_ocelot_probe(struct platform_device *pdev)
 	ocelot->ports = devm_kcalloc(&pdev->dev, ocelot->num_phys_ports,
 				     sizeof(struct ocelot_port *), GFP_KERNEL);
 
-	INIT_LIST_HEAD(&ocelot->multicast);
 	ocelot_init(ocelot);
-
-	ocelot_rmw(ocelot, HSIO_HW_CFG_DEV1G_4_MODE |
-		     HSIO_HW_CFG_DEV1G_6_MODE |
-		     HSIO_HW_CFG_DEV1G_9_MODE,
-		     HSIO_HW_CFG_DEV1G_4_MODE |
-		     HSIO_HW_CFG_DEV1G_6_MODE |
-		     HSIO_HW_CFG_DEV1G_9_MODE,
-		     HSIO_HW_CFG);
+	ocelot_set_cpu_port(ocelot, ocelot->num_phys_ports,
+			    OCELOT_TAG_PREFIX_NONE, OCELOT_TAG_PREFIX_NONE);
 
 	for_each_available_child_of_node(ports, portnp) {
+		struct ocelot_port_private *priv;
+		struct ocelot_port *ocelot_port;
 		struct device_node *phy_node;
+		phy_interface_t phy_mode;
 		struct phy_device *phy;
 		struct resource *res;
+		struct phy *serdes;
 		void __iomem *regs;
 		char res_name[8];
 		u32 port;
@@ -270,23 +386,72 @@ static int mscc_ocelot_probe(struct platform_device *pdev)
 			continue;
 
 		phy = of_phy_find_device(phy_node);
+		of_node_put(phy_node);
 		if (!phy)
 			continue;
 
 		err = ocelot_probe_port(ocelot, port, regs, phy);
 		if (err) {
-			dev_err(&pdev->dev, "failed to probe ports\n");
-			goto err_probe_ports;
+			of_node_put(portnp);
+			goto out_put_ports;
 		}
+
+		ocelot_port = ocelot->ports[port];
+		priv = container_of(ocelot_port, struct ocelot_port_private,
+				    port);
+
+		of_get_phy_mode(portnp, &phy_mode);
+
+		priv->phy_mode = phy_mode;
+
+		switch (priv->phy_mode) {
+		case PHY_INTERFACE_MODE_NA:
+			continue;
+		case PHY_INTERFACE_MODE_SGMII:
+			break;
+		case PHY_INTERFACE_MODE_QSGMII:
+			/* Ensure clock signals and speed is set on all
+			 * QSGMII links
+			 */
+			ocelot_port_writel(ocelot_port,
+					   DEV_CLOCK_CFG_LINK_SPEED
+					   (OCELOT_SPEED_1000),
+					   DEV_CLOCK_CFG);
+			break;
+		default:
+			dev_err(ocelot->dev,
+				"invalid phy mode for port%d, (Q)SGMII only\n",
+				port);
+			of_node_put(portnp);
+			err = -EINVAL;
+			goto out_put_ports;
+		}
+
+		serdes = devm_of_phy_get(ocelot->dev, portnp, NULL);
+		if (IS_ERR(serdes)) {
+			err = PTR_ERR(serdes);
+			if (err == -EPROBE_DEFER)
+				dev_dbg(ocelot->dev, "deferring probe\n");
+			else
+				dev_err(ocelot->dev,
+					"missing SerDes phys for port%d\n",
+					port);
+
+			of_node_put(portnp);
+			goto out_put_ports;
+		}
+
+		priv->serdes = serdes;
 	}
 
 	register_netdevice_notifier(&ocelot_netdevice_nb);
+	register_switchdev_notifier(&ocelot_switchdev_nb);
+	register_switchdev_blocking_notifier(&ocelot_switchdev_blocking_nb);
 
 	dev_info(&pdev->dev, "Ocelot switch probed\n");
 
-	return 0;
-
-err_probe_ports:
+out_put_ports:
+	of_node_put(ports);
 	return err;
 }
 
@@ -295,6 +460,8 @@ static int mscc_ocelot_remove(struct platform_device *pdev)
 	struct ocelot *ocelot = platform_get_drvdata(pdev);
 
 	ocelot_deinit(ocelot);
+	unregister_switchdev_blocking_notifier(&ocelot_switchdev_blocking_nb);
+	unregister_switchdev_notifier(&ocelot_switchdev_nb);
 	unregister_netdevice_notifier(&ocelot_netdevice_nb);
 
 	return 0;

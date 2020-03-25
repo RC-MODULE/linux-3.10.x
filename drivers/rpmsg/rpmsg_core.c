@@ -15,6 +15,7 @@
 #include <linux/module.h>
 #include <linux/rpmsg.h>
 #include <linux/of_device.h>
+#include <linux/pm_domain.h>
 #include <linux/slab.h>
 
 #include "rpmsg_internal.h"
@@ -45,7 +46,7 @@
  * equals to the src address of their rpmsg channel), the driver's handler
  * is invoked to process it.
  *
- * That said, more complicated drivers might do need to allocate
+ * That said, more complicated drivers might need to allocate
  * additional rpmsg addresses, and bind them to different rx callbacks.
  * To accomplish that, those drivers need to call this function.
  *
@@ -176,7 +177,7 @@ int rpmsg_send_offchannel(struct rpmsg_endpoint *ept, u32 src, u32 dst,
 EXPORT_SYMBOL(rpmsg_send_offchannel);
 
 /**
- * rpmsg_send() - send a message across to the remote processor
+ * rpmsg_trysend() - send a message across to the remote processor
  * @ept: the rpmsg endpoint
  * @data: payload of message
  * @len: length of payload
@@ -204,7 +205,7 @@ int rpmsg_trysend(struct rpmsg_endpoint *ept, void *data, int len)
 EXPORT_SYMBOL(rpmsg_trysend);
 
 /**
- * rpmsg_sendto() - send a message across to the remote processor, specify dst
+ * rpmsg_trysendto() - send a message across to the remote processor, specify dst
  * @ept: the rpmsg endpoint
  * @data: payload of message
  * @len: length of payload
@@ -252,7 +253,7 @@ __poll_t rpmsg_poll(struct rpmsg_endpoint *ept, struct file *filp,
 EXPORT_SYMBOL(rpmsg_poll);
 
 /**
- * rpmsg_send_offchannel() - send a message using explicit src/dst addresses
+ * rpmsg_trysend_offchannel() - send a message using explicit src/dst addresses
  * @ept: the rpmsg endpoint
  * @src: source address
  * @dst: destination address
@@ -449,6 +450,10 @@ static int rpmsg_dev_probe(struct device *dev)
 	struct rpmsg_endpoint *ept = NULL;
 	int err;
 
+	err = dev_pm_domain_attach(dev, true);
+	if (err)
+		goto out;
+
 	if (rpdrv->callback) {
 		strncpy(chinfo.name, rpdev->id.name, RPMSG_NAME_SIZE);
 		chinfo.src = rpdev->src;
@@ -488,7 +493,10 @@ static int rpmsg_dev_remove(struct device *dev)
 	if (rpdev->ops->announce_destroy)
 		err = rpdev->ops->announce_destroy(rpdev);
 
-	rpdrv->remove(rpdev);
+	if (rpdrv->remove)
+		rpdrv->remove(rpdev);
+
+	dev_pm_domain_detach(dev, true);
 
 	if (rpdev->ept)
 		rpmsg_destroy_ept(rpdev->ept);

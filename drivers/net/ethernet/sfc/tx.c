@@ -1,11 +1,8 @@
+// SPDX-License-Identifier: GPL-2.0-only
 /****************************************************************************
  * Driver for Solarflare network controllers and boards
  * Copyright 2005-2006 Fen Systems Ltd.
  * Copyright 2005-2013 Solarflare Communications Inc.
- *
- * This program is free software; you can redistribute it and/or modify it
- * under the terms of the GNU General Public License version 2 as published
- * by the Free Software Foundation, incorporated herein by reference.
  */
 
 #include <linux/pci.h>
@@ -98,6 +95,8 @@ static void efx_dequeue_buffer(struct efx_tx_queue *tx_queue,
 		netif_vdbg(tx_queue->efx, tx_done, tx_queue->efx->net_dev,
 			   "TX queue %d transmission id %x complete\n",
 			   tx_queue->queue, tx_queue->read_count);
+	} else if (buffer->flags & EFX_TX_BUF_XDP) {
+		xdp_return_frame_rx_napi(buffer->xdpf);
 	}
 
 	buffer->len = 0;
@@ -277,7 +276,7 @@ static void efx_skb_copy_bits_to_pio(struct efx_nic *efx, struct sk_buff *skb,
 
 		vaddr = kmap_atomic(skb_frag_page(f));
 
-		efx_memcpy_toio_aligned_cb(efx, piobuf, vaddr + f->page_offset,
+		efx_memcpy_toio_aligned_cb(efx, piobuf, vaddr + skb_frag_off(f),
 					   skb_frag_size(f), copy_buf);
 		kunmap_atomic(vaddr);
 	}
@@ -471,15 +470,13 @@ static int efx_tx_tso_fallback(struct efx_tx_queue *tx_queue,
 	if (IS_ERR(segments))
 		return PTR_ERR(segments);
 
-	dev_kfree_skb_any(skb);
+	dev_consume_skb_any(skb);
 	skb = segments;
 
 	while (skb) {
 		next = skb->next;
 		skb->next = NULL;
 
-		if (next)
-			skb->xmit_more = true;
 		efx_enqueue_skb(tx_queue, skb);
 		skb = next;
 	}
@@ -506,7 +503,7 @@ static int efx_tx_tso_fallback(struct efx_tx_queue *tx_queue,
 netdev_tx_t efx_enqueue_skb(struct efx_tx_queue *tx_queue, struct sk_buff *skb)
 {
 	unsigned int old_insert_count = tx_queue->insert_count;
-	bool xmit_more = skb->xmit_more;
+	bool xmit_more = netdev_xmit_more();
 	bool data_mapped = false;
 	unsigned int segments;
 	unsigned int skb_len;
@@ -533,7 +530,7 @@ netdev_tx_t efx_enqueue_skb(struct efx_tx_queue *tx_queue, struct sk_buff *skb)
 		if (rc)
 			goto err;
 #ifdef EFX_USE_PIO
-	} else if (skb_len <= efx_piobuf_size && !skb->xmit_more &&
+	} else if (skb_len <= efx_piobuf_size && !xmit_more &&
 		   efx_nic_may_tx_pio(tx_queue)) {
 		/* Use PIO for short packets with an empty queue. */
 		if (efx_enqueue_skb_pio(tx_queue, skb))
@@ -553,17 +550,14 @@ netdev_tx_t efx_enqueue_skb(struct efx_tx_queue *tx_queue, struct sk_buff *skb)
 	if (!data_mapped && (efx_tx_map_data(tx_queue, skb, segments)))
 		goto err;
 
-	/* Update BQL */
-	netdev_tx_sent_queue(tx_queue->core_txq, skb_len);
-
 	efx_tx_maybe_stop_queue(tx_queue);
 
 	/* Pass off to hardware */
-	if (!xmit_more || netif_xmit_stopped(tx_queue->core_txq)) {
+	if (__netdev_tx_sent_queue(tx_queue->core_txq, skb_len, xmit_more)) {
 		struct efx_tx_queue *txq2 = efx_tx_queue_partner(tx_queue);
 
-		/* There could be packets left on the partner queue if those
-		 * SKBs had skb->xmit_more set. If we do not push those they
+		/* There could be packets left on the partner queue if
+		 * xmit_more was set. If we do not push those they
 		 * could be left for a long time and cause a netdev watchdog.
 		 */
 		if (txq2->xmit_more_available)
@@ -571,7 +565,7 @@ netdev_tx_t efx_enqueue_skb(struct efx_tx_queue *tx_queue, struct sk_buff *skb)
 
 		efx_nic_push_buffers(tx_queue);
 	} else {
-		tx_queue->xmit_more_available = skb->xmit_more;
+		tx_queue->xmit_more_available = xmit_more;
 	}
 
 	if (segments) {
@@ -603,6 +597,94 @@ err:
 	}
 
 	return NETDEV_TX_OK;
+}
+
+static void efx_xdp_return_frames(int n,  struct xdp_frame **xdpfs)
+{
+	int i;
+
+	for (i = 0; i < n; i++)
+		xdp_return_frame_rx_napi(xdpfs[i]);
+}
+
+/* Transmit a packet from an XDP buffer
+ *
+ * Returns number of packets sent on success, error code otherwise.
+ * Runs in NAPI context, either in our poll (for XDP TX) or a different NIC
+ * (for XDP redirect).
+ */
+int efx_xdp_tx_buffers(struct efx_nic *efx, int n, struct xdp_frame **xdpfs,
+		       bool flush)
+{
+	struct efx_tx_buffer *tx_buffer;
+	struct efx_tx_queue *tx_queue;
+	struct xdp_frame *xdpf;
+	dma_addr_t dma_addr;
+	unsigned int len;
+	int space;
+	int cpu;
+	int i;
+
+	cpu = raw_smp_processor_id();
+
+	if (!efx->xdp_tx_queue_count ||
+	    unlikely(cpu >= efx->xdp_tx_queue_count))
+		return -EINVAL;
+
+	tx_queue = efx->xdp_tx_queues[cpu];
+	if (unlikely(!tx_queue))
+		return -EINVAL;
+
+	if (unlikely(n && !xdpfs))
+		return -EINVAL;
+
+	if (!n)
+		return 0;
+
+	/* Check for available space. We should never need multiple
+	 * descriptors per frame.
+	 */
+	space = efx->txq_entries +
+		tx_queue->read_count - tx_queue->insert_count;
+
+	for (i = 0; i < n; i++) {
+		xdpf = xdpfs[i];
+
+		if (i >= space)
+			break;
+
+		/* We'll want a descriptor for this tx. */
+		prefetchw(__efx_tx_queue_get_insert_buffer(tx_queue));
+
+		len = xdpf->len;
+
+		/* Map for DMA. */
+		dma_addr = dma_map_single(&efx->pci_dev->dev,
+					  xdpf->data, len,
+					  DMA_TO_DEVICE);
+		if (dma_mapping_error(&efx->pci_dev->dev, dma_addr))
+			break;
+
+		/*  Create descriptor and set up for unmapping DMA. */
+		tx_buffer = efx_tx_map_chunk(tx_queue, dma_addr, len);
+		tx_buffer->xdpf = xdpf;
+		tx_buffer->flags = EFX_TX_BUF_XDP |
+				   EFX_TX_BUF_MAP_SINGLE;
+		tx_buffer->dma_offset = 0;
+		tx_buffer->unmap_len = len;
+		tx_queue->tx_packets++;
+	}
+
+	/* Pass mapped frames to hardware. */
+	if (flush && i > 0)
+		efx_nic_push_buffers(tx_queue);
+
+	if (i == 0)
+		return -EIO;
+
+	efx_xdp_return_frames(n - i, xdpfs + i);
+
+	return i;
 }
 
 /* Remove packets from the TX queue
@@ -864,6 +946,8 @@ void efx_init_tx_queue(struct efx_tx_queue *tx_queue)
 	tx_queue->completed_desc_ptr = tx_queue->ptr_mask;
 	tx_queue->completed_timestamp_major = 0;
 	tx_queue->completed_timestamp_minor = 0;
+
+	tx_queue->xdp_tx = efx_channel_is_xdp_tx(tx_queue->channel);
 
 	/* Set up default function pointers. These may get replaced by
 	 * efx_nic_init_tx() based off NIC/queue capabilities.

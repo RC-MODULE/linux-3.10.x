@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: GPL-2.0-only
  /*
   * iio/adc/max1363.c
   * Copyright (C) 2008-2010 Jonathan Cameron
@@ -9,10 +10,6 @@
   * Copyright (C) 2000 Russell King
   *
   * Driver for max1363 and similar chips.
-  *
-  * This program is free software; you can redistribute it and/or modify
-  * it under the terms of the GNU General Public License version 2 as
-  * published by the Free Software Foundation.
   */
 
 #include <linux/interrupt.h>
@@ -1577,7 +1574,6 @@ static int max1363_probe(struct i2c_client *client,
 	struct max1363_state *st;
 	struct iio_dev *indio_dev;
 	struct regulator *vref;
-	const struct of_device_id *match;
 
 	indio_dev = devm_iio_device_alloc(&client->dev,
 					  sizeof(struct max1363_state));
@@ -1604,11 +1600,8 @@ static int max1363_probe(struct i2c_client *client,
 	/* this is only used for device removal purposes */
 	i2c_set_clientdata(client, indio_dev);
 
-	match = of_match_device(of_match_ptr(max1363_of_match),
-				&client->dev);
-	if (match)
-		st->chip_info = of_device_get_match_data(&client->dev);
-	else
+	st->chip_info = of_device_get_match_data(&client->dev);
+	if (!st->chip_info)
 		st->chip_info = &max1363_chip_info_tbl[id->driver_data];
 	st->client = client;
 

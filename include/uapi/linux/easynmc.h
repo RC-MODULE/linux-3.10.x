@@ -94,5 +94,6 @@ struct nmc_ioctl_buffer {
 #define IOCTL_NMC3_NUM_CORES       _IOR(NMC3_IOCTL_MAGIC,  17,  uint32_t)
 #define IOCTL_NMC3_LIST_CORES      _IOWR(NMC3_IOCTL_MAGIC, 18,  struct nmc_ioctl_buffer)
 #define IOCTL_NMC3_NMI_ON_CLOSE    _IOW(NMC3_IOCTL_MAGIC,  19,  int)
+#define IOCTL_NMC3_ION2NMC         _IOWR(NMC3_IOCTL_MAGIC, 20,  uint32_t)
 
 #endif

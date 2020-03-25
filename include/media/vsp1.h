@@ -1,14 +1,10 @@
+/* SPDX-License-Identifier: GPL-2.0+ */
 /*
  * vsp1.h  --  R-Car VSP1 API
  *
  * Copyright (C) 2015 Renesas Electronics Corporation
  *
  * Contact: Laurent Pinchart (laurent.pinchart@ideasonboard.com)
- *
- * This program is free software; you can redistribute it and/or modify
- * it under the terms of the GNU General Public License as published by
- * the Free Software Foundation; either version 2 of the License, or
- * (at your option) any later version.
  */
 #ifndef __MEDIA_VSP1_H__
 #define __MEDIA_VSP1_H__
@@ -21,10 +17,14 @@ struct device;
 
 int vsp1_du_init(struct device *dev);
 
+#define VSP1_DU_STATUS_COMPLETE		BIT(0)
+#define VSP1_DU_STATUS_WRITEBACK	BIT(1)
+
 /**
  * struct vsp1_du_lif_config - VSP LIF configuration
  * @width: output frame width
  * @height: output frame height
+ * @interlaced: true for interlaced pipelines
  * @callback: frame completion callback function (optional). When a callback
  *	      is provided, the VSP driver guarantees that it will be called once
  *	      and only once for each vsp1_du_atomic_flush() call.
@@ -33,8 +33,9 @@ int vsp1_du_init(struct device *dev);
 struct vsp1_du_lif_config {
 	unsigned int width;
 	unsigned int height;
+	bool interlaced;
 
-	void (*callback)(void *data, bool completed, u32 crc);
+	void (*callback)(void *data, unsigned int status, u32 crc);
 	void *callback_data;
 };
 
@@ -44,7 +45,7 @@ int vsp1_du_setup_lif(struct device *dev, unsigned int pipe_index,
 /**
  * struct vsp1_du_atomic_config - VSP atomic configuration parameters
  * @pixelformat: plane pixel format (V4L2 4CC)
- * @pitch: line pitch in bytes, for all planes
+ * @pitch: line pitch in bytes for the first plane
  * @mem: DMA memory address for each plane of the frame buffer
  * @src: source rectangle in the frame buffer (integer coordinates)
  * @dst: destination rectangle on the display (integer coordinates)
@@ -84,11 +85,25 @@ struct vsp1_du_crc_config {
 };
 
 /**
+ * struct vsp1_du_writeback_config - VSP writeback configuration parameters
+ * @pixelformat: plane pixel format (V4L2 4CC)
+ * @pitch: line pitch in bytes for the first plane
+ * @mem: DMA memory address for each plane of the frame buffer
+ */
+struct vsp1_du_writeback_config {
+	u32 pixelformat;
+	unsigned int pitch;
+	dma_addr_t mem[3];
+};
+
+/**
  * struct vsp1_du_atomic_pipe_config - VSP atomic pipe configuration parameters
  * @crc: CRC computation configuration
+ * @writeback: writeback configuration
  */
 struct vsp1_du_atomic_pipe_config {
 	struct vsp1_du_crc_config crc;
+	struct vsp1_du_writeback_config writeback;
 };
 
 void vsp1_du_atomic_begin(struct device *dev, unsigned int pipe_index);

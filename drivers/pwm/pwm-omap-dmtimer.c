@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: GPL-2.0-only
 /*
  * Copyright (c) 2015 Neil Armstrong <narmstrong@baylibre.com>
  * Copyright (c) 2014 Joachim Eastwood <manabian@gmail.com>
@@ -6,10 +7,6 @@
  * Copyright (c) 2010 Grant Erickson <marathon96@gmail.com>
  *
  * Also based on pwm-samsung.c
- *
- * This program is free software; you can redistribute it and/or
- * modify it under the terms of the GNU General Public License
- * version 2 as published by the Free Software Foundation.
  *
  * Description:
  *   This file is the core OMAP support for the generic, Linux
@@ -264,8 +261,9 @@ static int pwm_omap_dmtimer_probe(struct platform_device *pdev)
 
 	timer_pdata = dev_get_platdata(&timer_pdev->dev);
 	if (!timer_pdata) {
-		dev_err(&pdev->dev, "dmtimer pdata structure NULL\n");
-		ret = -EINVAL;
+		dev_dbg(&pdev->dev,
+			 "dmtimer pdata structure NULL, deferring probe\n");
+		ret = -EPROBE_DEFER;
 		goto put;
 	}
 

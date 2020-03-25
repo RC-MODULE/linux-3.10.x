@@ -205,6 +205,8 @@ void trace_likely_condition(struct ftrace_likely_data *f, int val, int expect)
 void ftrace_likely_update(struct ftrace_likely_data *f, int val,
 			  int expect, int is_constant)
 {
+	unsigned long flags = user_access_save();
+
 	/* A constant is always correct */
 	if (is_constant) {
 		f->constant++;
@@ -223,6 +225,8 @@ void ftrace_likely_update(struct ftrace_likely_data *f, int val,
 		f->data.correct++;
 	else
 		f->data.incorrect++;
+
+	user_access_restore(flags);
 }
 EXPORT_SYMBOL(ftrace_likely_update);
 
@@ -240,7 +244,7 @@ static int annotated_branch_stat_headers(struct seq_file *m)
 	return 0;
 }
 
-static inline long get_incorrect_percent(struct ftrace_branch_data *p)
+static inline long get_incorrect_percent(const struct ftrace_branch_data *p)
 {
 	long percent;
 
@@ -328,10 +332,10 @@ annotated_branch_stat_next(void *v, int idx)
 	return p;
 }
 
-static int annotated_branch_stat_cmp(void *p1, void *p2)
+static int annotated_branch_stat_cmp(const void *p1, const void *p2)
 {
-	struct ftrace_branch_data *a = p1;
-	struct ftrace_branch_data *b = p2;
+	const struct ftrace_branch_data *a = p1;
+	const struct ftrace_branch_data *b = p2;
 
 	long percent_a, percent_b;
 

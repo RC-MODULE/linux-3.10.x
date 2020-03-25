@@ -5,3 +5,15 @@ config RCM_VDU_VIDEO
 	default n
 	---help---
 	  Support for V4L2 interface to RCM VDU.
+
+config RCM_VPU_CODA980
+	tristate "RCM VPU CODA980 video codec driver"
+	default n
+	---help---
+	  RCM VPU CODA980 (Chips Media) video codec driver.
+
+config RCM_CODA_J10
+	bool "RCM JPEG CODA J10 codec driver"
+	default y
+	---help---
+	RCM JPEG CODA J10 codec driver

@@ -1,9 +1,6 @@
+// SPDX-License-Identifier: GPL-2.0-only
 /*
  * Copyright (c) 2017 Pablo Neira Ayuso <pablo@netfilter.org>
- *
- * This program is free software; you can redistribute it and/or modify
- * it under the terms of the GNU General Public License version 2 as
- * published by the Free Software Foundation.
  */
 
 #include <linux/kernel.h>
@@ -13,7 +10,7 @@
 #include <linux/netlink.h>
 #include <linux/netfilter.h>
 #include <linux/netfilter/nf_tables.h>
-#include <net/netfilter/nf_tables.h>
+#include <net/netfilter/nf_tables_core.h>
 
 struct nft_bitmap_elem {
 	struct list_head	head;
@@ -248,13 +245,13 @@ static inline u32 nft_bitmap_size(u32 klen)
 	return ((2 << ((klen * BITS_PER_BYTE) - 1)) / BITS_PER_BYTE) << 1;
 }
 
-static inline u32 nft_bitmap_total_size(u32 klen)
+static inline u64 nft_bitmap_total_size(u32 klen)
 {
 	return sizeof(struct nft_bitmap) + nft_bitmap_size(klen);
 }
 
-static unsigned int nft_bitmap_privsize(const struct nlattr * const nla[],
-					const struct nft_set_desc *desc)
+static u64 nft_bitmap_privsize(const struct nlattr * const nla[],
+			       const struct nft_set_desc *desc)
 {
 	u32 klen = ntohl(nla_get_be32(nla[NFTA_SET_KEY_LEN]));
 

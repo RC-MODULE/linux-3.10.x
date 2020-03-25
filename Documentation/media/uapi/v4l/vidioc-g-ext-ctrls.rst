@@ -1,4 +1,11 @@
-.. -*- coding: utf-8; mode: rst -*-
+.. Permission is granted to copy, distribute and/or modify this
+.. document under the terms of the GNU Free Documentation License,
+.. Version 1.1 or any later version published by the Free Software
+.. Foundation, with no Invariant Sections, no Front-Cover Texts
+.. and no Back-Cover Texts. A copy of the license is included at
+.. Documentation/media/uapi/fdl-appendix.rst.
+..
+.. TODO: replace it to GFDL-1.1-or-later WITH no-invariant-sections
 
 .. _VIDIOC_G_EXT_CTRLS:
 
@@ -95,6 +102,25 @@ appropriate. In the first case the new value is set in struct
 is inappropriate (e.g. the given menu index is not supported by the menu
 control), then this will also result in an ``EINVAL`` error code error.
 
+If ``request_fd`` is set to a not-yet-queued :ref:`request <media-request-api>`
+file descriptor and ``which`` is set to ``V4L2_CTRL_WHICH_REQUEST_VAL``,
+then the controls are not applied immediately when calling
+:ref:`VIDIOC_S_EXT_CTRLS <VIDIOC_G_EXT_CTRLS>`, but instead are applied by
+the driver for the buffer associated with the same request.
+If the device does not support requests, then ``EACCES`` will be returned.
+If requests are supported but an invalid request file descriptor is given,
+then ``EINVAL`` will be returned.
+
+An attempt to call :ref:`VIDIOC_S_EXT_CTRLS <VIDIOC_G_EXT_CTRLS>` for a
+request that has already been queued will result in an ``EBUSY`` error.
+
+If ``request_fd`` is specified and ``which`` is set to
+``V4L2_CTRL_WHICH_REQUEST_VAL`` during a call to
+:ref:`VIDIOC_G_EXT_CTRLS <VIDIOC_G_EXT_CTRLS>`, then it will return the
+values of the controls at the time of request completion.
+If the request is not yet completed, then this will result in an
+``EACCES`` error.
+
 The driver will only set/get these controls if all control values are
 correct. This prevents the situation where only some of the controls
 were set/get. Only low-level errors (e. g. a failed i2c command) can
@@ -173,6 +199,11 @@ still cause this situation.
       - A pointer to a matrix control of unsigned 32-bit values. Valid if
 	this control is of type ``V4L2_CTRL_TYPE_U32``.
     * -
+      - :c:type:`v4l2_area` *
+      - ``p_area``
+      - A pointer to a struct :c:type:`v4l2_area`. Valid if this control is
+        of type ``V4L2_CTRL_TYPE_AREA``.
+    * -
       - void *
       - ``ptr``
       - A pointer to a compound type which can be an N-dimensional array
@@ -209,13 +240,17 @@ still cause this situation.
       - ``which``
       - Which value of the control to get/set/try.
 	``V4L2_CTRL_WHICH_CUR_VAL`` will return the current value of the
-	control and ``V4L2_CTRL_WHICH_DEF_VAL`` will return the default
-	value of the control.
+	control, ``V4L2_CTRL_WHICH_DEF_VAL`` will return the default
+	value of the control and ``V4L2_CTRL_WHICH_REQUEST_VAL`` indicates that
+	these controls have to be retrieved from a request or tried/set for
+	a request. In the latter case the ``request_fd`` field contains the
+	file descriptor of the request that should be used. If the device
+	does not support requests, then ``EACCES`` will be returned.
 
 	.. note::
 
-	   You can only get the default value of the control,
-	   you cannot set or try it.
+	   When using ``V4L2_CTRL_WHICH_DEF_VAL`` be aware that you can only
+	   get the default value of the control, you cannot set or try it.
 
 	For backwards compatibility you can also use a control class here
 	(see :ref:`ctrl-class`). In that case all controls have to
@@ -272,8 +307,15 @@ still cause this situation.
 	then you can call :ref:`VIDIOC_TRY_EXT_CTRLS <VIDIOC_G_EXT_CTRLS>` to try to discover the
 	actual control that failed the validation step. Unfortunately,
 	there is no ``TRY`` equivalent for :ref:`VIDIOC_G_EXT_CTRLS <VIDIOC_G_EXT_CTRLS>`.
+    * - __s32
+      - ``request_fd``
+      - File descriptor of the request to be used by this operation. Only
+	valid if ``which`` is set to ``V4L2_CTRL_WHICH_REQUEST_VAL``.
+	If the device does not support requests, then ``EACCES`` will be returned.
+	If requests are supported but an invalid request file descriptor is
+	given, then ``EINVAL`` will be returned.
     * - __u32
-      - ``reserved``\ [2]
+      - ``reserved``\ [1]
       - Reserved for future extensions.
 
 	Drivers and applications must set the array to zero.
@@ -347,11 +389,14 @@ appropriately. The generic error codes are described at the
 
 EINVAL
     The struct :c:type:`v4l2_ext_control` ``id`` is
-    invalid, the struct :c:type:`v4l2_ext_controls`
+    invalid, or the struct :c:type:`v4l2_ext_controls`
     ``which`` is invalid, or the struct
     :c:type:`v4l2_ext_control` ``value`` was
     inappropriate (e.g. the given menu index is not supported by the
-    driver). This error code is also returned by the
+    driver), or the ``which`` field was set to ``V4L2_CTRL_WHICH_REQUEST_VAL``
+    but the given ``request_fd`` was invalid or ``V4L2_CTRL_WHICH_REQUEST_VAL``
+    is not supported by the kernel.
+    This error code is also returned by the
     :ref:`VIDIOC_S_EXT_CTRLS <VIDIOC_G_EXT_CTRLS>` and :ref:`VIDIOC_TRY_EXT_CTRLS <VIDIOC_G_EXT_CTRLS>` ioctls if two or
     more control values are in conflict.
 
@@ -362,7 +407,9 @@ ERANGE
 EBUSY
     The control is temporarily not changeable, possibly because another
     applications took over control of the device function this control
-    belongs to.
+    belongs to, or (if the ``which`` field was set to
+    ``V4L2_CTRL_WHICH_REQUEST_VAL``) the request was queued but not yet
+    completed.
 
 ENOSPC
     The space reserved for the control's payload is insufficient. The
@@ -370,5 +417,9 @@ ENOSPC
     and this error code is returned.
 
 EACCES
-    Attempt to try or set a read-only control or to get a write-only
-    control.
+    Attempt to try or set a read-only control, or to get a write-only
+    control, or to get a control from a request that has not yet been
+    completed.
+
+    Or the ``which`` field was set to ``V4L2_CTRL_WHICH_REQUEST_VAL`` but the
+    device does not support requests.

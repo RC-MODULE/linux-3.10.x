@@ -29,12 +29,12 @@
 
 static volatile uint32_t _ioread32(uint32_t const base_addr)
 {
-    return le32_to_cpu(*((volatile uint32_t*)(base_addr)));
+	return le32_to_cpu(as1_readl((void*)base_addr));
 }
 
 static  void _iowrite32(uint32_t const value, uint32_t const base_addr)
 {
-    *((volatile uint32_t*)(base_addr)) = cpu_to_le32(value);
+	as1_writel(cpu_to_le32(value), (void*)base_addr);
 }
 
 static int tx_fifo_ready(uint32_t base_addr)

@@ -4,18 +4,16 @@
  * All Rights Reserved.
  */
 #include "xfs.h"
+#include "xfs_shared.h"
 #include "xfs_format.h"
 #include "xfs_log_format.h"
 #include "xfs_trans_resv.h"
 #include "xfs_mount.h"
-#include "xfs_da_format.h"
-#include "xfs_da_btree.h"
 #include "xfs_dir2.h"
 #include "xfs_export.h"
 #include "xfs_inode.h"
 #include "xfs_trans.h"
 #include "xfs_inode_item.h"
-#include "xfs_trace.h"
 #include "xfs_icache.h"
 #include "xfs_log.h"
 #include "xfs_pnfs.h"
@@ -150,7 +148,7 @@ xfs_nfs_get_inode(
 	}
 
 	if (VFS_I(ip)->i_generation != generation) {
-		IRELE(ip);
+		xfs_irele(ip);
 		return ERR_PTR(-ESTALE);
 	}
 

@@ -1,15 +1,10 @@
+// SPDX-License-Identifier: GPL-2.0-or-later
 /*
  *  SR-IPv6 implementation
  *
  *  Authors:
  *  David Lebrun <david.lebrun@uclouvain.be>
  *  eBPF support: Mathieu Xhonneux <m.xhonneux@gmail.com>
- *
- *
- *  This program is free software; you can redistribute it and/or
- *        modify it under the terms of the GNU General Public License
- *        as published by the Free Software Foundation; either version
- *        2 of the License, or (at your option) any later version.
  */
 
 #include <linux/types.h>
@@ -28,6 +23,7 @@
 #include <net/addrconf.h>
 #include <net/ip6_route.h>
 #include <net/dst_cache.h>
+#include <net/ip_tunnels.h>
 #ifdef CONFIG_IPV6_SEG6_HMAC
 #include <net/seg6_hmac.h>
 #endif
@@ -86,6 +82,11 @@ static struct ipv6_sr_hdr *get_srh(struct sk_buff *skb)
 	if (!pskb_may_pull(skb, srhoff + len))
 		return NULL;
 
+	/* note that pskb_may_pull may change pointers in header;
+	 * for this reason it is necessary to reload them when needed.
+	 */
+	srh = (struct ipv6_sr_hdr *)(skb->data + srhoff);
+
 	if (!seg6_validate_srh(srh, len))
 		return NULL;
 
@@ -135,7 +136,8 @@ static bool decap_and_validate(struct sk_buff *skb, int proto)
 
 	skb_reset_network_header(skb);
 	skb_reset_transport_header(skb);
-	skb->encapsulation = 0;
+	if (iptunnel_pull_offloads(skb))
+		return false;
 
 	return true;
 }
@@ -149,8 +151,9 @@ static void advance_nextseg(struct ipv6_sr_hdr *srh, struct in6_addr *daddr)
 	*daddr = *addr;
 }
 
-int seg6_lookup_nexthop(struct sk_buff *skb, struct in6_addr *nhaddr,
-			u32 tbl_id)
+static int
+seg6_lookup_any_nexthop(struct sk_buff *skb, struct in6_addr *nhaddr,
+			u32 tbl_id, bool local_delivery)
 {
 	struct net *net = dev_net(skb->dev);
 	struct ipv6hdr *hdr = ipv6_hdr(skb);
@@ -158,6 +161,7 @@ int seg6_lookup_nexthop(struct sk_buff *skb, struct in6_addr *nhaddr,
 	struct dst_entry *dst = NULL;
 	struct rt6_info *rt;
 	struct flowi6 fl6;
+	int dev_flags = 0;
 
 	fl6.flowi6_iif = skb->dev->ifindex;
 	fl6.daddr = nhaddr ? *nhaddr : hdr->daddr;
@@ -182,7 +186,13 @@ int seg6_lookup_nexthop(struct sk_buff *skb, struct in6_addr *nhaddr,
 		dst = &rt->dst;
 	}
 
-	if (dst && dst->dev->flags & IFF_LOOPBACK && !dst->error) {
+	/* we want to discard traffic destined for local packet processing,
+	 * if @local_delivery is set to false.
+	 */
+	if (!local_delivery)
+		dev_flags |= IFF_LOOPBACK;
+
+	if (dst && (dst->dev->flags & dev_flags) && !dst->error) {
 		dst_release(dst);
 		dst = NULL;
 	}
@@ -197,6 +207,12 @@ out:
 	skb_dst_drop(skb);
 	skb_dst_set(skb, dst);
 	return dst->error;
+}
+
+int seg6_lookup_nexthop(struct sk_buff *skb,
+			struct in6_addr *nhaddr, u32 tbl_id)
+{
+	return seg6_lookup_any_nexthop(skb, nhaddr, tbl_id, false);
 }
 
 /* regular endpoint function */
@@ -341,6 +357,8 @@ static int input_action_end_dx6(struct sk_buff *skb,
 	if (!ipv6_addr_any(&slwt->nh6))
 		nhaddr = &slwt->nh6;
 
+	skb_set_transport_header(skb, sizeof(struct ipv6hdr));
+
 	seg6_lookup_nexthop(skb, nhaddr, 0);
 
 	return dst_input(skb);
@@ -370,6 +388,8 @@ static int input_action_end_dx4(struct sk_buff *skb,
 
 	skb_dst_drop(skb);
 
+	skb_set_transport_header(skb, sizeof(struct iphdr));
+
 	err = ip_route_input(skb, nhaddr, iph->saddr, 0, skb->dev);
 	if (err)
 		goto drop;
@@ -390,7 +410,9 @@ static int input_action_end_dt6(struct sk_buff *skb,
 	if (!pskb_may_pull(skb, sizeof(struct ipv6hdr)))
 		goto drop;
 
-	seg6_lookup_nexthop(skb, NULL, slwt->table);
+	skb_set_transport_header(skb, sizeof(struct ipv6hdr));
+
+	seg6_lookup_any_nexthop(skb, NULL, slwt->table, true);
 
 	return dst_input(skb);
 
@@ -459,35 +481,56 @@ drop:
 
 DEFINE_PER_CPU(struct seg6_bpf_srh_state, seg6_bpf_srh_states);
 
+bool seg6_bpf_has_valid_srh(struct sk_buff *skb)
+{
+	struct seg6_bpf_srh_state *srh_state =
+		this_cpu_ptr(&seg6_bpf_srh_states);
+	struct ipv6_sr_hdr *srh = srh_state->srh;
+
+	if (unlikely(srh == NULL))
+		return false;
+
+	if (unlikely(!srh_state->valid)) {
+		if ((srh_state->hdrlen & 7) != 0)
+			return false;
+
+		srh->hdrlen = (u8)(srh_state->hdrlen >> 3);
+		if (!seg6_validate_srh(srh, (srh->hdrlen + 1) << 3))
+			return false;
+
+		srh_state->valid = true;
+	}
+
+	return true;
+}
+
 static int input_action_end_bpf(struct sk_buff *skb,
 				struct seg6_local_lwt *slwt)
 {
 	struct seg6_bpf_srh_state *srh_state =
 		this_cpu_ptr(&seg6_bpf_srh_states);
-	struct seg6_bpf_srh_state local_srh_state;
 	struct ipv6_sr_hdr *srh;
-	int srhoff = 0;
 	int ret;
 
 	srh = get_and_validate_srh(skb);
-	if (!srh)
-		goto drop;
+	if (!srh) {
+		kfree_skb(skb);
+		return -EINVAL;
+	}
 	advance_nextseg(srh, &ipv6_hdr(skb)->daddr);
 
 	/* preempt_disable is needed to protect the per-CPU buffer srh_state,
 	 * which is also accessed by the bpf_lwt_seg6_* helpers
 	 */
 	preempt_disable();
+	srh_state->srh = srh;
 	srh_state->hdrlen = srh->hdrlen << 3;
-	srh_state->valid = 1;
+	srh_state->valid = true;
 
 	rcu_read_lock();
 	bpf_compute_data_pointers(skb);
 	ret = bpf_prog_run_save_cb(slwt->bpf.prog, skb);
 	rcu_read_unlock();
-
-	local_srh_state = *srh_state;
-	preempt_enable();
 
 	switch (ret) {
 	case BPF_OK:
@@ -500,24 +543,17 @@ static int input_action_end_bpf(struct sk_buff *skb,
 		goto drop;
 	}
 
-	if (unlikely((local_srh_state.hdrlen & 7) != 0))
+	if (srh_state->srh && !seg6_bpf_has_valid_srh(skb))
 		goto drop;
 
-	if (ipv6_find_hdr(skb, &srhoff, IPPROTO_ROUTING, NULL, NULL) < 0)
-		goto drop;
-	srh = (struct ipv6_sr_hdr *)(skb->data + srhoff);
-	srh->hdrlen = (u8)(local_srh_state.hdrlen >> 3);
-
-	if (!local_srh_state.valid &&
-	    unlikely(!seg6_validate_srh(srh, (srh->hdrlen + 1) << 3)))
-		goto drop;
-
+	preempt_enable();
 	if (ret != BPF_REDIRECT)
 		seg6_lookup_nexthop(skb, NULL, 0);
 
 	return dst_input(skb);
 
 drop:
+	preempt_enable();
 	kfree_skb(skb);
 	return -EINVAL;
 }
@@ -637,11 +673,9 @@ static int parse_nla_srh(struct nlattr **attrs, struct seg6_local_lwt *slwt)
 	if (!seg6_validate_srh(srh, len))
 		return -EINVAL;
 
-	slwt->srh = kmalloc(len, GFP_KERNEL);
+	slwt->srh = kmemdup(srh, len, GFP_KERNEL);
 	if (!slwt->srh)
 		return -ENOMEM;
-
-	memcpy(slwt->srh, srh, len);
 
 	slwt->headroom += len;
 
@@ -811,8 +845,9 @@ static int parse_nla_bpf(struct nlattr **attrs, struct seg6_local_lwt *slwt)
 	int ret;
 	u32 fd;
 
-	ret = nla_parse_nested(tb, SEG6_LOCAL_BPF_PROG_MAX,
-			       attrs[SEG6_LOCAL_BPF], bpf_prog_policy, NULL);
+	ret = nla_parse_nested_deprecated(tb, SEG6_LOCAL_BPF_PROG_MAX,
+					  attrs[SEG6_LOCAL_BPF],
+					  bpf_prog_policy, NULL);
 	if (ret < 0)
 		return ret;
 
@@ -841,7 +876,7 @@ static int put_nla_bpf(struct sk_buff *skb, struct seg6_local_lwt *slwt)
 	if (!slwt->bpf.prog)
 		return 0;
 
-	nest = nla_nest_start(skb, SEG6_LOCAL_BPF);
+	nest = nla_nest_start_noflag(skb, SEG6_LOCAL_BPF);
 	if (!nest)
 		return -EMSGSIZE;
 
@@ -947,8 +982,8 @@ static int seg6_local_build_state(struct nlattr *nla, unsigned int family,
 	if (family != AF_INET6)
 		return -EINVAL;
 
-	err = nla_parse_nested(tb, SEG6_LOCAL_MAX, nla, seg6_local_policy,
-			       extack);
+	err = nla_parse_nested_deprecated(tb, SEG6_LOCAL_MAX, nla,
+					  seg6_local_policy, extack);
 
 	if (err < 0)
 		return err;

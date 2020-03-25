@@ -7,11 +7,10 @@
 #include <linux/slab.h>
 #include <linux/string.h>
 #include <linux/scatterlist.h>
+#include <linux/numa.h>
 #include <asm/io.h>
 #include <asm/pat.h>
 #include <asm/x86_init.h>
-
-#ifdef __KERNEL__
 
 struct pci_sysdata {
 	int		domain;		/* PCI domain */
@@ -117,11 +116,6 @@ void native_restore_msi_irqs(struct pci_dev *dev);
 #define native_setup_msi_irqs		NULL
 #define native_teardown_msi_irq		NULL
 #endif
-#endif  /* __KERNEL__ */
-
-#ifdef CONFIG_X86_64
-#include <asm/pci_64.h>
-#endif
 
 /* generic pci stuff */
 #include <asm-generic/pci.h>
@@ -141,7 +135,7 @@ cpumask_of_pcibus(const struct pci_bus *bus)
 	int node;
 
 	node = __pcibus_to_node(bus);
-	return (node == -1) ? cpu_online_mask :
+	return (node == NUMA_NO_NODE) ? cpu_online_mask :
 			      cpumask_of_node(node);
 }
 #endif

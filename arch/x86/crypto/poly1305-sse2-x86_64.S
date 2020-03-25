@@ -1,12 +1,8 @@
+/* SPDX-License-Identifier: GPL-2.0-or-later */
 /*
  * Poly1305 authenticator algorithm, RFC7539, x64 SSE2 functions
  *
  * Copyright (C) 2015 Martin Willi
- *
- * This program is free software; you can redistribute it and/or modify
- * it under the terms of the GNU General Public License as published by
- * the Free Software Foundation; either version 2 of the License, or
- * (at your option) any later version.
  */
 
 #include <linux/linkage.h>
@@ -50,7 +46,7 @@ ORMASK:	.octa 0x00000000010000000000000001000000
 #define d3 %r11
 #define d4 %r12
 
-ENTRY(poly1305_block_sse2)
+SYM_FUNC_START(poly1305_block_sse2)
 	# %rdi: Accumulator h[5]
 	# %rsi: 16 byte input block m
 	# %rdx: Poly1305 key r[5]
@@ -253,16 +249,16 @@ ENTRY(poly1305_block_sse2)
 	# h0 += (d4 >> 26) * 5
 	mov		d4,%rax
 	shr		$26,%rax
-	lea		(%eax,%eax,4),%eax
-	add		%eax,%ebx
+	lea		(%rax,%rax,4),%rax
+	add		%rax,%rbx
 	# h4 = d4 & 0x3ffffff
 	mov		d4,%rax
 	and		$0x3ffffff,%eax
 	mov		%eax,h4
 
 	# h1 += h0 >> 26
-	mov		%ebx,%eax
-	shr		$26,%eax
+	mov		%rbx,%rax
+	shr		$26,%rax
 	add		%eax,h1
 	# h0 = h0 & 0x3ffffff
 	andl		$0x3ffffff,%ebx
@@ -272,11 +268,15 @@ ENTRY(poly1305_block_sse2)
 	dec		%rcx
 	jnz		.Ldoblock
 
+	# Zeroing of key material
+	mov		%rcx,0x00(%rsp)
+	mov		%rcx,0x08(%rsp)
+
 	add		$0x10,%rsp
 	pop		%r12
 	pop		%rbx
 	ret
-ENDPROC(poly1305_block_sse2)
+SYM_FUNC_END(poly1305_block_sse2)
 
 
 #define u0 0x00(%r8)
@@ -301,7 +301,7 @@ ENDPROC(poly1305_block_sse2)
 #undef d0
 #define d0 %r13
 
-ENTRY(poly1305_2block_sse2)
+SYM_FUNC_START(poly1305_2block_sse2)
 	# %rdi: Accumulator h[5]
 	# %rsi: 16 byte input block m
 	# %rdx: Poly1305 key r[5]
@@ -520,6 +520,12 @@ ENTRY(poly1305_2block_sse2)
 	paddq		t2,t1
 	movq		t1,d4
 
+	# Now do a partial reduction mod (2^130)-5, carrying h0 -> h1 -> h2 ->
+	# h3 -> h4 -> h0 -> h1 to get h0,h2,h3,h4 < 2^26 and h1 < 2^26 + a small
+	# amount.  Careful: we must not assume the carry bits 'd0 >> 26',
+	# 'd1 >> 26', 'd2 >> 26', 'd3 >> 26', and '(d4 >> 26) * 5' fit in 32-bit
+	# integers.  It's true in a single-block implementation, but not here.
+
 	# d1 += d0 >> 26
 	mov		d0,%rax
 	shr		$26,%rax
@@ -558,16 +564,16 @@ ENTRY(poly1305_2block_sse2)
 	# h0 += (d4 >> 26) * 5
 	mov		d4,%rax
 	shr		$26,%rax
-	lea		(%eax,%eax,4),%eax
-	add		%eax,%ebx
+	lea		(%rax,%rax,4),%rax
+	add		%rax,%rbx
 	# h4 = d4 & 0x3ffffff
 	mov		d4,%rax
 	and		$0x3ffffff,%eax
 	mov		%eax,h4
 
 	# h1 += h0 >> 26
-	mov		%ebx,%eax
-	shr		$26,%eax
+	mov		%rbx,%rax
+	shr		$26,%rax
 	add		%eax,h1
 	# h0 = h0 & 0x3ffffff
 	andl		$0x3ffffff,%ebx
@@ -581,4 +587,4 @@ ENTRY(poly1305_2block_sse2)
 	pop		%r12
 	pop		%rbx
 	ret
-ENDPROC(poly1305_2block_sse2)
+SYM_FUNC_END(poly1305_2block_sse2)
