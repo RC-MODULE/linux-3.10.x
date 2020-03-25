@@ -1467,8 +1467,10 @@ static int greth_of_probe(struct platform_device *ofdev)
 		goto error2;
 	}
 
+#ifndef CONFIG_ARM
 	/* setup dma -offset for bus */
 	greth->dev->archdata.dma_offset = - (greth->dev->dma_pfn_offset << PAGE_SHIFT); 	/* before v5.5 it was: set_dma_offset(greth->dev, - (greth->dev->dma_pfn_offset << PAGE_SHIFT)); */
+#endif
 
 	/* Allocate TX descriptor ring in coherent memory */
 	greth->tx_bd_base = dma_alloc_coherent(greth->dev, 1024,
