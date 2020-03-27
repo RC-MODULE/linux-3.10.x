@@ -504,6 +504,7 @@ static long easynmc_ioctl(struct file *filp, unsigned int ioctl_num, unsigned lo
 		struct dma_buf *buffer;
 		struct dma_buf_attachment *attachement;
 		struct sg_table *sg_tbl;
+		int is_arm_core = (strcmp(core->type, "arm") == 0);
 		int ret = get_user(fd,  (uint32_t __user *) ioctl_param);
 		if (ret)
 			return -EFAULT;
@@ -531,7 +532,16 @@ static long easynmc_ioctl(struct file *filp, unsigned int ioctl_num, unsigned lo
 		dma_buf_detach(buffer, attachement);
 		dma_buf_put(buffer);
 
+#ifdef CONFIG_TARGET_1879VM8YA
+		if (is_arm_core)
+			ret = put_user((uint32_t)(paddr), (uint32_t __user *) ioctl_param);
+		else
+			ret = put_user((uint32_t)(paddr >> 2), (uint32_t __user *) ioctl_param);
+#elif CONFIG_1888TX018
 		ret = put_user((uint32_t)((paddr >> 2) + 0x10000000), (uint32_t __user *) ioctl_param);
+else
+		ret = put_user((uint32_t)(paddr >> 2), (uint32_t __user *) ioctl_param);
+#endif
 		if (ret)
 			return -EFAULT;
 		break;
