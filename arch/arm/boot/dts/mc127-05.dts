@@ -3,11 +3,12 @@
  */
 
 /dts-v1/;
-#include "skeleton.dtsi"
-
 / {
     model = "RC-Module 1879VM8YA SoC";
     compatible = "rcm,1879VM8YA";
+
+	#address-cells = <1>;
+	#size-cells = <1>;
 
     aliases {
         uart0 = &spiuart;
@@ -114,7 +115,7 @@
                 clock-names = "wdogclk", "apb_pclk";
             };
 
-            ssp@000cf000 {
+            spi@000cf000 {
                 compatible = "arm,pl022", "arm,primecell";
                 bus-id = <0>;
                 reg = <0x600cf000 0x1000>;

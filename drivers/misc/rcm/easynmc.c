@@ -497,14 +497,15 @@ static long easynmc_ioctl(struct file *filp, unsigned int ioctl_num, unsigned lo
 
 // [***] EasyNMC prototype (start) FixMe!!!
 #ifdef CONFIG_ION
-	case IOCTL_NMC3_ION2NMC:
 	{
 		uint32_t fd;
 		phys_addr_t paddr;
 		struct dma_buf *buffer;
 		struct dma_buf_attachment *attachement;
 		struct sg_table *sg_tbl;
+#ifdef CONFIG_TARGET_1879VM8YA
 		int is_arm_core = (strcmp(core->type, "arm") == 0);
+#endif		
 		int ret = get_user(fd,  (uint32_t __user *) ioctl_param);
 		if (ret)
 			return -EFAULT;
@@ -539,8 +540,8 @@ static long easynmc_ioctl(struct file *filp, unsigned int ioctl_num, unsigned lo
 			ret = put_user((uint32_t)(paddr >> 2), (uint32_t __user *) ioctl_param);
 #elif CONFIG_1888TX018
 		ret = put_user((uint32_t)((paddr >> 2) + 0x10000000), (uint32_t __user *) ioctl_param);
-else
-		ret = put_user((uint32_t)(paddr >> 2), (uint32_t __user *) ioctl_param);
+#else
+		ret = put_user((uint32_t)(paddr >> 2), (uint32_t __user *) ioctl_param);		
 #endif
 		if (ret)
 			return -EFAULT;
