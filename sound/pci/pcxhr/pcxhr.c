@@ -1,23 +1,10 @@
+// SPDX-License-Identifier: GPL-2.0-or-later
 /*
  * Driver for Digigram pcxhr compatible soundcards
  *
  * main file with alsa callbacks
  *
  * Copyright (c) 2004 by Digigram <alsa@digigram.com>
- *
- *   This program is free software; you can redistribute it and/or modify
- *   it under the terms of the GNU General Public License as published by
- *   the Free Software Foundation; either version 2 of the License, or
- *   (at your option) any later version.
- *
- *   This program is distributed in the hope that it will be useful,
- *   but WITHOUT ANY WARRANTY; without even the implied warranty of
- *   MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- *   GNU General Public License for more details.
- *
- *   You should have received a copy of the GNU General Public License
- *   along with this program; if not, write to the Free Software
- *   Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307 USA
  */
 
 
@@ -1184,7 +1171,7 @@ int pcxhr_create_pcm(struct snd_pcxhr *chip)
 	strcpy(pcm->name, name);
 
 	snd_pcm_lib_preallocate_pages_for_all(pcm, SNDRV_DMA_TYPE_DEV,
-					      snd_dma_pci_data(chip->mgr->pci),
+					      &chip->mgr->pci->dev,
 					      32*1024, 32*1024);
 	chip->pcm = pcm;
 	return 0;
@@ -1454,21 +1441,14 @@ static void pcxhr_proc_ltc(struct snd_info_entry *entry,
 
 static void pcxhr_proc_init(struct snd_pcxhr *chip)
 {
-	struct snd_info_entry *entry;
-
-	if (! snd_card_proc_new(chip->card, "info", &entry))
-		snd_info_set_text_ops(entry, chip, pcxhr_proc_info);
-	if (! snd_card_proc_new(chip->card, "sync", &entry))
-		snd_info_set_text_ops(entry, chip, pcxhr_proc_sync);
+	snd_card_ro_proc_new(chip->card, "info", chip, pcxhr_proc_info);
+	snd_card_ro_proc_new(chip->card, "sync", chip, pcxhr_proc_sync);
 	/* gpio available on stereo sound cards only */
-	if (chip->mgr->is_hr_stereo &&
-	    !snd_card_proc_new(chip->card, "gpio", &entry)) {
-		snd_info_set_text_ops(entry, chip, pcxhr_proc_gpio_read);
-		entry->c.text.write = pcxhr_proc_gpo_write;
-		entry->mode |= 0200;
-	}
-	if (!snd_card_proc_new(chip->card, "ltc", &entry))
-		snd_info_set_text_ops(entry, chip, pcxhr_proc_ltc);
+	if (chip->mgr->is_hr_stereo)
+		snd_card_rw_proc_new(chip->card, "gpio", chip,
+				     pcxhr_proc_gpio_read,
+				     pcxhr_proc_gpo_write);
+	snd_card_ro_proc_new(chip->card, "ltc", chip, pcxhr_proc_ltc);
 }
 /* end of proc interface */
 
@@ -1664,7 +1644,7 @@ static int pcxhr_probe(struct pci_dev *pci,
 
 	/* create hostport purgebuffer */
 	size = PAGE_ALIGN(sizeof(struct pcxhr_hostport));
-	if (snd_dma_alloc_pages(SNDRV_DMA_TYPE_DEV, snd_dma_pci_data(pci),
+	if (snd_dma_alloc_pages(SNDRV_DMA_TYPE_DEV, &pci->dev,
 				size, &mgr->hostport) < 0) {
 		pcxhr_free(mgr);
 		return -ENOMEM;

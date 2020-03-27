@@ -1,11 +1,8 @@
+// SPDX-License-Identifier: GPL-2.0-only
 /*
  * Stream Parser
  *
  * Copyright (c) 2016 Tom Herbert <tom@herbertland.com>
- *
- * This program is free software; you can redistribute it and/or modify
- * it under the terms of the GNU General Public License version 2
- * as published by the Free Software Foundation.
  */
 
 #include <linux/bpf.h>
@@ -14,7 +11,8 @@
 #include <linux/file.h>
 #include <linux/in.h>
 #include <linux/kernel.h>
-#include <linux/module.h>
+#include <linux/export.h>
+#include <linux/init.h>
 #include <linux/net.h>
 #include <linux/netdevice.h>
 #include <linux/poll.h>
@@ -159,18 +157,14 @@ static int __strp_recv(read_descriptor_t *desc, struct sk_buff *orig_skb,
 					return 0;
 				}
 
-				skb = alloc_skb(0, GFP_ATOMIC);
+				skb = alloc_skb_for_msg(head);
 				if (!skb) {
 					STRP_STATS_INCR(strp->stats.mem_fail);
 					desc->error = -ENOMEM;
 					return 0;
 				}
-				skb->len = head->len;
-				skb->data_len = head->len;
-				skb->truesize = head->truesize;
-				*_strp_msg(skb) = *_strp_msg(head);
+
 				strp->skb_nextp = &head->next;
-				skb_shinfo(skb)->frag_list = head;
 				strp->skb_head = skb;
 				head = skb;
 			} else {
@@ -201,14 +195,16 @@ static int __strp_recv(read_descriptor_t *desc, struct sk_buff *orig_skb,
 			memset(stm, 0, sizeof(*stm));
 			stm->strp.offset = orig_offset + eaten;
 		} else {
-			/* Unclone since we may be appending to an skb that we
+			/* Unclone if we are appending to an skb that we
 			 * already share a frag_list with.
 			 */
-			err = skb_unclone(skb, GFP_ATOMIC);
-			if (err) {
-				STRP_STATS_INCR(strp->stats.mem_fail);
-				desc->error = err;
-				break;
+			if (skb_has_frag_list(skb)) {
+				err = skb_unclone(skb, GFP_ATOMIC);
+				if (err) {
+					STRP_STATS_INCR(strp->stats.mem_fail);
+					desc->error = err;
+					break;
+				}
 			}
 
 			stm = _strp_msg(head);
@@ -295,7 +291,7 @@ static int __strp_recv(read_descriptor_t *desc, struct sk_buff *orig_skb,
 			break;
 		}
 
-		/* Positive extra indicates ore bytes than needed for the
+		/* Positive extra indicates more bytes than needed for the
 		 * message
 		 */
 
@@ -404,8 +400,6 @@ EXPORT_SYMBOL_GPL(strp_data_ready);
 
 static void do_strp_work(struct strparser *strp)
 {
-	read_descriptor_t rd_desc;
-
 	/* We need the read lock to synchronize with strp_data_ready. We
 	 * need the socket lock for calling strp_read_sock.
 	 */
@@ -416,8 +410,6 @@ static void do_strp_work(struct strparser *strp)
 
 	if (strp->paused)
 		goto out;
-
-	rd_desc.arg.data = strp;
 
 	if (strp_read_sock(strp) == -ENOMEM)
 		queue_work(strp_wq, &strp->work);
@@ -547,17 +539,12 @@ void strp_check_rcv(struct strparser *strp)
 }
 EXPORT_SYMBOL_GPL(strp_check_rcv);
 
-static int __init strp_mod_init(void)
+static int __init strp_dev_init(void)
 {
 	strp_wq = create_singlethread_workqueue("kstrp");
+	if (unlikely(!strp_wq))
+		return -ENOMEM;
 
 	return 0;
 }
-
-static void __exit strp_mod_exit(void)
-{
-	destroy_workqueue(strp_wq);
-}
-module_init(strp_mod_init);
-module_exit(strp_mod_exit);
-MODULE_LICENSE("GPL");
+device_initcall(strp_dev_init);

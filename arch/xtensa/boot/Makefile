@@ -29,12 +29,12 @@ all: $(boot-y)
 Image: boot-elf
 zImage: boot-redboot
 uImage: $(obj)/uImage
+xipImage: $(obj)/xipImage
 
-boot-elf boot-redboot: $(addprefix $(obj)/,$(subdir-y)) \
-		       $(addprefix $(obj)/,$(host-progs))
+boot-elf boot-redboot: $(addprefix $(obj)/,$(subdir-y))
 	$(Q)$(MAKE) $(build)=$(obj)/$@ $(MAKECMDGOALS)
 
-OBJCOPYFLAGS = --strip-all -R .comment -R .note.gnu.build-id -O binary
+OBJCOPYFLAGS = --strip-all -R .comment -R .notes -O binary
 
 vmlinux.bin: vmlinux FORCE
 	$(call if_changed,objcopy)
@@ -50,4 +50,8 @@ UIMAGE_COMPRESSION = gzip
 
 $(obj)/uImage: vmlinux.bin.gz FORCE
 	$(call if_changed,uimage)
+	$(Q)$(kecho) '  Kernel: $@ is ready'
+
+$(obj)/xipImage: vmlinux FORCE
+	$(call if_changed,objcopy)
 	$(Q)$(kecho) '  Kernel: $@ is ready'

@@ -4107,7 +4107,7 @@ static int module_vdu_core_probe(struct platform_device *pdev)
 		}
 	}
 	// setup dma -offset for bus
-	set_dma_offset(&pdev->dev, -(pdev->dev.dma_pfn_offset << PAGE_SHIFT));
+	pdev->dev.archdata.dma_offset = -(pdev->dev.dma_pfn_offset << PAGE_SHIFT); 	/* before v5.5 it was: set_dma_offset(&pdev->dev, -(pdev->dev.dma_pfn_offset << PAGE_SHIFT)); */
 #endif
 
 	vdu->regs_phys = res->start;

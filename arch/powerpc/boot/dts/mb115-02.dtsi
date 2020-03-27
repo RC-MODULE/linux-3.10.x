@@ -1,0 +1,107 @@
+/*
+*
+* Device Tree Source for RCM MB115.02 extention board ( SRAM-NOR module )
+*
+*/
+
+/ {
+	plb {
+		sram_nor_arbiter {
+			status = "okay";
+			sram-nor-mux = <1>;		/* 0 to route extmem wires to LSIF0, 1 - to MCIF (page 922) */
+			ce-manage = <2>;		/* MCIF(page 913 + confluence): cs0..3=>1 controller,cs4,5=>2 controller,cs-mode=0,chip-num=0x3F */
+			pinctrl-names = "default";
+			pinctrl-0 =
+				<&lsif0_mgpio0_sram_nor>,
+				<&lsif0_mgpio1_sram_nor>,
+				<&lsif0_mgpio2_sram_nor>,
+				<&lsif0_mgpio3_sram_nor>,
+				<&lsif0_mgpio4_sram_nor>,
+				<&lsif0_mgpio5_sram_nor>,
+				<&lsif0_mgpio6_sram_nor>,
+				<&lsif0_mgpio7_sram_nor>,
+				<&lsif0_mgpio8_sram_nor>;
+		};
+
+		sram_plb_nor0: sram_plb_nor0@0x80170000 {
+			status = "disabled";
+			cs-mode = <0>;			/* 0 - cs in address, 1 - cs in reg (page 983) */
+			addr-size = <22>;		/* min 10 max 26 bit (page 983) */
+			timings = <0x1f1f0808>;		/* (page 984) */
+			chip-num = <15>;		/* (page 975) */
+			sram: sram@0 {
+				compatible = "mmio-sram";
+				#address-cells = <1>;
+				#size-cells = <1>;
+				reg = <0x00000000 0x10000000>;
+				ranges = <0 0x0 0x10000000>;
+
+				exported@0 {
+					reg = <0x0 0x10000000>;
+					export;
+				};
+			};
+		};
+
+		sram_plb_nor1: sram_plb_nor1@0x80190000 {
+			status = "ok";
+			cs-mode = <0>;							/* 0 - cs in address, 1 - cs in reg */
+			addr-size = <26>;						/* min 10 max 26 bit */
+			timings = <0x1f1f0808>;
+			chip-num = <15>;						/* (page 975) */
+
+			nor_flash0: nor_flash0@0 {
+				compatible = "cfi-flash";
+				reg = <0x00000000 0x10000000>;
+				bank-width = <4>;
+				#size-cells = <1>;
+				#address-cells = <1>;
+				little-endian;
+
+				partition@0 {
+					label = "uboot_spl";
+					reg = <0x00000 0x40000>;
+				};
+
+				partition@40000 {
+					label = "uboot";
+					reg = <0x40000 0x1000000>;
+				};
+
+				partition@1040000 {
+					label = "uboot_env";
+					reg = <0x1040000 0x40000>;
+				};
+
+				partition@1080000 {
+					label = "kern_dtb";
+					reg = <0x1080000 0x100000>;
+				};
+
+				partition@1180000 {
+					label = "kern";
+					reg = <0x1180000 0x1000000>;
+				};
+
+				partition@2180000 {
+					label = "rootfs";
+					reg = <0x2180000 0xDE80000>;
+				};
+			};
+
+			nor_flash1: nor_flash1@0 {
+				compatible = "cfi-flash";
+				reg = <0x10000000 0x10000000>;
+				bank-width = <4>;
+				#size-cells = <1>;
+				#address-cells = <1>;
+				little-endian;
+
+				partition@0 {
+					label = "rootf2";
+					reg = <0x00000000 0x10000000>;
+				};
+			};
+		};
+	};
+};

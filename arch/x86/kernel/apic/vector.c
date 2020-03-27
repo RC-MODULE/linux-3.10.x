@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: GPL-2.0-only
 /*
  * Local APIC related interfaces to support IOAPIC, MSI, etc.
  *
@@ -5,18 +6,16 @@
  *	Moved from arch/x86/kernel/apic/io_apic.c.
  * Jiang Liu <jiang.liu@linux.intel.com>
  *	Enable support of hierarchical irqdomains
- *
- * This program is free software; you can redistribute it and/or modify
- * it under the terms of the GNU General Public License version 2 as
- * published by the Free Software Foundation.
  */
 #include <linux/interrupt.h>
+#include <linux/irq.h>
 #include <linux/seq_file.h>
 #include <linux/init.h>
 #include <linux/compiler.h>
 #include <linux/slab.h>
 #include <asm/irqdomain.h>
 #include <asm/hw_irq.h>
+#include <asm/traps.h>
 #include <asm/apic.h>
 #include <asm/i8259.h>
 #include <asm/desc.h>
@@ -218,7 +217,8 @@ static int reserve_irq_vector(struct irq_data *irqd)
 	return 0;
 }
 
-static int allocate_vector(struct irq_data *irqd, const struct cpumask *dest)
+static int
+assign_vector_locked(struct irq_data *irqd, const struct cpumask *dest)
 {
 	struct apic_chip_data *apicd = apic_chip_data(irqd);
 	bool resvd = apicd->has_reserved;
@@ -245,22 +245,12 @@ static int allocate_vector(struct irq_data *irqd, const struct cpumask *dest)
 		return -EBUSY;
 
 	vector = irq_matrix_alloc(vector_matrix, dest, resvd, &cpu);
-	if (vector > 0)
-		apic_update_vector(irqd, vector, cpu);
 	trace_vector_alloc(irqd->irq, vector, resvd, vector);
-	return vector;
-}
-
-static int assign_vector_locked(struct irq_data *irqd,
-				const struct cpumask *dest)
-{
-	struct apic_chip_data *apicd = apic_chip_data(irqd);
-	int vector = allocate_vector(irqd, dest);
-
 	if (vector < 0)
 		return vector;
+	apic_update_vector(irqd, vector, cpu);
+	apic_update_irq_cfg(irqd, vector, cpu);
 
-	apic_update_irq_cfg(irqd, apicd->vector, apicd->cpu);
 	return 0;
 }
 
@@ -321,14 +311,13 @@ assign_managed_vector(struct irq_data *irqd, const struct cpumask *dest)
 	struct apic_chip_data *apicd = apic_chip_data(irqd);
 	int vector, cpu;
 
-	cpumask_and(vector_searchmask, vector_searchmask, affmsk);
-	cpu = cpumask_first(vector_searchmask);
-	if (cpu >= nr_cpu_ids)
-		return -EINVAL;
+	cpumask_and(vector_searchmask, dest, affmsk);
+
 	/* set_affinity might call here for nothing */
 	if (apicd->vector && cpumask_test_cpu(apicd->cpu, vector_searchmask))
 		return 0;
-	vector = irq_matrix_alloc_managed(vector_matrix, cpu);
+	vector = irq_matrix_alloc_managed(vector_matrix, vector_searchmask,
+					  &cpu);
 	trace_vector_alloc_managed(irqd->irq, vector, vector);
 	if (vector < 0)
 		return vector;
@@ -351,7 +340,7 @@ static void clear_irq_vector(struct irq_data *irqd)
 	trace_vector_clear(irqd->irq, vector, apicd->cpu, apicd->prev_vector,
 			   apicd->prev_cpu);
 
-	per_cpu(vector_irq, apicd->cpu)[vector] = VECTOR_UNUSED;
+	per_cpu(vector_irq, apicd->cpu)[vector] = VECTOR_SHUTDOWN;
 	irq_matrix_free(vector_matrix, apicd->cpu, vector, managed);
 	apicd->vector = 0;
 
@@ -360,7 +349,7 @@ static void clear_irq_vector(struct irq_data *irqd)
 	if (!vector)
 		return;
 
-	per_cpu(vector_irq, apicd->prev_cpu)[vector] = VECTOR_UNUSED;
+	per_cpu(vector_irq, apicd->prev_cpu)[vector] = VECTOR_SHUTDOWN;
 	irq_matrix_free(vector_matrix, apicd->prev_cpu, vector, managed);
 	apicd->prev_vector = 0;
 	apicd->move_in_progress = 0;
@@ -409,6 +398,17 @@ static int activate_reserved(struct irq_data *irqd)
 		if (!irqd_can_reserve(irqd))
 			apicd->can_reserve = false;
 	}
+
+	/*
+	 * Check to ensure that the effective affinity mask is a subset
+	 * the user supplied affinity mask, and warn the user if it is not
+	 */
+	if (!cpumask_subset(irq_data_get_effective_affinity_mask(irqd),
+			    irq_data_get_affinity_mask(irqd))) {
+		pr_warn("irq %u: Affinity broken due to vector space exhaustion.\n",
+			irqd->irq);
+	}
+
 	return ret;
 }
 
@@ -421,7 +421,7 @@ static int activate_managed(struct irq_data *irqd)
 	if (WARN_ON_ONCE(cpumask_empty(vector_searchmask))) {
 		/* Something in the core code broke! Survive gracefully */
 		pr_err("Managed startup for irq %u, but no CPU\n", irqd->irq);
-		return EINVAL;
+		return -EINVAL;
 	}
 
 	ret = assign_managed_vector(irqd, vector_searchmask);
@@ -433,7 +433,7 @@ static int activate_managed(struct irq_data *irqd)
 		pr_err("Managed startup irq %u, no vector available\n",
 		       irqd->irq);
 	}
-       return ret;
+	return ret;
 }
 
 static int x86_vector_activate(struct irq_domain *dom, struct irq_data *irqd,

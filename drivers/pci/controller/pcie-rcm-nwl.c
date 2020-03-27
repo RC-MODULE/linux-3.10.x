@@ -830,11 +830,10 @@ static const struct irq_domain_ops legacy_domain_ops = {
 #ifdef CONFIG_PCI_MSI
 static struct irq_chip nwl_msi_irq_chip = {
 	.name = "nwl_pcie:msi",
-	.irq_enable = unmask_msi_irq,
-	.irq_disable = mask_msi_irq,
-	.irq_mask = mask_msi_irq,
-	.irq_unmask = unmask_msi_irq,
-
+	.irq_enable = pci_msi_unmask_irq,
+	.irq_disable = pci_msi_mask_irq,
+	.irq_mask = pci_msi_mask_irq,
+	.irq_unmask = pci_msi_unmask_irq,
 };
 
 static struct msi_domain_info nwl_msi_domain_info = {
@@ -1390,7 +1389,6 @@ static int nwl_pcie_probe(struct platform_device *pdev)
 	struct pci_controller *hose = NULL;
 
 	int err;
-	resource_size_t iobase = 0;
 	LIST_HEAD(res);
 
 	bridge = devm_pci_alloc_host_bridge(dev, sizeof(*pcie));
@@ -1422,16 +1420,12 @@ static int nwl_pcie_probe(struct platform_device *pdev)
 		return err;
 	}
 
-	err = devm_of_pci_get_host_bridge_resources(dev, 0, 0xff, &res,
-						    &iobase);
+	err = pci_parse_request_of_pci_ranges(dev, &bridge->windows,
+					      &bridge->dma_ranges, NULL);
 	if (err) {
 		dev_err(dev, "Getting bridge resources failed\n");
 		return err;
 	}
-
-	err = devm_request_pci_bus_resources(dev, &res);
-	if (err)
-		goto error;
 
 	err = nwl_pcie_parse_map_dma_ranges(pcie, dev->of_node);
 	if (err)

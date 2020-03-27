@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: GPL-2.0-or-later
 /*
  *   (Tentative) USB Audio Driver for ALSA
  *
@@ -8,21 +9,6 @@
  *	    Thomas Sailer (sailer@ife.ee.ethz.ch)
  *
  *   Audio Class 3.0 support by Ruslan Bilovol <ruslan.bilovol@gmail.com>
- *
- *   This program is free software; you can redistribute it and/or modify
- *   it under the terms of the GNU General Public License as published by
- *   the Free Software Foundation; either version 2 of the License, or
- *   (at your option) any later version.
- *
- *   This program is distributed in the hope that it will be useful,
- *   but WITHOUT ANY WARRANTY; without even the implied warranty of
- *   MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- *   GNU General Public License for more details.
- *
- *   You should have received a copy of the GNU General Public License
- *   along with this program; if not, write to the Free Software
- *   Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307 USA
- *
  *
  *  NOTES:
  *
@@ -68,6 +54,7 @@
 #include "format.h"
 #include "power.h"
 #include "stream.h"
+#include "media.h"
 
 MODULE_AUTHOR("Takashi Iwai <tiwai@suse.de>");
 MODULE_DESCRIPTION("USB Audio");
@@ -87,6 +74,7 @@ static bool autoclock = true;
 static char *quirk_alias[SNDRV_CARDS];
 
 bool snd_usb_use_vmalloc = true;
+bool snd_usb_skip_validation;
 
 module_param_array(index, int, NULL, 0444);
 MODULE_PARM_DESC(index, "Index value for the USB audio adapter.");
@@ -109,6 +97,8 @@ module_param_array(quirk_alias, charp, NULL, 0444);
 MODULE_PARM_DESC(quirk_alias, "Quirk aliases, e.g. 0123abcd:5678beef.");
 module_param_named(use_vmalloc, snd_usb_use_vmalloc, bool, 0444);
 MODULE_PARM_DESC(use_vmalloc, "Use vmalloc for PCM intermediate buffers (default: yes).");
+module_param_named(skip_validation, snd_usb_skip_validation, bool, 0444);
+MODULE_PARM_DESC(skip_validation, "Skip unit descriptor validation (default: no).");
 
 /*
  * we keep the snd_usb_audio_t instances by ourselves for merging
@@ -246,7 +236,7 @@ static int snd_usb_create_streams(struct snd_usb_audio *chip, int ctrlif)
 		h1 = snd_usb_find_csint_desc(host_iface->extra,
 							 host_iface->extralen,
 							 NULL, UAC_HEADER);
-		if (!h1) {
+		if (!h1 || h1->bLength < sizeof(*h1)) {
 			dev_err(&dev->dev, "cannot find UAC_HEADER\n");
 			return -EINVAL;
 		}
@@ -673,6 +663,11 @@ static int usb_audio_probe(struct usb_interface *intf,
 	if (err < 0)
 		goto __error;
 
+	if (quirk && quirk->shares_media_device) {
+		/* don't want to fail when snd_media_device_create() fails */
+		snd_media_device_create(chip, intf);
+	}
+
 	usb_chip[chip->index] = chip;
 	chip->num_interfaces++;
 	usb_set_intfdata(intf, chip);
@@ -682,9 +677,12 @@ static int usb_audio_probe(struct usb_interface *intf,
 
  __error:
 	if (chip) {
+		/* chip->active is inside the chip->card object,
+		 * decrement before memory is possibly returned.
+		 */
+		atomic_dec(&chip->active);
 		if (!chip->num_interfaces)
 			snd_card_free(chip->card);
-		atomic_dec(&chip->active);
 	}
 	mutex_unlock(&register_mutex);
 	return err;
@@ -729,6 +727,14 @@ static void usb_audio_disconnect(struct usb_interface *intf)
 		list_for_each(p, &chip->midi_list) {
 			snd_usbmidi_disconnect(p);
 		}
+		/*
+		 * Nice to check quirk && quirk->shares_media_device and
+		 * then call the snd_media_device_delete(). Don't have
+		 * access to the quirk here. snd_media_device_delete()
+		 * accesses mixer_list
+		 */
+		snd_media_device_delete(chip);
+
 		/* release mixer resources */
 		list_for_each_entry(mixer, &chip->mixer_list, list) {
 			snd_usb_mixer_disconnect(mixer);
@@ -808,7 +814,7 @@ static int usb_audio_suspend(struct usb_interface *intf, pm_message_t message)
 		snd_power_change_state(chip->card, SNDRV_CTL_POWER_D3hot);
 	if (!chip->num_suspended_intf++) {
 		list_for_each_entry(as, &chip->pcm_list, list) {
-			snd_pcm_suspend_all(as->pcm);
+			snd_usb_pcm_suspend(as);
 			as->substream[0].need_setup_ep =
 				as->substream[1].need_setup_ep = true;
 		}
@@ -824,6 +830,7 @@ static int usb_audio_suspend(struct usb_interface *intf, pm_message_t message)
 static int __usb_audio_resume(struct usb_interface *intf, bool reset_resume)
 {
 	struct snd_usb_audio *chip = usb_get_intfdata(intf);
+	struct snd_usb_stream *as;
 	struct usb_mixer_interface *mixer;
 	struct list_head *p;
 	int err = 0;
@@ -834,6 +841,13 @@ static int __usb_audio_resume(struct usb_interface *intf, bool reset_resume)
 		return 0;
 
 	atomic_inc(&chip->active); /* avoid autopm */
+
+	list_for_each_entry(as, &chip->pcm_list, list) {
+		err = snd_usb_pcm_resume(as);
+		if (err < 0)
+			goto err_out;
+	}
+
 	/*
 	 * ALSA leaves material resumption to user space
 	 * we just notify and restart the mixers

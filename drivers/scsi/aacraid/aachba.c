@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: GPL-2.0-or-later
 /*
  *	Adaptec AAC series RAID controller driver
  *	(c) Copyright 2001 Red Hat Inc.
@@ -9,25 +10,10 @@
  *               2010-2015 PMC-Sierra, Inc. (aacraid@pmc-sierra.com)
  *		 2016-2017 Microsemi Corp. (aacraid@microsemi.com)
  *
- * This program is free software; you can redistribute it and/or modify
- * it under the terms of the GNU General Public License as published by
- * the Free Software Foundation; either version 2, or (at your option)
- * any later version.
- *
- * This program is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU General Public License for more details.
- *
- * You should have received a copy of the GNU General Public License
- * along with this program; see the file COPYING.  If not, write to
- * the Free Software Foundation, 675 Mass Ave, Cambridge, MA 02139, USA.
- *
  * Module Name:
  *  aachba.c
  *
  * Abstract: Contains Interfaces to manage IOs.
- *
  */
 
 #include <linux/kernel.h>
@@ -114,8 +100,6 @@
 #define ASENCODE_INVALID_MESSAGE_ERROR		0x00
 #define ASENCODE_LUN_FAILED_SELF_CONFIG		0x00
 #define ASENCODE_OVERLAPPED_COMMAND		0x00
-
-#define AAC_STAT_GOOD (DID_OK << 16 | COMMAND_COMPLETE << 8 | SAM_STAT_GOOD)
 
 #define BYTE0(x) (unsigned char)(x)
 #define BYTE1(x) (unsigned char)((x) >> 8)
@@ -551,7 +535,7 @@ static void get_container_name_callback(void *context, struct fib * fibptr)
 	if ((le32_to_cpu(get_name_reply->status) == CT_OK)
 	 && (get_name_reply->data[0] != '\0')) {
 		char *sp = get_name_reply->data;
-		int data_size = FIELD_SIZEOF(struct aac_get_name_resp, data);
+		int data_size = sizeof_field(struct aac_get_name_resp, data);
 
 		sp[data_size - 1] = '\0';
 		while (*sp == ' ')
@@ -590,7 +574,7 @@ static int aac_get_container_name(struct scsi_cmnd * scsicmd)
 
 	dev = (struct aac_dev *)scsicmd->device->host->hostdata;
 
-	data_size = FIELD_SIZEOF(struct aac_get_name_resp, data);
+	data_size = sizeof_field(struct aac_get_name_resp, data);
 
 	cmd_fibcontext = aac_fib_alloc_tag(dev, scsicmd);
 
@@ -1493,6 +1477,7 @@ static struct aac_srb * aac_scsi_common(struct fib * fib, struct scsi_cmnd * cmd
 	struct aac_srb * srbcmd;
 	u32 flag;
 	u32 timeout;
+	struct aac_dev *dev = fib->dev;
 
 	aac_fib_init(fib);
 	switch(cmd->sc_data_direction){
@@ -1519,7 +1504,7 @@ static struct aac_srb * aac_scsi_common(struct fib * fib, struct scsi_cmnd * cmd
 	srbcmd->flags    = cpu_to_le32(flag);
 	timeout = cmd->request->timeout/HZ;
 	if (timeout == 0)
-		timeout = 1;
+		timeout = (dev->sa_firmware ? AAC_SA_TIMEOUT : AAC_ARC_TIMEOUT);
 	srbcmd->timeout  = cpu_to_le32(timeout);  // timeout in seconds
 	srbcmd->retry_limit = 0; /* Obsolete parameter */
 	srbcmd->cdb_size = cpu_to_le32(cmd->cmd_len);
@@ -2483,13 +2468,13 @@ static int aac_read(struct scsi_cmnd * scsicmd)
 		scsicmd->result = DID_OK << 16 | COMMAND_COMPLETE << 8 |
 			SAM_STAT_CHECK_CONDITION;
 		set_sense(&dev->fsa_dev[cid].sense_data,
-			  HARDWARE_ERROR, SENCODE_INTERNAL_TARGET_FAILURE,
+			  ILLEGAL_REQUEST, SENCODE_LBA_OUT_OF_RANGE,
 			  ASENCODE_INTERNAL_TARGET_FAILURE, 0, 0);
 		memcpy(scsicmd->sense_buffer, &dev->fsa_dev[cid].sense_data,
 		       min_t(size_t, sizeof(dev->fsa_dev[cid].sense_data),
 			     SCSI_SENSE_BUFFERSIZE));
 		scsicmd->scsi_done(scsicmd);
-		return 1;
+		return 0;
 	}
 
 	dprintk((KERN_DEBUG "aac_read[cpu %d]: lba = %llu, t = %ld.\n",
@@ -2575,13 +2560,13 @@ static int aac_write(struct scsi_cmnd * scsicmd)
 		scsicmd->result = DID_OK << 16 | COMMAND_COMPLETE << 8 |
 			SAM_STAT_CHECK_CONDITION;
 		set_sense(&dev->fsa_dev[cid].sense_data,
-			  HARDWARE_ERROR, SENCODE_INTERNAL_TARGET_FAILURE,
+			  ILLEGAL_REQUEST, SENCODE_LBA_OUT_OF_RANGE,
 			  ASENCODE_INTERNAL_TARGET_FAILURE, 0, 0);
 		memcpy(scsicmd->sense_buffer, &dev->fsa_dev[cid].sense_data,
 		       min_t(size_t, sizeof(dev->fsa_dev[cid].sense_data),
 			     SCSI_SENSE_BUFFERSIZE));
 		scsicmd->scsi_done(scsicmd);
-		return 1;
+		return 0;
 	}
 
 	dprintk((KERN_DEBUG "aac_write[cpu %d]: lba = %llu, t = %ld.\n",
@@ -2894,6 +2879,7 @@ int aac_scsi_cmd(struct scsi_cmnd * scsicmd)
 					    !(dev->raw_io_64) ||
 					    ((scsicmd->cmnd[1] & 0x1f) != SAI_READ_CAPACITY_16))
 						break;
+					/* fall through */
 				case INQUIRY:
 				case READ_CAPACITY:
 				case TEST_UNIT_READY:
@@ -2961,12 +2947,14 @@ int aac_scsi_cmd(struct scsi_cmnd * scsicmd)
 
 	case SYNCHRONIZE_CACHE:
 		if (((aac_cache & 6) == 6) && dev->cache_protected) {
-			scsicmd->result = AAC_STAT_GOOD;
+			scsicmd->result = DID_OK << 16 | COMMAND_COMPLETE << 8 |
+					  SAM_STAT_GOOD;
 			break;
 		}
 		/* Issue FIB to tell Firmware to flush it's cache */
 		if ((aac_cache & 6) != 2)
 			return aac_synchronize(scsicmd);
+		/* fall through */
 	case INQUIRY:
 	{
 		struct inquiry_data inq_data;
@@ -2989,7 +2977,9 @@ int aac_scsi_cmd(struct scsi_cmnd * scsicmd)
 				arr[1] = scsicmd->cmnd[2];
 				scsi_sg_copy_from_buffer(scsicmd, &inq_data,
 							 sizeof(inq_data));
-				scsicmd->result = AAC_STAT_GOOD;
+				scsicmd->result = DID_OK << 16 |
+						  COMMAND_COMPLETE << 8 |
+						  SAM_STAT_GOOD;
 			} else if (scsicmd->cmnd[2] == 0x80) {
 				/* unit serial number page */
 				arr[3] = setinqserial(dev, &arr[4],
@@ -3000,7 +2990,9 @@ int aac_scsi_cmd(struct scsi_cmnd * scsicmd)
 				if (aac_wwn != 2)
 					return aac_get_container_serial(
 						scsicmd);
-				scsicmd->result = AAC_STAT_GOOD;
+				scsicmd->result = DID_OK << 16 |
+						  COMMAND_COMPLETE << 8 |
+						  SAM_STAT_GOOD;
 			} else if (scsicmd->cmnd[2] == 0x83) {
 				/* vpd page 0x83 - Device Identification Page */
 				char *sno = (char *)&inq_data;
@@ -3009,7 +3001,9 @@ int aac_scsi_cmd(struct scsi_cmnd * scsicmd)
 				if (aac_wwn != 2)
 					return aac_get_container_serial(
 						scsicmd);
-				scsicmd->result = AAC_STAT_GOOD;
+				scsicmd->result = DID_OK << 16 |
+						  COMMAND_COMPLETE << 8 |
+						  SAM_STAT_GOOD;
 			} else {
 				/* vpd page not implemented */
 				scsicmd->result = DID_OK << 16 |
@@ -3040,7 +3034,8 @@ int aac_scsi_cmd(struct scsi_cmnd * scsicmd)
 			inq_data.inqd_pdt = INQD_PDT_PROC;	/* Processor device */
 			scsi_sg_copy_from_buffer(scsicmd, &inq_data,
 						 sizeof(inq_data));
-			scsicmd->result = AAC_STAT_GOOD;
+			scsicmd->result = DID_OK << 16 | COMMAND_COMPLETE << 8 |
+					  SAM_STAT_GOOD;
 			break;
 		}
 		if (dev->in_reset)
@@ -3089,7 +3084,8 @@ int aac_scsi_cmd(struct scsi_cmnd * scsicmd)
 		/* Do not cache partition table for arrays */
 		scsicmd->device->removable = 1;
 
-		scsicmd->result = AAC_STAT_GOOD;
+		scsicmd->result = DID_OK << 16 | COMMAND_COMPLETE << 8 |
+				  SAM_STAT_GOOD;
 		break;
 	}
 
@@ -3115,7 +3111,8 @@ int aac_scsi_cmd(struct scsi_cmnd * scsicmd)
 		scsi_sg_copy_from_buffer(scsicmd, cp, sizeof(cp));
 		/* Do not cache partition table for arrays */
 		scsicmd->device->removable = 1;
-		scsicmd->result = AAC_STAT_GOOD;
+		scsicmd->result = DID_OK << 16 | COMMAND_COMPLETE << 8 |
+				  SAM_STAT_GOOD;
 		break;
 	}
 
@@ -3194,7 +3191,8 @@ int aac_scsi_cmd(struct scsi_cmnd * scsicmd)
 		scsi_sg_copy_from_buffer(scsicmd,
 					 (char *)&mpd,
 					 mode_buf_length);
-		scsicmd->result = AAC_STAT_GOOD;
+		scsicmd->result = DID_OK << 16 | COMMAND_COMPLETE << 8 |
+				  SAM_STAT_GOOD;
 		break;
 	}
 	case MODE_SENSE_10:
@@ -3271,7 +3269,8 @@ int aac_scsi_cmd(struct scsi_cmnd * scsicmd)
 					 (char *)&mpd10,
 					 mode_buf_length);
 
-		scsicmd->result = AAC_STAT_GOOD;
+		scsicmd->result = DID_OK << 16 | COMMAND_COMPLETE << 8 |
+				  SAM_STAT_GOOD;
 		break;
 	}
 	case REQUEST_SENSE:
@@ -3280,7 +3279,8 @@ int aac_scsi_cmd(struct scsi_cmnd * scsicmd)
 				sizeof(struct sense_data));
 		memset(&dev->fsa_dev[cid].sense_data, 0,
 				sizeof(struct sense_data));
-		scsicmd->result = AAC_STAT_GOOD;
+		scsicmd->result = DID_OK << 16 | COMMAND_COMPLETE << 8 |
+				  SAM_STAT_GOOD;
 		break;
 
 	case ALLOW_MEDIUM_REMOVAL:
@@ -3290,7 +3290,8 @@ int aac_scsi_cmd(struct scsi_cmnd * scsicmd)
 		else
 			fsa_dev_ptr[cid].locked = 0;
 
-		scsicmd->result = AAC_STAT_GOOD;
+		scsicmd->result = DID_OK << 16 | COMMAND_COMPLETE << 8 |
+				  SAM_STAT_GOOD;
 		break;
 	/*
 	 *	These commands are all No-Ops
@@ -3307,14 +3308,16 @@ int aac_scsi_cmd(struct scsi_cmnd * scsicmd)
 			       min_t(size_t,
 				     sizeof(dev->fsa_dev[cid].sense_data),
 				     SCSI_SENSE_BUFFERSIZE));
-		break;
+			break;
 		}
+		/* fall through */
 	case RESERVE:
 	case RELEASE:
 	case REZERO_UNIT:
 	case REASSIGN_BLOCKS:
 	case SEEK_10:
-		scsicmd->result = AAC_STAT_GOOD;
+		scsicmd->result = DID_OK << 16 | COMMAND_COMPLETE << 8 |
+				  SAM_STAT_GOOD;
 		break;
 
 	case START_STOP:
@@ -3439,7 +3442,7 @@ static int delete_disk(struct aac_dev *dev, void __user *arg)
 	}
 }
 
-int aac_dev_ioctl(struct aac_dev *dev, int cmd, void __user *arg)
+int aac_dev_ioctl(struct aac_dev *dev, unsigned int cmd, void __user *arg)
 {
 	switch (cmd) {
 	case FSACTL_QUERY_DISK:
@@ -3467,7 +3470,6 @@ int aac_dev_ioctl(struct aac_dev *dev, int cmd, void __user *arg)
 
 static void aac_srb_callback(void *context, struct fib * fibptr)
 {
-	struct aac_dev *dev;
 	struct aac_srb_reply *srbreply;
 	struct scsi_cmnd *scsicmd;
 
@@ -3477,8 +3479,6 @@ static void aac_srb_callback(void *context, struct fib * fibptr)
 		return;
 
 	BUG_ON(fibptr == NULL);
-
-	dev = fibptr->dev;
 
 	srbreply = (struct aac_srb_reply *) fib_data(fibptr);
 
@@ -3908,13 +3908,11 @@ static int aac_send_hba_fib(struct scsi_cmnd *scsicmd)
 
 static long aac_build_sg(struct scsi_cmnd *scsicmd, struct sgmap *psg)
 {
-	struct aac_dev *dev;
 	unsigned long byte_count = 0;
 	int nseg;
 	struct scatterlist *sg;
 	int i;
 
-	dev = (struct aac_dev *)scsicmd->device->host->hostdata;
 	// Get rid of old data
 	psg->count = 0;
 	psg->sg[0].addr = 0;
@@ -3950,14 +3948,12 @@ static long aac_build_sg(struct scsi_cmnd *scsicmd, struct sgmap *psg)
 
 static long aac_build_sg64(struct scsi_cmnd *scsicmd, struct sgmap64 *psg)
 {
-	struct aac_dev *dev;
 	unsigned long byte_count = 0;
 	u64 addr;
 	int nseg;
 	struct scatterlist *sg;
 	int i;
 
-	dev = (struct aac_dev *)scsicmd->device->host->hostdata;
 	// Get rid of old data
 	psg->count = 0;
 	psg->sg[0].addr[0] = 0;

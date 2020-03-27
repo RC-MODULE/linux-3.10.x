@@ -24,7 +24,7 @@
 #include <linux/timekeeping.h>
 #include "clock.h"
 
-#define NO_IDLEST			0x1
+#define NO_IDLEST			0
 
 #define OMAP4_MODULEMODE_MASK		0x3
 
@@ -33,6 +33,9 @@
 
 #define OMAP4_IDLEST_MASK		(0x3 << 16)
 #define OMAP4_IDLEST_SHIFT		16
+
+#define OMAP4_STBYST_MASK		BIT(18)
+#define OMAP4_STBYST_SHIFT		18
 
 #define CLKCTRL_IDLEST_FUNCTIONAL	0x0
 #define CLKCTRL_IDLEST_INTERFACE_IDLE	0x2
@@ -100,11 +103,12 @@ static bool _omap4_is_timeout(union omap4_timeout *time, u32 timeout)
 	 * can be from a timer that requires pm_runtime access, which
 	 * will eventually bring us here with timekeeping_suspended,
 	 * during both suspend entry and resume paths. This happens
-	 * at least on am43xx platform.
+	 * at least on am43xx platform. Account for flakeyness
+	 * with udelay() by multiplying the timeout value by 2.
 	 */
 	if (unlikely(_early_timeout || timekeeping_suspended)) {
 		if (time->cycles++ < timeout) {
-			udelay(1);
+			udelay(1 * 2);
 			return false;
 		}
 	} else {
@@ -137,9 +141,6 @@ static int _omap4_clkctrl_clk_enable(struct clk_hw *hw)
 	int ret;
 	union omap4_timeout timeout = { 0 };
 
-	if (!clk->enable_bit)
-		return 0;
-
 	if (clk->clkdm) {
 		ret = ti_clk_ll_ops->clkdm_clk_enable(clk->clkdm, hw->clk);
 		if (ret) {
@@ -151,6 +152,9 @@ static int _omap4_clkctrl_clk_enable(struct clk_hw *hw)
 		}
 	}
 
+	if (!clk->enable_bit)
+		return 0;
+
 	val = ti_clk_ll_ops->clk_readl(&clk->enable_reg);
 
 	val &= ~OMAP4_MODULEMODE_MASK;
@@ -158,7 +162,7 @@ static int _omap4_clkctrl_clk_enable(struct clk_hw *hw)
 
 	ti_clk_ll_ops->clk_writel(val, &clk->enable_reg);
 
-	if (clk->flags & NO_IDLEST)
+	if (test_bit(NO_IDLEST, &clk->flags))
 		return 0;
 
 	/* Wait until module is enabled */
@@ -179,7 +183,7 @@ static void _omap4_clkctrl_clk_disable(struct clk_hw *hw)
 	union omap4_timeout timeout = { 0 };
 
 	if (!clk->enable_bit)
-		return;
+		goto exit;
 
 	val = ti_clk_ll_ops->clk_readl(&clk->enable_reg);
 
@@ -187,7 +191,7 @@ static void _omap4_clkctrl_clk_disable(struct clk_hw *hw)
 
 	ti_clk_ll_ops->clk_writel(val, &clk->enable_reg);
 
-	if (clk->flags & NO_IDLEST)
+	if (test_bit(NO_IDLEST, &clk->flags))
 		goto exit;
 
 	/* Wait until module is disabled */
@@ -229,6 +233,7 @@ static struct clk_hw *_ti_omap4_clkctrl_xlate(struct of_phandle_args *clkspec,
 {
 	struct omap_clkctrl_provider *provider = data;
 	struct omap_clkctrl_clk *entry;
+	bool found = false;
 
 	if (clkspec->args_count != 2)
 		return ERR_PTR(-EINVAL);
@@ -238,11 +243,13 @@ static struct clk_hw *_ti_omap4_clkctrl_xlate(struct of_phandle_args *clkspec,
 
 	list_for_each_entry(entry, &provider->clocks, node) {
 		if (entry->reg_offset == clkspec->args[0] &&
-		    entry->bit_offset == clkspec->args[1])
+		    entry->bit_offset == clkspec->args[1]) {
+			found = true;
 			break;
+		}
 	}
 
-	if (!entry)
+	if (!found)
 		return ERR_PTR(-EINVAL);
 
 	return entry->clk;
@@ -259,8 +266,13 @@ _ti_clkctrl_clk_register(struct omap_clkctrl_provider *provider,
 	struct omap_clkctrl_clk *clkctrl_clk;
 	int ret = 0;
 
-	init.name = kasprintf(GFP_KERNEL, "%s:%s:%04x:%d", node->parent->name,
-			      node->name, offset, bit);
+	if (ti_clk_get_features()->flags & TI_CLK_CLKCTRL_COMPAT)
+		init.name = kasprintf(GFP_KERNEL, "%pOFn:%pOFn:%04x:%d",
+				      node->parent, node, offset,
+				      bit);
+	else
+		init.name = kasprintf(GFP_KERNEL, "%pOFn:%04x:%d", node,
+				      offset, bit);
 	clkctrl_clk = kzalloc(sizeof(*clkctrl_clk), GFP_KERNEL);
 	if (!init.name || !clkctrl_clk) {
 		ret = -ENOMEM;
@@ -271,7 +283,7 @@ _ti_clkctrl_clk_register(struct omap_clkctrl_provider *provider,
 	init.parent_names = parents;
 	init.num_parents = num_parents;
 	init.ops = ops;
-	init.flags = CLK_IS_BASIC;
+	init.flags = 0;
 
 	clk = ti_clk_register(NULL, clk_hw, init.name);
 	if (IS_ERR_OR_NULL(clk)) {
@@ -372,7 +384,7 @@ _ti_clkctrl_setup_div(struct omap_clkctrl_provider *provider,
 
 	if (ti_clk_parse_divider_data((int *)div_data->dividers, 0,
 				      div_data->max_div, div_flags,
-				      &div->width, &div->table)) {
+				      div)) {
 		pr_err("%s: Data parsing for %pOF:%04x:%d failed\n", __func__,
 		       node, offset, data->bit);
 		kfree(div);
@@ -440,6 +452,12 @@ static void __init _ti_omap4_clkctrl_setup(struct device_node *node)
 	const __be32 *addrp;
 	u32 addr;
 	int ret;
+	char *c;
+	u16 soc_mask = 0;
+
+	if (!(ti_clk_get_features()->flags & TI_CLK_CLKCTRL_COMPAT) &&
+	    of_node_name_eq(node, "clk"))
+		ti_clk_features.flags |= TI_CLK_CLKCTRL_COMPAT;
 
 	addrp = of_get_address(node, 0, NULL, NULL);
 	addr = (u32)of_translate_address(node, addrp);
@@ -453,18 +471,42 @@ static void __init _ti_omap4_clkctrl_setup(struct device_node *node)
 		data = omap5_clkctrl_data;
 #endif
 #ifdef CONFIG_SOC_DRA7XX
-	if (of_machine_is_compatible("ti,dra7"))
-		data = dra7_clkctrl_data;
+	if (of_machine_is_compatible("ti,dra7")) {
+		if (ti_clk_get_features()->flags & TI_CLK_CLKCTRL_COMPAT)
+			data = dra7_clkctrl_compat_data;
+		else
+			data = dra7_clkctrl_data;
+	}
+
+	if (of_machine_is_compatible("ti,dra72"))
+		soc_mask = CLKF_SOC_DRA72;
+	if (of_machine_is_compatible("ti,dra74"))
+		soc_mask = CLKF_SOC_DRA74;
+	if (of_machine_is_compatible("ti,dra76"))
+		soc_mask = CLKF_SOC_DRA76;
 #endif
 #ifdef CONFIG_SOC_AM33XX
-	if (of_machine_is_compatible("ti,am33xx"))
-		data = am3_clkctrl_data;
+	if (of_machine_is_compatible("ti,am33xx")) {
+		if (ti_clk_get_features()->flags & TI_CLK_CLKCTRL_COMPAT)
+			data = am3_clkctrl_compat_data;
+		else
+			data = am3_clkctrl_data;
+	}
 #endif
 #ifdef CONFIG_SOC_AM43XX
-	if (of_machine_is_compatible("ti,am4372"))
-		data = am4_clkctrl_data;
-	if (of_machine_is_compatible("ti,am438x"))
-		data = am438x_clkctrl_data;
+	if (of_machine_is_compatible("ti,am4372")) {
+		if (ti_clk_get_features()->flags & TI_CLK_CLKCTRL_COMPAT)
+			data = am4_clkctrl_compat_data;
+		else
+			data = am4_clkctrl_data;
+	}
+
+	if (of_machine_is_compatible("ti,am438x")) {
+		if (ti_clk_get_features()->flags & TI_CLK_CLKCTRL_COMPAT)
+			data = am438x_clkctrl_compat_data;
+		else
+			data = am438x_clkctrl_data;
+	}
 #endif
 #ifdef CONFIG_SOC_TI81XX
 	if (of_machine_is_compatible("ti,dm814"))
@@ -473,6 +515,9 @@ static void __init _ti_omap4_clkctrl_setup(struct device_node *node)
 	if (of_machine_is_compatible("ti,dm816"))
 		data = dm816_clkctrl_data;
 #endif
+
+	if (ti_clk_get_features()->flags & TI_CLK_DEVICE_TYPE_GP)
+		soc_mask |= CLKF_SOC_NONSEC;
 
 	while (data->addr) {
 		if (addr == data->addr)
@@ -492,20 +537,42 @@ static void __init _ti_omap4_clkctrl_setup(struct device_node *node)
 
 	provider->base = of_iomap(node, 0);
 
-	provider->clkdm_name = kmalloc(strlen(node->parent->name) + 3,
-				       GFP_KERNEL);
-	if (!provider->clkdm_name) {
-		kfree(provider);
-		return;
+	if (ti_clk_get_features()->flags & TI_CLK_CLKCTRL_COMPAT) {
+		provider->clkdm_name = kasprintf(GFP_KERNEL, "%pOFnxxx", node->parent);
+		if (!provider->clkdm_name) {
+			kfree(provider);
+			return;
+		}
+
+		/*
+		 * Create default clkdm name, replace _cm from end of parent
+		 * node name with _clkdm
+		 */
+		provider->clkdm_name[strlen(provider->clkdm_name) - 2] = 0;
+	} else {
+		provider->clkdm_name = kasprintf(GFP_KERNEL, "%pOFn", node);
+		if (!provider->clkdm_name) {
+			kfree(provider);
+			return;
+		}
+
+		/*
+		 * Create default clkdm name, replace _clkctrl from end of
+		 * node name with _clkdm
+		 */
+		provider->clkdm_name[strlen(provider->clkdm_name) - 7] = 0;
 	}
 
-	/*
-	 * Create default clkdm name, replace _cm from end of parent node
-	 * name with _clkdm
-	 */
-	strcpy(provider->clkdm_name, node->parent->name);
-	provider->clkdm_name[strlen(provider->clkdm_name) - 2] = 0;
 	strcat(provider->clkdm_name, "clkdm");
+
+	/* Replace any dash from the clkdm name with underscore */
+	c = provider->clkdm_name;
+
+	while (*c) {
+		if (*c == '-')
+			*c = '_';
+		c++;
+	}
 
 	INIT_LIST_HEAD(&provider->clocks);
 
@@ -513,6 +580,12 @@ static void __init _ti_omap4_clkctrl_setup(struct device_node *node)
 	reg_data = data->regs;
 
 	while (reg_data->parent) {
+		if ((reg_data->flags & CLKF_SOC_MASK) &&
+		    (reg_data->flags & soc_mask) == 0) {
+			reg_data++;
+			continue;
+		}
+
 		hw = kzalloc(sizeof(*hw), GFP_KERNEL);
 		if (!hw)
 			return;
@@ -527,7 +600,7 @@ static void __init _ti_omap4_clkctrl_setup(struct device_node *node)
 		if (reg_data->flags & CLKF_HW_SUP)
 			hw->enable_bit = MODULEMODE_HWCTRL;
 		if (reg_data->flags & CLKF_NO_IDLEST)
-			hw->flags |= NO_IDLEST;
+			set_bit(NO_IDLEST, &hw->flags);
 
 		if (reg_data->clkdm_name)
 			hw->clkdm_name = reg_data->clkdm_name;
@@ -539,9 +612,13 @@ static void __init _ti_omap4_clkctrl_setup(struct device_node *node)
 		init.flags = 0;
 		if (reg_data->flags & CLKF_SET_RATE_PARENT)
 			init.flags |= CLK_SET_RATE_PARENT;
-		init.name = kasprintf(GFP_KERNEL, "%s:%s:%04x:%d",
-				      node->parent->name, node->name,
-				      reg_data->offset, 0);
+		if (ti_clk_get_features()->flags & TI_CLK_CLKCTRL_COMPAT)
+			init.name = kasprintf(GFP_KERNEL, "%pOFn:%pOFn:%04x:%d",
+					      node->parent, node,
+					      reg_data->offset, 0);
+		else
+			init.name = kasprintf(GFP_KERNEL, "%pOFn:%04x:%d",
+					      node, reg_data->offset, 0);
 		clkctrl_clk = kzalloc(sizeof(*clkctrl_clk), GFP_KERNEL);
 		if (!init.name || !clkctrl_clk)
 			goto cleanup;
@@ -549,7 +626,7 @@ static void __init _ti_omap4_clkctrl_setup(struct device_node *node)
 		init.ops = &omap4_clkctrl_clk_ops;
 		hw->hw.init = &init;
 
-		clk = ti_clk_register(NULL, &hw->hw, init.name);
+		clk = ti_clk_register_omap_hw(NULL, &hw->hw, init.name);
 		if (IS_ERR_OR_NULL(clk))
 			goto cleanup;
 
@@ -574,3 +651,33 @@ cleanup:
 }
 CLK_OF_DECLARE(ti_omap4_clkctrl_clock, "ti,clkctrl",
 	       _ti_omap4_clkctrl_setup);
+
+/**
+ * ti_clk_is_in_standby - Check if clkctrl clock is in standby or not
+ * @clk: clock to check standby status for
+ *
+ * Finds whether the provided clock is in standby mode or not. Returns
+ * true if the provided clock is a clkctrl type clock and it is in standby,
+ * false otherwise.
+ */
+bool ti_clk_is_in_standby(struct clk *clk)
+{
+	struct clk_hw *hw;
+	struct clk_hw_omap *hwclk;
+	u32 val;
+
+	hw = __clk_get_hw(clk);
+
+	if (!omap2_clk_is_hw_omap(hw))
+		return false;
+
+	hwclk = to_clk_hw_omap(hw);
+
+	val = ti_clk_ll_ops->clk_readl(&hwclk->enable_reg);
+
+	if (val & OMAP4_STBYST_MASK)
+		return true;
+
+	return false;
+}
+EXPORT_SYMBOL_GPL(ti_clk_is_in_standby);

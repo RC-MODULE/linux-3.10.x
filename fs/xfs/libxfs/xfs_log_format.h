@@ -77,6 +77,19 @@ static inline uint xlog_get_cycle(char *ptr)
 
 #define XLOG_UNMOUNT_TYPE	0x556e	/* Un for Unmount */
 
+/*
+ * Log item for unmount records.
+ *
+ * The unmount record used to have a string "Unmount filesystem--" in the
+ * data section where the "Un" was really a magic number (XLOG_UNMOUNT_TYPE).
+ * We just write the magic number now; see xfs_log_unmount_write.
+ */
+struct xfs_unmount_log_format {
+	uint16_t	magic;	/* XLOG_UNMOUNT_TYPE */
+	uint16_t	pad1;
+	uint32_t	pad2;	/* may as well make it 64 bits */
+};
+
 /* Region types for iovec's i_type */
 #define XLOG_REG_TYPE_BFORMAT		1
 #define XLOG_REG_TYPE_BCHUNK		2
@@ -419,9 +432,9 @@ static inline uint xfs_log_dinode_size(int version)
 }
 
 /*
- * Buffer Log Format defintions
+ * Buffer Log Format definitions
  *
- * These are the physical dirty bitmap defintions for the log format structure.
+ * These are the physical dirty bitmap definitions for the log format structure.
  */
 #define	XFS_BLF_CHUNK		128
 #define	XFS_BLF_SHIFT		7

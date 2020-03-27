@@ -41,7 +41,8 @@
 
 #define CCM_B0_SIZE             16
 #define CCM_AAD_FIELD_SIZE      2
-#define T6_MAX_AAD_SIZE 511
+// 511 - 16(For IV)
+#define T6_MAX_AAD_SIZE 495
 
 
 /* Define following if h/w is not dropping the AAD and IV data before
@@ -159,9 +160,9 @@ static inline struct chcr_context *a_ctx(struct crypto_aead *tfm)
 	return crypto_aead_ctx(tfm);
 }
 
-static inline struct chcr_context *c_ctx(struct crypto_ablkcipher *tfm)
+static inline struct chcr_context *c_ctx(struct crypto_skcipher *tfm)
 {
-	return crypto_ablkcipher_ctx(tfm);
+	return crypto_skcipher_ctx(tfm);
 }
 
 static inline struct chcr_context *h_ctx(struct crypto_ahash *tfm)
@@ -170,8 +171,7 @@ static inline struct chcr_context *h_ctx(struct crypto_ahash *tfm)
 }
 
 struct ablk_ctx {
-	struct crypto_skcipher *sw_cipher;
-	struct crypto_cipher *aes_generic;
+	struct crypto_sync_skcipher *sw_cipher;
 	__be32 key_ctx_hdr;
 	unsigned int enckey_len;
 	unsigned char ciph_mode;
@@ -185,9 +185,6 @@ struct chcr_aead_reqctx {
 	dma_addr_t b0_dma;
 	unsigned int b0_len;
 	unsigned int op;
-	short int aad_nents;
-	short int src_nents;
-	short int dst_nents;
 	u16 imm;
 	u16 verify;
 	u8 iv[CHCR_MAX_CRYPTO_IV_LEN + MAX_SCRATCH_PAD_SIZE];
@@ -255,6 +252,8 @@ struct chcr_context {
 	struct chcr_dev *dev;
 	unsigned char tx_qidx;
 	unsigned char rx_qidx;
+	unsigned char tx_chan_id;
+	unsigned char pci_chan_id;
 	struct __crypto_ctx crypto_ctx[0];
 };
 
@@ -286,7 +285,7 @@ struct chcr_ahash_req_ctx {
 	u8 bfr2[CHCR_HASH_MAX_BLOCK_SIZE_128];
 };
 
-struct chcr_blkcipher_req_ctx {
+struct chcr_skcipher_req_ctx {
 	struct sk_buff *skb;
 	struct scatterlist *dstsg;
 	unsigned int processed;
@@ -303,7 +302,7 @@ struct chcr_alg_template {
 	u32 type;
 	u32 is_registered;
 	union {
-		struct crypto_alg crypto;
+		struct skcipher_alg skcipher;
 		struct ahash_alg hash;
 		struct aead_alg aead;
 	} alg;
@@ -320,16 +319,14 @@ void chcr_aead_dma_unmap(struct device *dev, struct aead_request *req,
 			 unsigned short op_type);
 void chcr_add_aead_dst_ent(struct aead_request *req,
 			   struct cpl_rx_phys_dsgl *phys_cpl,
-			   unsigned int assoclen,
 			   unsigned short qid);
-void chcr_add_aead_src_ent(struct aead_request *req, struct ulptx_sgl *ulptx,
-			   unsigned int assoclen);
-void chcr_add_cipher_src_ent(struct ablkcipher_request *req,
+void chcr_add_aead_src_ent(struct aead_request *req, struct ulptx_sgl *ulptx);
+void chcr_add_cipher_src_ent(struct skcipher_request *req,
 			     void *ulptx,
 			     struct  cipher_wr_param *wrparam);
-int chcr_cipher_dma_map(struct device *dev, struct ablkcipher_request *req);
-void chcr_cipher_dma_unmap(struct device *dev, struct ablkcipher_request *req);
-void chcr_add_cipher_dst_ent(struct ablkcipher_request *req,
+int chcr_cipher_dma_map(struct device *dev, struct skcipher_request *req);
+void chcr_cipher_dma_unmap(struct device *dev, struct skcipher_request *req);
+void chcr_add_cipher_dst_ent(struct skcipher_request *req,
 			     struct cpl_rx_phys_dsgl *phys_cpl,
 			     struct  cipher_wr_param *wrparam,
 			     unsigned short qid);

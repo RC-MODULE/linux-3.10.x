@@ -1,23 +1,30 @@
+/* SPDX-License-Identifier: GPL-2.0-only */
 #ifndef __ASM_GENERIC_EXPORT_H
 #define __ASM_GENERIC_EXPORT_H
 
 #ifndef KSYM_FUNC
 #define KSYM_FUNC(x) x
 #endif
-#ifdef CONFIG_64BIT
-#define __put .quad
-#ifndef KSYM_ALIGN
-#define KSYM_ALIGN 8
-#endif
-#else
-#define __put .long
-#ifndef KSYM_ALIGN
+#ifdef CONFIG_HAVE_ARCH_PREL32_RELOCATIONS
 #define KSYM_ALIGN 4
-#endif
+#elif defined(CONFIG_64BIT)
+#define KSYM_ALIGN 8
+#else
+#define KSYM_ALIGN 4
 #endif
 #ifndef KCRC_ALIGN
 #define KCRC_ALIGN 4
 #endif
+
+.macro __put, val, name
+#ifdef CONFIG_HAVE_ARCH_PREL32_RELOCATIONS
+	.long	\val - ., \name - ., 0
+#elif defined(CONFIG_64BIT)
+	.quad	\val, \name, 0
+#else
+	.long	\val, \name, 0
+#endif
+.endm
 
 /*
  * note on .section use: @progbits vs %progbits nastiness doesn't matter,
@@ -25,7 +32,6 @@
  */
 .macro ___EXPORT_SYMBOL name,val,sec
 #ifdef CONFIG_MODULES
-	.globl __ksymtab_\name
 	.section ___ksymtab\sec+\name,"a"
 	.balign KSYM_ALIGN
 __ksymtab_\name:
@@ -38,7 +44,6 @@ __kstrtab_\name:
 #ifdef CONFIG_MODVERSIONS
 	.section ___kcrctab\sec+\name,"a"
 	.balign KCRC_ALIGN
-__kcrctab_\name:
 #if defined(CONFIG_MODULE_REL_CRCS)
 	.long __crc_\name - .
 #else
@@ -49,18 +54,20 @@ __kcrctab_\name:
 #endif
 #endif
 .endm
-#undef __put
 
-#if defined(__KSYM_DEPS__)
-
-#define __EXPORT_SYMBOL(sym, val, sec)	=== __KSYM_##sym ===
-
-#elif defined(CONFIG_TRIM_UNUSED_KSYMS)
+#if defined(CONFIG_TRIM_UNUSED_KSYMS)
 
 #include <linux/kconfig.h>
 #include <generated/autoksyms.h>
 
+.macro __ksym_marker sym
+	.section ".discard.ksym","a"
+__ksym_marker_\sym:
+	 .previous
+.endm
+
 #define __EXPORT_SYMBOL(sym, val, sec)				\
+	__ksym_marker sym;					\
 	__cond_export_sym(sym, val, sec, __is_defined(__KSYM_##sym))
 #define __cond_export_sym(sym, val, sec, conf)			\
 	___cond_export_sym(sym, val, sec, conf)

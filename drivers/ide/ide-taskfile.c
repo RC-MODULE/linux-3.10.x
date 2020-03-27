@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: GPL-2.0-only
 /*
  *  Copyright (C) 2000-2002	   Michael Cornwell <cornwell@acm.org>
  *  Copyright (C) 2000-2002	   Andre Hedrick <andre@linux-ide.org>
@@ -128,7 +129,7 @@ ide_startstop_t do_rw_taskfile(ide_drive_t *drive, struct ide_cmd *orig_cmd)
 			return pre_task_out_intr(drive, cmd);
 		}
 		handler = task_pio_intr;
-		/* fall-through */
+		/* fall through */
 	case ATA_PROT_NODATA:
 		if (handler == NULL)
 			handler = task_no_data_intr;
@@ -140,6 +141,7 @@ ide_startstop_t do_rw_taskfile(ide_drive_t *drive, struct ide_cmd *orig_cmd)
 		hwif->expiry = dma_ops->dma_timer_expiry;
 		ide_execute_command(drive, cmd, ide_dma_intr, 2 * WAIT_CMD);
 		dma_ops->dma_start(drive);
+		/* fall through */
 	default:
 		return ide_started;
 	}
@@ -439,7 +441,7 @@ int ide_raw_taskfile(ide_drive_t *drive, struct ide_cmd *cmd, u8 *buf,
 			goto put_req;
 	}
 
-	rq->special = cmd;
+	ide_req(rq)->special = cmd;
 	cmd->rq = rq;
 
 	blk_execute_rq(drive->queue, NULL, rq, 0);

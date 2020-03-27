@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: GPL-2.0-or-later
 /*
  * CXL Flash Device Driver
  *
@@ -5,17 +6,13 @@
  *             Uma Krishnan <ukrishn@linux.vnet.ibm.com>, IBM Corporation
  *
  * Copyright (C) 2018 IBM Corporation
- *
- * This program is free software; you can redistribute it and/or
- * modify it under the terms of the GNU General Public License
- * as published by the Free Software Foundation; either version
- * 2 of the License, or (at your option) any later version.
  */
 
 #include <linux/file.h>
 #include <linux/idr.h>
 #include <linux/module.h>
 #include <linux/mount.h>
+#include <linux/pseudo_fs.h>
 #include <linux/poll.h>
 #include <linux/sched/signal.h>
 
@@ -35,31 +32,15 @@
 static int ocxlflash_fs_cnt;
 static struct vfsmount *ocxlflash_vfs_mount;
 
-static const struct dentry_operations ocxlflash_fs_dops = {
-	.d_dname	= simple_dname,
-};
-
-/*
- * ocxlflash_fs_mount() - mount the pseudo-filesystem
- * @fs_type:	File system type.
- * @flags:	Flags for the filesystem.
- * @dev_name:	Device name associated with the filesystem.
- * @data:	Data pointer.
- *
- * Return: pointer to the directory entry structure
- */
-static struct dentry *ocxlflash_fs_mount(struct file_system_type *fs_type,
-					 int flags, const char *dev_name,
-					 void *data)
+static int ocxlflash_fs_init_fs_context(struct fs_context *fc)
 {
-	return mount_pseudo(fs_type, "ocxlflash:", NULL, &ocxlflash_fs_dops,
-			    OCXLFLASH_FS_MAGIC);
+	return init_pseudo(fc, OCXLFLASH_FS_MAGIC) ? 0 : -ENOMEM;
 }
 
 static struct file_system_type ocxlflash_fs_type = {
 	.name		= "ocxlflash",
 	.owner		= THIS_MODULE,
-	.mount		= ocxlflash_fs_mount,
+	.init_fs_context = ocxlflash_fs_init_fs_context,
 	.kill_sb	= kill_anon_super,
 };
 
@@ -88,10 +69,8 @@ static struct file *ocxlflash_getfile(struct device *dev, const char *name,
 				      const struct file_operations *fops,
 				      void *priv, int flags)
 {
-	struct qstr this;
-	struct path path;
 	struct file *file;
-	struct inode *inode = NULL;
+	struct inode *inode;
 	int rc;
 
 	if (fops->owner && !try_module_get(fops->owner)) {
@@ -116,29 +95,15 @@ static struct file *ocxlflash_getfile(struct device *dev, const char *name,
 		goto err3;
 	}
 
-	this.name = name;
-	this.len = strlen(name);
-	this.hash = 0;
-	path.dentry = d_alloc_pseudo(ocxlflash_vfs_mount->mnt_sb, &this);
-	if (!path.dentry) {
-		dev_err(dev, "%s: d_alloc_pseudo failed\n", __func__);
-		rc = -ENOMEM;
-		goto err4;
-	}
-
-	path.mnt = mntget(ocxlflash_vfs_mount);
-	d_instantiate(path.dentry, inode);
-
-	file = alloc_file(&path, OPEN_FMODE(flags), fops);
+	file = alloc_file_pseudo(inode, ocxlflash_vfs_mount, name,
+				 flags & (O_ACCMODE | O_NONBLOCK), fops);
 	if (IS_ERR(file)) {
 		rc = PTR_ERR(file);
 		dev_err(dev, "%s: alloc_file failed rc=%d\n",
 			__func__, rc);
-		path_put(&path);
-		goto err3;
+		goto err4;
 	}
 
-	file->f_flags = flags & (O_ACCMODE | O_NONBLOCK);
 	file->private_data = priv;
 out:
 	return file;
@@ -1157,7 +1122,7 @@ static int afu_release(struct inode *inode, struct file *file)
  *
  * Return: 0 on success, -errno on failure
  */
-static int ocxlflash_mmap_fault(struct vm_fault *vmf)
+static vm_fault_t ocxlflash_mmap_fault(struct vm_fault *vmf)
 {
 	struct vm_area_struct *vma = vmf->vma;
 	struct ocxlflash_context *ctx = vma->vm_file->private_data;
@@ -1180,8 +1145,7 @@ static int ocxlflash_mmap_fault(struct vm_fault *vmf)
 	mmio_area = ctx->psn_phys;
 	mmio_area += offset;
 
-	vm_insert_pfn(vma, vmf->address, mmio_area >> PAGE_SHIFT);
-	return VM_FAULT_NOPAGE;
+	return vmf_insert_pfn(vma, vmf->address, mmio_area >> PAGE_SHIFT);
 }
 
 static const struct vm_operations_struct ocxlflash_vmops = {

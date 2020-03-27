@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: GPL-2.0-or-later
 /*
  * Copyright 2008-2010 Freescale Semiconductor, Inc. All Rights Reserved.
  *
@@ -6,12 +7,6 @@
  *  Authors: Hongjun Chen <hong-jun.chen@freescale.com>
  *	     Porting to 2.6.35 by DENX Software Engineering,
  *	     Anatolij Gustschin <agust@denx.de>
- *
- * This program is free software; you can redistribute  it and/or modify it
- * under  the terms of  the GNU General  Public License as published by the
- * Free Software Foundation;  either version 2 of the  License, or (at your
- * option) any later version.
- *
  */
 
 #include <linux/module.h>
@@ -37,7 +32,7 @@
 #define VIU_VERSION		"0.5.1"
 
 /* Allow building this driver with COMPILE_TEST */
-#ifndef CONFIG_PPC
+#if !defined(CONFIG_PPC) && !defined(CONFIG_MICROBLAZE)
 #define out_be32(v, a)	iowrite32be(a, (void __iomem *)v)
 #define in_be32(a)	ioread32be((void __iomem *)a)
 #endif
@@ -219,7 +214,7 @@ enum status_config {
 	FIELD_NO		= 0x01 << 28,	/* Field number */
 	DITHER_ON		= 0x01 << 29,	/* Dithering is on */
 	ROUND_ON		= 0x01 << 30,	/* Round is on */
-	MODE_32BIT		= 0x01 << 31,	/* Data in RGBa888,
+	MODE_32BIT		= 1UL << 31,	/* Data in RGBa888,
 						 * 0 in RGB565
 						 */
 };
@@ -565,14 +560,9 @@ static const struct videobuf_queue_ops viu_video_qops = {
 static int vidioc_querycap(struct file *file, void *priv,
 			   struct v4l2_capability *cap)
 {
-	strcpy(cap->driver, "viu");
-	strcpy(cap->card, "viu");
-	strcpy(cap->bus_info, "platform:viu");
-	cap->device_caps =	V4L2_CAP_VIDEO_CAPTURE |
-				V4L2_CAP_STREAMING     |
-				V4L2_CAP_VIDEO_OVERLAY |
-				V4L2_CAP_READWRITE;
-	cap->capabilities = cap->device_caps | V4L2_CAP_DEVICE_CAPS;
+	strscpy(cap->driver, "viu", sizeof(cap->driver));
+	strscpy(cap->card, "viu", sizeof(cap->card));
+	strscpy(cap->bus_info, "platform:viu", sizeof(cap->bus_info));
 	return 0;
 }
 
@@ -941,7 +931,7 @@ static int vidioc_enum_input(struct file *file, void *priv,
 
 	inp->type = V4L2_INPUT_TYPE_CAMERA;
 	inp->std = fh->dev->vdev->tvnorms;
-	strcpy(inp->name, "Camera");
+	strscpy(inp->name, "Camera", sizeof(inp->name));
 	return 0;
 }
 
@@ -1090,7 +1080,7 @@ static void viu_capture_intr(struct viu_dev *dev, u32 status)
 
 		if (waitqueue_active(&buf->vb.done)) {
 			list_del(&buf->vb.queue);
-			v4l2_get_timestamp(&buf->vb.ts);
+			buf->vb.ts = ktime_get_ns();
 			buf->vb.state = VIDEOBUF_DONE;
 			buf->vb.field_count++;
 			wake_up(&buf->vb.done);
@@ -1385,6 +1375,8 @@ static const struct video_device viu_template = {
 	.release	= video_device_release,
 
 	.tvnorms        = V4L2_STD_NTSC_M | V4L2_STD_PAL,
+	.device_caps	= V4L2_CAP_VIDEO_CAPTURE | V4L2_CAP_STREAMING |
+			  V4L2_CAP_VIDEO_OVERLAY | V4L2_CAP_READWRITE,
 };
 
 static int viu_of_probe(struct platform_device *op)
@@ -1414,7 +1406,7 @@ static int viu_of_probe(struct platform_device *op)
 				     sizeof(struct viu_reg), DRV_NAME)) {
 		dev_err(&op->dev, "Error while requesting mem region\n");
 		ret = -EBUSY;
-		goto err;
+		goto err_irq;
 	}
 
 	/* remap registers */
@@ -1422,7 +1414,7 @@ static int viu_of_probe(struct platform_device *op)
 	if (!viu_regs) {
 		dev_err(&op->dev, "Can't map register set\n");
 		ret = -ENOMEM;
-		goto err;
+		goto err_irq;
 	}
 
 	/* Prepare our private structure */
@@ -1430,7 +1422,7 @@ static int viu_of_probe(struct platform_device *op)
 	if (!viu_dev) {
 		dev_err(&op->dev, "Can't allocate private structure\n");
 		ret = -ENOMEM;
-		goto err;
+		goto err_irq;
 	}
 
 	viu_dev->vr = viu_regs;
@@ -1446,16 +1438,21 @@ static int viu_of_probe(struct platform_device *op)
 	ret = v4l2_device_register(viu_dev->dev, &viu_dev->v4l2_dev);
 	if (ret < 0) {
 		dev_err(&op->dev, "v4l2_device_register() failed: %d\n", ret);
-		goto err;
+		goto err_irq;
 	}
 
 	ad = i2c_get_adapter(0);
+	if (!ad) {
+		ret = -EFAULT;
+		dev_err(&op->dev, "couldn't get i2c adapter\n");
+		goto err_v4l2;
+	}
 
 	v4l2_ctrl_handler_init(&viu_dev->hdl, 5);
 	if (viu_dev->hdl.error) {
 		ret = viu_dev->hdl.error;
 		dev_err(&op->dev, "couldn't register control\n");
-		goto err_vdev;
+		goto err_i2c;
 	}
 	/* This control handler will inherit the control(s) from the
 	   sub-device(s). */
@@ -1471,7 +1468,7 @@ static int viu_of_probe(struct platform_device *op)
 	vdev = video_device_alloc();
 	if (vdev == NULL) {
 		ret = -ENOMEM;
-		goto err_vdev;
+		goto err_hdl;
 	}
 
 	*vdev = viu_template;
@@ -1492,7 +1489,7 @@ static int viu_of_probe(struct platform_device *op)
 	ret = video_register_device(viu_dev->vdev, VFL_TYPE_GRABBER, -1);
 	if (ret < 0) {
 		video_device_release(viu_dev->vdev);
-		goto err_vdev;
+		goto err_unlock;
 	}
 
 	/* enable VIU clock */
@@ -1500,12 +1497,12 @@ static int viu_of_probe(struct platform_device *op)
 	if (IS_ERR(clk)) {
 		dev_err(&op->dev, "failed to lookup the clock!\n");
 		ret = PTR_ERR(clk);
-		goto err_clk;
+		goto err_vdev;
 	}
 	ret = clk_prepare_enable(clk);
 	if (ret) {
 		dev_err(&op->dev, "failed to enable the clock!\n");
-		goto err_clk;
+		goto err_vdev;
 	}
 	viu_dev->clk = clk;
 
@@ -1516,7 +1513,7 @@ static int viu_of_probe(struct platform_device *op)
 	if (request_irq(viu_dev->irq, viu_intr, 0, "viu", (void *)viu_dev)) {
 		dev_err(&op->dev, "Request VIU IRQ failed.\n");
 		ret = -ENODEV;
-		goto err_irq;
+		goto err_clk;
 	}
 
 	mutex_unlock(&viu_dev->lock);
@@ -1524,16 +1521,19 @@ static int viu_of_probe(struct platform_device *op)
 	dev_info(&op->dev, "Freescale VIU Video Capture Board\n");
 	return ret;
 
-err_irq:
-	clk_disable_unprepare(viu_dev->clk);
 err_clk:
-	video_unregister_device(viu_dev->vdev);
+	clk_disable_unprepare(viu_dev->clk);
 err_vdev:
-	v4l2_ctrl_handler_free(&viu_dev->hdl);
+	video_unregister_device(viu_dev->vdev);
+err_unlock:
 	mutex_unlock(&viu_dev->lock);
+err_hdl:
+	v4l2_ctrl_handler_free(&viu_dev->hdl);
+err_i2c:
 	i2c_put_adapter(ad);
+err_v4l2:
 	v4l2_device_unregister(&viu_dev->v4l2_dev);
-err:
+err_irq:
 	irq_dispose_mapping(viu_irq);
 	return ret;
 }

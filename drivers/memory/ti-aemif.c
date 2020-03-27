@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: GPL-2.0-only
 /*
  * TI AEMIF driver
  *
@@ -6,10 +7,6 @@
  * Authors:
  * Murali Karicheri <m-karicheri2@ti.com>
  * Ivan Khoronzhuk <ivan.khoronzhuk@ti.com>
- *
- * This program is free software; you can redistribute it and/or modify
- * it under the terms of the GNU General Public License version 2 as
- * published by the Free Software Foundation.
  */
 
 #include <linux/clk.h>
@@ -411,7 +408,7 @@ static int aemif_probe(struct platform_device *pdev)
 			if (ret < 0)
 				goto error;
 		}
-	} else {
+	} else if (pdata) {
 		for (i = 0; i < pdata->num_sub_devices; i++) {
 			pdata->sub_devices[i].dev.parent = dev;
 			ret = platform_device_register(&pdata->sub_devices[i]);

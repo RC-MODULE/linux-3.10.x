@@ -439,15 +439,12 @@ static const struct v4l2_file_operations mvdu_video_fops = {
 static int querycap(struct file *file, void *fh, struct v4l2_capability *cap)
 {
 	struct mvdu_video_data *mvd = file->private_data;
-	memset(cap, 0, sizeof(*cap));
 
-	strncpy(cap->card, CARD_NAME, sizeof(cap->card) - 1);
 	strncpy(cap->driver, DRIVER_NAME, sizeof(cap->driver) - 1);
+	strncpy(cap->card, CARD_NAME, sizeof(cap->card) - 1);
 	snprintf(cap->bus_info, sizeof(cap->bus_info), "MMIO %08x",
 		 (unsigned int)mvd->core_device->regs_phys);
 	cap->version = KERNEL_VERSION(0, 0, 1);
-    cap->device_caps = V4L2_CAP_STREAMING | V4L2_CAP_VIDEO_OUTPUT;
-	cap->capabilities = cap->device_caps | V4L2_CAP_DEVICE_CAPS;
 
 	MVDU_VIDEO_BASE_PHYS(cap) = mvd->core_device->video_buffer_pa;
 
@@ -891,6 +888,9 @@ static int __init video_dev_init(struct mvdu_device *core_device)
 				"failed to register v4l2 device\n");
 		goto fail_video_device_register;
 	}
+
+	vd->device_caps = V4L2_CAP_STREAMING | V4L2_CAP_VIDEO_OUTPUT;
+
 	/* We need to select some device type to call
 	 * video_register_device function. Type value defines
 	 * class/device name (we want "video").

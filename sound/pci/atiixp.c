@@ -1,22 +1,8 @@
+// SPDX-License-Identifier: GPL-2.0-or-later
 /*
  *   ALSA driver for ATI IXP 150/200/250/300 AC97 controllers
  *
  *	Copyright (c) 2004 Takashi Iwai <tiwai@suse.de>
- *
- *   This program is free software; you can redistribute it and/or modify
- *   it under the terms of the GNU General Public License as published by
- *   the Free Software Foundation; either version 2 of the License, or
- *   (at your option) any later version.
- *
- *   This program is distributed in the hope that it will be useful,
- *   but WITHOUT ANY WARRANTY; without even the implied warranty of
- *   MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- *   GNU General Public License for more details.
- *
- *   You should have received a copy of the GNU General Public License
- *   along with this program; if not, write to the Free Software
- *   Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307 USA
- *
  */
 
 #include <linux/io.h>
@@ -207,10 +193,10 @@ struct atiixp;
  */
 
 struct atiixp_dma_desc {
-	u32 addr;	/* DMA buffer address */
+	__le32 addr;	/* DMA buffer address */
 	u16 status;	/* status bits */
 	u16 size;	/* size of the packet in dwords */
-	u32 next;	/* address of the next packet descriptor */
+	__le32 next;	/* address of the next packet descriptor */
 };
 
 /*
@@ -367,7 +353,7 @@ static int atiixp_build_dma_packets(struct atiixp *chip, struct atiixp_dma *dma,
 
 	if (dma->desc_buf.area == NULL) {
 		if (snd_dma_alloc_pages(SNDRV_DMA_TYPE_DEV,
-					snd_dma_pci_data(chip->pci),
+					&chip->pci->dev,
 					ATI_DESC_LIST_SIZE,
 					&dma->desc_buf) < 0)
 			return -ENOMEM;
@@ -733,6 +719,10 @@ static int snd_atiixp_pcm_trigger(struct snd_pcm_substream *substream, int cmd)
 	case SNDRV_PCM_TRIGGER_START:
 	case SNDRV_PCM_TRIGGER_PAUSE_RELEASE:
 	case SNDRV_PCM_TRIGGER_RESUME:
+		if (dma->running && dma->suspended &&
+		    cmd == SNDRV_PCM_TRIGGER_RESUME)
+			writel(dma->saved_curptr, chip->remap_addr +
+			       dma->ops->dt_cur);
 		dma->ops->enable_transfer(chip, 1);
 		dma->running = 1;
 		dma->suspended = 0;
@@ -740,9 +730,12 @@ static int snd_atiixp_pcm_trigger(struct snd_pcm_substream *substream, int cmd)
 	case SNDRV_PCM_TRIGGER_STOP:
 	case SNDRV_PCM_TRIGGER_PAUSE_PUSH:
 	case SNDRV_PCM_TRIGGER_SUSPEND:
+		dma->suspended = cmd == SNDRV_PCM_TRIGGER_SUSPEND;
+		if (dma->running && dma->suspended)
+			dma->saved_curptr = readl(chip->remap_addr +
+						  dma->ops->dt_cur);
 		dma->ops->enable_transfer(chip, 0);
 		dma->running = 0;
-		dma->suspended = cmd == SNDRV_PCM_TRIGGER_SUSPEND;
 		break;
 	default:
 		err = -EINVAL;
@@ -903,15 +896,15 @@ static int snd_atiixp_playback_prepare(struct snd_pcm_substream *substream)
 	case 8:
 		data |= ATI_REG_OUT_DMA_SLOT_BIT(10) |
 			ATI_REG_OUT_DMA_SLOT_BIT(11);
-		/* fallthru */
+		/* fall through */
 	case 6:
 		data |= ATI_REG_OUT_DMA_SLOT_BIT(7) |
 			ATI_REG_OUT_DMA_SLOT_BIT(8);
-		/* fallthru */
+		/* fall through */
 	case 4:
 		data |= ATI_REG_OUT_DMA_SLOT_BIT(6) |
 			ATI_REG_OUT_DMA_SLOT_BIT(9);
-		/* fallthru */
+		/* fall through */
 	default:
 		data |= ATI_REG_OUT_DMA_SLOT_BIT(3) |
 			ATI_REG_OUT_DMA_SLOT_BIT(4);
@@ -1291,7 +1284,7 @@ static int snd_atiixp_pcm_new(struct atiixp *chip)
 	chip->pcmdevs[ATI_PCMDEV_ANALOG] = pcm;
 
 	snd_pcm_lib_preallocate_pages_for_all(pcm, SNDRV_DMA_TYPE_DEV,
-					      snd_dma_pci_data(chip->pci),
+					      &chip->pci->dev,
 					      64*1024, 128*1024);
 
 	err = snd_pcm_add_chmap_ctls(pcm, SNDRV_PCM_STREAM_PLAYBACK,
@@ -1324,7 +1317,7 @@ static int snd_atiixp_pcm_new(struct atiixp *chip)
 	chip->pcmdevs[ATI_PCMDEV_DIGITAL] = pcm;
 
 	snd_pcm_lib_preallocate_pages_for_all(pcm, SNDRV_DMA_TYPE_DEV,
-					      snd_dma_pci_data(chip->pci),
+					      &chip->pci->dev,
 					      64*1024, 128*1024);
 
 	/* pre-select AC97 SPDIF slots 10/11 */
@@ -1479,14 +1472,6 @@ static int snd_atiixp_suspend(struct device *dev)
 	int i;
 
 	snd_power_change_state(card, SNDRV_CTL_POWER_D3hot);
-	for (i = 0; i < NUM_ATI_PCMDEVS; i++)
-		if (chip->pcmdevs[i]) {
-			struct atiixp_dma *dma = &chip->dmas[i];
-			if (dma->substream && dma->running)
-				dma->saved_curptr = readl(chip->remap_addr +
-							  dma->ops->dt_cur);
-			snd_pcm_suspend_all(chip->pcmdevs[i]);
-		}
 	for (i = 0; i < NUM_ATI_CODECS; i++)
 		snd_ac97_suspend(chip->ac97[i]);
 	snd_atiixp_aclink_down(chip);
@@ -1514,8 +1499,6 @@ static int snd_atiixp_resume(struct device *dev)
 				dma->substream->ops->prepare(dma->substream);
 				writel((u32)dma->desc_buf.addr | ATI_REG_LINKPTR_EN,
 				       chip->remap_addr + dma->ops->llp_offset);
-				writel(dma->saved_curptr, chip->remap_addr +
-				       dma->ops->dt_cur);
 			}
 		}
 
@@ -1546,10 +1529,7 @@ static void snd_atiixp_proc_read(struct snd_info_entry *entry,
 
 static void snd_atiixp_proc_init(struct atiixp *chip)
 {
-	struct snd_info_entry *entry;
-
-	if (! snd_card_proc_new(chip->card, "atiixp", &entry))
-		snd_info_set_text_ops(entry, chip, snd_atiixp_proc_read);
+	snd_card_ro_proc_new(chip->card, "atiixp", chip, snd_atiixp_proc_read);
 }
 
 

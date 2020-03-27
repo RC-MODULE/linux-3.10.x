@@ -304,21 +304,6 @@ static struct dentry *udf_lookup(struct inode *dir, struct dentry *dentry,
 	if (dentry->d_name.len > UDF_NAME_LEN)
 		return ERR_PTR(-ENAMETOOLONG);
 
-#ifdef UDF_RECOVERY
-	/* temporary shorthand for specifying files by inode number */
-	if (!strncmp(dentry->d_name.name, ".B=", 3)) {
-		struct kernel_lb_addr lb = {
-			.logicalBlockNum = 0,
-			.partitionReferenceNum =
-				simple_strtoul(dentry->d_name.name + 3,
-						NULL, 0),
-		};
-		inode = udf_iget(dir->i_sb, lb);
-		if (IS_ERR(inode))
-			return inode;
-	} else
-#endif /* UDF_RECOVERY */
-
 	fi = udf_find_entry(dir, &dentry->d_name, &fibh, &cfi);
 	if (IS_ERR(fi))
 		return ERR_CAST(fi);
@@ -602,8 +587,7 @@ static int udf_add_nondir(struct dentry *dentry, struct inode *inode)
 	fi = udf_add_entry(dir, dentry, &fibh, &cfi, &err);
 	if (unlikely(!fi)) {
 		inode_dec_link_count(inode);
-		unlock_new_inode(inode);
-		iput(inode);
+		discard_new_inode(inode);
 		return err;
 	}
 	cfi.icb.extLength = cpu_to_le32(inode->i_sb->s_blocksize);
@@ -694,8 +678,7 @@ static int udf_mkdir(struct inode *dir, struct dentry *dentry, umode_t mode)
 	fi = udf_add_entry(inode, NULL, &fibh, &cfi, &err);
 	if (!fi) {
 		inode_dec_link_count(inode);
-		unlock_new_inode(inode);
-		iput(inode);
+		discard_new_inode(inode);
 		goto out;
 	}
 	set_nlink(inode, 2);
@@ -713,8 +696,7 @@ static int udf_mkdir(struct inode *dir, struct dentry *dentry, umode_t mode)
 	if (!fi) {
 		clear_nlink(inode);
 		mark_inode_dirty(inode);
-		unlock_new_inode(inode);
-		iput(inode);
+		discard_new_inode(inode);
 		goto out;
 	}
 	cfi.icb.extLength = cpu_to_le32(inode->i_sb->s_blocksize);
@@ -1041,8 +1023,7 @@ out:
 out_no_entry:
 	up_write(&iinfo->i_data_sem);
 	inode_dec_link_count(inode);
-	unlock_new_inode(inode);
-	iput(inode);
+	discard_new_inode(inode);
 	goto out;
 }
 

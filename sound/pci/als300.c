@@ -1,20 +1,7 @@
+// SPDX-License-Identifier: GPL-2.0-or-later
 /*
  *  als300.c - driver for Avance Logic ALS300/ALS300+ soundcards.
  *  Copyright (C) 2005 by Ash Willis <ashwillis@programmer.net>
- *
- *  This program is free software; you can redistribute it and/or modify
- *  it under the terms of the GNU General Public License as published by
- *  the Free Software Foundation; either version 2 of the License, or
- *  (at your option) any later version.
- *
- *  This program is distributed in the hope that it will be useful,
- *  but WITHOUT ANY WARRANTY; without even the implied warranty of
- *  MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- *  GNU General Public License for more details.
- *
- *  You should have received a copy of the GNU General Public License
- *  along with this program; if not, write to the Free Software
- *  Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307 USA
  *
  *  TODO
  *  4 channel playback for ALS300+
@@ -605,7 +592,8 @@ static int snd_als300_new_pcm(struct snd_als300 *chip)
 
 	/* pre-allocation of buffers */
 	snd_pcm_lib_preallocate_pages_for_all(pcm, SNDRV_DMA_TYPE_DEV,
-	snd_dma_pci_data(chip->pci), 64*1024, 64*1024);
+					      &chip->pci->dev,
+					      64*1024, 64*1024);
 	return 0;
 }
 
@@ -731,7 +719,6 @@ static int snd_als300_suspend(struct device *dev)
 	struct snd_als300 *chip = card->private_data;
 
 	snd_power_change_state(card, SNDRV_CTL_POWER_D3hot);
-	snd_pcm_suspend_all(chip->pcm);
 	snd_ac97_suspend(chip->ac97);
 	return 0;
 }

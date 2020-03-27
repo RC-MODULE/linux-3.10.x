@@ -17,9 +17,16 @@
 #include <asm/dcr.h>
 #endif
 
-#define CONTROL_REG_EXT_MEM_MUX 0x30
-#define SRAM_NOR_CTRL 0x1C
 #define CONTROL_REG_CE_MANAGE 0x04
+#define CONTROL_REG_GBIT_GRETH0_ADDR_MSB 0x08
+#define CONTROL_REG_GBIT_GRETH1_ADDR_MSB 0x10
+#define CONTROL_REG_GRETH0_ADDR_MSB 0x14
+#define CONTROL_REG_GRETH1_ADDR_MSB 0x18
+#define CONTROL_REG_GRETH2_ADDR_MSB 0x20
+#define CONTROL_REG_EXT_MEM_MUX 0x30
+#define CONTROL_REG_MII_MUX_MODE 0x34
+
+#define SRAM_NOR_CTRL 0x1C
 #define EM2_PLB6MCIF2_DCR_BASE 0x80160000
 #define EM3_PLB6MCIF2_DCR_BASE 0x80180000
 
@@ -39,6 +46,33 @@ static void plb6mcif_initbridge(void)
 }
 #endif
 
+static int setup_greth_addr_msb(struct regmap *control)
+{
+	int ret;
+
+	ret = regmap_write(control, CONTROL_REG_GBIT_GRETH0_ADDR_MSB, 0);
+	if (ret != 0)
+		return ret;
+
+	ret = regmap_write(control, CONTROL_REG_GBIT_GRETH1_ADDR_MSB, 0);
+	if (ret != 0)
+		return ret;
+
+	ret = regmap_write(control, CONTROL_REG_GRETH0_ADDR_MSB, 0);
+	if (ret != 0)
+		return ret;
+
+	ret = regmap_write(control, CONTROL_REG_GRETH1_ADDR_MSB, 0);
+	if (ret != 0)
+		return ret;
+
+	ret = regmap_write(control, CONTROL_REG_GRETH2_ADDR_MSB, 0);
+	if (ret != 0)
+		return ret;
+
+	return 0;
+}
+
 static int rcm_mtd_arbiter_probe(struct platform_device *pdev)
 {
 	struct device_node *tmp;
@@ -46,6 +80,7 @@ static int rcm_mtd_arbiter_probe(struct platform_device *pdev)
 	struct regmap *sctl;
 	u32 sram_nor_mux = 0;
 	u32 ext_mem_mux_mode;
+	u32 mii_mux_mode;
 	u32 ce_manage;
 	int ret;
 
@@ -70,6 +105,31 @@ static int rcm_mtd_arbiter_probe(struct platform_device *pdev)
 		return -ENOENT;
 	}
 	sctl = syscon_node_to_regmap(tmp);
+	if (IS_ERR(sctl)) {
+		dev_err(&pdev->dev,
+			"failed to covert sctl register reference\n");
+		return PTR_ERR(sctl);
+	}
+
+	tmp = of_parse_phandle(pdev->dev.of_node, "control", 0);
+	if (!tmp) {
+		dev_err(&pdev->dev,
+			"failed to find control register reference\n");
+		return -ENOENT;
+	}
+	control = syscon_node_to_regmap(tmp);
+	if (IS_ERR(control)) {
+		dev_err(&pdev->dev,
+			"failed to covert control register reference\n");
+		return PTR_ERR(control);
+	}
+
+	ret = setup_greth_addr_msb(control);
+	if (ret != 0) {
+		dev_err(&pdev->dev,
+			"setup greth ethernet msb address error\n");
+		return ret;
+	}
 
 	if (sram_nor_mux == 1) {
 #ifdef CONFIG_PPC_DCR
@@ -84,14 +144,6 @@ static int rcm_mtd_arbiter_probe(struct platform_device *pdev)
 	} else {
 		if (ce_manage != 7)
 			ce_manage = 6 - ce_manage;
-
-		tmp = of_parse_phandle(pdev->dev.of_node, "control", 0);
-		if (!tmp) {
-			dev_err(&pdev->dev,
-				"failed to find control register reference\n");
-			return -ENOENT;
-		}
-		control = syscon_node_to_regmap(tmp);
 
 		ret = regmap_write(sctl, SRAM_NOR_CTRL, 0);
 		if (ret != 0) {
@@ -114,6 +166,25 @@ static int rcm_mtd_arbiter_probe(struct platform_device *pdev)
 			if (ret != 0) {
 				dev_err(&pdev->dev,
 					"Write MII_MUX register error %i\n",
+					ret);
+				return ret;
+			}
+		}
+
+		ret = of_property_read_u32(pdev->dev.of_node,
+					   "mii-mux-mode",
+					   &mii_mux_mode);
+		if (ret == 0) {
+			if (mii_mux_mode > 1) {
+				dev_err(&pdev->dev,
+					"Illegal mii_mux_mode value (shuld be 0 or 1)\n");
+				return -EINVAL;
+			}
+			ret = regmap_write(control, CONTROL_REG_MII_MUX_MODE,
+					   mii_mux_mode);
+			if (ret != 0) {
+				dev_err(&pdev->dev,
+					"Write MII_MUX_MODE register error %i\n",
 					ret);
 				return ret;
 			}

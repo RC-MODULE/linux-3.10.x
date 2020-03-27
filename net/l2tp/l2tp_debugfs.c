@@ -1,12 +1,8 @@
+// SPDX-License-Identifier: GPL-2.0-or-later
 /*
  * L2TP subsystem debugfs
  *
  * Copyright (c) 2010 Katalix Systems Ltd
- *
- *	This program is free software; you can redistribute it and/or
- *	modify it under the terms of the GNU General Public License
- *	as published by the Free Software Foundation; either version
- *	2 of the License, or (at your option) any later version.
  */
 
 #define pr_fmt(fmt) KBUILD_MODNAME ": " fmt
@@ -35,7 +31,6 @@
 #include "l2tp_core.h"
 
 static struct dentry *rootdir;
-static struct dentry *tunnels;
 
 struct l2tp_dfs_seq_data {
 	struct net *net;
@@ -177,9 +172,6 @@ static void l2tp_dfs_seq_tunnel_show(struct seq_file *m, void *v)
 		   atomic_long_read(&tunnel->stats.rx_packets),
 		   atomic_long_read(&tunnel->stats.rx_bytes),
 		   atomic_long_read(&tunnel->stats.rx_errors));
-
-	if (tunnel->show != NULL)
-		tunnel->show(m, tunnel);
 }
 
 static void l2tp_dfs_seq_session_show(struct seq_file *m, void *v)
@@ -194,12 +186,9 @@ static void l2tp_dfs_seq_session_show(struct seq_file *m, void *v)
 	if (session->send_seq || session->recv_seq)
 		seq_printf(m, "   nr %hu, ns %hu\n", session->nr, session->ns);
 	seq_printf(m, "   refcnt %d\n", refcount_read(&session->ref_count));
-	seq_printf(m, "   config %d/%d/%c/%c/%s/%s %08x %u\n",
-		   session->mtu, session->mru,
+	seq_printf(m, "   config 0/0/%c/%c/-/%s %08x %u\n",
 		   session->recv_seq ? 'R' : '-',
 		   session->send_seq ? 'S' : '-',
-		   session->data_seq == 1 ? "IPSEQ" :
-		   session->data_seq == 2 ? "DATASEQ" : "-",
 		   session->lns_mode ? "LNS" : "LAC",
 		   session->debug,
 		   jiffies_to_msecs(session->reorder_timeout));
@@ -336,32 +325,18 @@ static const struct file_operations l2tp_dfs_fops = {
 
 static int __init l2tp_debugfs_init(void)
 {
-	int rc = 0;
-
 	rootdir = debugfs_create_dir("l2tp", NULL);
-	if (IS_ERR(rootdir)) {
-		rc = PTR_ERR(rootdir);
-		rootdir = NULL;
-		goto out;
-	}
 
-	tunnels = debugfs_create_file("tunnels", 0600, rootdir, NULL, &l2tp_dfs_fops);
-	if (tunnels == NULL)
-		rc = -EIO;
+	debugfs_create_file("tunnels", 0600, rootdir, NULL, &l2tp_dfs_fops);
 
 	pr_info("L2TP debugfs support\n");
 
-out:
-	if (rc)
-		pr_warn("unable to init\n");
-
-	return rc;
+	return 0;
 }
 
 static void __exit l2tp_debugfs_exit(void)
 {
-	debugfs_remove(tunnels);
-	debugfs_remove(rootdir);
+	debugfs_remove_recursive(rootdir);
 }
 
 module_init(l2tp_debugfs_init);

@@ -41,22 +41,28 @@ extern bool __vmalloc_start_set; /* set once high_memory is set */
 #endif
 
 /*
- * Define this here and validate with BUILD_BUG_ON() in pgtable_32.c
- * to avoid include recursion hell
+ * This is an upper bound on sizeof(struct cpu_entry_area) / PAGE_SIZE.
+ * Define this here and validate with BUILD_BUG_ON() in cpu_entry_area.c
+ * to avoid include recursion hell.
  */
-#define CPU_ENTRY_AREA_PAGES	(NR_CPUS * 40)
+#define CPU_ENTRY_AREA_PAGES	(NR_CPUS * 43)
 
-#define CPU_ENTRY_AREA_BASE						\
-	((FIXADDR_TOT_START - PAGE_SIZE * (CPU_ENTRY_AREA_PAGES + 1))   \
-	 & PMD_MASK)
+/* The +1 is for the readonly IDT page: */
+#define CPU_ENTRY_AREA_BASE	\
+	((FIXADDR_TOT_START - PAGE_SIZE*(CPU_ENTRY_AREA_PAGES+1)) & PMD_MASK)
+
+#define LDT_BASE_ADDR		\
+	((CPU_ENTRY_AREA_BASE - PAGE_SIZE) & PMD_MASK)
+
+#define LDT_END_ADDR		(LDT_BASE_ADDR + PMD_SIZE)
 
 #define PKMAP_BASE		\
-	((CPU_ENTRY_AREA_BASE - PAGE_SIZE) & PMD_MASK)
+	((LDT_BASE_ADDR - PAGE_SIZE) & PMD_MASK)
 
 #ifdef CONFIG_HIGHMEM
 # define VMALLOC_END	(PKMAP_BASE - 2 * PAGE_SIZE)
 #else
-# define VMALLOC_END	(CPU_ENTRY_AREA_BASE - 2 * PAGE_SIZE)
+# define VMALLOC_END	(LDT_BASE_ADDR - 2 * PAGE_SIZE)
 #endif
 
 #define MODULES_VADDR	VMALLOC_START

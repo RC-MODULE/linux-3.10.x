@@ -39,6 +39,7 @@
 #include <linux/proc_fs.h>
 #include <linux/list.h>
 #include <linux/kthread.h>
+#include <linux/dma-buf.h> // [***] EasyNMC prototype
 
 #define DRVNAME "easynmc"
 
@@ -403,7 +404,7 @@ static long easynmc_ioctl(struct file *filp, unsigned int ioctl_num, unsigned lo
 
 		chan = (struct nmc_stdio_channel *) &core->imem_virt[addr];
 
-		if ((chan->size & (le32_to_cpu(chan->size) - 1)) != 0) {
+		if ((le32_to_cpu(chan->size) & (le32_to_cpu(chan->size) - 1)) != 0) {
 			printk("easynmc: IO buffer size not power of 2, not attaching\n");
 			return -EIO;
 		}
@@ -494,8 +495,65 @@ static long easynmc_ioctl(struct file *filp, unsigned int ioctl_num, unsigned lo
 		break;
 	}
 
+// [***] EasyNMC prototype (start) FixMe!!!
+#ifdef CONFIG_ION
+	case IOCTL_NMC3_ION2NMC:
+	{
+		uint32_t fd;
+		phys_addr_t paddr;
+		struct dma_buf *buffer;
+		struct dma_buf_attachment *attachement;
+		struct sg_table *sg_tbl;
+		int is_arm_core = (strcmp(core->type, "arm") == 0);
+		int ret = get_user(fd,  (uint32_t __user *) ioctl_param);
+		if (ret)
+			return -EFAULT;
+
+		buffer = dma_buf_get(fd);
+		if (IS_ERR(buffer))
+			return PTR_ERR(buffer);
+
+		attachement = dma_buf_attach(buffer, core->dev);
+		if (IS_ERR(attachement)) {
+			dma_buf_put(buffer);
+			return PTR_ERR(attachement);
+		}
+
+		sg_tbl = dma_buf_map_attachment(attachement, DMA_BIDIRECTIONAL);
+		if (IS_ERR(sg_tbl)) {
+			dma_buf_detach(buffer, attachement);
+			dma_buf_put(buffer);
+			return PTR_ERR(attachement);
+		}
+
+		paddr = page_to_phys(sg_page(sg_tbl->sgl));
+
+		dma_buf_unmap_attachment(attachement, sg_tbl, DMA_BIDIRECTIONAL);
+		dma_buf_detach(buffer, attachement);
+		dma_buf_put(buffer);
+
+#ifdef CONFIG_TARGET_1879VM8YA
+		if (is_arm_core)
+			ret = put_user((uint32_t)(paddr), (uint32_t __user *) ioctl_param);
+		else
+			ret = put_user((uint32_t)(paddr >> 2), (uint32_t __user *) ioctl_param);
+#elif CONFIG_1888TX018
+		ret = put_user((uint32_t)((paddr >> 2) + 0x10000000), (uint32_t __user *) ioctl_param);
+else
+		ret = put_user((uint32_t)(paddr >> 2), (uint32_t __user *) ioctl_param);
+#endif
+		if (ret)
+			return -EFAULT;
+		break;
+	}
+#endif
+// [***] EasyNMC prototype (end)
+
+	default:
+		return -ENOTTY;
 
 	}
+
 	return 0;
 }
 
@@ -600,7 +658,8 @@ static int imem_mmap(struct file * filp, struct vm_area_struct * vma)
 
 static int pollflags[NMC_NUM_IRQS] = {
 	POLLHUP,
-	POLLPRI | POLLRDBAND,
+//	POLLPRI | POLLRDBAND, // [***] EasyNMC prototype
+	POLLOUT | POLLWRNORM, // [***] EasyNMC prototype
 	POLLIN  | POLLRDNORM
 };
 
@@ -991,10 +1050,10 @@ EXPORT_SYMBOL(easynmc_deregister_core);
 static ssize_t proc_read(struct file *filp, char __user *buffer, size_t buffer_length, loff_t *offset)
 {
 	struct list_head *iter; 
-	int copied=0; 
+	int copied=0;
 	struct nmc_core *core;
-	char* buff;
 	int len;
+	char name_buf[32];
 
 	/* 
 	 * We give all of our information in one go, so if the
@@ -1010,38 +1069,29 @@ static ssize_t proc_read(struct file *filp, char __user *buffer, size_t buffer_l
 
 	if (*offset > 0)
 		return 0;
-
-	buff = kmalloc(buffer_length, GFP_KERNEL);
-	if (!buff) 
-		return -ENOMEM;
-
+	
 	/* Lock us against any core removal that might happen */
 	spin_lock(&rlock);
 	list_for_each(iter, &core_list) {
 		core = list_entry(iter, struct nmc_core, linkage);
-		len = snprintf(&buff[copied], buffer_length, "/dev/nmc%d\n", core->id); 
-		copied += len;
-		buffer_length -= len; 
-		*offset += len;
-	}
-	spin_unlock(&rlock);
-
-	if (copied) {
-		if (copy_to_user(buffer, buff, copied)) {
-			copied = -EFAULT;
-			goto out;
+		len = snprintf(name_buf, sizeof name_buf, "/dev/nmc%d\n", core->id);
+		if ((len >= 0)  && (len <= buffer_length)) {
+			if (copy_to_user(&buffer[copied], name_buf, len)) {
+				spin_unlock(&rlock);
+				return -EFAULT;
+			}
+			copied += len;
+			buffer_length -= len;
+			*offset += len;
 		}
-	}
-
-out:
-
-	kfree(buff);
+	}	
+	spin_unlock(&rlock);
 
 	return copied; /* Do not return NULL byte */
 }
 
 static struct proc_dir_entry *nmc_proc_entry;
-static const struct file_operations proc_fops = {
+static const struct file_operations proc_fops = { /*wherefore? struct proc_ops?*/
 	.read = proc_read,
 	.owner = THIS_MODULE
 };

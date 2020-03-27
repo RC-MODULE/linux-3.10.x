@@ -1084,7 +1084,8 @@ of interest:
                    commands to the adapter.
     this_id      - scsi id of host (scsi initiator) or -1 if not known
     sg_tablesize - maximum scatter gather elements allowed by host.
-                   0 implies scatter gather not supported by host
+                   Set this to SG_ALL or less to avoid chained SG lists.
+                   Must be at least 1.
     max_sectors  - maximum number of sectors (usually 512 bytes) allowed
                    in a single SCSI command. The default value of 0 leads
                    to a setting of SCSI_DEFAULT_MAX_SECTORS (defined in
@@ -1098,8 +1099,6 @@ of interest:
     unchecked_isa_dma - 1=>only use bottom 16 MB of ram (ISA DMA addressing
                    restriction), 0=>can use full 32 bit (or better) DMA
                    address space
-    use_clustering - 1=>SCSI commands in mid level's queue can be merged,
-                     0=>disallow SCSI command merging
     no_async_abort - 1=>Asynchronous aborts are not supported
                      0=>Timed-out commands will be aborted asynchronously
     hostt        - pointer to driver's struct scsi_host_template from which

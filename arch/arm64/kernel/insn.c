@@ -1,20 +1,9 @@
+// SPDX-License-Identifier: GPL-2.0-only
 /*
  * Copyright (C) 2013 Huawei Ltd.
  * Author: Jiang Liu <liuj97@gmail.com>
  *
  * Copyright (C) 2014-2016 Zi Shen Lim <zlim.lnx@gmail.com>
- *
- * This program is free software; you can redistribute it and/or modify
- * it under the terms of the GNU General Public License version 2 as
- * published by the Free Software Foundation.
- *
- * This program is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU General Public License for more details.
- *
- * You should have received a copy of the GNU General Public License
- * along with this program.  If not, see <http://www.gnu.org/licenses/>.
  */
 #include <linux/bitops.h>
 #include <linux/bug.h>
@@ -32,12 +21,13 @@
 #include <asm/fixmap.h>
 #include <asm/insn.h>
 #include <asm/kprobes.h>
+#include <asm/sections.h>
 
 #define AARCH64_INSN_SF_BIT	BIT(31)
 #define AARCH64_INSN_N_BIT	BIT(22)
 #define AARCH64_INSN_LSL_12	BIT(22)
 
-static int aarch64_insn_encoding_class[] = {
+static const int aarch64_insn_encoding_class[] = {
 	AARCH64_INSN_CLS_UNKNOWN,
 	AARCH64_INSN_CLS_UNKNOWN,
 	AARCH64_INSN_CLS_UNKNOWN,
@@ -89,16 +79,29 @@ bool aarch64_insn_is_branch_imm(u32 insn)
 
 static DEFINE_RAW_SPINLOCK(patch_lock);
 
+static bool is_exit_text(unsigned long addr)
+{
+	/* discarded with init text/data */
+	return system_state < SYSTEM_RUNNING &&
+		addr >= (unsigned long)__exittext_begin &&
+		addr < (unsigned long)__exittext_end;
+}
+
+static bool is_image_text(unsigned long addr)
+{
+	return core_kernel_text(addr) || is_exit_text(addr);
+}
+
 static void __kprobes *patch_map(void *addr, int fixmap)
 {
 	unsigned long uintaddr = (uintptr_t) addr;
-	bool module = !core_kernel_text(uintaddr);
+	bool image = is_image_text(uintaddr);
 	struct page *page;
 
-	if (module && IS_ENABLED(CONFIG_STRICT_MODULE_RWX))
-		page = vmalloc_to_page(addr);
-	else if (!module)
+	if (image)
 		page = phys_to_page(__pa_symbol(addr));
+	else if (IS_ENABLED(CONFIG_STRICT_MODULE_RWX))
+		page = vmalloc_to_page(addr);
 	else
 		return addr;
 
@@ -149,20 +152,6 @@ int __kprobes aarch64_insn_write(void *addr, u32 insn)
 	return __aarch64_insn_write(addr, cpu_to_le32(insn));
 }
 
-static bool __kprobes __aarch64_insn_hotpatch_safe(u32 insn)
-{
-	if (aarch64_get_insn_class(insn) != AARCH64_INSN_CLS_BR_SYS)
-		return false;
-
-	return	aarch64_insn_is_b(insn) ||
-		aarch64_insn_is_bl(insn) ||
-		aarch64_insn_is_svc(insn) ||
-		aarch64_insn_is_hvc(insn) ||
-		aarch64_insn_is_smc(insn) ||
-		aarch64_insn_is_brk(insn) ||
-		aarch64_insn_is_nop(insn);
-}
-
 bool __kprobes aarch64_insn_uses_literal(u32 insn)
 {
 	/* ldr/ldrsw (literal), prfm */
@@ -189,22 +178,6 @@ bool __kprobes aarch64_insn_is_branch(u32 insn)
 		aarch64_insn_is_bcond(insn);
 }
 
-/*
- * ARM Architecture Reference Manual for ARMv8 Profile-A, Issue A.a
- * Section B2.6.5 "Concurrent modification and execution of instructions":
- * Concurrent modification and execution of instructions can lead to the
- * resulting instruction performing any behavior that can be achieved by
- * executing any sequence of instructions that can be executed from the
- * same Exception level, except where the instruction before modification
- * and the instruction after modification is a B, BL, NOP, BKPT, SVC, HVC,
- * or SMC instruction.
- */
-bool __kprobes aarch64_insn_hotpatch_safe(u32 old_insn, u32 new_insn)
-{
-	return __aarch64_insn_hotpatch_safe(old_insn) &&
-	       __aarch64_insn_hotpatch_safe(new_insn);
-}
-
 int __kprobes aarch64_insn_patch_text_nosync(void *addr, u32 insn)
 {
 	u32 *tp = addr;
@@ -216,8 +189,8 @@ int __kprobes aarch64_insn_patch_text_nosync(void *addr, u32 insn)
 
 	ret = aarch64_insn_write(tp, insn);
 	if (ret == 0)
-		flush_icache_range((uintptr_t)tp,
-				   (uintptr_t)tp + AARCH64_INSN_SIZE);
+		__flush_icache_range((uintptr_t)tp,
+				     (uintptr_t)tp + AARCH64_INSN_SIZE);
 
 	return ret;
 }
@@ -239,11 +212,6 @@ static int __kprobes aarch64_insn_patch_text_cb(void *arg)
 		for (i = 0; ret == 0 && i < pp->insn_cnt; i++)
 			ret = aarch64_insn_patch_text_nosync(pp->text_addrs[i],
 							     pp->new_insns[i]);
-		/*
-		 * aarch64_insn_patch_text_nosync() calls flush_icache_range(),
-		 * which ends with "dsb; isb" pair guaranteeing global
-		 * visibility.
-		 */
 		/* Notify other processors with an additional increment. */
 		atomic_inc(&pp->cpu_count);
 	} else {
@@ -255,8 +223,7 @@ static int __kprobes aarch64_insn_patch_text_cb(void *arg)
 	return ret;
 }
 
-static
-int __kprobes aarch64_insn_patch_text_sync(void *addrs[], u32 insns[], int cnt)
+int __kprobes aarch64_insn_patch_text(void *addrs[], u32 insns[], int cnt)
 {
 	struct aarch64_insn_patch patch = {
 		.text_addrs = addrs,
@@ -270,34 +237,6 @@ int __kprobes aarch64_insn_patch_text_sync(void *addrs[], u32 insns[], int cnt)
 
 	return stop_machine_cpuslocked(aarch64_insn_patch_text_cb, &patch,
 				       cpu_online_mask);
-}
-
-int __kprobes aarch64_insn_patch_text(void *addrs[], u32 insns[], int cnt)
-{
-	int ret;
-	u32 insn;
-
-	/* Unsafe to patch multiple instructions without synchronizaiton */
-	if (cnt == 1) {
-		ret = aarch64_insn_read(addrs[0], &insn);
-		if (ret)
-			return ret;
-
-		if (aarch64_insn_hotpatch_safe(insn, insns[0])) {
-			/*
-			 * ARMv8 architecture doesn't guarantee all CPUs see
-			 * the new instruction after returning from function
-			 * aarch64_insn_patch_text_nosync(). So send IPIs to
-			 * all other CPUs to achieve instruction
-			 * synchronization.
-			 */
-			ret = aarch64_insn_patch_text_nosync(addrs[0], insns[0]);
-			kick_all_cpus_sync();
-			return ret;
-		}
-	}
-
-	return aarch64_insn_patch_text_sync(addrs, insns, cnt);
 }
 
 static int __kprobes aarch64_get_imm_shift_mask(enum aarch64_insn_imm_type type,
@@ -796,6 +735,46 @@ u32 aarch64_insn_gen_load_store_ex(enum aarch64_insn_register reg,
 
 	return aarch64_insn_encode_register(AARCH64_INSN_REGTYPE_RS, insn,
 					    state);
+}
+
+u32 aarch64_insn_gen_ldadd(enum aarch64_insn_register result,
+			   enum aarch64_insn_register address,
+			   enum aarch64_insn_register value,
+			   enum aarch64_insn_size_type size)
+{
+	u32 insn = aarch64_insn_get_ldadd_value();
+
+	switch (size) {
+	case AARCH64_INSN_SIZE_32:
+	case AARCH64_INSN_SIZE_64:
+		break;
+	default:
+		pr_err("%s: unimplemented size encoding %d\n", __func__, size);
+		return AARCH64_BREAK_FAULT;
+	}
+
+	insn = aarch64_insn_encode_ldst_size(size, insn);
+
+	insn = aarch64_insn_encode_register(AARCH64_INSN_REGTYPE_RT, insn,
+					    result);
+
+	insn = aarch64_insn_encode_register(AARCH64_INSN_REGTYPE_RN, insn,
+					    address);
+
+	return aarch64_insn_encode_register(AARCH64_INSN_REGTYPE_RS, insn,
+					    value);
+}
+
+u32 aarch64_insn_gen_stadd(enum aarch64_insn_register address,
+			   enum aarch64_insn_register value,
+			   enum aarch64_insn_size_type size)
+{
+	/*
+	 * STADD is simply encoded as an alias for LDADD with XZR as
+	 * the destination register.
+	 */
+	return aarch64_insn_gen_ldadd(AARCH64_INSN_REG_ZR, address,
+				      value, size);
 }
 
 static u32 aarch64_insn_encode_prfm_imm(enum aarch64_insn_prfm_type type,
@@ -1301,6 +1280,48 @@ u32 aarch64_insn_gen_logical_shifted_reg(enum aarch64_insn_register dst,
 	insn = aarch64_insn_encode_register(AARCH64_INSN_REGTYPE_RM, insn, reg);
 
 	return aarch64_insn_encode_immediate(AARCH64_INSN_IMM_6, insn, shift);
+}
+
+/*
+ * MOV (register) is architecturally an alias of ORR (shifted register) where
+ * MOV <*d>, <*m> is equivalent to ORR <*d>, <*ZR>, <*m>
+ */
+u32 aarch64_insn_gen_move_reg(enum aarch64_insn_register dst,
+			      enum aarch64_insn_register src,
+			      enum aarch64_insn_variant variant)
+{
+	return aarch64_insn_gen_logical_shifted_reg(dst, AARCH64_INSN_REG_ZR,
+						    src, 0, variant,
+						    AARCH64_INSN_LOGIC_ORR);
+}
+
+u32 aarch64_insn_gen_adr(unsigned long pc, unsigned long addr,
+			 enum aarch64_insn_register reg,
+			 enum aarch64_insn_adr_type type)
+{
+	u32 insn;
+	s32 offset;
+
+	switch (type) {
+	case AARCH64_INSN_ADR_TYPE_ADR:
+		insn = aarch64_insn_get_adr_value();
+		offset = addr - pc;
+		break;
+	case AARCH64_INSN_ADR_TYPE_ADRP:
+		insn = aarch64_insn_get_adrp_value();
+		offset = (addr - ALIGN_DOWN(pc, SZ_4K)) >> 12;
+		break;
+	default:
+		pr_err("%s: unknown adr encoding %d\n", __func__, type);
+		return AARCH64_BREAK_FAULT;
+	}
+
+	if (offset < -SZ_1M || offset >= SZ_1M)
+		return AARCH64_BREAK_FAULT;
+
+	insn = aarch64_insn_encode_register(AARCH64_INSN_REGTYPE_RD, insn, reg);
+
+	return aarch64_insn_encode_immediate(AARCH64_INSN_IMM_ADR, insn, offset);
 }
 
 /*

@@ -11,6 +11,7 @@
 #include <linux/spi/spi.h>
 #include <linux/timer.h>
 #include <linux/dma-mapping.h>
+#include <linux/interrupt.h>
 
 #define PSEUDO_SPI_SERIAL_TTY_MAJOR		240
 #define PSEUDO_SPI_SERIAL_TTY_MINORS	1

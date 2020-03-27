@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: GPL-2.0-only
 /*
  * This is the driver for the STA2x11 Video Input Port.
  *
@@ -6,23 +7,6 @@
  * Copyright (C) 2010       WindRiver Systems, Inc.
  *     authors: Andreas Kies <andreas.kies@windriver.com>
  *              Vlad Lungu   <vlad.lungu@windriver.com>
- *
- * This program is free software; you can redistribute it and/or modify it
- * under the terms and conditions of the GNU General Public License,
- * version 2, as published by the Free Software Foundation.
- *
- * This program is distributed in the hope it will be useful, but WITHOUT
- * ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or
- * FITNESS FOR A PARTICULAR PURPOSE.  See the GNU General Public License for
- * more details.
- *
- * You should have received a copy of the GNU General Public License along with
- * this program; if not, write to the Free Software Foundation, Inc.,
- * 51 Franklin St - Fifth Floor, Boston, MA 02110-1301 USA.
- *
- * The full GNU General Public License is included in this distribution in
- * the file called "COPYING".
- *
  */
 
 #include <linux/types.h>
@@ -110,12 +94,13 @@ static inline struct vip_buffer *to_vip_buffer(struct vb2_v4l2_buffer *vb2)
  * @std: video standard (e.g. PAL/NTSC)
  * @input: input line for video signal ( 0 or 1 )
  * @disabled: Device is in power down state
- * @slock: for excluse acces of registers
+ * @slock: for excluse access of registers
  * @vb_vidq: queue maintained by videobuf2 layer
  * @buffer_list: list of buffer in use
  * @sequence: sequence number of acquired buffer
  * @active: current active buffer
  * @lock: used in videobuf2 callback
+ * @v4l_lock: serialize its video4linux ioctls
  * @tcount: Number of top frames
  * @bcount: Number of bottom frames
  * @overflow: Number of FIFO overflows
@@ -145,6 +130,7 @@ struct sta2x11_vip {
 	unsigned int sequence;
 	struct vip_buffer *active; /* current active buffer */
 	spinlock_t lock; /* Used in videobuf2 callback */
+	struct mutex v4l_lock;
 
 	/* Interrupt counters */
 	int tcount, bcount;
@@ -385,6 +371,8 @@ static const struct vb2_ops vip_video_qops = {
 	.buf_queue		= buffer_queue,
 	.start_streaming	= start_streaming,
 	.stop_streaming		= stop_streaming,
+	.wait_prepare		= vb2_ops_wait_prepare,
+	.wait_finish		= vb2_ops_wait_finish,
 };
 
 
@@ -415,14 +403,10 @@ static int vidioc_querycap(struct file *file, void *priv,
 {
 	struct sta2x11_vip *vip = video_drvdata(file);
 
-	strcpy(cap->driver, KBUILD_MODNAME);
-	strcpy(cap->card, KBUILD_MODNAME);
+	strscpy(cap->driver, KBUILD_MODNAME, sizeof(cap->driver));
+	strscpy(cap->card, KBUILD_MODNAME, sizeof(cap->card));
 	snprintf(cap->bus_info, sizeof(cap->bus_info), "PCI:%s",
 		 pci_name(vip->pdev));
-	cap->device_caps = V4L2_CAP_VIDEO_CAPTURE | V4L2_CAP_READWRITE |
-			   V4L2_CAP_STREAMING;
-	cap->capabilities = cap->device_caps | V4L2_CAP_DEVICE_CAPS;
-
 	return 0;
 }
 
@@ -576,9 +560,7 @@ static int vidioc_enum_fmt_vid_cap(struct file *file, void *priv,
 	if (f->index != 0)
 		return -EINVAL;
 
-	strcpy(f->description, "4:2:2, packed, UYVY");
 	f->pixelformat = V4L2_PIX_FMT_UYVY;
-	f->flags = 0;
 	return 0;
 }
 
@@ -771,6 +753,8 @@ static const struct video_device video_dev_template = {
 	.fops = &vip_fops,
 	.ioctl_ops = &vip_ioctl_ops,
 	.tvnorms = V4L2_STD_ALL,
+	.device_caps = V4L2_CAP_VIDEO_CAPTURE | V4L2_CAP_READWRITE |
+		       V4L2_CAP_STREAMING,
 };
 
 /**
@@ -870,6 +854,7 @@ static int sta2x11_vip_init_buffer(struct sta2x11_vip *vip)
 	vip->vb_vidq.mem_ops = &vb2_dma_contig_memops;
 	vip->vb_vidq.timestamp_flags = V4L2_BUF_FLAG_TIMESTAMP_MONOTONIC;
 	vip->vb_vidq.dev = &vip->pdev->dev;
+	vip->vb_vidq.lock = &vip->v4l_lock;
 	err = vb2_queue_init(&vip->vb_vidq);
 	if (err)
 		return err;
@@ -1034,6 +1019,7 @@ static int sta2x11_vip_init_one(struct pci_dev *pdev,
 	vip->std = V4L2_STD_PAL;
 	vip->format = formats_50[0];
 	vip->config = config;
+	mutex_init(&vip->v4l_lock);
 
 	ret = sta2x11_vip_init_controls(vip);
 	if (ret)
@@ -1080,6 +1066,7 @@ static int sta2x11_vip_init_one(struct pci_dev *pdev,
 	vip->video_dev = video_dev_template;
 	vip->video_dev.v4l2_dev = &vip->v4l2_dev;
 	vip->video_dev.queue = &vip->vb_vidq;
+	vip->video_dev.lock = &vip->v4l_lock;
 	video_set_drvdata(&vip->video_dev, vip);
 
 	ret = video_register_device(&vip->video_dev, VFL_TYPE_GRABBER, -1);

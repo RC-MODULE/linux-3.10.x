@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: GPL-2.0-or-later
 /*
  *   Scarlett Driver for ALSA
  *
@@ -12,17 +13,6 @@
  *
  *   Code cleanup:
  *   David Henningsson <david.henningsson at canonical.com>
- *
- *   This program is free software; you can redistribute it and/or modify
- *   it under the terms of the GNU General Public License as published by
- *   the Free Software Foundation; either version 2 of the License, or
- *   (at your option) any later version.
- *
- *   This program is distributed in the hope that it will be useful,
- *   but WITHOUT ANY WARRANTY; without even the implied warranty of
- *   MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- *   GNU General Public License for more details.
- *
  */
 
 /*
@@ -152,6 +142,7 @@ enum {
 	SCARLETT_OUTPUTS,
 	SCARLETT_SWITCH_IMPEDANCE,
 	SCARLETT_SWITCH_PAD,
+	SCARLETT_SWITCH_GAIN,
 };
 
 enum {
@@ -199,6 +190,15 @@ static const struct scarlett_mixer_elem_enum_info opt_pad = {
 	.offsets = {},
 	.names = (char const * const []){
 		"0dB", "-10dB"
+	}
+};
+
+static const struct scarlett_mixer_elem_enum_info opt_gain = {
+	.start = 0,
+	.len = 2,
+	.offsets = {},
+	.names = (char const * const []){
+		"Lo", "Hi"
 	}
 };
 
@@ -662,8 +662,8 @@ static struct scarlett_device_info s6i6_info = {
 		{ .num = 1, .type = SCARLETT_SWITCH_PAD, .name = NULL},
 		{ .num = 2, .type = SCARLETT_SWITCH_IMPEDANCE, .name = NULL},
 		{ .num = 2, .type = SCARLETT_SWITCH_PAD, .name = NULL},
-		{ .num = 3, .type = SCARLETT_SWITCH_PAD, .name = NULL},
-		{ .num = 4, .type = SCARLETT_SWITCH_PAD, .name = NULL},
+		{ .num = 3, .type = SCARLETT_SWITCH_GAIN, .name = NULL},
+		{ .num = 4, .type = SCARLETT_SWITCH_GAIN, .name = NULL},
 	},
 
 	.matrix_mux_init = {
@@ -890,6 +890,15 @@ static int scarlett_controls_create_generic(struct usb_mixer_interface *mixer,
 					  scarlett_ctl_enum_resume, 0x01,
 					  0x0b, ctl->num, USB_MIXER_S16, 1, mx,
 					  &opt_pad, &elem);
+			if (err < 0)
+				return err;
+			break;
+		case SCARLETT_SWITCH_GAIN:
+			sprintf(mx, "Input %d Gain Switch", ctl->num);
+			err = add_new_ctl(mixer, &usb_scarlett_ctl_enum,
+					  scarlett_ctl_enum_resume, 0x01,
+					  0x08, ctl->num, USB_MIXER_S16, 1, mx,
+					  &opt_gain, &elem);
 			if (err < 0)
 				return err;
 			break;

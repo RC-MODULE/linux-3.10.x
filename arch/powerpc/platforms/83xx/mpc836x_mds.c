@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: GPL-2.0-or-later
 /*
  * Copyright 2006 Freescale Semiconductor, Inc. All rights reserved.
  *
@@ -9,11 +10,6 @@
  *
  * Changelog:
  * Jun 21, 2006	Initial version
- *
- * This program is free software; you can redistribute it and/or modify it
- * under  the terms of  the GNU General  Public License as published by the
- * Free Software Foundation;  either version 2 of the  License, or (at your
- * option) any later version.
  */
 
 #include <linux/stddef.h>
@@ -43,7 +39,6 @@
 #include <asm/udbg.h>
 #include <sysdev/fsl_soc.h>
 #include <sysdev/fsl_pci.h>
-#include <sysdev/simple_gpio.h>
 #include <soc/fsl/qe/qe.h>
 #include <soc/fsl/qe/qe_ic.h>
 
@@ -185,12 +180,6 @@ static int __init mpc836x_usb_cfg(void)
 		qe_usb_clock_set(QE_CLK21, 48000000);
 	} else {
 		setbits8(&bcsr[13], BCSR13_USBMODE);
-		/*
-		 * The BCSR GPIOs are used to control power and
-		 * speed of the USB transceiver. This is needed for
-		 * the USB Host only.
-		 */
-		simple_gpiochip_init("fsl,mpc8360mds-bcsr-gpio");
 	}
 
 	of_node_put(np);

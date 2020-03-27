@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: GPL-2.0-or-later
 /*
  *   ALSA driver for VIA VT82xx (South Bridge)
  *
@@ -6,21 +7,6 @@
  *	Copyright (c) 2000 Jaroslav Kysela <perex@perex.cz>
  *	                   Tjeerd.Mulder <Tjeerd.Mulder@fujitsu-siemens.com>
  *                    2002 Takashi Iwai <tiwai@suse.de>
- *
- *   This program is free software; you can redistribute it and/or modify
- *   it under the terms of the GNU General Public License as published by
- *   the Free Software Foundation; either version 2 of the License, or
- *   (at your option) any later version.
- *
- *   This program is distributed in the hope that it will be useful,
- *   but WITHOUT ANY WARRANTY; without even the implied warranty of
- *   MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- *   GNU General Public License for more details.
- *
- *   You should have received a copy of the GNU General Public License
- *   along with this program; if not, write to the Free Software
- *   Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307 USA
- *
  */
 
 /*
@@ -433,7 +419,7 @@ static int build_via_table(struct viadev *dev, struct snd_pcm_substream *substre
 		/* the start of each lists must be aligned to 8 bytes,
 		 * but the kernel pages are much bigger, so we don't care
 		 */
-		if (snd_dma_alloc_pages(SNDRV_DMA_TYPE_DEV, snd_dma_pci_data(chip->pci),
+		if (snd_dma_alloc_pages(SNDRV_DMA_TYPE_DEV, &chip->pci->dev,
 					PAGE_ALIGN(VIA_TABLE_SIZE * 2 * 8),
 					&dev->table) < 0)
 			return -ENOMEM;
@@ -1377,7 +1363,6 @@ static const struct snd_pcm_ops snd_via686_playback_ops = {
 	.prepare =	snd_via686_playback_prepare,
 	.trigger =	snd_via82xx_pcm_trigger,
 	.pointer =	snd_via686_pcm_pointer,
-	.page =		snd_pcm_sgbuf_ops_page,
 };
 
 /* via686 capture callbacks */
@@ -1390,7 +1375,6 @@ static const struct snd_pcm_ops snd_via686_capture_ops = {
 	.prepare =	snd_via686_capture_prepare,
 	.trigger =	snd_via82xx_pcm_trigger,
 	.pointer =	snd_via686_pcm_pointer,
-	.page =		snd_pcm_sgbuf_ops_page,
 };
 
 /* via823x DSX playback callbacks */
@@ -1403,7 +1387,6 @@ static const struct snd_pcm_ops snd_via8233_playback_ops = {
 	.prepare =	snd_via8233_playback_prepare,
 	.trigger =	snd_via82xx_pcm_trigger,
 	.pointer =	snd_via8233_pcm_pointer,
-	.page =		snd_pcm_sgbuf_ops_page,
 };
 
 /* via823x multi-channel playback callbacks */
@@ -1416,7 +1399,6 @@ static const struct snd_pcm_ops snd_via8233_multi_ops = {
 	.prepare =	snd_via8233_multi_prepare,
 	.trigger =	snd_via82xx_pcm_trigger,
 	.pointer =	snd_via8233_pcm_pointer,
-	.page =		snd_pcm_sgbuf_ops_page,
 };
 
 /* via823x capture callbacks */
@@ -1429,7 +1411,6 @@ static const struct snd_pcm_ops snd_via8233_capture_ops = {
 	.prepare =	snd_via8233_capture_prepare,
 	.trigger =	snd_via82xx_pcm_trigger,
 	.pointer =	snd_via8233_pcm_pointer,
-	.page =		snd_pcm_sgbuf_ops_page,
 };
 
 
@@ -1473,7 +1454,7 @@ static int snd_via8233_pcm_new(struct via82xx *chip)
 	init_viadev(chip, chip->capture_devno, VIA_REG_CAPTURE_8233_STATUS, 6, 1);
 
 	snd_pcm_lib_preallocate_pages_for_all(pcm, SNDRV_DMA_TYPE_DEV_SG,
-					      snd_dma_pci_data(chip->pci),
+					      &chip->pci->dev,
 					      64*1024, VIA_MAX_BUFSIZE);
 
 	err = snd_pcm_add_chmap_ctls(pcm, SNDRV_PCM_STREAM_PLAYBACK,
@@ -1497,7 +1478,7 @@ static int snd_via8233_pcm_new(struct via82xx *chip)
 	init_viadev(chip, chip->capture_devno + 1, VIA_REG_CAPTURE_8233_STATUS + 0x10, 7, 1);
 
 	snd_pcm_lib_preallocate_pages_for_all(pcm, SNDRV_DMA_TYPE_DEV_SG,
-					      snd_dma_pci_data(chip->pci),
+					      &chip->pci->dev,
 					      64*1024, VIA_MAX_BUFSIZE);
 
 	err = snd_pcm_add_chmap_ctls(pcm, SNDRV_PCM_STREAM_PLAYBACK,
@@ -1540,7 +1521,7 @@ static int snd_via8233a_pcm_new(struct via82xx *chip)
 	init_viadev(chip, chip->capture_devno, VIA_REG_CAPTURE_8233_STATUS, 6, 1);
 
 	snd_pcm_lib_preallocate_pages_for_all(pcm, SNDRV_DMA_TYPE_DEV_SG,
-					      snd_dma_pci_data(chip->pci),
+					      &chip->pci->dev,
 					      64*1024, VIA_MAX_BUFSIZE);
 
 	err = snd_pcm_add_chmap_ctls(pcm, SNDRV_PCM_STREAM_PLAYBACK,
@@ -1566,7 +1547,7 @@ static int snd_via8233a_pcm_new(struct via82xx *chip)
 	init_viadev(chip, chip->playback_devno, 0x30, 3, 0);
 
 	snd_pcm_lib_preallocate_pages_for_all(pcm, SNDRV_DMA_TYPE_DEV_SG,
-					      snd_dma_pci_data(chip->pci),
+					      &chip->pci->dev,
 					      64*1024, VIA_MAX_BUFSIZE);
 	return 0;
 }
@@ -1596,7 +1577,7 @@ static int snd_via686_pcm_new(struct via82xx *chip)
 	init_viadev(chip, 1, VIA_REG_CAPTURE_STATUS, 0, 1);
 
 	snd_pcm_lib_preallocate_pages_for_all(pcm, SNDRV_DMA_TYPE_DEV_SG,
-					      snd_dma_pci_data(chip->pci),
+					      &chip->pci->dev,
 					      64*1024, VIA_MAX_BUFSIZE);
 	return 0;
 }
@@ -2144,10 +2125,8 @@ static void snd_via82xx_proc_read(struct snd_info_entry *entry,
 
 static void snd_via82xx_proc_init(struct via82xx *chip)
 {
-	struct snd_info_entry *entry;
-
-	if (! snd_card_proc_new(chip->card, "via82xx", &entry))
-		snd_info_set_text_ops(entry, chip, snd_via82xx_proc_read);
+	snd_card_ro_proc_new(chip->card, "via82xx", chip,
+			     snd_via82xx_proc_read);
 }
 
 /*
@@ -2278,8 +2257,6 @@ static int snd_via82xx_suspend(struct device *dev)
 	int i;
 
 	snd_power_change_state(card, SNDRV_CTL_POWER_D3hot);
-	for (i = 0; i < 2; i++)
-		snd_pcm_suspend_all(chip->pcms[i]);
 	for (i = 0; i < chip->num_devs; i++)
 		snd_via82xx_channel_reset(chip, &chip->devs[i]);
 	synchronize_irq(chip->irq);

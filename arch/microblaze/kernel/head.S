@@ -99,7 +99,7 @@ big_endian:
 _prepare_copy_fdt:
 	or	r11, r0, r0 /* incremment */
 	ori	r4, r0, TOPHYS(_fdt_start)
-	ori	r3, r0, (0x8000 - 4)
+	ori	r3, r0, (0x10000 - 4)
 _copy_fdt:
 	lw	r12, r7, r11 /* r12 = r7 + r11 */
 	sw	r12, r4, r11 /* addr[r4 + r11] = r12 */
@@ -341,11 +341,6 @@ start_here:
 	/* Initialize r31 with current task address */
 	addik	r31, r0, init_task
 
-	/*
-	 * Call platform dependent initialize function.
-	 * Please see $(ARCH)/mach-$(SUBARCH)/setup.c for
-	 * the function.
-	 */
 	addik	r11, r0, machine_early_init
 	brald	r15, r11
 	nop

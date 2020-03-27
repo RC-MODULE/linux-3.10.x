@@ -1,9 +1,6 @@
+// SPDX-License-Identifier: GPL-2.0-only
 /*
  * Copyright (c) 2011 Jamie Iles
- *
- * This program is free software; you can redistribute it and/or modify
- * it under the terms of the GNU General Public License version 2 as
- * published by the Free Software Foundation.
  *
  * All enquiries to support@picochip.com
  */
@@ -30,6 +27,7 @@
 #include <linux/slab.h>
 
 #include "gpiolib.h"
+#include "gpiolib-acpi.h"
 
 #define GPIO_SWPORTA_DR		0x00
 #define GPIO_SWPORTA_DDR	0x04
@@ -255,11 +253,13 @@ static int dwapb_irq_reqres(struct irq_data *d)
 	struct irq_chip_generic *igc = irq_data_get_irq_chip_data(d);
 	struct dwapb_gpio *gpio = igc->private;
 	struct gpio_chip *gc = &gpio->ports[0].gc;
+	int ret;
 
-	if (gpiochip_lock_as_irq(gc, irqd_to_hwirq(d))) {
+	ret = gpiochip_lock_as_irq(gc, irqd_to_hwirq(d));
+	if (ret) {
 		dev_err(gpio->dev, "unable to lock HW IRQ %lu for IRQ\n",
 			irqd_to_hwirq(d));
-		return -EINVAL;
+		return ret;
 	}
 	return 0;
 }
@@ -653,7 +653,6 @@ MODULE_DEVICE_TABLE(acpi, dwapb_acpi_match);
 static int dwapb_gpio_probe(struct platform_device *pdev)
 {
 	unsigned int i;
-	struct resource *res;
 	struct dwapb_gpio *gpio;
 	int err;
 	struct device *dev = &pdev->dev;
@@ -686,8 +685,7 @@ static int dwapb_gpio_probe(struct platform_device *pdev)
 	if (!gpio->ports)
 		return -ENOMEM;
 
-	res = platform_get_resource(pdev, IORESOURCE_MEM, 0);
-	gpio->regs = devm_ioremap_resource(&pdev->dev, res);
+	gpio->regs = devm_platform_ioremap_resource(pdev, 0);
 	if (IS_ERR(gpio->regs))
 		return PTR_ERR(gpio->regs);
 
@@ -726,6 +724,7 @@ static int dwapb_gpio_probe(struct platform_device *pdev)
 out_unregister:
 	dwapb_gpio_unregister(gpio);
 	dwapb_irq_teardown(gpio);
+	clk_disable_unprepare(gpio->clk);
 
 	return err;
 }
@@ -745,8 +744,7 @@ static int dwapb_gpio_remove(struct platform_device *pdev)
 #ifdef CONFIG_PM_SLEEP
 static int dwapb_gpio_suspend(struct device *dev)
 {
-	struct platform_device *pdev = to_platform_device(dev);
-	struct dwapb_gpio *gpio = platform_get_drvdata(pdev);
+	struct dwapb_gpio *gpio = dev_get_drvdata(dev);
 	struct gpio_chip *gc	= &gpio->ports[0].gc;
 	unsigned long flags;
 	int i;
@@ -790,8 +788,7 @@ static int dwapb_gpio_suspend(struct device *dev)
 
 static int dwapb_gpio_resume(struct device *dev)
 {
-	struct platform_device *pdev = to_platform_device(dev);
-	struct dwapb_gpio *gpio = platform_get_drvdata(pdev);
+	struct dwapb_gpio *gpio = dev_get_drvdata(dev);
 	struct gpio_chip *gc	= &gpio->ports[0].gc;
 	unsigned long flags;
 	int i;

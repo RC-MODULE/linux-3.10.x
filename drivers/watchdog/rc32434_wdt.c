@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: GPL-2.0-or-later
 /*
  *  IDT Interprise 79RC32434 watchdog driver
  *
@@ -9,12 +10,6 @@
  *
  *  (c) Copyright 1996 Alan Cox <alan@lxorguk.ukuu.org.uk>,
  *					All Rights Reserved.
- *
- *  This program is free software; you can redistribute it and/or
- *  modify it under the terms of the GNU General Public License
- *  as published by the Free Software Foundation; either version
- *  2 of the License, or (at your option) any later version.
- *
  */
 
 #define pr_fmt(fmt) KBUILD_MODNAME ": " fmt
@@ -150,7 +145,7 @@ static int rc32434_wdt_open(struct inode *inode, struct file *file)
 	rc32434_wdt_start();
 	rc32434_wdt_ping();
 
-	return nonseekable_open(inode, file);
+	return stream_open(inode, file);
 }
 
 static int rc32434_wdt_release(struct inode *inode, struct file *file)
@@ -250,6 +245,7 @@ static const struct file_operations rc32434_wdt_fops = {
 	.llseek		= no_llseek,
 	.write		= rc32434_wdt_write,
 	.unlocked_ioctl	= rc32434_wdt_ioctl,
+	.compat_ioctl	= compat_ptr_ioctl,
 	.open		= rc32434_wdt_open,
 	.release	= rc32434_wdt_release,
 };
