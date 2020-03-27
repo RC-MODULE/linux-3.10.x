@@ -1043,9 +1043,9 @@
 				interrupts = <124 2>; // active high level-sensitive
 			};
 
-		vdu_graber_int0: vdu_graber@0x38015000 {
+		vdu_graber_int0: vdu_grabber@0x38015000 {
 				status = "disabled";
-				compatible = "rcm,vdu-graber";
+				compatible = "rcm,vdu-grabber";
 				reg = <0x38015000 0x1000>;
 				interrupt-parent = <&MPIC>;
 				interrupts = <118 2>;
@@ -1054,9 +1054,9 @@
 				memory-region = <&grab_buffer0>;	
 			};
 
-		vdu_graber_ext0: vdu_graber@0x38016000 {
+		vdu_graber_ext0: vdu_grabber@0x38016000 {
 				status = "disabled";
-				compatible = "rcm,vdu-graber";
+				compatible = "rcm,vdu-grabber";
 				reg = <0x38016000 0x1000>;
 				interrupt-parent = <&MPIC>;
 				interrupts = <119 2>;
@@ -1065,9 +1065,9 @@
 				memory-region = <&grab_buffer1>;	
 			};
 	
-		vdu_graber_int1: vdu_graber@0x3801b000 {
+		vdu_graber_int1: vdu_grabber@0x3801b000 {
 				status = "disabled";
-				compatible = "rcm,vdu-graber";
+				compatible = "rcm,vdu-grabber";
 				reg = <0x3801b000 0x1000>;
 				interrupt-parent = <&MPIC>;
 				interrupts = <121 2>;
@@ -1076,9 +1076,9 @@
 				memory-region = <&grab_buffer2>;	
 			};
 
-		vdu_graber_ext1: vdu_graber@0x3801c000 {
+		vdu_graber_ext1: vdu_grabber@0x3801c000 {
 				status = "disabled";
-				compatible = "rcm,vdu-graber";
+				compatible = "rcm,vdu-grabber";
 				reg = <0x3801c000 0x1000>;
 				interrupt-parent = <&MPIC>;
 				interrupts = <122 2>;

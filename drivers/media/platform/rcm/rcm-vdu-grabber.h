@@ -4,12 +4,6 @@
 #include <linux/ioctl.h>
 #include <linux/watchdog.h>
 
-// ****************************************************************************
-//
-//								MAP REGISTERS
-//
-// ****************************************************************************
-
 	// CONTROL
 	#define ADDR_ID_REG           0x000 // address of register id_reg          
 	#define ADDR_ENABLE           0x004 // address of register enable_o        
@@ -113,7 +107,6 @@
 	#define VIDIOC_G_PARAMS			_IOWR('v', BASE_VIDIOC_PRIVATE + 1, struct grb_parameters)
 	#define VIDIOC_S_PARAMS			_IOWR('v', BASE_VIDIOC_PRIVATE + 2, struct grb_parameters)
 	#define VIDIOC_AUTO_DETECT		_IOWR('v', BASE_VIDIOC_PRIVATE + 3, struct grb_parameters)
-	#define VIDIOC_SET_COLOR_CONV	_IOWR('v', BASE_VIDIOC_PRIVATE + 4, struct grb_gamma)
 
 	#define C_WHITE   "\033[1;29;40m"
 	#define C_RED	  "\033[1;31;40m"
@@ -125,8 +118,8 @@
 	#define C_GREY	  "\033[1:37:40m"
 	#define C_CLEAR   "\033[1;0m"
 
-	#define DEVICE_NAME "grb_v2"
-	#define DRIVER_NAME "grb_driver"
+	#define DEVICE_NAME "vdugrb_v1.0.0"
+	#define DRIVER_NAME "vdugrb_drv"
 	#define GRB_DEVID 0xec176627
 
 	#define PHYS_TO_DMA(A) ((A)|0x40000000)
@@ -232,7 +225,7 @@ struct grb_info {
 
 	struct grb_parameters param;
 	struct grb_gamma gam;
-	struct coef_conv c_conv;
+	const struct coef_conv* c_conv;
 
 	phys_addr_t phys_addr_regs_grb;
 	void __iomem *base_addr_regs_grb;

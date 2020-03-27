@@ -18,8 +18,8 @@ config RCM_CODA_J10
 	---help---
 	RCM JPEG CODA J10 codec driver
 
-config RCM_VDU_GRABER
-	bool "RCM VDU grab driver"
+config RCM_VDU_GRABBER
+	bool "RCM VDU grabber driver"
 	select MEDIA_CONTROLLER
 	select VIDEO_V4L2_SUBDEV_API
 	select VIDEO_ADV7604
@@ -29,5 +29,5 @@ config RCM_VDU_GRABER
 	select VIDEO_ADV_DEBUG
 	default y
 	---help---
-	RCM VDU grab driver
+	RCM VDU grabber driver
 	
