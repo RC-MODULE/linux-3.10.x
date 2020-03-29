@@ -1,88 +1,87 @@
-#ifndef DEFINES_H
-#define DEFINES_H
+#ifndef RCM_VDU_GRABBER_H
+#define RCM_VDU_GRABBER_H
 
 #include <linux/ioctl.h>
 #include <linux/watchdog.h>
+#include <linux/version.h>
 
 	// CONTROL
-	#define ADDR_ID_REG           0x000 // address of register id_reg          
-	#define ADDR_ENABLE           0x004 // address of register enable_o        
-	#define ADDR_PR_RESET         0x008 // address of register pr_reset_o   
-	#define ADDR_REC_ENABLE       0x00c // address of register rec_enable_o 
+	#define ADDR_ID_REG           0x000
+	#define ADDR_ENABLE           0x004
+	#define ADDR_PR_RESET         0x008
+	#define ADDR_REC_ENABLE       0x00c
 	// STATUS
-	#define ADDR_ACTIVE_FRAME     0x100 // address of register active_frame_i  
-	#define ADDR_FRAME_SIZE       0x104 // address of register frame_size_i 
-	#define ADDR_FRAME_PARAM      0x108 // address of register frame_param_i  
-	#define ADDR_DMA0_STATUS      0x10c // address of register dma1_status_i   
-	#define ADDR_DMA1_STATUS      0x110 // address of register dma2_status_i   
-	#define ADDR_DMA2_STATUS      0x114 // address of register dma3_status_i   
-	#define ADDR_DMA_ERROR        0x118 // address of register dma_error 
+	#define ADDR_ACTIVE_FRAME     0x100
+	#define ADDR_FRAME_SIZE       0x104
+	#define ADDR_FRAME_PARAM      0x108
+	#define ADDR_DMA0_STATUS      0x10c
+	#define ADDR_DMA1_STATUS      0x110
+	#define ADDR_DMA2_STATUS      0x114
+	#define ADDR_DMA_ERROR        0x118
 	// INTERRUPT
-	#define ADDR_INT_STATUS       0x200 // address of register int_status_i    
-	#define ADDR_INT_MASK         0x204 // address of register int_mask_o      
-	#define ADDR_TEST_INT         0x208 // address of register test_int_o      
-	#define ADDR_INTERRUPTION     0x20c // address of register interruption_i  
+	#define ADDR_INT_STATUS       0x200
+	#define ADDR_INT_MASK         0x204
+	#define ADDR_TEST_INT         0x208
+	#define ADDR_INTERRUPTION     0x20c
 	// CONVERSION
-	#define ADDR_GAM_ENABLE       0x300 // address of register gam_enable_o    
-	#define ADDR_CONV_ENABLE      0x304 // address of register conv_enable_o   
-	#define ADDR_C_0_0            0x308 // address of register c_1_0_o         
-	#define ADDR_C_0_1            0x30c // address of register c_1_1_o         
-	#define ADDR_C_0_2            0x310 // address of register c_1_2_o         
-	#define ADDR_C_0_3            0x314 // address of register c_1_3_o         
-	#define ADDR_C_1_0            0x318 // address of register c_2_0_o         
-	#define ADDR_C_1_1            0x31c // address of register c_2_1_o         
-	#define ADDR_C_1_2            0x320 // address of register c_2_2_o         
-	#define ADDR_C_1_3            0x324 // address of register c_2_3_o         
-	#define ADDR_C_2_0            0x328 // address of register c_3_0_o         
-	#define ADDR_C_2_1            0x32c // address of register c_3_1_o         
-	#define ADDR_C_2_2            0x330 // address of register c_3_2_o         
-	#define ADDR_C_2_3            0x334 // address of register c_3_3_o 
-	#define ADDR_CH0_RANGE        0x338 // address of register ch1_range 
-	#define ADDR_CH1_RANGE        0x33c // address of register ch2_range 
-	#define ADDR_CH2_RANGE        0x340 // address of register ch3_range 
+	#define ADDR_GAM_ENABLE       0x300
+	#define ADDR_CONV_ENABLE      0x304
+	#define ADDR_C_0_0            0x308
+	#define ADDR_C_0_1            0x30c
+	#define ADDR_C_0_2            0x310
+	#define ADDR_C_0_3            0x314
+	#define ADDR_C_1_0            0x318
+	#define ADDR_C_1_1            0x31c
+	#define ADDR_C_1_2            0x320
+	#define ADDR_C_1_3            0x324
+	#define ADDR_C_2_0            0x328
+	#define ADDR_C_2_1            0x32c
+	#define ADDR_C_2_2            0x330
+	#define ADDR_C_2_3            0x334
+	#define ADDR_CH0_RANGE        0x338
+	#define ADDR_CH1_RANGE        0x33c
+	#define ADDR_CH2_RANGE        0x340
 	// DMA
-	#define ADDR_BASE_SW_ENA      0x400 // address of register base_sw_ena_o   
-	#define ADDR_DMA0_ADDR0       0x404 // address of register dma1_addr1_o    
-	#define ADDR_DMA0_ADDR1       0x408 // address of register dma1_addr2_o    
-	#define ADDR_DMA1_ADDR0       0x40c // address of register dma2_addr1_o    
-	#define ADDR_DMA1_ADDR1       0x410 // address of register dma2_addr2_o    
-	#define ADDR_DMA2_ADDR0       0x414 // address of register dma3_addr1_o    
-	#define ADDR_DMA2_ADDR1       0x418 // address of register dma3_addr2_o
-	#define ADDR_Y_SIZE           0x41c // address of register frame size for Y
-	#define ADDR_C_SIZE           0x420 // address of register frame size for C
-	#define ADDR_FULL_LINE_SIZE   0x424 // address of register full_line_size
-	#define ADDR_MODE             0x428 // address of register mode      
-	#define ADDR_LOCATION_DATA    0x42c // address of register location_data   
-	#define ADDR_TRANSPARENCY     0x430 // address of register transparency_o  
-	#define ADDR_BASE_POINT       0x434 // address of register base_point_o 
-	#define ADDR_DMA_ID           0x438 // address of register dma_id 
-	#define ADDR_AXI_PARAM        0x43c // address of register axi_param     
+	#define ADDR_BASE_SW_ENA      0x400
+	#define ADDR_DMA0_ADDR0       0x404
+	#define ADDR_DMA0_ADDR1       0x408
+	#define ADDR_DMA1_ADDR0       0x40c
+	#define ADDR_DMA1_ADDR1       0x410
+	#define ADDR_DMA2_ADDR0       0x414
+	#define ADDR_DMA2_ADDR1       0x418
+	#define ADDR_Y_SIZE           0x41c
+	#define ADDR_C_SIZE           0x420
+	#define ADDR_FULL_LINE_SIZE   0x424
+	#define ADDR_MODE             0x428
+	#define ADDR_LOCATION_DATA    0x42c
+	#define ADDR_TRANSPARENCY     0x430
+	#define ADDR_BASE_POINT       0x434
+	#define ADDR_DMA_ID           0x438
+	#define ADDR_AXI_PARAM        0x43c
 	// GAMMA
 	#define BASE_ADDR_TABLE_0     0xd00 // address of table gamma-correction
 	#define BASE_ADDR_TABLE_1     0xe00 // address of table gamma-correction
 	#define BASE_ADDR_TABLE_2     0xf00 // address of table gamma-correction
 
-	#define INT_BIT_CH2_OVR		(1<<31)	// Разрешение генерации сигнала прерывания по событию: запись в полный буфер второго канала
-	#define INT_BIT_CH1_OVR		(1<<28)	// Разрешение генерации сигнала прерывания по событию: запись в полный буфер первого канала
-	#define INT_BIT_CH0_OVR		(1<<25)	// Разрешение генерации сигнала прерывания по событию: запись в полный буфер нулевого канала
-	#define INT_BIT_RCV_END		(1<<18)	// Разрешение генерации сигнала прерывания по событию: окончание захвата кадра
-	#define INT_BIT_VSYNC		(1<<16)	// Разрешение генерации сигнала прерывания по событию: фронт сигнала развёртки вертикальной синхронизации
-	#define INT_BIT_HSYNC		(1<<15)	// Разрешение генерации сигнала прерывания по событию: фронт сигнала развёртки горизонтальной синхронизации
-	#define INT_BIT_ST_ERROR	(1<<14)	// Разрешение генерации сигнала прерывания по событию: несовпадение количества шин, по которым передаются видеоданные, в соседних кадрах
-	#define INT_BIT_VS_ERROR	(1<<13)	// Разрешение генерации сигнала прерывания по событию: несовпадение количества линий в соседних кадрах
-	#define INT_BIT_HS_ERROR	(1<<12)	// Разрешение генерации сигнала прерывания по событию: несовпадение количество точек в соседних линиях
-	#define INT_BIT_DONE		(1<<11)	// Разрешение генерации сигнала прерывания по событию: окончание распознавания развёртки
-	#define INT_BIT_GRB_OFF		(1<<8)	// Разрешение генерации сигнала прерывания по событию: состояние активности устройства захвата видеоизображения
-	#define INT_BIT_END_WRITE	(1<<7)	// Разрешение генерации сигнала прерывания по событию: окончание записи кадра в память
-	#define INT_BIT_UNC_ERR		(1<<6)	// Разрешение генерации сигнала прерывания по событию: неисправимая ошибка синхрокода EAV и SAV
-	#define INT_BIT_REPL		(1<<5)	// Разрешение генерации сигнала прерывания по событию: исправление ошибки синхрокода EAV и SAV
-	#define INT_BIT_ERR_CODE	(1<<4)	// Разрешение генерации сигнала прерывания по событию: ошибка синхрокода EAV и SAV
-	#define INT_BIT_DMA2_ERROR	(1<<3)	// Разрешение генерации сигнала прерывания по событию: при записи в память второго канала ответ с AXI «ошибка»
-	#define INT_BIT_DMA1_ERROR	(1<<2)	// Разрешение генерации сигнала прерывания по событию: при записи в память первого канала ответ с AXI «ошибка»
-	#define INT_BIT_DMA0_ERROR	(1<<1)	// Разрешение генерации сигнала прерывания по событию: при записи в память нулевого канала ответ с AXI «ошибка»
-	#define INT_BIT_TEST		(1<<0)	// Разрешение генерации сигнала прерывания по событию: тестовый запрос прерывания в активном состоянии
-
-	#define FULL_INT_MASK		0x9205F9FF	// 1001 0010 0000 0101 1111 1001 1111 1111
+	#define INT_BIT_CH2_OVR		(1<<31)	// write to the full channel buffer 2
+	#define INT_BIT_CH1_OVR		(1<<28)	// write to the full channel buffer 1
+	#define INT_BIT_CH0_OVR		(1<<25)	// write to the full channel buffer 0
+	#define INT_BIT_RCV_END		(1<<18)	// frame capture end
+	#define INT_BIT_VSYNC		(1<<16)	// vertical sync signal front
+	#define INT_BIT_HSYNC		(1<<15)	// horisontal sync signal front
+	#define INT_BIT_ST_ERROR	(1<<14)	// discrepancy in the number of buses on which video data is transmitted in adjacent frames
+	#define INT_BIT_VS_ERROR	(1<<13)	// mismatch of the number of lines in adjacent frames
+	#define INT_BIT_HS_ERROR	(1<<12)	// mismatch of the number of points in adjacent frames
+	#define INT_BIT_DONE		(1<<11)	// frame recognition end
+	#define INT_BIT_GRB_OFF		(1<<8)	// video capture device activity state
+	#define INT_BIT_END_WRITE	(1<<7)	// end of frame writing to memory
+	#define INT_BIT_UNC_ERR		(1<<6)	// unrecoverable sync error EAV and SAV
+	#define INT_BIT_REPL		(1<<5)	// EAV and SAV sync error correction
+	#define INT_BIT_ERR_CODE	(1<<4)	// sync error EAV and SAV
+	#define INT_BIT_DMA2_ERROR	(1<<3)	// AXI DMA error, channel 2
+	#define INT_BIT_DMA1_ERROR	(1<<2)	// AXI DMA error, channel 1
+	#define INT_BIT_DMA0_ERROR	(1<<1)	// AXI DMA error, channel 0
+	#define INT_BIT_TEST		(1<<0)	// test interrupt
 
 	#define EXTERNAL			0
 	#define INTERNAL			1
@@ -108,19 +107,11 @@
 	#define VIDIOC_S_PARAMS			_IOWR('v', BASE_VIDIOC_PRIVATE + 2, struct grb_parameters)
 	#define VIDIOC_AUTO_DETECT		_IOWR('v', BASE_VIDIOC_PRIVATE + 3, struct grb_parameters)
 
-	#define C_WHITE   "\033[1;29;40m"
-	#define C_RED	  "\033[1;31;40m"
-	#define C_GREEN   "\033[1;32;40m"
-	#define C_YELLOW  "\033[1;33;40m"
-	#define C_BLUE	  "\033[1;34;40m"
-	#define C_CRIMSON "\033[1;35;40m"
-	#define C_CYAN	  "\033[1;36;40m"
-	#define C_GREY	  "\033[1:37:40m"
-	#define C_CLEAR   "\033[1;0m"
+	#define RCM_GRB_DEVICE_NAME "rcm_vdu_grb_dev"
+	#define RCM_GRB_DRIVER_NAME "rcm_vdu_grb_drv"
+	#define RCM_GRB_DRIVER_VERSION KERNEL_VERSION(1,0,0)
 
-	#define DEVICE_NAME "vdugrb_v1.0.0"
-	#define DRIVER_NAME "vdugrb_drv"
-	#define GRB_DEVID 0xec176627
+	#define RCM_GRB_DEVID 0xec176627
 
 	#define PHYS_TO_DMA(A) ((A)|0x40000000)
 	#define U16x2_TO_U32(H,L) (((H)<<16)|(L))
@@ -208,33 +199,31 @@ struct grb_info {
 	struct device *dev;
 	struct video_device video_dev;
 	struct videobuf_queue videobuf_queue_grb;
+	struct videobuf_buffer* cur_buf;
 	struct list_head buffer_queue;
-	char frame_count;
+	unsigned int frame_count;
+	unsigned int reqv_buf_cnt;
+	unsigned int next_buf_num;
 	int num_irq;
-	wait_queue_head_t wait_queue;
+	//wait_queue_head_t wait_queue;
 	struct completion cmpl;
 	spinlock_t irq_lock;
-
 	struct v4l2_device v4l2_device;
 	struct v4l2_pix_format user_format;
 	struct v4l2_rect cropping;
 	struct v4l2_pix_format recognize_format;
-
 	struct input_format in_f;
 	struct output_format out_f;
-
 	struct grb_parameters param;
 	struct grb_gamma gam;
 	const struct coef_conv* c_conv;
-
 	phys_addr_t phys_addr_regs_grb;
 	void __iomem *base_addr_regs_grb;
 	phys_addr_t buff_phys_addr;
 	dma_addr_t buff_dma_addr;
 	void* kern_virt_addr;
-
 	u32 mem_offset1, mem_offset2;		// fill set_register
 	u32 buff_length;					// fiil buf_setup
 };
 
-#endif
+#endif // RCM_VDU_GRABBER_H

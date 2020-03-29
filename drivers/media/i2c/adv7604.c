@@ -2806,7 +2806,7 @@ static int adv76xx_core_init(struct v4l2_subdev *sd)
 	struct adv76xx_platform_data *pdata = &state->pdata;
 
 #ifdef CONFIG_1888TX018
-	if(pdata->sample_alsb)
+	if (pdata->sample_alsb)
 		io_write(sd, 0x1b, 0x01);
 #endif
 
@@ -3623,57 +3623,14 @@ static int adv76xx_probe(struct i2c_client *client,
 
 #ifdef CONFIG_1888TX018
 	err = adv76xx_set_edid(sd, &v4l2_edid_init);
-	if( err )
+	if (err)
 		v4l2_err(sd, "Error %d edid setup\n", err);
-	hdmi_write( sd, 0x6c, 0x01 ); // set 5V to pin HPA_A/INT2
-	hdmi_write( sd, 0x20, 0x80 );
-	adv76xx_log_status(sd);
-//-------------------------------------------------------------------------
-	io_write( sd, 0x00, 0x08 );
-	v4l2_info( sd, "IO, Address 0x00: 0x%02x\n", io_read( sd, 0x00 ) );
-	io_write( sd, 0x01, 0x06 );
-	v4l2_info( sd, "IO, Address 0x01: 0x%02x\n", io_read( sd, 0x01 ) );
-// ALT_DATA_SAT,        IO, Address 0x02[0] A control to disable the data saturator.
-// RGB_OUT,             IO, Address 0x02[1] A control to select output color space and the correct digital blank level and offsets.
-// OP_656_RANGE,        IO, Address 0x02[2] A control to set the output range of the digital data.
-// ALT_GAMMA,           IO, Address 0x02[3] A control to set the colorspace of the input video.
-// NP_COLOR_SPACE[3:0], IO, Address 0x02[7:4] A control to set the colorspace of the input video.
-	io_write( sd, 0x02, 0xF2 );
-	v4l2_info( sd, "IO, Address 0x02: 0x%02x\n", io_read( sd, 0x02 ) );
-// OP_FORMAT_SEL[7:0], IO, Address 0x03[7:0] 
-// 0x00 - 8-bit SDR ITU-656 mode (default)
-// 0x0A - 12-bit SDR ITU Mode 2
-// 0x20 - 8-bit 4:2:2 DDR mode
-// 0x2A - 12-bit DDR 4:2:2 Mode 2
-// 0x40 - 24-bit 4:4:4 SDR mode
-// 0x60 - 24-bit 4:4:4 DDR mode
-// 0x80 - 16-bit ITU-656 SDR mode
-// 0x8A - 24-bit ITU-656 SDR Mode 2
-	io_write( sd, 0x03, 0x40 );
-	v4l2_info( sd, "IO, Address 0x03: 0x%02x\n", io_read( sd, 0x03 ) );
-// defaults (0x62) to R,G,B in [23..0] of pixel port, and for 28.63636 MHz xtal. All good.
-	v4l2_info( sd, "IO, Address 0x04: 0x%02x\n", io_read( sd, 0x04 ) );
-// OP_SWAP_CB_CR,    IO, Address 0x05[0], A control for the swapping of Cr and Cb data on the pixel buses 0(default)-Outputs Cr and Cb as per OP_FORMAT_SEL,1-Inverts the order of Cb and Cr in the interleaved data stream
-// REPL_AV_CODE,     IO, Address 0x05[1], A control to select the duplication of the AV codes and insertion on all data channels of the output data stream (1(default)-Spreads AV code across the three channels.)
-// AVCODE_INSERT_EN, IO, Address 0x05[2], A control to select AV code insertion into the data stream (1(default)-Inserts AV codes into data stream)
-// DATA_BLANK_EN,    IO, Address 0x05[3], A control to blank data during video blanking sections (1-Blank data during horizontal and vertical blanking periods)
-// F_OUT_SEL,        IO, Address 0x05[4], A control to select the DE or FIELD signal to be output on the DE pin (0(default)-Selects DE output on DE pin,1-Selects FIELD output on DE pin)
-	io_write( sd, 0x05, 0x28 );
-	v4l2_info( sd, "IO, Address 0x05: 0x%02x\n", io_read( sd, 0x05 ) );
-// DR_STR[1:0],      IO, Address 0x14[5:4] A control to set the drive strength of the data output drivers.
-// DR_STR_CLK[1:0],  IO, Address 0x14[3:2] A control to set the drive strength control for the output pixel clock out signal on the LLC pin.
-// DR_STR_SYNC[1:0], IO, Address 0x14[1:0] A control to set the drive strength of the synchronization pins, HS, VS/FIELD/ALSB, and DE.
-	v4l2_info( sd, "IO, Address 0x14: 0x%02x\n", io_read( sd, 0x14 ) );
-// ---- F_OUT_SEL,        IO, Address 0x05[4] A control to select the DE or FIELD signal to be output on the DE pin.
-// ---- INV_LLC_POL,      IO Map, Address 0x06, [0] The polarity of the pixel clock
-// INV_LLC_POL,      IO, Address 0x06[0] A control to select the polarity of the LLC. (1-Inverts LLC)
-// INV_HS_POL,       IO, Address 0x06[1] A control to select the polarity of the HS signal. (0-Neg(def)1-Pos)
-// INV_VS_POL,       IO, Address 0x06[2] A control to select the polarity of the VS/FIELD/ALSB signal. (0-Neg(def)1-Pos)
-// INV_F_POL,        IO, Address 0x06[3] A control to select the polarity of the DE signal. (1-Inv)
-// VS_OUT_SEL,       IO, Address 0x06[7] A control to select the VSync or FIELD signal to be output on the VS/FIELD/ALSB pin. (1-Selects VSync output)
-	//io_write( sd, 0x06, 0xA6 );
-	v4l2_info( sd, "IO, Address 0x06: 0x%02x\n", io_read( sd, 0x06 ) );	// defaults (0xA0) to negative VS/HS polarity. Set xA6 for positive VS/HS.
 
+	hdmi_write( sd, 0x6c, 0x01 );	// Set 5V to pin HPA_A/INT2
+	io_write( sd, 0x02, 0xF2 );		// Set to xF2 for RGB_OUT.
+	io_write( sd, 0x03, 0x40 );		// Set to x40 for 24-bit 4:4:4 SDR (RGB)
+
+	adv76xx_log_status(sd);
 #endif
 	return 0;
 
