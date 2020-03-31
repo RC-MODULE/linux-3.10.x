@@ -497,6 +497,7 @@ static long easynmc_ioctl(struct file *filp, unsigned int ioctl_num, unsigned lo
 
 // [***] EasyNMC prototype (start) FixMe!!!
 #ifdef CONFIG_ION
+	case IOCTL_NMC3_ION2NMC:
 	{
 		uint32_t fd;
 		phys_addr_t paddr;
