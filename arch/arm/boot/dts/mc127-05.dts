@@ -135,7 +135,7 @@
                 mmc: mmc-slot@1 {
                     compatible = "mmc-spi-slot";
                     reg = <1>;
-                    spi-max-frequency = <9000000>; /* DDDDDD <25000000>; */
+                    spi-max-frequency = <25000000>; /* DDDDDD <25000000>; */
                 };
                 spiuart: uart-slot@2
                 {
