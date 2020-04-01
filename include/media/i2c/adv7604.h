@@ -92,6 +92,11 @@ struct adv76xx_platform_data {
 	/* DIS_CABLE_DET_RST: 1 if the 5V pins are unused and unconnected */
 	unsigned disable_cable_det_rst:1;
 
+#ifdef CONFIG_1888TX018
+	/* Separating addresses for uses two AD7611 (page 173,sample pin ALSB) */
+	unsigned sample_alsb:1;
+#endif
+
 	int default_input;
 
 	/* Analog input muxing mode */

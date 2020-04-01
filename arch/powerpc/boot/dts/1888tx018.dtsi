@@ -77,10 +77,30 @@
 			default_cma_pool: default_cma_pool {
 				compatible = "shared-dma-pool";
 				reusable;
-				alloc-ranges = <0x0 0x00000000 0x0 0x30000000>; // shall be in DMA zone
+				alloc-ranges = <0x0 0x00000000 0x0 0x2bc00000>; // shall be in DMA zone
 				size = <0x0 0x4000000>;
 				alignment = <0x0 0x1000000>;
 				linux,cma-default;
+			};
+
+			grab_buffer0: grab_buffer@0x2bc00000 {
+				reg = <0x0 0x2bc00000 0x0 0x02000000>;
+				no-map;
+			};
+
+			grab_buffer1: grab_buffer@0x2dc00000 {
+				reg = <0x0 0x2dc00000 0x0 0x02000000>;
+				no-map;
+			};
+
+			grab_buffer2: grab_buffer@0x2fc00000 {
+				reg = <0x0 0x2fc00000 0x0 0x02000000>;
+				no-map;
+			};
+
+			grab_buffer3: grab_buffer@0x31C00000 {
+				reg = <0x0 0x31c00000 0x0 0x02000000>;
+				no-map;
 			};
 
 			vpu_buffer: vpu_buffer@0x33C00000 {
@@ -679,6 +699,43 @@
 					compatible = "rcm,adv7513";
 					reg = <0x3D>;
 				};
+
+				// HDMI graber, channel 0
+				adv7611_0: adv7611@4c {
+					default-input = <0>;
+					sample-alsb = <1>;
+					compatible = "adi,adv7611";
+					reg = <0x4c>, <0x42>, <0x40>, <0x3e>, <0x38>, <0x3c>, <0x26>, <0x32>, <0x36>, <0x34>, <0x30>, <0x22>, <0x24>;
+					reg-names = "main",  "avlink","cec","infoframe","esdp", "dpp", "afe", "rep", "edid", "hdmi", "test", "cp", "vdp";
+				    #address-cells = <1>;
+					#size-cells = <0>;
+					port@0 {
+						reg = <0>;
+						hdmi: endpoint_0 {
+							hsync-active=<1>;
+							vsync-active=<1>;
+							pclk-sample=<1>;
+						};
+					};
+				};
+
+				// HDMI graber, channel 1
+				adv7611_1: adv7611@4d {
+					default-input = <0>;
+					compatible = "adi,adv7611";
+					reg = <0x4d>, <0x43>, <0x41>, <0x3f>, <0x39>, <0x3d>, <0x27>, <0x33>, <0x37>, <0x35>, <0x31>, <0x23>, <0x25>;
+					reg-names = "main",  "avlink","cec","infoframe","esdp", "dpp", "afe", "rep", "edid", "hdmi", "test", "cp", "vdp";
+				    #address-cells = <1>;
+					#size-cells = <0>;
+					port@0 {
+						reg = <0>;
+						hdmi_1: endpoint_1 {
+							hsync-active=<1>;
+							vsync-active=<1>;
+							pclk-sample=<1>;
+						};
+					};
+				};
 			};
 
 			i2c1: i2c@0x3C05B000 {
@@ -1006,6 +1063,50 @@
 				reg = <0x3801a000 0x1000>;
 				interrupt-parent = <&MPIC>;
 				interrupts = <124 2>; // active high level-sensitive
+			};
+
+		vdu_graber_int0: vdu_grabber@0x38015000 {
+				status = "disabled";
+				compatible = "rcm,vdu-grabber";
+				reg = <0x38015000 0x1000>;
+				interrupt-parent = <&MPIC>;
+				interrupts = <118 2>;
+				#address-cells = <1>;
+				#size-cells = <1>;
+				memory-region = <&grab_buffer0>;	
+			};
+
+		vdu_graber_ext0: vdu_grabber@0x38016000 {
+				status = "disabled";
+				compatible = "rcm,vdu-grabber";
+				reg = <0x38016000 0x1000>;
+				interrupt-parent = <&MPIC>;
+				interrupts = <119 2>;
+				#address-cells = <1>;
+				#size-cells = <1>;
+				memory-region = <&grab_buffer1>;	
+			};
+	
+		vdu_graber_int1: vdu_grabber@0x3801b000 {
+				status = "disabled";
+				compatible = "rcm,vdu-grabber";
+				reg = <0x3801b000 0x1000>;
+				interrupt-parent = <&MPIC>;
+				interrupts = <121 2>;
+				#address-cells = <1>;
+				#size-cells = <1>;
+				memory-region = <&grab_buffer2>;	
+			};
+
+		vdu_graber_ext1: vdu_grabber@0x3801c000 {
+				status = "disabled";
+				compatible = "rcm,vdu-grabber";
+				reg = <0x3801c000 0x1000>;
+				interrupt-parent = <&MPIC>;
+				interrupts = <122 2>;
+				#address-cells = <1>;
+				#size-cells = <1>;
+				memory-region = <&grab_buffer3>;	
 			};
 		};
 

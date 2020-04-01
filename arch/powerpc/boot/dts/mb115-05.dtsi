@@ -1,0 +1,52 @@
+/*
+*
+* Device Tree Source for RCM MB115.05 extention board ( Video Capture Board )
+*
+*/
+/ {
+	plb {
+		lsif1 {
+			i2c0: i2c@0x3C05A000 {
+				status = "ok";
+
+				// HDMI channel 0
+				adv7513_0: adv7513@39 {
+					//status = "ok";
+				};
+
+				// HDMI channel 1
+				adv7513_1: adv7513@3d {
+					//status = "ok";
+				};
+
+				// HDMI graber, channel 0
+				adv7611_0: adv7611@4c {
+					status = "okay";
+				};
+
+				// HDMI graber, channel 1
+				adv7611_1: adv7611@4d {
+					status = "okay";
+				};
+			};
+		};
+
+		mms {
+			vdu_grabber_int0: vdu_grabber@0x38015000 { // (capture from fb1)
+				status = "okay";
+			};
+
+			vdu_grabber_ext0: vdu_grabber@0x38016000 { // EXT0
+				status = "okay";
+			};
+
+			vdu_grabber_int1: vdu_grabber@0x3801b000 { // (capture from fb0)
+				status = "okay";
+			};
+
+			vdu_grabber_ext1: vdu_grabber@0x3801c000 { // EXT1
+				status = "okay";
+			};
+		};
+	};
+};
