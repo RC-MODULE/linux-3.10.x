@@ -5,6 +5,7 @@ choice
 
 config TARGET_1879VM8YA
 	bool "Support 1879VM8YA based boards"
+	select CACHE_L2X0
 	select SPI
 
 endchoice
