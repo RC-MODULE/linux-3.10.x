@@ -55,7 +55,7 @@
         cpu0: cpu@0 {
             device_type = "cpu";
             compatible = "arm,cortex-a5";
-            reg = <0x400>;
+            reg = <0x0>;
         };
     };
 
@@ -76,19 +76,15 @@
             reg = <0x600b0000 0x1000>,
                   <0x600b1000 0x1000>;
         };
-/*
+
         L2: cache-controller {
-                compatible = "arm,l220-cache";
-                reg = <0xfff80000 0x10000>;
-                cache-unified;
-                cache-level = <2>;
-            interrupts = <0 55 4>;
-            cache-size = <0x20000>;
-            cache-sets = <512>;
-            cache-block = <32>;
-            cache-line-size = <32>;
+            compatible = "arm,pl310-cache";
+            reg = <0x000d2000 0x1000>;
+            cache-unified;
+            cache-level = <2>;
+            cache-size = <0x80000>;
         };
-*/
+
         apb {
             compatible = "arm,amba-bus", "simple-bus";
             #address-cells = <1>;
