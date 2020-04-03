@@ -471,10 +471,6 @@ static const struct of_device_id ocores_i2c_match[] = {
 		.compatible = "opencores,i2c-ocores",
 		.data = (void *)TYPE_OCORES,
 	},
-	 {
-               .compatible = "rcm,i2c-ocores",
-               .data = (void *)TYPE_K1879X,
-	},
 	{
 		.compatible = "aeroflexgaisler,i2cmst",
 		.data = (void *)TYPE_GRLIB,
