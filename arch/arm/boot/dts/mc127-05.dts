@@ -185,6 +185,14 @@
                 };
             };
 
+            thermal: thermal@0x600D1000 {
+                compatible = "rcm,thermal-v2";
+                reg = <0x600D1000 0x1000>;
+                interrupt-parent = <&gic0>;
+                interrupts = <0 3 4>;
+                #thermal-sensor-cells = <0>;
+            };
+
             pc0_cmb0 {
                 compatible = "syscon";
                 reg = <0x80000000 0x10000>;
@@ -814,6 +822,25 @@
             irq_polling;
 
             status = "okay";
+        };
+    };
+
+    thermal-zones {
+        cpu-thermal {
+            polling-delay-passive = <0>;
+            polling-delay =  <1000>;
+            thermal-sensors = <&thermal>;
+
+            trips {
+                cpu-crit {
+                    temperature = <100000>;
+                    hysteresis = <0>;
+                    type = "critical";
+                };
+            };
+
+            cooling-maps {
+            };
         };
     };
 };
