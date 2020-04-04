@@ -1,4 +1,3 @@
-
 // SPDX-License-Identifier: GPL-2.0-or-later
 /*
  * Aeroflex Gaisler GRETH 10/100/1G Ethernet MAC.
@@ -1581,7 +1580,6 @@ error4:
 error3:
 	mdiobus_unregister(greth->mdio);
 error2:
-
 #if defined(CONFIG_PPC) || defined(CONFIG_ARM)
 	devm_iounmap(greth->dev, greth->regs);
 #else
