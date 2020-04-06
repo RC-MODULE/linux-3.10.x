@@ -54,20 +54,6 @@ is_kryo_midr(const struct arm64_cpu_capabilities *entry, int scope)
 	return model == entry->midr_range.model;
 }
 
-static bool __maybe_unused
-is_kryo_midr(const struct arm64_cpu_capabilities *entry, int scope)
-{
-	u32 model;
-
-	WARN_ON(scope != SCOPE_LOCAL_CPU || preemptible());
-
-	model = read_cpuid_id();
-	model &= MIDR_IMPLEMENTOR_MASK | (0xf00 << MIDR_PARTNUM_SHIFT) |
-		 MIDR_ARCHITECTURE_MASK;
-
-	return model == entry->midr_model;
-}
-
 static bool
 has_mismatched_cache_type(const struct arm64_cpu_capabilities *entry,
 			  int scope)
@@ -852,13 +838,6 @@ const struct arm64_cpu_capabilities arm64_errata[] = {
 		.type = ARM64_CPUCAP_LOCAL_CPU_ERRATUM,
 		.matches = cpucap_multi_entry_cap_matches,
 		.match_list = qcom_erratum_1003_list,
-	},
-	{
-		.desc = "Qualcomm Technologies Kryo erratum 1003",
-		.capability = ARM64_WORKAROUND_QCOM_FALKOR_E1003,
-		.def_scope = SCOPE_LOCAL_CPU,
-		.midr_model = MIDR_QCOM_KRYO,
-		.matches = is_kryo_midr,
 	},
 #endif
 #ifdef CONFIG_ARM64_WORKAROUND_REPEAT_TLBI

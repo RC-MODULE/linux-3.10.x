@@ -19,8 +19,8 @@ struct nmc_miscdev {
 
 
 /* This struct represents the generic NMC core */
-struct nmc_core {
-	const char*        name;
+struct nmc_core { 
+	const char*        name; 
 	const char*        type;
 	struct device*     dev;
 	int                irqs[NMC_NUM_IRQS];
@@ -30,20 +30,20 @@ struct nmc_core {
 	void             (*clear_interrupt) (struct nmc_core *self, enum nmc_irq n);
 	int              (*check_interrupts) (struct nmc_core *self);
 	char __iomem      *imem_virt;  /* Pointer to nmc internal memory (remapped) */
-	phys_addr_t        imem_phys;
-	size_t             imem_size; /* size in bytes */
+	phys_addr_t        imem_phys; 
+	size_t             imem_size; /* size in bytes */ 
 	/* Private data */
-	int                id;
+	int                id; 
 	int                started;
 	struct nmc_miscdev mdev_io;
 	struct nmc_miscdev mdev_mem;
-	char               devname_io[EASYNMC_DEVNAME_LEN];
+	char               devname_io[EASYNMC_DEVNAME_LEN]; 
 	char               devname_mem[EASYNMC_DEVNAME_LEN];
 	wait_queue_head_t  qh;
-	int                token_id; /* Id for next token after reset */
+	int                token_id; /* Id for next token after reset */	
 	int                cancel_id; /* Id of token being cancelled */
-	struct semaphore   cancel_sem; /* semaphore */
-	struct nmc_core_stats    stats;
+	struct semaphore   cancel_sem; /* semaphore */ 
+	struct nmc_core_stats    stats; 
 	struct nmc_core_stats    pollstats;
 	struct nmc_stdio_channel  *stdout;
 	struct nmc_stdio_channel  *stdin;
