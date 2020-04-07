@@ -10,7 +10,7 @@
  * published by the Free Software Foundation.
  */
 
-#include "skeleton.dtsi"
+//#include "skeleton.dtsi"
 
 / {
 	model = "RC Module K1879XB1YA";
