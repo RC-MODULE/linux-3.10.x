@@ -71,6 +71,8 @@ config MTD_DATAFLASH_WRITE_VERIFY
 
 config MTD_MNAND
        tristate "RC Module MNAND Flash Controller"
+	   select MTD_RAW_NAND
+	   select MTD_NAND_ECC_SW_HAMMING
        select MTD_NAND_IDS
 
 config MTD_DATAFLASH_OTP

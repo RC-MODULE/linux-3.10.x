@@ -27,6 +27,7 @@
 
 
 #include <linux/mtd/mnand.h>
+#include "../nand/raw/internals.h" // v5.5.0: nand_get_manufacturer
 
 #define DRIVER_NAME "mnand"
 
@@ -479,7 +480,7 @@ static int mnand_core_read(loff_t off)
                                 u_char *ecc_from_spare;
                                 u_char *ecc_block = g_chip.dma_area + i * MNAND_ECC_BLOCKSIZE;
 
-                                __nand_calculate_ecc(ecc_block, 256, soft_ecc);
+                                __nand_calculate_ecc(ecc_block, 256, soft_ecc,false); // v5.5.0: bool sm_order
                                 mnand_get_hardware_ecc(i, hard_ecc);
 
                                 if (memcmp(hard_ecc, soft_ecc, MNAND_ECC_BYTESPERBLOCK) != 0) {
@@ -493,7 +494,7 @@ static int mnand_core_read(loff_t off)
                                         continue;
                                 }
                                 if (memcmp(ecc_from_spare, hard_ecc, MNAND_ECC_BYTESPERBLOCK)) {
-                                        if (nand_correct_data(&g_chip.mtd, ecc_block, ecc_from_spare, hard_ecc) < 0) {
+                                        if (nand_correct_data(mtd_to_nand(&g_chip.mtd), ecc_block, ecc_from_spare, hard_ecc) < 0) { // v5.5.0: added mtd_to_nand
                                                 printk("\nData loss detected: off 0x%08llX ecc_block %d ecc_spare %02X%02X%02X ecc_hw %02X%02X%02X\n",
                                                        off, i, ecc_from_spare[0], ecc_from_spare[1], ecc_from_spare[2],
                                                        hard_ecc[0], hard_ecc[1], hard_ecc[2]);
@@ -668,13 +669,13 @@ static int mnand_erase(struct mtd_info* mtd, struct erase_info* instr)
 
         if(err) {
                 printk(KERN_ERR "erase failed with %d at 0x%08llx\n", err, instr->addr);
-                instr->state = MTD_ERASE_FAILED;
+                // instr->state = MTD_ERASE_FAILED;  v5.5.0: no member named state
                 instr->fail_addr = instr->addr;
         } else {
-                instr->state = MTD_ERASE_DONE;
+                // instr->state = MTD_ERASE_DONE;
         }
 
-        mtd_erase_callback(instr);
+        // mtd_erase_callback(instr); v5.5.0: and not function too
 
         return 0;
 }
@@ -688,6 +689,7 @@ static int mnand_erase(struct mtd_info* mtd, struct erase_info* instr)
  * when there are too many bitflips in a page (i.e., ECC error). After setting
  * a new threshold, the host should retry reading the page.
  */
+#if 0 // Where that used? I do not see...
 static int nand_setup_read_retry(struct mtd_info *mtd, int retry_mode)
 {
         struct nand_chip *chip = mtd_to_nand(mtd);
@@ -781,6 +783,7 @@ static int nand_check_wp(struct mtd_info *mtd)
         chip->cmdfunc(mtd, NAND_CMD_STATUS, -1, -1);
         return (chip->read_byte(mtd) & NAND_STATUS_WP) ? 0 : 1;
 }
+#endif // 0!!!
 
 #define MNAND_PAGE_ALIGNED(x) (((x) & (g_chip.mtd.writesize-1)) ==0)
 
