@@ -20,6 +20,7 @@
 #include "thermal_core.h"
 
 #define RCM_THERMAL_OVERHEAT_POLL_DELAY 1000
+#define RCM_THERMAL_DATA_PREPARE_DELAY 5
 
 #pragma pack(push)
 #pragma pack(4)
@@ -227,6 +228,10 @@ static int rcm_thermal_probe(struct platform_device *pdev)
 	data->irq_overheat = platform_get_irq(pdev, 0);
 
 	if (data->irq_overheat > 0) {
+		write_term_reg(0, data->regs->level);
+		write_term_reg(0, data->regs->im);
+		write_term_reg(0, data->regs->ir);
+
 		ret = devm_request_threaded_irq(data->dev, data->irq_overheat,
 		                                rcm_thermal_overheat_isr, 
 		                                rcm_thermal_overheat_isr_thread,
@@ -238,6 +243,12 @@ static int rcm_thermal_probe(struct platform_device *pdev)
 			return ret;
 		}
 	}
+
+	write_term_reg(0, data->regs->pwdn);
+	write_term_reg(1, data->regs->start);
+
+	// It's needed to wait until data became valid (at least 7 ADC-cycles)
+	msleep(RCM_THERMAL_DATA_PREPARE_DELAY);
 
 	data->tz_device = devm_thermal_zone_of_sensor_register(&pdev->dev, 0,
 				data, &rcm_thermal_ops);
@@ -252,9 +263,6 @@ static int rcm_thermal_probe(struct platform_device *pdev)
 
 	if (data->irq_overheat > 0)
 		rcm_thermal_configure_overheat_interrupt(data);
-
-	write_term_reg(0, data->regs->pwdn);
-	write_term_reg(1, data->regs->start);
 
 	dev_dbg(&pdev->dev, "probe succeeded\n");
 
