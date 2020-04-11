@@ -156,19 +156,19 @@
 
 		dspcores {
 			nmc3_0_core0: nmc3_0_core0@0x39000000 {
-				status = "ok";
+				status = "disabled";
 				core-name = "K1879-nmc";
 			};
 			nmc3_0_core1: nmc3_0_core1@0x39020000 {
-				status = "ok";
+				status = "disabled";
 				core-name = "K1879-nmc";
 			};
 			nmc3_1_core0: nmc3_1_core0@0x39040000 {
-				status = "ok";
+				status = "disabled";
 				core-name = "K1879-nmc";
 			};
 			nmc3_1_core1: nmc3_1_core1@0x39060000 {
-				status = "ok";
+				status = "disabled";
 				core-name = "K1879-nmc";
 			};
 		};

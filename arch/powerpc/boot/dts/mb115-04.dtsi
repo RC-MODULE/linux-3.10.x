@@ -111,7 +111,7 @@
 
 			// HDMI channel 0 (actually VDU index 1)
 			vdu0: vdu@0x38013000 {
-				status = "ok";
+				//status = "ok";
 			};
 
 			// HDMI channel 1 (actually VDU index 0)

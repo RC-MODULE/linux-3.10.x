@@ -953,7 +953,7 @@ static void mvdu_update_vdu_state(struct mvdu_device *dev)
 
 			/* Start checking for underflow and syserr */
 			mvdu_clear_and_enable_irq(dev, O_FIFO_EMPTY);
-			mvdu_clear_and_enable_irq(dev, INT_SYS_ERR);
+			//mvdu_clear_and_enable_irq(dev, INT_SYS_ERR);
 
 			/* Enable hardware */
 			control = MVDU_REG_CTRL_VDU_ENA_VDU_ENA_MASK;
