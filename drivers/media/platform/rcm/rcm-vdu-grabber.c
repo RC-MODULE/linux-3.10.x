@@ -350,12 +350,12 @@ static int check_and_correct_out_format( u32 format_dout, u32* c_hor_size, u32* 
 		GRB_DBG_PRINT( "pixelformat: RGB888\n" )
 		return 0;
 	case 0x04:
-		GRB_DBG_PRINT( "pixelformat: YCBCR422 three planes\n" )
+		GRB_DBG_PRINT( "pixelformat: YCBCR422 two planes\n" )
 		return 0;
 	case 0x06:
-		*c_hor_size /= 2;	// common plane for CB and CR
+		*c_hor_size /= 2;
 		*c_full_size /= 2;
-		GRB_DBG_PRINT( "pixelformat: YCBCR422 two planes\n" )
+		GRB_DBG_PRINT( "pixelformat: YCBCR422 three planes\n" )
 		return 0;
 	case 0x0e:
 		GRB_DBG_PRINT( "pixelformat: YCBCR444 three planes\n" )
@@ -660,7 +660,7 @@ static int vidioc_g_fmt_vid_cap_grb ( struct file *file_ptr, void *fh, struct v4
 
 	print_v4l2_format( "Vidioc_g_fmt_vid_cap_grb entry", (int)grb_info_ptr->phys_addr_regs_grb, f );
 	if( f->type == V4L2_BUF_TYPE_VIDEO_CAPTURE )
-		f->fmt.pix = grb_info_ptr->recognize_format;	// now i believe, was all parameters were determinated when autodetect occured 
+		f->fmt.pix = grb_info_ptr->recognize_format;
 	else
 		ret = -EINVAL;
 	print_v4l2_format( "Vidioc_g_fmt_vid_cap_grb return", ret, f );
@@ -672,7 +672,22 @@ static int vidioc_try_fmt_vid_cap_grb( struct file *file_ptr, void *fh, struct v
 	struct grb_info *grb_info_ptr = video_drvdata( file_ptr );
 
 	print_v4l2_format( "Vidioc_try_fmt_vid_cap_grb entry", (int)grb_info_ptr->phys_addr_regs_grb, f );
-	f->fmt.pix = grb_info_ptr->recognize_format;
+	if( f->type == V4L2_BUF_TYPE_VIDEO_CAPTURE ) {
+		f->fmt.pix.width = grb_info_ptr->recognize_format.width;
+		f->fmt.pix.height = grb_info_ptr->recognize_format.height;
+		f->fmt.pix.pixelformat = V4L2_PIX_FMT_RGB24;
+		f->fmt.pix.field = grb_info_ptr->recognize_format.field;
+		f->fmt.pix.bytesperline = f->fmt.pix.width*2+f->fmt.pix.width;
+		f->fmt.pix.sizeimage = f->fmt.pix.bytesperline*f->fmt.pix.height;
+		f->fmt.pix.colorspace = V4L2_COLORSPACE_DEFAULT;
+		f->fmt.pix.priv = 0;
+		f->fmt.pix.flags = 0;
+		f->fmt.pix.ycbcr_enc = 0;
+		f->fmt.pix.quantization = 0;
+		f->fmt.pix.xfer_func = 0;
+	}
+	else
+		ret = -EINVAL;
 	return ret;
 }
 
@@ -973,7 +988,7 @@ static irqreturn_t proc_interrupt (struct grb_info *grb_info_ptr) {
 		grb_info_ptr->recognize_format.pixelformat = V4L2_PIX_FMT_NV16;		// set format default?
 		grb_info_ptr->recognize_format.field = rd_data & 0x10 ? V4L2_FIELD_INTERLACED : V4L2_FIELD_NONE;
 
-// mult in interrupt?
+/*
 		grb_info_ptr->recognize_format.bytesperline = grb_info_ptr->recognize_format.width * 2; // bytes per pixel;
 		grb_info_ptr->recognize_format.sizeimage = grb_info_ptr->recognize_format.bytesperline * grb_info_ptr->recognize_format.height;
 		grb_info_ptr->recognize_format.colorspace = V4L2_COLORSPACE_DEFAULT;
@@ -982,6 +997,7 @@ static irqreturn_t proc_interrupt (struct grb_info *grb_info_ptr) {
 		grb_info_ptr->recognize_format.ycbcr_enc = V4L2_YCBCR_ENC_DEFAULT;
 		grb_info_ptr->recognize_format.quantization = V4L2_QUANTIZATION_DEFAULT;
 		grb_info_ptr->recognize_format.xfer_func = V4L2_XFER_FUNC_DEFAULT;
+		*/
 
 		complete_all( &grb_info_ptr->cmpl );
 	}
