@@ -37,7 +37,7 @@
 	#define GRB_DBG_PRINT(...) while(0);
 #endif
 
-#define PI while(0);		//GRB_DBG_PRINT("%s\n",__FUNCTION__)
+#define PI GRB_DBG_PRINT("%s\n",__FUNCTION__)
 
 #ifdef RCM_VDU_GRB_DBG
 
@@ -75,6 +75,22 @@ static void print_videobuf_queue_param2( struct videobuf_queue* queue, int off0,
 	} 
 }
 
+static void fill_buffer_as_rgb( struct videobuf_queue* queue, int len ) {
+	int i;
+	struct videobuf_dma_contig_memory* mem;
+	struct videobuf_buffer* vb = queue->bufs[0];
+	if( vb ) {
+		u8* p;
+		mem = vb->priv;
+		p = (u8*)mem->vaddr;
+		len /= 4;
+		for( i=0; i<len; i++ ) *p++ = 0xFF, *p++ = 0x00, *p++ = 0x00;
+		for( i=0; i<len; i++ ) *p++ = 0x00, *p++ = 0xFF, *p++ = 0x00;
+		for( i=0; i<len; i++ ) *p++ = 0x00, *p++ = 0x00, *p++ = 0xFF;
+		for( i=0; i<len; i++ ) *p++ = 0x7F, *p++ = 0x7F, *p++ = 0x7F;
+	}
+}
+
 static void print_v4l2_selection( const char* info, int arg, const struct v4l2_selection* s ) {
 		GRB_DBG_PRINT( "%s(%08x): target=%x,flag=%x,rect=%x,%x,%x,%x\n",
 						info, arg, s->target, s->flags, s->r.left, s->r.top, s->r.width, s->r.height )
@@ -91,6 +107,10 @@ static void print_v4l2_format( const char* info, int arg, const struct v4l2_form
 					f->fmt.pix.ycbcr_enc, f->fmt.pix.quantization, f->fmt.pix.xfer_func )
 }
 
+static void print_v4l2_buffer( const char* info, const struct v4l2_buffer* b ) {
+	GRB_DBG_PRINT( "%s: index=%x,type=%x,bytesused=%x,flags=%x,field=%x,sequence=%x,memory=%x,offset=%x,length=%x\n",
+					info, b->index, b->type, b->bytesused, b->flags, b->field, b->sequence, b->memory, b->m.offset, b->length )
+}
 
 #endif // RCM_VDU_GRB_DBG
 
@@ -432,9 +452,9 @@ int setup_registers( struct grb_info *grb_info_ptr ) {
 	grb_info_ptr->mem_offset1 = y_full_size*y_ver_size;											// plane for color component 1
 	grb_info_ptr->mem_offset2 = grb_info_ptr->mem_offset1 + c_full_size*c_ver_size;				// plane for color component 2
 	
-	//GRB_DBG_PRINT( "y_hor_size=%d,y_ver_size=%d,c_hor_size=%d,c_ver_size=%d,y_full_size=%d,c_full_size=%d,mem_offset1=%d,mem_offset2=%d,alpha=%d\n",
-	//		 y_hor_size, y_ver_size, c_hor_size, c_ver_size, y_full_size, c_full_size,
-	//		 grb_info_ptr->mem_offset1, grb_info_ptr->mem_offset2, grb_info_ptr->param.alpha )
+	GRB_DBG_PRINT( "y_hor_size=%d,y_ver_size=%d,c_hor_size=%d,c_ver_size=%d,y_full_size=%d,c_full_size=%d,mem_offset1=%d,mem_offset2=%d,alpha=%d\n",
+			 y_hor_size, y_ver_size, c_hor_size, c_ver_size, y_full_size, c_full_size,
+			 grb_info_ptr->mem_offset1, grb_info_ptr->mem_offset2, grb_info_ptr->param.alpha )
 	//print_videobuf_queue_param( &grb_info_ptr->videobuf_queue_grb, 2 ); 						// print vaddr,dma_handle,size for each buffer
 
 	base_addr0_dma0 = videobuf_to_dma_contig_rcm( grb_info_ptr->videobuf_queue_grb.bufs[0] );	// just return dma address
@@ -487,6 +507,9 @@ static int buf_setup_grb ( struct videobuf_queue *q, unsigned int *count, unsign
 	struct grb_info *grb_info_ptr = q->priv_data;
 	int max_buff;
 	*size = grb_info_ptr->user_format.sizeimage;
+	GRB_DBG_PRINT( "buf setup entry: buff_length=%u,size=%u,count=%u\n", grb_info_ptr->buff_length, *size, *count )
+	if( *size == 0 )
+		return -EINVAL;
 	max_buff = grb_info_ptr->buff_length / *size;
 	if( *count < 2 )
 		*count = 2;
@@ -496,7 +519,7 @@ static int buf_setup_grb ( struct videobuf_queue *q, unsigned int *count, unsign
 		*count = max_buff;
 	grb_info_ptr->reqv_buf_cnt = *count;	// save available buffers count
 	//print_videobuf_queue_param( q, 4 );
-	GRB_DBG_PRINT( "buf setup: buff_length=%u,size=%u,count=%u\n", grb_info_ptr->buff_length, *size, *count )
+	GRB_DBG_PRINT( "buf setup return: buff_length=%u,size=%u,count=%u\n", grb_info_ptr->buff_length, *size, *count )
 	return 0;
 }
 
@@ -654,49 +677,45 @@ static int vidioc_s_crop_grb ( struct file *file_ptr,void *fh, const struct v4l2
 }
 */
 
-static int vidioc_g_fmt_vid_cap_grb ( struct file *file_ptr, void *fh, struct v4l2_format *f ) {
-	int ret = 0;
-	struct grb_info *grb_info_ptr = video_drvdata(file_ptr);
-
-	print_v4l2_format( "Vidioc_g_fmt_vid_cap_grb entry", (int)grb_info_ptr->phys_addr_regs_grb, f );
-	if( f->type == V4L2_BUF_TYPE_VIDEO_CAPTURE )
-		f->fmt.pix = grb_info_ptr->recognize_format;
-	else
-		ret = -EINVAL;
-	print_v4l2_format( "Vidioc_g_fmt_vid_cap_grb return", ret, f );
-	return 0;
-}
-
-static int vidioc_try_fmt_vid_cap_grb( struct file *file_ptr, void *fh, struct v4l2_format *f ) {
-	int ret = 0;
-	struct grb_info *grb_info_ptr = video_drvdata( file_ptr );
-
-	print_v4l2_format( "Vidioc_try_fmt_vid_cap_grb entry", (int)grb_info_ptr->phys_addr_regs_grb, f );
+static int vidioc_fmt( struct grb_info *grb_info_ptr, struct v4l2_format *f ) {
 	if( f->type == V4L2_BUF_TYPE_VIDEO_CAPTURE ) {
 		f->fmt.pix.width = grb_info_ptr->recognize_format.width;
-		f->fmt.pix.height = grb_info_ptr->recognize_format.height;
+		f->fmt.pix.height = grb_info_ptr->user_format.height = grb_info_ptr->recognize_format.height;
 		f->fmt.pix.pixelformat = V4L2_PIX_FMT_RGB24;
 		f->fmt.pix.field = grb_info_ptr->recognize_format.field;
-		f->fmt.pix.bytesperline = f->fmt.pix.width*2+f->fmt.pix.width;
-		f->fmt.pix.sizeimage = f->fmt.pix.bytesperline*f->fmt.pix.height;
+		f->fmt.pix.bytesperline = grb_info_ptr->user_format.bytesperline = f->fmt.pix.width;
+		f->fmt.pix.sizeimage = grb_info_ptr->user_format.sizeimage = f->fmt.pix.bytesperline*f->fmt.pix.height*3;
 		f->fmt.pix.colorspace = V4L2_COLORSPACE_DEFAULT;
 		f->fmt.pix.priv = 0;
 		f->fmt.pix.flags = 0;
-		f->fmt.pix.ycbcr_enc = 0;
-		f->fmt.pix.quantization = 0;
+		f->fmt.pix.ycbcr_enc = V4L2_YCBCR_ENC_DEFAULT;
+		f->fmt.pix.quantization = V4L2_QUANTIZATION_DEFAULT;
 		f->fmt.pix.xfer_func = 0;
+		return 0;
 	}
 	else
-		ret = -EINVAL;
+		return -EINVAL;
+}
+
+static int vidioc_g_fmt_vid_cap_grb ( struct file *file_ptr, void *fh, struct v4l2_format *f ) {
+	struct grb_info *grb_info_ptr = video_drvdata(file_ptr);
+	print_v4l2_format( "Vidioc_g_fmt_vid_cap_grb entry", (int)grb_info_ptr->phys_addr_regs_grb, f );
+	return vidioc_fmt( grb_info_ptr, f );
+}
+
+static int vidioc_try_fmt_vid_cap_grb( struct file *file_ptr, void *fh, struct v4l2_format *f ) {
+	int ret;
+	struct grb_info *grb_info_ptr = video_drvdata( file_ptr );
+	print_v4l2_format( "Vidioc_try_fmt_vid_cap_grb entry", (int)grb_info_ptr->phys_addr_regs_grb, f );
+	ret = vidioc_fmt( grb_info_ptr, f ) || set_output_format( grb_info_ptr, f );
 	return ret;
 }
 
 static int vidioc_s_fmt_vid_cap_grb ( struct file *file_ptr, void *fh, struct v4l2_format *f ) {
-	int ret = 0;
+	int ret;
 	struct grb_info *grb_info_ptr = video_drvdata( file_ptr );
-
 	print_v4l2_format( "Vidioc_s_fmt_vid_cap_grb entry", (int)grb_info_ptr->phys_addr_regs_grb, f );
-	ret = set_output_format( grb_info_ptr, f );	//negotiate the format of data (typically image format) exchanged between driver and application
+	ret = vidioc_fmt( grb_info_ptr, f ) || set_output_format( grb_info_ptr, f );	//negotiate the format of data (typically image format) exchanged between driver and application
 	return ret;
 }
 
@@ -716,7 +735,7 @@ static int vidioc_reqbufs_grb ( struct file *file_ptr, void *fh, struct v4l2_req
 static int vidioc_querybuf_grb( struct file *file_ptr, void *fh, struct v4l2_buffer *buf ) {
 	struct grb_info *grb_info_ptr = video_drvdata(file_ptr);
 	int ret = videobuf_querybuf(&grb_info_ptr->videobuf_queue_grb, buf);
-	PI
+	print_v4l2_buffer( "vidioc_querybuf_grb", buf );
 	//print_videobuf_queue_param( &grb_info_ptr->videobuf_queue_grb, 4 );
 	return ret;
 }
@@ -724,7 +743,7 @@ static int vidioc_querybuf_grb( struct file *file_ptr, void *fh, struct v4l2_buf
 static int vidioc_qbuf_grb( struct file *file_ptr, void *fh, struct v4l2_buffer *buf ) {
 	struct grb_info *grb_info_ptr = video_drvdata(file_ptr);
 	int ret = videobuf_qbuf(&grb_info_ptr->videobuf_queue_grb, buf);
-	GRB_DBG_PRINT( "vidioc_qbuf_grb return: index=%u,type=%u,offset=%08x,length=%08x\n", buf->index, buf->type, buf->m.offset, buf->length )
+	print_v4l2_buffer( "vidioc_qbuf_grb", buf );
 	//print_videobuf_queue_param( &grb_info_ptr->videobuf_queue_grb, 4 );
 	return ret;
 }
@@ -733,7 +752,7 @@ static int vidioc_dqbuf_grb( struct file *file_ptr, void *fh, struct v4l2_buffer
 	struct grb_info *grb_info_ptr = video_drvdata(file_ptr);
 	struct videobuf_queue* videobuf_queue = &grb_info_ptr->videobuf_queue_grb;
 	int ret = videobuf_dqbuf( videobuf_queue, buf, file_ptr->f_flags & O_NONBLOCK );
-	PI
+	print_v4l2_buffer( "vidioc_dqbuf_grb", buf );
 	//print_videobuf_queue_param( &grb_info_ptr->videobuf_queue_grb, 4 );
 	return ret;
 }
@@ -1121,6 +1140,7 @@ static int device_probe( struct platform_device *grb_device ) {
 	grb_info_ptr->video_dev.release = video_dev_release;
 	
 	grb_info_ptr->video_dev.tvnorms = V4L2_STD_ATSC_8_VSB + V4L2_STD_ATSC_16_VSB;
+	grb_info_ptr->in_f.format_din = 0x04;	// it'default value
 
 	err = v4l2_device_register( grb_info_ptr->dev, &grb_info_ptr->v4l2_device );
 	if (err) {
