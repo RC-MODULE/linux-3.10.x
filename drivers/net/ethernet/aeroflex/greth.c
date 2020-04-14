@@ -26,6 +26,10 @@
 #include <linux/etherdevice.h>
 #include <linux/ethtool.h>
 #include <linux/skbuff.h>
+#include <linux/of.h>
+#include <linux/of_irq.h>
+#include <linux/of_mdio.h>
+#include <linux/of_address.h>
 #include <linux/io.h>
 #include <linux/crc32.h>
 #include <linux/mii.h>
@@ -394,6 +398,14 @@ static int greth_close(struct net_device *dev)
 	netif_stop_queue(dev);
 
 	free_irq(greth->irq, (void *) dev);
+
+#ifdef CONFIG_ARM
+		/*  Workaround Gaisler weirdness: We might be
+		 *  receiving a packet when we disabled rx, wait
+		 *  till reception complete.
+		 */
+		msleep(2000);
+#endif
 
 	greth_clean_rings(greth);
 
@@ -1306,7 +1318,7 @@ static int greth_mdio_probe(struct net_device *dev)
 	return 0;
 }
 
-static int greth_mdio_init(struct greth_private *greth)
+static int greth_mdio_init(struct greth_private *greth, struct device_node *np)
 {
 	int ret;
 	unsigned long timeout;
@@ -1326,7 +1338,12 @@ static int greth_mdio_init(struct greth_private *greth)
 	greth->mdio->write = greth_mdio_write;
 	greth->mdio->priv = greth;
 
-	ret = mdiobus_register(greth->mdio);
+	if(NULL == np) {
+		ret = mdiobus_register(greth->mdio);
+	} else {
+		ret = of_mdiobus_register(greth->mdio, np);
+	};
+
 	if (ret) {
 		goto error;
 	}
@@ -1460,7 +1477,7 @@ static int greth_of_probe(struct platform_device *ofdev)
 	/* Check if MAC can handle MDIO interrupts */
 	greth->mdio_int_en = (tmp >> 26) & 1;
 
-	err = greth_mdio_init(greth);
+	err = greth_mdio_init(greth, of_get_child_by_name(ofdev->dev.of_node, "mdio"));
 	if (err) {
 		if (netif_msg_probe(greth))
 			dev_err(greth->dev, "failed to register MDIO bus\n");

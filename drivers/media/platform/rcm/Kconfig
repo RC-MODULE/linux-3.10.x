@@ -13,12 +13,14 @@ config RCM_VPU_CODA980
 	  RCM VPU CODA980 (Chips Media) video codec driver.
 
 config RCM_CODA_J10
+	depends on 1888TX018
 	bool "RCM JPEG CODA J10 codec driver"
-	default y
+	default n
 	---help---
 	RCM JPEG CODA J10 codec driver
 
 config RCM_VDU_GRABBER
+	depends on 1888TX018
 	bool "RCM VDU grabber driver"
 	select MEDIA_CONTROLLER
 	select VIDEO_V4L2_SUBDEV_API
@@ -27,7 +29,7 @@ config RCM_VDU_GRABBER
 	select VIDEOBUF_DMA_CONTIG
 	select VIDEOBUF_VMALLOC
 	select VIDEO_ADV_DEBUG
-	default y
+	default n
 	---help---
 	RCM VDU grabber driver
 	

@@ -915,6 +915,9 @@ int rcm_setup_vmode(struct mvdu_device *dev)
 
 	return 0;
 }
+
+int rcm_setup_vmode(struct mvdu_device *dev);
+
 #endif // CONFIG_1888TX018
 
 /*
@@ -923,7 +926,7 @@ int rcm_setup_vmode(struct mvdu_device *dev)
  *
  * dev->lock MUST be held.
  */
-int rcm_setup_vmode(struct mvdu_device *dev);
+
 static void mvdu_update_vdu_state(struct mvdu_device *dev)
 {
 	u32 control;
@@ -974,9 +977,11 @@ static void mvdu_update_vdu_state(struct mvdu_device *dev)
 			/* State transition complete */
 			mvdu_set_vdu_state(dev, VDU_STATE_ON);
 
+#ifdef CONFIG_1888TX018
 			/* Notify low-level */
 			dev_info(dev->dev, "about to call setup_vmode");
 			(void) rcm_setup_vmode(dev);
+#endif
 		}
 
 	} else if (dev->vdu_state == VDU_STATE_ON) {

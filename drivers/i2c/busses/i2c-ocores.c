@@ -84,7 +84,7 @@ struct ocores_i2c {
 #define TYPE_OCORES		0
 #define TYPE_GRLIB		1
 #define TYPE_SIFIVE_REV0	2
-#define TYPE_RCM	2
+#define TYPE_RCM		3
 
 #define OCORES_FLAG_BROKEN_IRQ BIT(1) /* Broken IRQ for FU540-C000 SoC */
 
@@ -604,8 +604,13 @@ static int ocores_i2c_of_probe(struct platform_device *pdev,
 			return ret;
 		}
 		i2c->ip_clock_khz = clk_get_rate(i2c->clk) / 1000;
-		if (clock_frequency_present)
-			i2c->bus_clock_khz = clock_frequency / 1000;
+		if (clock_frequency_present) {
+                       if(!of_property_read_u32(np, "speed", &i2c->bus_clock_khz)) {
+                           i2c->bus_clock_khz /= 1000;
+                       } else {
+                           i2c->bus_clock_khz = clock_frequency / 1000;
+                       }
+               }
 	}
 
 	if (i2c->ip_clock_khz == 0) {
