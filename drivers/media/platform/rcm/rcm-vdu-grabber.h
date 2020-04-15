@@ -117,6 +117,8 @@
 	#define U16x2_TO_U32(H,L) (((H)<<16)|(L))
 	#define U8x4_TO_U32(U0,U1,U2,U3) (((u32)U0<<0)+((u32)U1<<8)+((u32)U2<<16)+((u32)U3<<24))
 
+	#define NUM_OUTPUT_FORMATS 4
+
 	struct grb_parameters {
 		u32 sync;
 		u32 std_in;
