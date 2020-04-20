@@ -92,16 +92,26 @@
 	#define YCBCR				0
 	#define RGB					1
 	
-	#define YCBCR422			0
-	#define YCBCR444			1
-	#define RGB888				2
+	#define D_FMT_YCBCR422		0
+	#define D_FMT_YCBCR444		1
+	#define D_FMT_RGB888		2
 	
-	#define HD					0
-	#define SD					1
-	
-	#define SERIAL				0
-	#define PARALLEL			1
+	#define STD_CLR_HD			0
+	#define STD_CLR_SD			1
 
+	#define V_IF_SERIAL			0
+	#define V_IF_PARALLEL		1
+
+	#define SYNC_EXTERNAL		0
+	#define SYNC_INTERNAL		1
+
+	#define RCM_GRB_CID_SYNC		(V4L2_CID_PRIVATE_BASE + 0)	// SYNC_xx..
+	#define RCM_GRB_CID_STD_IN		(V4L2_CID_PRIVATE_BASE + 1)	// STD_CLR_xx
+	#define RCM_GRB_CID_D_V_IF		(V4L2_CID_PRIVATE_BASE + 2)	// V_IF_xx..
+	#define RCM_GRB_CID_D_FORMAT	(V4L2_CID_PRIVATE_BASE + 3)	// D_FMT_xx..
+	#define RCM_GRB_CID_STD_OUT		(V4L2_CID_PRIVATE_BASE + 4)	// STD_CLR_xx
+
+// custom code - todo standard
 	#define VIDIOC_SET_GAMMA		_IOWR('v', BASE_VIDIOC_PRIVATE + 0, struct grb_gamma)
 	#define VIDIOC_G_PARAMS			_IOWR('v', BASE_VIDIOC_PRIVATE + 1, struct grb_parameters)
 	#define VIDIOC_S_PARAMS			_IOWR('v', BASE_VIDIOC_PRIVATE + 2, struct grb_parameters)

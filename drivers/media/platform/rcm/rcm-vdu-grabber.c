@@ -37,7 +37,7 @@
 	#define GRB_DBG_PRINT(...) while(0);
 #endif
 
-#define PI GRB_DBG_PRINT("%s\n",__FUNCTION__)
+#define PI while(0);//GRB_DBG_PRINT("%s\n",__FUNCTION__)
 
 #ifdef RCM_VDU_GRB_DBG
 
@@ -140,16 +140,17 @@ static int reset_grab( void __iomem *addr ) {
 	return -1;
 }
 
-static int set_input_format( struct grb_info *grb_info_ptr, struct grb_parameters *param ) {
+static int set_input_format( struct grb_info *grb_info_ptr ) {
+	struct grb_parameters *param = &grb_info_ptr->param;
 	u32 active_bus;
 	u32 format_data;
 
-	if( param->d_format == YCBCR422 ) {
+	if( param->d_format == D_FMT_YCBCR422 ) {
 		format_data  = 0x0 ;							// YCbCr(0)
-		if( param->std_in == SD ) {
-			if( param->v_if == SERIAL )					// d0
+		if( param->std_in == STD_CLR_SD ) {
+			if( param->v_if == V_IF_SERIAL )			// d0
 				active_bus = 0x1;
-			else if( param->v_if == PARALLEL )			// d0,d1,d2
+			else if( param->v_if == V_IF_PARALLEL )		// d0,d1,d2
 				active_bus = 0x3;
 			else {
 				active_bus = 0x0;
@@ -157,7 +158,7 @@ static int set_input_format( struct grb_info *grb_info_ptr, struct grb_parameter
 				return -EINVAL;
 			}
 		}
-		else if( param->std_in == HD ) {
+		else if( param->std_in == STD_CLR_HD ) {
 			active_bus = 0x2 ;							// d0,d1
 		}
 		else {
@@ -168,13 +169,13 @@ static int set_input_format( struct grb_info *grb_info_ptr, struct grb_parameter
 		grb_info_ptr->in_f.color = YCBCR;
 		GRB_DBG_PRINT( "input format is YCBCR 4:2:2\n" )
 	}
-	else if( param->d_format == YCBCR444 ) {			// 1
+	else if( param->d_format == D_FMT_YCBCR444 ) {		// 1
 		format_data = 0x0 ;								// YCbCr
 		active_bus  = 0x3 ;								// d0,d1,d2
 		grb_info_ptr->in_f.color = YCBCR;
 		GRB_DBG_PRINT( "input format is YCBCR 4:4:4\n" ) 
 	} 
-	else if( param->d_format == RGB888 ) {				// 1
+	else if( param->d_format == D_FMT_RGB888 ) {		// 1
 		format_data = 0x1 ;								// RGB
 		active_bus  = 0x3 ;								// d0,d1,d2
 		grb_info_ptr->in_f.color = RGB ;
@@ -280,9 +281,9 @@ static int setup_color( struct grb_info *grb_info_ptr, void __iomem* base_addr )
 		color_std_out = grb_info_ptr->out_f.color_std;
 
 	if( ( ( color_in != RGB ) && ( color_in != YCBCR ) ) ||
-		  ( ( color_std_in != SD ) && ( color_std_in != HD ) ) ||
+		  ( ( color_std_in != STD_CLR_SD ) && ( color_std_in != STD_CLR_HD ) ) ||
 		  ( ( color_in != RGB ) && ( color_in != YCBCR ) ) ||
-		  ( ( color_std_in != SD ) && ( color_std_in != HD ) ) ) {
+		  ( ( color_std_in != STD_CLR_SD ) && ( color_std_in != STD_CLR_HD ) ) ) {
 		GRB_DBG_PRINT( "color format is wrong: input-format=%u,standard=%u;output-format=%u,standard=%u\n",
 					   color_in, color_std_in, color_out, color_std_out );
 		return -EINVAL;
@@ -290,7 +291,7 @@ static int setup_color( struct grb_info *grb_info_ptr, void __iomem* base_addr )
 
 	if( color_in != color_out ) {
 		if( color_in == RGB ) {
-			if( color_std_out == SD ) {
+			if( color_std_out == STD_CLR_SD ) {
 				GRB_DBG_PRINT( "RGB->YCBCR,SD\n" )
 				grb_info_ptr->c_conv = &RGB_TO_YCBCR_SD;
 			} 
@@ -300,7 +301,7 @@ static int setup_color( struct grb_info *grb_info_ptr, void __iomem* base_addr )
 			}
 		}
 		else if( color_in == YCBCR ) {
-			if( color_std_in == SD ) {
+			if( color_std_in == STD_CLR_SD ) {
 				GRB_DBG_PRINT( "YCBCR->RGB,SD\n" )
 				grb_info_ptr->c_conv = &YCBCR_TO_RGB_SD;
 			} 
@@ -313,11 +314,11 @@ static int setup_color( struct grb_info *grb_info_ptr, void __iomem* base_addr )
 	else if( (color_in == YCBCR) && (color_out == YCBCR) ) {
 		GRB_DBG_PRINT( "enable conversion colour standard  for YCBCR.\n" )
 
-		if( (color_std_in == SD) && (color_std_out == HD) ) {
+		if( (color_std_in == STD_CLR_SD) && (color_std_out == STD_CLR_HD) ) {
 			GRB_DBG_PRINT( "YCBCR SD->HD\n" )
 			grb_info_ptr->c_conv = &YCBCR_SD_TO_HD;
 		}
-		else if( (color_std_in == HD) & (color_std_out == SD) ) {
+		else if( (color_std_in == STD_CLR_HD) & (color_std_out == STD_CLR_SD) ) {
 			GRB_DBG_PRINT( "YCBCR HD->SD\n" )
 			grb_info_ptr->c_conv = &YCBCR_HD_TO_SD;
 		}
@@ -400,16 +401,17 @@ static void setup_gamma( void __iomem* base_addr, struct grb_gamma *gam ) {
 
 static void setup_dma_addr( u32 format_dout, u32 mem_offs1, u32 mem_offs2, u32 ba_dma0, u32* ba_dma1, u32* ba_dma2 ) {
 	switch( format_dout ) {
-	//case 0x06:			// YCBCR422_3
 	case 0x04:			// YCBCR422_2
-	case 0x07:			// RGB88
-	case 0x0e:			// YCBCR444
-		*ba_dma1 = ba_dma0 + mem_offs2; // swap plane for Gstreamer compatable
-		*ba_dma2 = ba_dma0 + mem_offs1;
-		return;
-	default:
-		*ba_dma1 = ba_dma0 + mem_offs1;	// native order
+	case 0x07:			// RGB888
+		*ba_dma1 = ba_dma0 + mem_offs1;
 		*ba_dma2 = ba_dma0 + mem_offs2;
+		return;
+	case 0x03:			// ARGB8888
+	case 0x06:			// YCBCR422_3
+	case 0x0e:			// YCBCR444
+	default:
+		*ba_dma1 = ba_dma0 + mem_offs2;
+		*ba_dma2 = ba_dma0 + mem_offs1;
 		return;
 	}
 }
@@ -476,11 +478,11 @@ int setup_registers( struct grb_info *grb_info_ptr ) {
 	reset_grab( base_addr );
 	write_register( 1, base_addr, ADDR_BASE_SW_ENA );											// enable switching base addresses
 	write_register( base_addr0_dma0, base_addr, ADDR_DMA0_ADDR0 );								// luminance,odd
-	write_register( base_addr0_dma2, base_addr, ADDR_DMA1_ADDR0 );								// color difference 1,odd
-	write_register( base_addr0_dma1, base_addr, ADDR_DMA2_ADDR0 );								// color difference 2,odd
-	write_register( base_addr1_dma0, base_addr, ADDR_DMA0_ADDR1 );								// luminance,even
-	write_register( base_addr1_dma2, base_addr, ADDR_DMA1_ADDR1 );								// color difference 1,even
-	write_register( base_addr1_dma1, base_addr, ADDR_DMA2_ADDR1 );								// color difference 2,even
+	write_register( base_addr0_dma1, base_addr, ADDR_DMA1_ADDR0 );								// color difference 1
+	write_register( base_addr0_dma2, base_addr, ADDR_DMA2_ADDR0 );								// color difference 2
+	write_register( base_addr1_dma0, base_addr, ADDR_DMA0_ADDR1 );								// luminance
+	write_register( base_addr1_dma1, base_addr, ADDR_DMA1_ADDR1 );								// color difference 1
+	write_register( base_addr1_dma2, base_addr, ADDR_DMA2_ADDR1 );								// color difference 2
 	write_register( U16x2_TO_U32( y_ver_size, y_hor_size ), base_addr, ADDR_Y_SIZE );			// 27:16-height,11:0-width for luminance
 	write_register( U16x2_TO_U32( c_ver_size, c_hor_size ), base_addr, ADDR_C_SIZE );			// 27:16-height,11:0-width color difference
 	write_register( U16x2_TO_U32( c_full_size, y_full_size ), base_addr, ADDR_FULL_LINE_SIZE );	// 27:16-height,11:0-width full string
@@ -871,7 +873,7 @@ static int drv_vidioc_s_params( struct grb_info *grb_info_ptr, void *arg ) { // 
 	struct grb_parameters* param = (struct grb_parameters*)arg;
 	PI
 	grb_info_ptr->param = *param;
-	return set_input_format( grb_info_ptr, param );
+	return set_input_format( grb_info_ptr );
 }
 
 static int drv_vidioc_auto_detect( struct grb_info *grb_info_ptr, void *arg )
@@ -961,6 +963,121 @@ static int vidioc_s_selection_grb( struct file *file, void *fh, struct v4l2_sele
 	return 0;
 }
 
+static int vidioc_queryctrl_grb( struct file *file, void *fh, struct v4l2_queryctrl *a ) {
+	GRB_DBG_PRINT( "vidioc_queryctrl_grb entry: id=%x,type=%x,name=%s\n", a->id, a->type, a->name )
+	switch( a->id ) {
+	case RCM_GRB_CID_SYNC:
+		strlcpy( a->name, "sync", sizeof(a->name) );
+		a->minimum = 0, a->maximum = 1, a->step = 1, a->default_value = SYNC_EXTERNAL;
+		break;
+	case RCM_GRB_CID_STD_IN:
+		strlcpy( a->name, "stdin", sizeof(a->name) );
+		a->minimum = 0, a->maximum = 1, a->step = 1, a->default_value = STD_CLR_HD;
+		break;
+	case RCM_GRB_CID_D_V_IF:
+		strlcpy( a->name, "dvif", sizeof(a->name) );
+		a->minimum = 0, a->maximum = 1, a->step = 1, a->default_value = V_IF_SERIAL;
+		break;
+	case RCM_GRB_CID_D_FORMAT:
+		strlcpy( a->name, "dformat", sizeof(a->name) );
+		a->minimum = 0, a->maximum = 2, a->step = 1, a->default_value = D_FMT_YCBCR422;
+		break;
+	case RCM_GRB_CID_STD_OUT:
+		strlcpy( a->name, "stdout", sizeof(a->name) );
+		a->minimum = 0, a->maximum = 1, a->step = 1, a->default_value = STD_CLR_HD;
+		break;
+	default:
+		return -EINVAL;
+	}
+	a->type = V4L2_CTRL_TYPE_INTEGER;
+	a->flags = 0;
+	a->reserved[0] = a->reserved[1] = 0;
+	return 0;
+}
+
+static int vidioc_s_ctrl_grb( struct file *file, void *fh, struct v4l2_control *a ) {
+	struct grb_info *grb_info_ptr = video_drvdata(file);
+	struct grb_parameters *grb_parameters_ptr = &grb_info_ptr->param;
+
+	GRB_DBG_PRINT( "vidioc_s_ctrl_grb: id=%x,value=%x\n", a->id, a->value )
+	switch( a->id ) {
+	case RCM_GRB_CID_SYNC:
+		grb_parameters_ptr->sync = a->value;
+		break;
+	case RCM_GRB_CID_STD_IN:
+		grb_parameters_ptr->std_in = a->value;
+		break;
+	case RCM_GRB_CID_D_V_IF:
+		grb_parameters_ptr->v_if = a->value;
+		break;
+	case RCM_GRB_CID_D_FORMAT:
+		grb_parameters_ptr->d_format = a->value;
+		break;
+	case RCM_GRB_CID_STD_OUT:
+		grb_parameters_ptr->std_out = a->value;
+		break;
+	case V4L2_CID_ALPHA_COMPONENT:
+		grb_parameters_ptr->alpha = a->value;
+		break;
+	default:
+		return -EINVAL;
+	}
+	set_input_format( grb_info_ptr );
+	return 0;
+}
+
+static int vidioc_g_ctrl_grb( struct file *file, void *fh, struct v4l2_control *a ) {
+	struct grb_info *grb_info_ptr = video_drvdata(file);
+	struct grb_parameters *grb_parameters_ptr = &grb_info_ptr->param;
+
+	GRB_DBG_PRINT( "vidioc_g_ctrl_grb: id=%x,value=%x\n", a->id, a->value )
+	switch( a->id ) {
+	case RCM_GRB_CID_SYNC:
+		a->value = grb_parameters_ptr->sync;
+		break;
+	case RCM_GRB_CID_STD_IN:
+		a->value = grb_parameters_ptr->std_in;
+		break;
+	case RCM_GRB_CID_D_V_IF:
+		a->value = grb_parameters_ptr->v_if;
+		break;
+	case RCM_GRB_CID_D_FORMAT:
+		a->value = grb_parameters_ptr->d_format;
+		break;
+	case RCM_GRB_CID_STD_OUT:
+		a->value = grb_parameters_ptr->std_out;
+		break;
+	case V4L2_CID_ALPHA_COMPONENT:
+		a->value = grb_parameters_ptr->alpha;
+		break;
+	default:
+		return -EINVAL;
+	}
+	return 0;
+}
+
+static int vidioc_enum_frameintervals_grb( struct file *file, void *fh, struct v4l2_frmivalenum *fival ) {
+	GRB_DBG_PRINT( "vidioc_enum_frameintervals: index=%u,pixel_format=%08x,width=%u,height=%u,type=%u\n",
+					fival->index, fival->pixel_format, fival->width, fival->height, fival->type )
+	return -EINVAL;
+}
+
+static int vidioc_enum_framesizes_grb( struct file *file, void *fh, struct v4l2_frmsizeenum *fsize ) {
+	GRB_DBG_PRINT( "vidioc_enum_framesizes: index=%u,pixel_format=%08x,type=%u\n",
+					fsize->index, fsize->pixel_format, fsize->type )
+	return -EINVAL;
+}
+
+static int vidioc_g_parm_grb( struct file *file, void *fh, struct v4l2_streamparm *a ) {
+	GRB_DBG_PRINT( "vidioc_g_parm_grb: type=%u\n", a->type )
+	return -EINVAL;
+}
+
+static int vidioc_s_parm_grb( struct file *file, void *fh, struct v4l2_streamparm *a ) {
+	GRB_DBG_PRINT( "vidioc_s_parm_grb: type=%u\n", a->type )
+	return -EINVAL;
+}
+
 // grb capture ioctl operations 
 static const struct v4l2_ioctl_ops grb_ioctl_ops = {
 	.vidioc_querycap			= vidioc_querycap_grb,
@@ -971,15 +1088,22 @@ static const struct v4l2_ioctl_ops grb_ioctl_ops = {
 	.vidioc_g_fmt_vid_cap		= vidioc_g_fmt_vid_cap_grb,
 	.vidioc_s_fmt_vid_cap		= vidioc_s_fmt_vid_cap_grb,
 	.vidioc_try_fmt_vid_cap		= vidioc_try_fmt_vid_cap_grb,
-	.vidioc_reqbufs      		= vidioc_reqbufs_grb,
-	.vidioc_querybuf     		= vidioc_querybuf_grb,
-	.vidioc_qbuf         		= vidioc_qbuf_grb,
-	.vidioc_dqbuf        		= vidioc_dqbuf_grb,
-	.vidioc_streamon     		= vidioc_streamon_grb,
-	.vidioc_streamoff    		= vidioc_streamoff_grb,
-	.vidioc_default             = vidioc_default_grb,
-	.vidioc_g_selection         = vidioc_g_selection_grb,
-	.vidioc_s_selection         = vidioc_s_selection_grb
+	.vidioc_reqbufs				= vidioc_reqbufs_grb,
+	.vidioc_querybuf			= vidioc_querybuf_grb,
+	.vidioc_qbuf				= vidioc_qbuf_grb,
+	.vidioc_dqbuf				= vidioc_dqbuf_grb,
+	.vidioc_streamon			= vidioc_streamon_grb,
+	.vidioc_streamoff			= vidioc_streamoff_grb,
+	.vidioc_default				= vidioc_default_grb,
+	.vidioc_g_selection			= vidioc_g_selection_grb,
+	.vidioc_s_selection			= vidioc_s_selection_grb,
+	.vidioc_queryctrl			= vidioc_queryctrl_grb,
+	.vidioc_g_ctrl				= vidioc_g_ctrl_grb,					// for future modification
+	.vidioc_s_ctrl				= vidioc_s_ctrl_grb,					// ...
+	.vidioc_enum_frameintervals	= vidioc_enum_frameintervals_grb,
+	.vidioc_enum_framesizes		= vidioc_enum_framesizes_grb,
+	.vidioc_g_parm				= vidioc_g_parm_grb,
+	.vidioc_s_parm				= vidioc_s_parm_grb
 };
 
 static struct videobuf_buffer* grb_next_buffer( struct list_head* buffer_queue ) { // from interrupt context,because without spinlock
@@ -1048,12 +1172,12 @@ static irqreturn_t proc_interrupt (struct grb_info *grb_info_ptr) {
 			setup_dma_addr( grb_info_ptr->out_f.format_dout, grb_info_ptr->mem_offset1, grb_info_ptr->mem_offset2,
 									base_addr0_dma, &base_addr1_dma, &base_addr2_dma );
 
-			if( switch_page == 0 ) {	// even
+			if( switch_page == 0 ) {
 				write_register( base_addr0_dma, base_addr, ADDR_DMA0_ADDR0 );
 				write_register( base_addr1_dma, base_addr, ADDR_DMA1_ADDR0 );
 				write_register( base_addr2_dma, base_addr, ADDR_DMA2_ADDR0 );
 			}
-			else {	// odd
+			else {
 				write_register( base_addr0_dma, base_addr, ADDR_DMA0_ADDR1 );
 				write_register( base_addr1_dma, base_addr, ADDR_DMA1_ADDR1 );
 				write_register( base_addr2_dma, base_addr, ADDR_DMA2_ADDR1 );
@@ -1195,8 +1319,15 @@ static int device_probe( struct platform_device *grb_device ) {
 	//grb_info_ptr->video_dev.vfl_dir	= VFL_DIR_M2M;
 	//grb_info_ptr->video_dev.tvnorms = V4L2_STD_ATSC_8_VSB + V4L2_STD_ATSC_16_VSB;
 
-	grb_info_ptr->in_f.format_din = 0x04;	// it'default value
+//	grb_info_ptr->in_f.format_din = 0x04;	// it'default value
+	grb_info_ptr->param.sync = SYNC_EXTERNAL;
+	grb_info_ptr->param.std_in = STD_CLR_HD;
+	grb_info_ptr->param.v_if = V_IF_SERIAL;
+	grb_info_ptr->param.d_format = D_FMT_YCBCR422;
+	grb_info_ptr->param.std_out = STD_CLR_HD;
 	grb_info_ptr->param.alpha = 255;
+	set_input_format( grb_info_ptr );
+
 	err = v4l2_device_register( grb_info_ptr->dev, &grb_info_ptr->v4l2_device );
 	if (err) {
 		dev_err( grb_info_ptr->dev, "failed v4l2_device register %d\n", err );
