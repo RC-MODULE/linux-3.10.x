@@ -185,6 +185,20 @@
                 };
             };
 
+            pcie_epc@600d8000 {
+                compatible = "rcm,cdns-pcie-ep";
+                reg = <0x600d8000 0x8000>,
+                      <0x40000000 0x20000000>;
+                reg-names = "reg", "mem";
+                cdns,max-outbound-regions = <16>;
+/*
+                max-functions = /bits/ 8 <8>;
+                phys = <&ep_phy0 &ep_phy1>;
+                phy-names = "pcie-lane0","pcie-lane1";
+*/
+                csc = <&ccpu_clsc>;
+            };
+
             thermal: thermal@0x600D1000 {
                 compatible = "rcm,thermal-v2";
                 reg = <0x600D1000 0x1000>;
@@ -213,31 +227,31 @@
                 reg = <0xe0000000 0x10000>;
             };
 
-            ccpu_crg0: crgnm@0x600c6000
+            ccpu_crg0: crg@0x600c6000
             {
                 compatible = "syscon";
                 reg = <0x600c6000 0x1000>;
             };
 
-            ccpu_crg1: crgnm@0x600c7000
+            ccpu_crg1: crg@0x600c7000
             {
                 compatible = "syscon";
                 reg = <0x600c7000 0x1000>;
             };
 
-            ccpu_crg2: crgnm@0x600c8000
+            ccpu_crg2: crg@0x600c8000
             {
                 compatible = "syscon";
                 reg = <0x600c8000 0x1000>;
             };
 
-            ccpu_crg3: crgnm@0x600c9000
+            ccpu_crg3: crg@0x600c9000
             {
                 compatible = "syscon";
                 reg = <0x600c9000 0x1000>;
             };
 
-            ccpu_clsc: clsc@0x600cb000
+            ccpu_clsc: csc@0x600cb000
             {
                 compatible = "syscon";
                 reg = <0x600cb000 0x1000>;
