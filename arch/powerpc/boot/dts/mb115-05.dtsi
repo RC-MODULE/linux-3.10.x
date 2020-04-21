@@ -37,15 +37,15 @@
 			};
 
 			vdu_grabber_ext0: vdu_grabber@0x38016000 { // EXT0
-				//status = "okay";
+				status = "okay";
 			};
 
 			vdu_grabber_int1: vdu_grabber@0x3801b000 { // (capture from fb0)
-				//status = "okay";
+				status = "okay";
 			};
 
 			vdu_grabber_ext1: vdu_grabber@0x3801c000 { // EXT1
-				//status = "okay";
+				status = "okay";
 			};
 		};
 	};

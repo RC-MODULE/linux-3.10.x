@@ -37,7 +37,7 @@
 	#define GRB_DBG_PRINT(...) while(0);
 #endif
 
-#define PI while(0);//GRB_DBG_PRINT("%s\n",__FUNCTION__)
+#define GRB_DBG_PRINT_PROC_CALL GRB_DBG_PRINT("%s\n",__FUNCTION__)
 
 #ifdef RCM_VDU_GRB_DBG
 
@@ -529,7 +529,7 @@ static int buf_setup_grb ( struct videobuf_queue *q, unsigned int *count, unsign
 
 static int buf_prepare_grb ( struct videobuf_queue *q, struct videobuf_buffer *vb, enum v4l2_field field ) {
 	struct grb_info *grb_info_ptr = q->priv_data;
-	PI
+	GRB_DBG_PRINT_PROC_CALL
 	vb->size = grb_info_ptr->user_format.sizeimage;
 	vb->width = grb_info_ptr->user_format.bytesperline;
 	vb->height = grb_info_ptr->user_format.height;
@@ -549,7 +549,7 @@ static int buf_prepare_grb ( struct videobuf_queue *q, struct videobuf_buffer *v
 
 static void buf_queue_grb ( struct videobuf_queue *q, struct videobuf_buffer *vb ) {
 	struct grb_info* grb_info_ptr = q->priv_data;
-	PI
+	GRB_DBG_PRINT_PROC_CALL
 	list_add_tail( &vb->queue, &grb_info_ptr->buffer_queue );	// Note that videobuf holds the lock when it calls us, so we need not (indeed, cannot) take it here
 	vb->state = VIDEOBUF_QUEUED;
 	//print_videobuf_queue_param( q, 4 );
@@ -558,7 +558,7 @@ static void buf_queue_grb ( struct videobuf_queue *q, struct videobuf_buffer *vb
 static void buf_release_grb ( struct videobuf_queue *q, struct videobuf_buffer *vb ) {
 	struct grb_info* grb_info_ptr = q->priv_data;
 	unsigned long flags;
-	PI
+	GRB_DBG_PRINT_PROC_CALL
 	spin_lock_irqsave( &grb_info_ptr->irq_lock, flags );
 	INIT_LIST_HEAD( &grb_info_ptr->buffer_queue );				// We need to flush the buffer from the dma queue since hey are de-allocated
 	spin_unlock_irqrestore( &grb_info_ptr->irq_lock, flags );
@@ -788,7 +788,7 @@ static int vidioc_reqbufs_grb ( struct file *file_ptr, void *fh, struct v4l2_req
 	struct grb_info *grb_info_ptr = video_drvdata( file_ptr );
 	unsigned long flags;
 	int ret;
-	PI
+	GRB_DBG_PRINT_PROC_CALL
 	spin_lock_irqsave( &grb_info_ptr->irq_lock, flags );
 	INIT_LIST_HEAD( &grb_info_ptr->buffer_queue );
 	spin_unlock_irqrestore( &grb_info_ptr->irq_lock, flags );
@@ -825,7 +825,7 @@ static int vidioc_dqbuf_grb( struct file *file_ptr, void *fh, struct v4l2_buffer
 static int vidioc_streamon_grb( struct file *file_ptr, void *fh, enum v4l2_buf_type type ) {
 	struct grb_info *grb_info_ptr = video_drvdata(file_ptr);
 	int retval;
-	PI
+	GRB_DBG_PRINT_PROC_CALL
 	if( type != V4L2_BUF_TYPE_VIDEO_CAPTURE )
 		return -EINVAL;
 
@@ -840,7 +840,7 @@ static int vidioc_streamon_grb( struct file *file_ptr, void *fh, enum v4l2_buf_t
 static int vidioc_streamoff_grb( struct file *file_ptr, void *__fh, enum v4l2_buf_type type ) {
 	struct grb_info *grb_info_ptr = video_drvdata(file_ptr);
 	int retval;
-	PI
+	GRB_DBG_PRINT_PROC_CALL
 	if ( type != V4L2_BUF_TYPE_VIDEO_CAPTURE )
 		return -EINVAL;
 
@@ -865,13 +865,13 @@ static void drv_set_gamma( struct grb_info *grb_info_ptr, void *arg ) {
 
 static void drv_vidioc_g_params( struct grb_info *grb_info_ptr, void *arg ) {
 	struct grb_parameters* param = (struct grb_parameters*)arg;
-	PI
+	GRB_DBG_PRINT_PROC_CALL
 	param = &grb_info_ptr->param;
 }
 
 static int drv_vidioc_s_params( struct grb_info *grb_info_ptr, void *arg ) { // VIDIOC_S_PARAMS
 	struct grb_parameters* param = (struct grb_parameters*)arg;
-	PI
+	GRB_DBG_PRINT_PROC_CALL
 	grb_info_ptr->param = *param;
 	return set_input_format( grb_info_ptr );
 }
@@ -956,7 +956,7 @@ exit:
 
 static int vidioc_s_selection_grb( struct file *file, void *fh, struct v4l2_selection *s ) {
 	struct grb_info *grb_info_ptr = video_drvdata(file);
-	PI
+	GRB_DBG_PRINT_PROC_CALL
 	if (s->type != V4L2_BUF_TYPE_VIDEO_CAPTURE)
 		return -EINVAL;
 	grb_info_ptr->cropping = s->r; // rect
@@ -1078,6 +1078,36 @@ static int vidioc_s_parm_grb( struct file *file, void *fh, struct v4l2_streampar
 	return -EINVAL;
 }
 
+static int vidioc_enum_input_grb( struct file *file, void *fh, struct v4l2_input *inp ) {
+	struct grb_info *grb_info_ptr = video_drvdata(file);
+
+	GRB_DBG_PRINT( "vidioc_enum_input_grb: index=%u\n", inp->index )
+	if( inp->index != 0 )
+		return -EINVAL;
+	snprintf( inp->name, sizeof(inp->name), "%s(%08x)", RCM_GRB_DEVICE_NAME, (u32)grb_info_ptr->phys_addr_regs_grb );
+	inp->type = V4L2_INPUT_TYPE_CAMERA;
+	inp->audioset = 0;
+	inp->tuner = 0;
+	inp->std = V4L2_STD_ALL;
+	inp->status = 0;		// todo V4L2_IN_ST_NO_SIGNAL,if it's so
+	inp->capabilities = 0;
+	inp->reserved[0] = inp->reserved[1] = inp->reserved[2] = 0;
+	return 0;
+}
+/*
+static int vidioc_g_input_grb( struct file *file, void *fh, unsigned int *i ) {
+	GRB_DBG_PRINT( "vidioc_g_input_grb: i=%u\n", *i )
+	*i = 0;
+	return 0;
+}
+
+static int vidioc_s_input_grb( struct file *file, void *fh, unsigned int i ) {
+	GRB_DBG_PRINT( "vidioc_s_input_grb: i=%u\n", i )
+	if( i == 0)
+		return 0;
+	return -EINVAL;
+}
+*/
 // grb capture ioctl operations 
 static const struct v4l2_ioctl_ops grb_ioctl_ops = {
 	.vidioc_querycap			= vidioc_querycap_grb,
@@ -1103,7 +1133,10 @@ static const struct v4l2_ioctl_ops grb_ioctl_ops = {
 	.vidioc_enum_frameintervals	= vidioc_enum_frameintervals_grb,
 	.vidioc_enum_framesizes		= vidioc_enum_framesizes_grb,
 	.vidioc_g_parm				= vidioc_g_parm_grb,
-	.vidioc_s_parm				= vidioc_s_parm_grb
+	.vidioc_s_parm				= vidioc_s_parm_grb,
+	.vidioc_enum_input			= vidioc_enum_input_grb,
+//	.vidioc_g_input				= vidioc_g_input_grb,
+//	.vidioc_s_input				= vidioc_s_input_grb
 };
 
 static struct videobuf_buffer* grb_next_buffer( struct list_head* buffer_queue ) { // from interrupt context,because without spinlock
@@ -1195,7 +1228,7 @@ static irqreturn_t proc_interrupt (struct grb_info *grb_info_ptr) {
 		grb_info_ptr->recognize_format.width = rd_data & 0xFFF;				// 11:0-width
 		rd_data = read_register( base_addr, ADDR_FRAME_PARAM );
 		grb_info_ptr->recognize_format.pixelformat = 0;						// set format default?
-		grb_info_ptr->recognize_format.field = rd_data & 0x10 ? V4L2_FIELD_INTERLACED : V4L2_FIELD_NONE;
+		grb_info_ptr->recognize_format.field = ( rd_data & 0x10 ) ? V4L2_FIELD_INTERLACED : V4L2_FIELD_NONE;
 		complete_all( &grb_info_ptr->cmpl );
 	}
 	else {																	// we do not must be here
@@ -1319,7 +1352,7 @@ static int device_probe( struct platform_device *grb_device ) {
 	//grb_info_ptr->video_dev.vfl_dir	= VFL_DIR_M2M;
 	//grb_info_ptr->video_dev.tvnorms = V4L2_STD_ATSC_8_VSB + V4L2_STD_ATSC_16_VSB;
 
-//	grb_info_ptr->in_f.format_din = 0x04;	// it'default value
+//	grb_info_ptr->in_f.format_din = 0x04;			// it'default value
 	grb_info_ptr->param.sync = SYNC_EXTERNAL;
 	grb_info_ptr->param.std_in = STD_CLR_HD;
 	grb_info_ptr->param.v_if = V_IF_SERIAL;
@@ -1327,6 +1360,10 @@ static int device_probe( struct platform_device *grb_device ) {
 	grb_info_ptr->param.std_out = STD_CLR_HD;
 	grb_info_ptr->param.alpha = 255;
 	set_input_format( grb_info_ptr );
+
+	grb_info_ptr->recognize_format.width = 640;		// it's too,but autodetect will set new values
+	grb_info_ptr->recognize_format.height = 480;
+	grb_info_ptr->recognize_format.field = V4L2_FIELD_NONE;
 
 	err = v4l2_device_register( grb_info_ptr->dev, &grb_info_ptr->v4l2_device );
 	if (err) {
