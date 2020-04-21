@@ -13,7 +13,11 @@
 /*
  * Local Management Registers
  */
-#define CDNS_PCIE_LM_BASE	0x00100000
+#ifdef CONFIG_RCM_PCIE_CADENCE_EP
+#	define CDNS_PCIE_LM_BASE	0x00001000
+#else
+#	define CDNS_PCIE_LM_BASE	0x00100000
+#endif
 
 /* Vendor ID Register */
 #define CDNS_PCIE_LM_ID		(CDNS_PCIE_LM_BASE + 0x0044)
@@ -104,7 +108,11 @@
 /*
  * Address Translation Registers
  */
-#define CDNS_PCIE_AT_BASE	0x00400000
+#ifdef CONFIG_RCM_PCIE_CADENCE_EP
+#	define CDNS_PCIE_AT_BASE	0x00004000
+#else
+#	define CDNS_PCIE_AT_BASE	0x00400000
+#endif
 
 /* Region r Outbound AXI to PCIe Address Translation Register 0 */
 #define CDNS_PCIE_AT_OB_REGION_PCI_ADDR0(r) \
