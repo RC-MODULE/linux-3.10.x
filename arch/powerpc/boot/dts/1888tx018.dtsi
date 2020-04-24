@@ -78,7 +78,7 @@
 				compatible = "shared-dma-pool";
 				reusable;
 				alloc-ranges = <0x0 0x00000000 0x0 0x2bc00000>; // shall be in DMA zone
-				size = <0x0 0x4000000>;
+				size = <0x0 0x8000000>;
 				alignment = <0x0 0x1000000>;
 				linux,cma-default;
 			};
@@ -100,11 +100,6 @@
 
 			grab_buffer3: grab_buffer@0x31C00000 {
 				reg = <0x0 0x31c00000 0x0 0x02000000>;
-				no-map;
-			};
-
-			vpu_buffer: vpu_buffer@0x33C00000 {
-				reg = <0x0 0x33C00000 0x0 0x04000000>;
 				no-map;
 			};
 
@@ -1054,7 +1049,6 @@
 				reg = <0x38020000 0x4000>;
 				interrupt-parent = <&MPIC>;
 				interrupts = <123 2>; // active high level-sensitive
-				memory-buffer = <&vpu_buffer>;
 			};
 
 			jpg: jpg@0x3801a000 {

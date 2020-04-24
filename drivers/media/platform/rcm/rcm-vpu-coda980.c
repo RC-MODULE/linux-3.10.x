@@ -63,7 +63,7 @@
 #define VPU_SUPPORT_PLATFORM_DRIVER_REGISTER
 
 /* if this driver knows the dedicated video memory address */
-#define VPU_SUPPORT_RESERVED_VIDEO_MEMORY
+// #define VPU_SUPPORT_RESERVED_VIDEO_MEMORY
 
 #define VPU_PLATFORM_DEVICE_NAME "vdec"
 #define VPU_CLK_NAME "vcodec"
@@ -206,13 +206,16 @@ static int vpu_alloc_dma_buffer(vpudrv_buffer_t *vb)
 
 	vb->base = (unsigned long)(s_video_memory.base + (vb->phys_addr - s_video_memory.phys_addr));
 #else
-	vb->base = (unsigned long)dma_alloc_coherent(NULL, PAGE_ALIGN(vb->size), (dma_addr_t *) (&vb->phys_addr), GFP_DMA | GFP_KERNEL);
-	if ((void *)(vb->base) == NULL)	{
-		vpu_loge("dynamic Physical memory allocation error size=%d\n", vb->size);
-		return -1;
+	{
+		dma_addr_t dma_addr;
+		vb->base = (unsigned long)dma_alloc_coherent(&g_pdev->dev, PAGE_ALIGN(vb->size), &dma_addr, GFP_DMA | GFP_KERNEL);
+		vb->phys_addr = dma_addr;
+		if ((void *)(vb->base) == NULL)	{
+			vpu_loge("dynamic Physical memory allocation error size=%d\n", vb->size);
+			return -1;
+		}
 	}
 #endif
-
 
 	return 0;
 }
@@ -227,7 +230,7 @@ static void vpu_free_dma_buffer(vpudrv_buffer_t *vb)
 		vmem_free(&s_vmem, vb->phys_addr, 0);
 #else
 	if (vb->base)
-		dma_free_coherent(0, PAGE_ALIGN(vb->size), (void *)vb->base, vb->phys_addr);
+		dma_free_coherent(&g_pdev->dev, PAGE_ALIGN(vb->size), (void *)vb->base, vb->phys_addr);
 #endif
 
 }
@@ -697,6 +700,19 @@ static int vpu_release(struct inode *inode, struct file *filp)
 	vpu_free_instances(filp);
     s_vpu_drv_context.open_count--;
     if (s_vpu_drv_context.open_count == 0) {
+	// [***] VPU processors must be stopped first
+	// because the firmware code is into the common memory buffer
+	{
+		int core;
+		for (core = 0; core < MAX_NUM_VPU_CORE; core++) {
+			if (s_bit_firmware_info[core].size == 0)
+				continue;
+			WriteVpuRegister(BIT_CODE_RUN, 0);
+			WriteVpuRegister(BIT_BUSY_FLAG, 1);
+			WriteVpuRegister(BIT_CODE_RESET, 1);
+		}
+	}
+	// [***]
         if (s_instance_pool.base) {
             vpu_logi("[VPUDRV] free instance pool\n");
             vpu_free_dma_buffer(&s_instance_pool);
