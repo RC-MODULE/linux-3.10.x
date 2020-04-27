@@ -337,7 +337,7 @@ static irqreturn_t vpu_irq_handler(int irq, void *dev_id)
 static int vpu_open(struct inode *inode, struct file *filp)
 {
 	spin_lock(&s_vpu_lock);
-	vpu_logi("[VPUDRV] vpu_open\n");
+	vpu_logd("[VPUDRV] vpu_open\n");
 
     s_vpu_drv_context.open_count++;
 	filp->private_data = (void *)(&s_vpu_drv_context);
@@ -689,7 +689,7 @@ static ssize_t vpu_write(struct file *filp, const char __user *buf, size_t len, 
 
 static int vpu_release(struct inode *inode, struct file *filp)
 {
-	vpu_logi("[VPUDRV] vpu_release\n");
+	vpu_logd("[VPUDRV] vpu_release\n");
 	
 	spin_lock(&s_vpu_lock);
 
@@ -714,18 +714,18 @@ static int vpu_release(struct inode *inode, struct file *filp)
 	}
 	// [***]
         if (s_instance_pool.base) {
-            vpu_logi("[VPUDRV] free instance pool\n");
+            vpu_logd("[VPUDRV] free instance pool\n");
             vpu_free_dma_buffer(&s_instance_pool);
             s_instance_pool.base = 0;
         }
 
         if (s_common_memory.base) {
-            vpu_logi("[VPUDRV] free common memory\n");
+            vpu_logd("[VPUDRV] free common memory\n");
             vpu_free_dma_buffer(&s_common_memory);
             s_common_memory.base = 0;
         }
     }
-    vpu_logi("%s open count: %d\n", __func__, s_vpu_drv_context.open_count);
+    vpu_logd("%s open count: %d\n", __func__, s_vpu_drv_context.open_count);
 
 	spin_unlock(&s_vpu_lock);
 
@@ -807,16 +807,16 @@ static int vpu_probe(struct platform_device *pdev)
 
 	g_pdev = pdev;
 
-	vpu_logi("[VPUDRV] vpu_probe\n");
+	vpu_logd("[VPUDRV] vpu_probe\n");
 	if (pdev)
 		res = platform_get_resource(pdev, IORESOURCE_MEM, 0);
 	if (res) {/* if platform driver is implemented */
 		s_vpu_reg_phy_addr = res->start;
 		s_vpu_reg_virt_addr = ioremap(res->start, res->end - res->start);
-		vpu_logi("[VPUDRV] : vpu base address get from platform driver physical base addr=0x%x, virtual base=0x%p\n", (unsigned)s_vpu_reg_phy_addr , s_vpu_reg_virt_addr);
+		vpu_logd("[VPUDRV] : vpu base address get from platform driver physical base addr=0x%x, virtual base=0x%p\n", (unsigned)s_vpu_reg_phy_addr , s_vpu_reg_virt_addr);
 	} else {
 		s_vpu_reg_virt_addr = ioremap(s_vpu_reg_phy_addr, VPU_REG_SIZE);
-		vpu_logi("[VPUDRV] : vpu base address get from defined value physical base addr=0x%x, virtual base=0x%p\n", (unsigned)s_vpu_reg_phy_addr, s_vpu_reg_virt_addr);
+		vpu_logd("[VPUDRV] : vpu base address get from defined value physical base addr=0x%x, virtual base=0x%p\n", (unsigned)s_vpu_reg_phy_addr, s_vpu_reg_virt_addr);
 
 	}
 
@@ -844,7 +844,7 @@ static int vpu_probe(struct platform_device *pdev)
 	if (!s_vpu_clk)
 		printk(KERN_ERR "[VPUDRV] : fail to get clock controller, but, do not treat as error, \n");
 	else
-		vpu_logi("[VPUDRV] : get clock controller s_vpu_clk=%p\n", s_vpu_clk);
+		vpu_logd("[VPUDRV] : get clock controller s_vpu_clk=%p\n", s_vpu_clk);
 
 #ifdef VPU_SUPPORT_CLOCK_CONTROL
 #else
@@ -857,9 +857,9 @@ static int vpu_probe(struct platform_device *pdev)
 		res = platform_get_resource(pdev, IORESOURCE_IRQ, 0);
 	if (res) {/* if platform driver is implemented */
 		s_vpu_irq = res->start;
-		vpu_logi("[VPUDRV] : vpu irq number get from platform driver irq=0x%x\n", s_vpu_irq);
+		vpu_logd("[VPUDRV] : vpu irq number get from platform driver irq=0x%x\n", s_vpu_irq);
 	} else {
-		vpu_logi("[VPUDRV] : vpu irq number get from defined value irq=0x%x\n", s_vpu_irq);
+		vpu_logd("[VPUDRV] : vpu irq number get from defined value irq=0x%x\n", s_vpu_irq);
 	}
 
 
