@@ -506,6 +506,13 @@ config RCM_AUDIO_DMA
 	  Support the DMA engine for RC Module platforms
 	  devices.
 
+config RCM_CDNS_DMA
+	tristate "RCM Cadence PCIE internal DMA support"
+	select DMA_ENGINE
+	help
+	  Support the DMA engine for RC Module Cadence PCIE
+	  internal DMA controller.
+
 config SIRF_DMA
 	tristate "CSR SiRFprimaII/SiRFmarco DMA support"
 	depends on ARCH_SIRF
