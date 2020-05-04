@@ -185,9 +185,19 @@
                 };
             };
 
+            pcie_dma: pcie_dma@0x600de000 {
+                compatible = "rcm,cdns-dma";
+                reg = <0x600de000 0x1000>;
+                #dma-cells = <1>;
+                interrupt-parent = <&gic0>;
+                interrupts = <0 40 4>;
+
+                desc_area = <&ccpu_ccmb0>;
+            };
+
             pcie_epc@600d8000 {
                 compatible = "rcm,cdns-pcie-ep";
-                reg = <0x600d8000 0x8000>,
+                reg = <0x600d8000 0x6000>,
                       <0x40000000 0x20000000>;
                 reg-names = "reg", "mem";
                 cdns,max-outbound-regions = <16>;
@@ -205,6 +215,26 @@
                 interrupt-parent = <&gic0>;
                 interrupts = <0 3 4>;
                 #thermal-sensor-cells = <0>;
+            };
+
+            ccpu_ccmb0: ccmb@0x60000000 {
+                compatible = "syscon";
+                reg = <0x60000000 0x20000>;
+            };
+
+            ccpu_ccmb1: ccmb@0x60020000 {
+                compatible = "syscon";
+                reg = <0x60020000 0x20000>;
+            };
+
+            ccpu_ccmb2: ccmb@0x60040000 {
+                compatible = "syscon";
+                reg = <0x60040000 0x20000>;
+            };
+
+            ccpu_ccmb3: ccmb@0x60080000 {
+                compatible = "syscon";
+                reg = <0x60080000 0x20000>;
             };
 
             pc0_cmb0 {
