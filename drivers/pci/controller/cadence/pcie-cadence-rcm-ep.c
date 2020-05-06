@@ -548,6 +548,8 @@ int rcm_cdns_pcie_ep_setup(struct rcm_cdns_pcie_ep *ep)
 	/* Reserve region 0 for IRQs */
 	set_bit(0, &ep->ob_region_map);
 
+	cdns_pcie_reset_outbound_region(pcie, 0);
+
 	node_csc = of_parse_phandle(np, "csc", 0);
 	if (!node_csc) {
 		dev_err(dev, "failed to find csc node\n");
