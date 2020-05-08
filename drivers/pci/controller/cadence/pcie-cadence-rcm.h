@@ -1,7 +1,7 @@
 /* SPDX-License-Identifier: GPL-2.0 */
-// Copyright (c) 2017 Cadence
-// Cadence PCIe controller driver.
-// Author: Cyrille Pitchen <cyrille.pitchen@free-electrons.com>
+/*
+ *  Copyright (C) 2020 Alexander Shtreys <alexander.shtreys@mir.dev>
+ */
 
 #ifndef _PCIE_CADENCE_RCM_H
 #define _PCIE_CADENCE_RCM_H
@@ -49,5 +49,9 @@ static inline int rcm_cdns_pcie_ep_setup(struct rcm_cdns_pcie_ep *ep)
 	return 0;
 }
 #endif
+
+void rcm_cdns_pcie_set_outbound_region(struct cdns_pcie *pcie, u8 fn,
+                                       u32 r, bool is_io,
+                                       u64 cpu_addr, u64 pci_addr, size_t size);
 
 #endif /* _PCIE_CADENCE_RCM_H */
