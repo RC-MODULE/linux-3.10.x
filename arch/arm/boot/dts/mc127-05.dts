@@ -209,6 +209,40 @@
                 csc = <&ccpu_clsc>;
             };
 
+            pcie@600d8000 {
+                compatible = "rcm,cdns-pcie-host";
+                device_type = "pci";
+                #address-cells = <3>;
+                #size-cells = <2>;
+                cdns,max-outbound-regions = <16>;
+                vendor-id = /bits/ 16 <0x17cd>;
+                device-id = /bits/ 16 <0x0200>;
+
+                reg = <0x600d8000 0x6000>,
+                      <0x50000000 0x10000000>,
+                      <0x40000000 0x20000000>;
+                reg-names = "reg", "cfg", "mem";
+
+                ranges = <0x02000000 0x0 0x00000000  0x40000000  0x0 0x10000000>;
+
+                #interrupt-cells = <0x1>;
+
+                interrupt-map = <0x0 0x0 0x0  0x1  &gic0  0x0 42 0x4
+                                 0x0 0x0 0x0  0x2  &gic0  0x0 43 0x4
+                                 0x0 0x0 0x0  0x3  &gic0  0x0 44 0x4
+                                 0x0 0x0 0x0  0x4  &gic0  0x0 45 0x4>;
+
+                interrupt-map-mask = <0x0 0x0 0x0  0x7>;
+/*
+                msi-parent = <&its_pci>;
+
+                phys = <&pcie_phy0>;
+                phy-names = "pcie-phy";
+*/
+                status = "disabled";
+            };
+
+
             thermal: thermal@0x600D1000 {
                 compatible = "rcm,thermal-v2";
                 reg = <0x600D1000 0x1000>;
