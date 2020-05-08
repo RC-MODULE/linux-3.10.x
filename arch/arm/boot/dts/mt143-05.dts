@@ -1,0 +1,342 @@
+/*
+ *
+ */
+
+/dts-v1/;
+/ {
+    model = "RC-Module 1888BC048 (Basis) SoC";
+    compatible = "rcm,1888BC048";
+
+	#address-cells = <1>;
+	#size-cells = <1>;
+
+    aliases {
+        uart0 = &uart0;
+        mmc0 = &mmc0;
+    }; 
+
+    chosen {
+        // bootargs = "console=ttyRCM0,6250000 earlyprintk debug  memblock=debug";
+        //bootargs = "console=ttyRCM0,6250000 earlyprintk debug rootwait";
+        bootargs = "console=ttyRCM0,6250000 earlyprintk debug rootwait";
+        stdout-path = &uart0;
+    };
+
+    /* 2Gib at 0x80000000 */
+    memory@80000000 {
+        device_type = "memory";
+        reg = <0x80000000 0x40000000>;
+    };
+
+    /* 1Gib at 0xC0000000 */
+    memory@C0000000 {
+        device_type = "memory";
+        reg = <0xC0000000 0x40000000>;
+    };
+    
+    cpus {
+        #address-cells = <1>;
+        #size-cells = <0>;
+
+        cpu0: cpu@0 {
+            reg = <0x0>;
+            device_type = "cpu";
+            compatible = "arm,cortex-a5";
+            next-level-cache = <&L2>;
+			clocks = <&clock_arm>;
+        };
+    };
+
+    clock_arm: clock_arm@800M {
+        #clock-cells = <0>;
+        compatible = "fixed-clock";
+        clock-frequency = <800000000>;
+    };
+
+    clock_axi_slow: clock_axi_slow@100M {
+        #clock-cells = <0>;
+        compatible = "fixed-clock";
+        clock-frequency = <100000000>;
+    };
+
+    clock_axi_fast: clock_axi_fast@400M {
+        #clock-cells = <0>;
+        compatible = "fixed-clock";
+        clock-frequency = <400000000>;
+    };
+
+    clock_can: clock_can@64M {
+        #clock-cells = <0>;
+        compatible = "fixed-clock";
+        clock-frequency = <64000000>;
+    };
+
+    clock_mkio: clock_mkio@20M {
+        #clock-cells = <0>;
+        compatible = "fixed-clock";
+        clock-frequency = <20000000>;
+    };
+
+    apbf0 {
+        compatible = "simple-bus";
+        #address-cells = <1>;
+        #size-cells = <1>;
+        ranges;
+
+    };
+
+    apbs0 {
+        compatible = "simple-bus";
+        #address-cells = <1>;
+        #size-cells = <1>;
+        ranges;
+
+    };
+
+    apbs1 {
+        compatible = "simple-bus";
+        #address-cells = <1>;
+        #size-cells = <1>;
+        ranges;
+
+        spi@01040000 {
+            compatible = "arm,pl022", "arm,primecell";
+            bus-id = <0>;
+            reg = <0x01040000 0x1000>;
+            #address-cells = <1>;
+            #size-cells = <0>;
+            interrupt-parent = <&gic0>;
+            interrupts = <0 40 4>;
+            clocks = <&clock_axi_slow>;
+            clock-names = "apb_pclk";
+			cs-gpios = <&gpio0 5 0>;	
+            num-cs = <1>;
+
+            spi_flash0@0 {
+			    compatible = "st,w25q32", "spi-flash";
+			    reg = <0>;
+				spi-max-frequency = <1000000>;
+				spi-cpol;
+				spi-cpha;
+            };
+        };
+
+        spi@01041000 {
+            compatible = "arm,pl022", "arm,primecell";
+            bus-id = <0>;
+            reg = <0x01041000 0x1000>;
+            #address-cells = <1>;
+            #size-cells = <0>;
+            interrupt-parent = <&gic0>;
+            interrupts = <0 41 4>;
+            clocks = <&clock_axi_slow>;
+            clock-names = "apb_pclk";
+        };
+
+        mmc0: mmc0@01042000 {
+            // status = "disabled";
+            compatible = "rcm,mmc-0.2";
+            reg = <0x01042000 0x1000>;
+            interrupt-parent = <&gic0>;
+            interrupts = <0 40 4>; // active high level-sensitive
+            clocks = <&clock_axi_slow>;
+            min-frequency = <1000000>;
+            max-frequency = <25000000>;
+            axi-awlen = <15>;		// 16 data frames
+            axi-arlen = <15>;		// 16 data frames
+            axi-awsize = <2>;		// 4 bytes 
+            axi-arsize = <2>;		// 4 bytes 
+            sdio-timeout = <200>;	// 200 ms
+            clock-names = "mmc";
+        };
+
+        mmc1: mmc0@01043000 {
+            // status = "disabled";
+            compatible = "rcm,mmc-0.2";
+            reg = <0x01043000 0x1000>;
+            interrupt-parent = <&gic0>;
+            interrupts = <0 41 4>; // active high level-sensitive
+            clocks = <&clock_axi_slow>;
+            min-frequency = <1000000>;
+            max-frequency = <25000000>;
+            axi-awlen = <15>;		// 16 data frames
+            axi-arlen = <15>;		// 16 data frames
+            axi-awsize = <2>;		// 4 bytes 
+            axi-arsize = <2>;		// 4 bytes 
+            sdio-timeout = <200>;	// 200 ms
+            clock-names = "mmc";
+        };
+
+	    uart0: uart0@01044000 {
+		    compatible = "rcm,muart";			
+			clocks = <&clock_axi_fast>;
+		    reg = <0x01044000 0x1000>;
+            interrupt-parent = <&gic0>;
+            interrupts = <0 44 4>;
+		};
+
+	    uart1: uart1@01045000 {
+		    compatible = "rcm,muart";			
+			clocks = <&clock_axi_fast>;
+		    reg = <0x01045000 0x1000>;
+            interrupt-parent = <&gic0>;
+            interrupts = <0 45 4>;
+		};
+
+        timer01@01048000 {
+            compatible = "arm,sp804", "arm,primecell";
+            reg = <0x01048000 0x1000>;
+            interrupts = <0 10 4>, <0 11 4>;
+            interrupt-parent = <&gic0>;
+            /* arm,sp804-has-irq = <2>; */
+            clocks = <&clock_axi_slow>;
+            clock-names = "apb_pclk";
+        };
+
+        timer23@01049000 {
+            compatible = "arm,sp804", "arm,primecell";
+            reg = <0x01049000 0x1000>;
+            interrupts = <0 12 4>, <0 13 4>;
+            interrupt-parent = <&gic0>;
+            arm,sp804-has-irq = <2>;
+            clocks = <&clock_axi_slow>;
+            clock-names = "apb_pclk";
+            status = "disabled";
+        };
+
+        timer45@0104a000 {
+            compatible = "arm,sp804", "arm,primecell";
+            reg = <0x0104a000 0x1000>;
+            interrupts = <0 14 4>, <0 15 4>;
+            interrupt-parent = <&gic0>;
+            arm,sp804-has-irq = <2>;
+            clocks = <&clock_axi_slow>;
+            clock-names = "apb_pclk";
+            status = "disabled";
+        };
+
+        timer67@0104b000 {
+            compatible = "arm,sp804", "arm,primecell";
+            reg = <0x0104b000 0x1000>;
+            interrupts = <0 16 4>, <0 17 4>;
+            interrupt-parent = <&gic0>;
+            arm,sp804-has-irq = <2>;
+            clocks = <&clock_axi_slow>;
+            clock-names = "apb_pclk";
+            status = "disabled";
+        };
+    };
+
+    apbs2 {
+        compatible = "simple-bus";
+        #address-cells = <1>;
+        #size-cells = <1>;
+        ranges;
+
+        wd@0108f000 {
+            reg = <0x0108f000 0x1000>;
+            compatible = "arm,sp805", "arm,primecell";
+            interrupt-parent = <&gic0>;
+            interrupts = <0 31 4>;
+            clocks = <&clock_axi_slow>, <&clock_axi_slow>;
+            clock-names = "wdogclk", "apb_pclk";
+        };
+
+		gpio0: gpio0@01088000 {
+		    compatible = "rcm,gpio";
+			#address-cells = <1>;
+		    #size-cells = <0>;
+			clocks = <&clock_axi_slow>;
+		    reg = <0x01088000 0x1000>;
+            interrupt-parent = <&gic0>;
+            interrupts = <0 46 1>;  // rising
+			gpio-controller;
+			#gpio-cells = <2>;
+            interrupt-controller;
+            #interrupt-cells = <2>;
+		};
+
+		gpio1: gpio1@01089000 {
+		    compatible = "rcm,gpio";
+			#address-cells = <1>;
+		    #size-cells = <0>;
+			clocks = <&clock_axi_slow>;
+		    reg = <0x01089000 0x1000>;
+            interrupt-parent = <&gic0>;
+            interrupts = <0 47 1>;  // rising
+			gpio-controller;
+			#gpio-cells = <2>;
+            interrupt-controller;
+            #interrupt-cells = <2>;
+		};
+
+		gpio2: gpio0@0108a000 {
+		    compatible = "rcm,gpio";
+			#address-cells = <1>;
+		    #size-cells = <0>;
+			clocks = <&clock_axi_slow>;
+		    reg = <0x0108a000 0x1000>;
+            interrupt-parent = <&gic0>;
+            interrupts = <0 48 1>;  // rising
+			gpio-controller;
+			#gpio-cells = <2>;
+            interrupt-controller;
+            #interrupt-cells = <2>;
+		};
+
+		gpio3: gpio0@0108b000 {
+		    compatible = "rcm,gpio";
+			#address-cells = <1>;
+		    #size-cells = <0>;
+			clocks = <&clock_axi_slow>;
+		    reg = <0x0108b000 0x1000>;
+            interrupt-parent = <&gic0>;
+            interrupts = <0 49 1>;  // rising
+			gpio-controller;
+			#gpio-cells = <2>;
+            interrupt-controller;
+            #interrupt-cells = <2>;
+		};
+
+		gpio4: gpio0@0108c000 {
+		    compatible = "rcm,gpio";
+			#address-cells = <1>;
+		    #size-cells = <0>;
+			clocks = <&clock_axi_slow>;
+		    reg = <0x0108c000 0x1000>;
+            interrupt-parent = <&gic0>;
+            interrupts = <0 50 1>;  // rising
+			gpio-controller;
+			#gpio-cells = <2>;
+            interrupt-controller;
+            #interrupt-cells = <2>;
+		};
+    };
+
+    axi32 {
+        compatible = "simple-bus";
+        #address-cells = <1>;
+        #size-cells = <1>;
+        ranges;
+
+        gic0: interrupt-controller@01104000 {
+            compatible = "arm,pl390";
+            interrupt-controller;
+            irq_start = <0>;
+            #interrupt-cells = <3>;
+            #address-cells = <1>;
+            reg = <0x01104000 0x1000>,
+                  <0x01105000 0x1000>;
+        };
+
+        L2: l2-cache-controller@0x01106000 {
+            compatible = "arm,pl310-cache";
+            reg = <0x01106000 0x1000>;
+            cache-unified;
+            cache-level = <2>;
+            status = "okay";
+            /* cache-size = <0x80000>; */
+        };	
+    };
+};
+

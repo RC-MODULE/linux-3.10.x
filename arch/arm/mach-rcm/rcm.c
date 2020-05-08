@@ -30,3 +30,14 @@ DT_MACHINE_START(RCM_1879VM8YA, "RCM 1879VM8YA Module")
     .dt_compat      = rcm_1879vm8ya_dt_match,
 MACHINE_END
 
+static const char *rcm_1888bc048_dt_match[] __initconst = {
+    "rcm,1888BC048",
+    NULL
+};
+
+DT_MACHINE_START(RCM_1888BC048, "RCM 1888BC048 Module")
+    .init_time      = rcm_dt_timer_init,
+    .l2c_aux_mask   = 0xffffffff,
+    .l2c_aux_val    =  0x00000000,
+    .dt_compat      = rcm_1888bc048_dt_match,
+MACHINE_END

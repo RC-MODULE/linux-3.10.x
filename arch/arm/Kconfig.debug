@@ -1442,6 +1442,10 @@ choice
 		  options; the platform specific options are deprecated
 		  and will be soon removed.
 
+	config DEBUG_MUART
+		bool "Kernel low-level debugging on RC-Module MUART"
+		depends on ARCH_RCM_ARM
+
 endchoice
 
 config DEBUG_AT91_UART
@@ -1568,6 +1572,7 @@ config DEBUG_LL_INCLUDE
 	default "debug/bcm63xx.S" if DEBUG_BCM63XX_UART
 	default "debug/digicolor.S" if DEBUG_DIGICOLOR_UA0
 	default "debug/brcmstb.S" if DEBUG_BRCMSTB_UART
+	default "debug/muart.S" if DEBUG_MUART
 	default "mach/debug-macro.S"
 
 # Compatibility options for PL01x
@@ -1580,6 +1585,7 @@ config DEBUG_UART_8250
 
 config DEBUG_UART_PHYS
 	hex "Physical base address of debug UART"
+	default 0x01044000 if DEBUG_MUART
 	default 0x01c20000 if DEBUG_DAVINCI_DMx_UART0
 	default 0x01c28000 if DEBUG_SUNXI_UART0
 	default 0x01c28400 if DEBUG_SUNXI_UART1
@@ -1713,7 +1719,7 @@ config DEBUG_UART_PHYS
 		DEBUG_S3C64XX_UART || \
 		DEBUG_BCM63XX_UART || DEBUG_ASM9260_UART || \
 		DEBUG_SIRFSOC_UART || DEBUG_DIGICOLOR_UA0 || \
-		DEBUG_AT91_UART
+		DEBUG_AT91_UART || DEBUG_MUART
 
 config DEBUG_UART_VIRT
 	hex "Virtual base address of debug UART"
@@ -1732,6 +1738,7 @@ config DEBUG_UART_VIRT
 	default 0xf1006000 if DEBUG_MT6589_UART0
 	default 0xf1009000 if DEBUG_MT8135_UART3
 	default 0xf1023000 if DEBUG_BCM_IPROC_UART3
+	default 0xf1044000 if DEBUG_MUART
 	default 0xf11f1000 if DEBUG_VERSATILE
 	default 0xf1600000 if DEBUG_INTEGRATOR
 	default 0xf1c28000 if DEBUG_SUNXI_UART0
@@ -1823,7 +1830,7 @@ config DEBUG_UART_VIRT
 		DEBUG_S3C64XX_UART || \
 		DEBUG_BCM63XX_UART || DEBUG_ASM9260_UART || \
 		DEBUG_SIRFSOC_UART || DEBUG_DIGICOLOR_UA0 || \
-		DEBUG_AT91_UART
+		DEBUG_AT91_UART || DEBUG_MUART
 
 config DEBUG_UART_8250_SHIFT
 	int "Register offset shift for the 8250 debug UART"
