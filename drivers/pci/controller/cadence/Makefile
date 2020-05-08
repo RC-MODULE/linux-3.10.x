@@ -3,3 +3,7 @@ obj-$(CONFIG_PCIE_CADENCE) += pcie-cadence.o
 obj-$(CONFIG_PCIE_CADENCE_HOST) += pcie-cadence-host.o
 obj-$(CONFIG_PCIE_CADENCE_EP) += pcie-cadence-ep.o
 obj-$(CONFIG_PCIE_CADENCE_PLAT) += pcie-cadence-plat.o
+obj-$(CONFIG_RCM_PCIE_CADENCE) += pcie-cadence-rcm.o
+obj-$(CONFIG_RCM_PCIE_CADENCE_HOST) += pcie-cadence-rcm-host.o
+obj-$(CONFIG_RCM_PCIE_CADENCE_EP) += pcie-cadence-rcm-ep.o
+obj-$(CONFIG_RCM_PCIE_CADENCE_PLAT) += pcie-cadence-rcm-plat.o

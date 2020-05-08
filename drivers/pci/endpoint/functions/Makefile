@@ -4,3 +4,4 @@
 #
 
 obj-$(CONFIG_PCI_EPF_TEST)		+= pci-epf-test.o
+obj-$(CONFIG_RCM_PCI_EPF_TEST)		+= rcm-pci-epf-test.o

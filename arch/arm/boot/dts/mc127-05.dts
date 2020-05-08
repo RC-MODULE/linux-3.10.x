@@ -185,12 +185,90 @@
                 };
             };
 
+            pcie_dma: pcie_dma@0x600de000 {
+                compatible = "rcm,cdns-dma";
+                reg = <0x600de000 0x1000>;
+                #dma-cells = <1>;
+                interrupt-parent = <&gic0>;
+                interrupts = <0 40 4>;
+
+                desc_area = <&ccpu_ccmb0>;
+            };
+
+            pcie_epc@600d8000 {
+                compatible = "rcm,cdns-pcie-ep";
+                reg = <0x600d8000 0x6000>,
+                      <0x40000000 0x20000000>;
+                reg-names = "reg", "mem";
+                cdns,max-outbound-regions = <16>;
+/*
+                max-functions = /bits/ 8 <8>;
+                phys = <&ep_phy0 &ep_phy1>;
+                phy-names = "pcie-lane0","pcie-lane1";
+*/
+                csc = <&ccpu_clsc>;
+            };
+
+            pcie@600d8000 {
+                compatible = "rcm,cdns-pcie-host";
+                device_type = "pci";
+                #address-cells = <3>;
+                #size-cells = <2>;
+                cdns,max-outbound-regions = <16>;
+                vendor-id = /bits/ 16 <0x17cd>;
+                device-id = /bits/ 16 <0x0200>;
+
+                reg = <0x600d8000 0x6000>,
+                      <0x50000000 0x10000000>,
+                      <0x40000000 0x20000000>;
+                reg-names = "reg", "cfg", "mem";
+
+                ranges = <0x02000000 0x0 0x00000000  0x40000000  0x0 0x10000000>;
+
+                #interrupt-cells = <0x1>;
+
+                interrupt-map = <0x0 0x0 0x0  0x1  &gic0  0x0 42 0x4
+                                 0x0 0x0 0x0  0x2  &gic0  0x0 43 0x4
+                                 0x0 0x0 0x0  0x3  &gic0  0x0 44 0x4
+                                 0x0 0x0 0x0  0x4  &gic0  0x0 45 0x4>;
+
+                interrupt-map-mask = <0x0 0x0 0x0  0x7>;
+/*
+                msi-parent = <&its_pci>;
+
+                phys = <&pcie_phy0>;
+                phy-names = "pcie-phy";
+*/
+                status = "disabled";
+            };
+
+
             thermal: thermal@0x600D1000 {
                 compatible = "rcm,thermal-v2";
                 reg = <0x600D1000 0x1000>;
                 interrupt-parent = <&gic0>;
                 interrupts = <0 3 4>;
                 #thermal-sensor-cells = <0>;
+            };
+
+            ccpu_ccmb0: ccmb@0x60000000 {
+                compatible = "syscon";
+                reg = <0x60000000 0x20000>;
+            };
+
+            ccpu_ccmb1: ccmb@0x60020000 {
+                compatible = "syscon";
+                reg = <0x60020000 0x20000>;
+            };
+
+            ccpu_ccmb2: ccmb@0x60040000 {
+                compatible = "syscon";
+                reg = <0x60040000 0x20000>;
+            };
+
+            ccpu_ccmb3: ccmb@0x60080000 {
+                compatible = "syscon";
+                reg = <0x60080000 0x20000>;
             };
 
             pc0_cmb0 {
@@ -213,31 +291,31 @@
                 reg = <0xe0000000 0x10000>;
             };
 
-            ccpu_crg0: crgnm@0x600c6000
+            ccpu_crg0: crg@0x600c6000
             {
                 compatible = "syscon";
                 reg = <0x600c6000 0x1000>;
             };
 
-            ccpu_crg1: crgnm@0x600c7000
+            ccpu_crg1: crg@0x600c7000
             {
                 compatible = "syscon";
                 reg = <0x600c7000 0x1000>;
             };
 
-            ccpu_crg2: crgnm@0x600c8000
+            ccpu_crg2: crg@0x600c8000
             {
                 compatible = "syscon";
                 reg = <0x600c8000 0x1000>;
             };
 
-            ccpu_crg3: crgnm@0x600c9000
+            ccpu_crg3: crg@0x600c9000
             {
                 compatible = "syscon";
                 reg = <0x600c9000 0x1000>;
             };
 
-            ccpu_clsc: clsc@0x600cb000
+            ccpu_clsc: csc@0x600cb000
             {
                 compatible = "syscon";
                 reg = <0x600cb000 0x1000>;
