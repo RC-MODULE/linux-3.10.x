@@ -26,15 +26,17 @@ static int rcm_cdns_pcie_ep_write_header(struct pci_epc *epc, u8 fn,
 	struct rcm_cdns_pcie_ep *ep = epc_get_drvdata(epc);
 	struct cdns_pcie *pcie = &ep->pcie;
 
-	cdns_pcie_ep_fn_writew(pcie, fn, PCI_DEVICE_ID, hdr->deviceid);
-	cdns_pcie_ep_fn_writeb(pcie, fn, PCI_REVISION_ID, hdr->revid);
-	cdns_pcie_ep_fn_writeb(pcie, fn, PCI_CLASS_PROG, hdr->progif_code);
-	cdns_pcie_ep_fn_writew(pcie, fn, PCI_CLASS_DEVICE,
-	                       hdr->subclass_code | hdr->baseclass_code << 8);
-	cdns_pcie_ep_fn_writeb(pcie, fn, PCI_CACHE_LINE_SIZE,
-	                       hdr->cache_line_size);
-	cdns_pcie_ep_fn_writew(pcie, fn, PCI_SUBSYSTEM_ID, hdr->subsys_id);
-	cdns_pcie_ep_fn_writeb(pcie, fn, PCI_INTERRUPT_PIN, hdr->interrupt_pin);
+	rcm_cdns_pcie_ep_fn_writew(pcie, fn, PCI_DEVICE_ID, hdr->deviceid);
+	rcm_cdns_pcie_ep_fn_writeb(pcie, fn, PCI_REVISION_ID, hdr->revid);
+	rcm_cdns_pcie_ep_fn_writeb(pcie, fn, PCI_CLASS_PROG, hdr->progif_code);
+	rcm_cdns_pcie_ep_fn_writew(pcie, fn, PCI_CLASS_DEVICE,
+	                           hdr->subclass_code | 
+	                           hdr->baseclass_code << 8);
+	rcm_cdns_pcie_ep_fn_writeb(pcie, fn, PCI_CACHE_LINE_SIZE,
+	                           hdr->cache_line_size);
+	rcm_cdns_pcie_ep_fn_writew(pcie, fn, PCI_SUBSYSTEM_ID, hdr->subsys_id);
+	rcm_cdns_pcie_ep_fn_writeb(pcie, fn, PCI_INTERRUPT_PIN,
+	                           hdr->interrupt_pin);
 
 	/*
 	 * Vendor ID can only be modified from function 0, all other functions
@@ -208,7 +210,7 @@ static int rcm_cdns_pcie_ep_set_msi(struct pci_epc *epc, u8 fn, u8 mmc)
 	flags = (flags & ~PCI_MSI_FLAGS_QMASK) | (mmc << 1);
 	flags |= PCI_MSI_FLAGS_64BIT;
 	flags &= ~PCI_MSI_FLAGS_MASKBIT;
-	cdns_pcie_ep_fn_writew(pcie, fn, cap + PCI_MSI_FLAGS, flags);
+	rcm_cdns_pcie_ep_fn_writew(pcie, fn, cap + PCI_MSI_FLAGS, flags);
 
 	return 0;
 }

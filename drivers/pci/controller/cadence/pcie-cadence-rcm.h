@@ -41,6 +41,57 @@ struct rcm_cdns_pcie_ep {
 	struct regmap    *csc;
 };
 
+/* Register access */
+static inline void rcm_cdns_pcie_writeb(struct cdns_pcie *pcie, u32 reg,
+                                        u8 value)
+{
+	u32 off = (reg & 0x3);
+	u32 val = readl(pcie->reg_base + reg - off);
+	u32 mask = ~(0xFF << (off * 8));
+
+	val = (val & mask) | ((u32)value << (off * 8));
+
+	writel(val, pcie->reg_base + reg - off);
+}
+
+static inline void rcm_cdns_pcie_writew(struct cdns_pcie *pcie, u32 reg,
+                                        u16 value)
+{
+	u32 off = (reg & 0x3);
+	u32 val = readl(pcie->reg_base + reg - off);
+	u32 mask = ~(0xFFFF << (off * 8));
+
+	val = (val & mask) | ((u32)value << (off * 8));
+
+	writel(val, pcie->reg_base + reg - off);
+}
+
+/* Root Port register access */
+static inline void rcm_cdns_pcie_rp_writeb(struct cdns_pcie *pcie,
+                                           u32 reg, u8 value)
+{
+	rcm_cdns_pcie_writeb(pcie, CDNS_PCIE_RP_BASE + reg, value);
+}
+
+static inline void rcm_cdns_pcie_rp_writew(struct cdns_pcie *pcie,
+                                           u32 reg, u16 value)
+{
+	rcm_cdns_pcie_writew(pcie, CDNS_PCIE_RP_BASE + reg, value);
+}
+
+/* Endpoint Function register access */
+static inline void rcm_cdns_pcie_ep_fn_writeb(struct cdns_pcie *pcie, u8 fn,
+                                              u32 reg, u8 value)
+{
+	rcm_cdns_pcie_writeb(pcie, CDNS_PCIE_EP_FUNC_BASE(fn) + reg, value);
+}
+
+static inline void rcm_cdns_pcie_ep_fn_writew(struct cdns_pcie *pcie, u8 fn,
+                                              u32 reg, u16 value)
+{
+	rcm_cdns_pcie_writew(pcie, CDNS_PCIE_EP_FUNC_BASE(fn) + reg, value);
+}
+
 #ifdef CONFIG_RCM_PCIE_CADENCE_EP
 int rcm_cdns_pcie_ep_setup(struct rcm_cdns_pcie_ep *ep);
 #else
