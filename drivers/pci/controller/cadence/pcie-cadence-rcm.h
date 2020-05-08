@@ -92,6 +92,15 @@ static inline void rcm_cdns_pcie_ep_fn_writew(struct cdns_pcie *pcie, u8 fn,
 	rcm_cdns_pcie_writew(pcie, CDNS_PCIE_EP_FUNC_BASE(fn) + reg, value);
 }
 
+#ifdef CONFIG_RCM_PCIE_CADENCE_HOST
+int rcm_cdns_pcie_host_setup(struct cdns_pcie_rc *rc);
+#else
+static inline int rcm_cdns_pcie_host_setup(struct cdns_pcie_rc *rc)
+{
+	return 0;
+}
+#endif
+
 #ifdef CONFIG_RCM_PCIE_CADENCE_EP
 int rcm_cdns_pcie_ep_setup(struct rcm_cdns_pcie_ep *ep);
 #else
