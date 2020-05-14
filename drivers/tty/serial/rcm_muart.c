@@ -11,6 +11,8 @@
 #include <linux/console.h>
 #include <linux/sysrq.h>
 #include <linux/platform_device.h>
+#include <linux/types.h>
+#include <linux/sizes.h>
 #include <linux/tty.h>
 #include <linux/tty_flip.h>
 #include <linux/serial_core.h>
@@ -19,35 +21,59 @@
 #include <linux/of_address.h>
 #include <linux/clk.h>
 
-
 #define MUART_ID 0x55415254
 #define MUART_VERSION 0x10190
 
 #define MUART_TX_FIFO_SIZE 0x3ff
+#define MUART_RX_FIFO_SIZE 0x3ff
+#define MUART_FIFO_MASK 0x7ff
 
 //MUART_CTRL
-#define MUART_MEN_i 0
-#define MUART_LBE_i 1
-#define MUART_APB_MD 2
-#define MUART_MDS_i 3
-#define MUART_RTSen_i 4
-#define MUART_CTSen_i 5
-#define MUART_RTS_POL 6
-#define MUART_PEN_i 7
-#define MUART_EPS_i 8
-#define MUART_SPS_i 9
-#define MUART_STP2_i 10
-#define MUART_WLEN_i 12
-#define MUART_DUM_i 15
+#define MUART_CTRL_MEN_i 0
+#define MUART_CTRL_LBE_i 1
+#define MUART_CTRL_APB_MD_i 2
+#define MUART_CTRL_MDS_i 3
+#define MUART_CTRL_RTSen_i 4
+#define MUART_CTRL_CTSen_i 5
+#define MUART_CTRL_RTS_POL 6
+#define MUART_CTRL_PEN_i 7
+#define MUART_CTRL_EPS_i 8
+#define MUART_CTRL_SPS_i 9
+#define MUART_CTRL_STP2_i 10
+#define MUART_CTRL_WLEN_i 12
+#define MUART_CTRL_DUM_i 15
 
 //MUART_BDIV
 #define MUART_BAUD_DIV_i 0
 #define MUART_N_DIV 24
 
-
 //MUART_FIFO_STATE
 #define MUART_RXFS_i 0
 #define MUART_TXFS_i 16
+
+//MUART_DREG
+#define MUART_DREG_FE (1 << 12) // frame error
+#define MUART_DREG_PE (1 << 13) // parity error
+#define MUART_DREG_BE (1 << 14) // break error
+#define MUART_DREG_OE (1 << 15) // overflow error
+#define MUART_DREG_DUMMY_RX (1 << 16) // dummy flag
+#define MUART_DREG_ERR                                                         \
+	(MUART_DREG_FE | MUART_DREG_PE | MUART_DREG_BE | MUART_DREG_OE)
+
+// MUART_FIFOWM shifts
+#define MUART_FIFOWM_RXFS_i 0
+#define MUART_FIFOWM_TXFS_i 16
+
+//MUART_STATUS /MASK
+#define MUART_IRQ_RX 0x01 // RX IRQ
+#define MUART_IRQ_TX 0x02 // TX IRQ
+#define MUART_IRQ_RTR 0x04 // RX timeout
+#define MUART_IRQ_FER 0x08 // Stop bit error
+#define MUART_IRQ_PER 0x08 // Parity bit error
+#define MUART_IRQ_BER 0x10 // Line hangup error
+#define MUART_IRQ_RER 0x20 // RX FIFO overflow
+#define MUART_IRQ_TER 0x40 // TX FIFO overflow
+#define MUART_IRQ_TTR 0x80 // TX CTS error
 
 /*
  *Information about a serial port
@@ -56,167 +82,209 @@
  */
 
 struct muart_regs {
-    unsigned long id;            // 0x000
-    unsigned long version;       // 0x004
-    unsigned long sw_rst;        // 0x008
-    unsigned long reserve_1;     // 0x00C
-    unsigned long gen_status;    // 0x010
-    unsigned long fifo_state;    // 0x014
-    unsigned long status;        // 0x018
-    unsigned long reserve_2;     // 0x01C
-    unsigned long dtrans;        // 0x020
-    unsigned long reserve_3;     // 0x024
-    unsigned long drec;          // 0x028
-    unsigned long reserve_4;     // 0x02C
-    unsigned long bdiv;          // 0x030
-    unsigned long reserve_5;     // 0x034
-    unsigned long reserve_6;     // 0x038
-    unsigned long reserve_7;     // 0x03C
-    unsigned long fifowm;        // 0x040
-    unsigned long ctrl;          // 0x044
-    unsigned long mask;          // 0x048
-    unsigned long rxtimeout;     // 0x04C
-    unsigned long reserve_8;     // 0x050
-    unsigned long txtimeout;     // 0x054
-    // dma control registers - not needed for a while
+	unsigned long id; // 0x000
+	unsigned long version; // 0x004
+	unsigned long sw_rst; // 0x008
+	unsigned long reserve_1; // 0x00C
+	unsigned long gen_status; // 0x010
+	unsigned long fifo_state; // 0x014
+	unsigned long status; // 0x018
+	unsigned long reserve_2; // 0x01C
+	unsigned long dtrans; // 0x020
+	unsigned long reserve_3; // 0x024
+	unsigned long drec; // 0x028
+	unsigned long reserve_4; // 0x02C
+	unsigned long bdiv; // 0x030
+	unsigned long reserve_5; // 0x034
+	unsigned long reserve_6; // 0x038
+	unsigned long reserve_7; // 0x03C
+	unsigned long fifowm; // 0x040
+	unsigned long ctrl; // 0x044
+	unsigned long mask; // 0x048
+	unsigned long rxtimeout; // 0x04C
+	unsigned long reserve_8; // 0x050
+	unsigned long txtimeout; // 0x054
+	// dma control registers - not needed for a while
 };
 
 struct muart_port {
 	struct uart_port port;
-	struct clk	*clk;
+	struct clk *clk;
 	unsigned long baud;
 };
 
-
-
-#define to_muart_port(uport)  container_of(uport, struct muart_port, port)
-static struct muart_port* muart_ports[CONFIG_SERIAL_MUART_NR_PORTS];
+#define to_muart_port(uport) container_of(uport, struct muart_port, port)
+static struct muart_port *muart_ports[CONFIG_SERIAL_MUART_NR_PORTS];
 
 #ifdef CONFIG_SERIAL_MUART_CONSOLE
 static struct console muart_console;
 #endif
 
-#define MUART_SERIAL_DEV_NAME	"ttyRCM"
+#define MUART_SERIAL_DEV_NAME "ttyRCM"
 
-#define DRIVER_NAME	"rcm-muart"
+#define DRIVER_NAME "rcm-muart"
 
 static struct uart_driver muart_driver = {
-	.owner		= THIS_MODULE,
-	.driver_name	= DRIVER_NAME,
-	.dev_name	= MUART_SERIAL_DEV_NAME,
-	.major		= 0,
-	.minor		= 0,
-	.nr		    = CONFIG_SERIAL_MUART_NR_PORTS,
+	.owner = THIS_MODULE,
+	.driver_name = DRIVER_NAME,
+	.dev_name = MUART_SERIAL_DEV_NAME,
+	.major = 0,
+	.minor = 0,
+	.nr = CONFIG_SERIAL_MUART_NR_PORTS,
 #ifdef CONFIG_SERIAL_MUART_CONSOLE
-	.cons		= &muart_console,
+	.cons = &muart_console,
 #endif
 };
 
-// int muart_getc(struct udevice *dev)
-// {
-// 	struct muart_priv *priv = dev_get_priv(dev);
-//     struct muart_regs* regs = priv->regs;
+static inline void muart_enable_interrupts(struct uart_port *port,
+					   unsigned int mask)
+{
+	struct muart_regs *regs = (struct muart_regs *)port->membase;
+	writel(readl(&regs->mask) | mask, &regs->mask);
+}
 
-//     int fifo_len = (ioread32(&regs->fifo_state) >> MUART_RXFS_i) & 0x7ff;
-//     if(fifo_len == 0)
-//         return -EAGAIN;
-    
-//     return ioread32(&regs->drec) & 0xff;    
-// }
-
-// int muart_putc(struct udevice *dev, const char ch)
-// {
-// 	struct muart_priv *priv = dev_get_priv(dev);
-//     struct muart_regs* regs = priv->regs;
-//     int fifo_len = (ioread32(&regs->fifo_state) >> MUART_TXFS_i) & 0x7ff;
-    
-//     if(fifo_len > 1023)
-//     {
-//         return -EAGAIN;
-//     }
-
-// 	iowrite32(ch, &regs->dtrans);
-
-//     return 0;
-// }
-
-// int muart_pending(struct udevice *dev, bool input)
-// {
-// 	struct muart_priv *priv = dev_get_priv(dev);
-//     struct muart_regs* regs = priv->regs;
-
-//     int fifo_len = (ioread32(&regs->fifo_state) >> MUART_RXFS_i) & 0x7ff;
-
-//     return fifo_len;
-// }
-
-// int muart_setbrg(struct udevice *dev, int baudrate)
-// {
-// 	struct muart_priv *priv = dev_get_priv(dev);
-//     struct muart_regs* regs = priv->regs;
-//     unsigned int N = 0;
-//     unsigned int divisor;
-
-//     if(priv->freq == 0)
-//         return -EINVAL;
-
-//     if(baudrate > (priv->freq/8))
-//     {
-//         printf("%s: error: unable to set requested baudrate %d - too fast\n", dev->name, baudrate);
-//         return -EINVAL;
-//     }
-
-//     // there are two possible predividers 8 and 10 - choose best one to reach exact BR
-//     if(((priv->freq / 8) % baudrate) != 0)
-//         if(((priv->freq / 10) % baudrate) == 0)
-//             N = 1;
-
-//     divisor = priv->freq / ((N?10:8) * baudrate);
-
-//     if(divisor > 0xFFFFFF)
-//     {
-//         printf("%s: error: unable to set requested baudrate %d - too slow\n", dev->name, baudrate);
-//         return -EINVAL;
-//     }
-
-//     // disable MUART
-//     iowrite32(ioread32(&regs->ctrl) & ~(1 << MUART_MEN_i), &regs->ctrl);
-
-//     // set new baud rate
-//     iowrite32((N<<MUART_N_DIV) | (divisor << MUART_BAUD_DIV_i), &regs->bdiv);
-
-//     // enable MUART
-//     iowrite32(ioread32(&regs->ctrl) | (1 << MUART_MEN_i), &regs->ctrl);
-
-//     return 0;
-// };
-
+static inline void muart_disable_interrupts(struct uart_port *port,
+					    unsigned int mask)
+{
+	struct muart_regs *regs = (struct muart_regs *)port->membase;
+	writel(readl(&regs->mask) & ~mask, &regs->mask);
+}
 
 static void muart_stop_rx(struct uart_port *port)
 {
-    // disable rx irq
+	// disable rx irq
 	// todo
 }
 
 static void muart_stop_tx(struct uart_port *port)
 {
-    // wait for finish transfer
-    struct muart_regs* regs = (struct muart_regs*) port->membase;
+	// wait for finish transfer
+	struct muart_regs *regs = (struct muart_regs *)port->membase;
 
-    while (((readl(&regs->fifo_state) >> MUART_RXFS_i) & 0x7ff) != 0)
-        cpu_relax();
+	while (((readl(&regs->fifo_state) >> MUART_TXFS_i) & MUART_FIFO_MASK) !=
+	       0)
+		cpu_relax();
 
-    // tx irq dusable to do
+	muart_disable_interrupts(port, MUART_IRQ_TX);
 }
-
 
 /*
  * Return TIOCSER_TEMT when transmitter is not busy.
  */
 static unsigned int muart_tx_empty(struct uart_port *port)
 {
+	struct muart_regs *regs = (struct muart_regs *)port->membase;
 
-    return 0;
+	if (((readl(&regs->fifo_state) >> MUART_TXFS_i) & MUART_FIFO_MASK) == 0)
+		return TIOCSER_TEMT;
+
+	return 0;
+}
+
+static void muart_rx_chars(struct uart_port *port) __releases(&port->lock)
+	__acquires(&port->lock)
+{
+	unsigned int ch, flag;
+	struct muart_regs *regs = (struct muart_regs *)port->membase;
+
+	// put everything that we have in fifo to tty
+	while ((readl(&regs->fifo_state) >> MUART_RXFS_i) & MUART_FIFO_MASK) {
+		ch = readl(&regs->drec) | MUART_DREG_DUMMY_RX;
+		port->icount.rx++;
+		flag = TTY_NORMAL;
+
+		if (unlikely(ch & MUART_DREG_ERR)) {
+			if (ch & MUART_DREG_BE) {
+				ch &= ~(MUART_DREG_FE | MUART_DREG_PE);
+				port->icount.brk++;
+				if (uart_handle_break(port))
+					continue;
+			} else if (ch & MUART_DREG_PE)
+				port->icount.parity++;
+			else if (ch & MUART_DREG_FE)
+				port->icount.frame++;
+			if (ch & MUART_DREG_OE)
+				port->icount.overrun++;
+
+			ch &= port->read_status_mask;
+
+			if (ch & MUART_DREG_BE)
+				flag = TTY_BREAK;
+			else if (ch & MUART_DREG_PE)
+				flag = TTY_PARITY;
+			else if (ch & MUART_DREG_FE)
+				flag = TTY_FRAME;
+		}
+
+		if (uart_handle_sysrq_char(port, ch & 255))
+			continue;
+
+		uart_insert_char(port, ch, MUART_DREG_OE, ch, flag);
+	}
+
+	spin_unlock(&port->lock);
+	tty_flip_buffer_push(&port->state->port);
+
+	// todo DMA processing
+
+	spin_lock(&port->lock);
+}
+
+/* internal function - shuold be used to send char to fifo */
+static bool muart_tx_char(struct uart_port *port, unsigned char ch,
+			  bool from_irq)
+{
+	struct muart_regs *regs = (struct muart_regs *)port->membase;
+
+	if (unlikely(!from_irq)) {
+		// check fifo state
+		int symbols_in_fifo =
+			(readl(&regs->fifo_state) >> MUART_TXFS_i) &
+			MUART_FIFO_MASK;
+		if (symbols_in_fifo > MUART_TX_FIFO_SIZE)
+			return false;
+	}
+
+	writel(ch, &regs->dtrans);
+	port->icount.tx++;
+
+	return true;
+}
+
+/* internal driver procedure */
+/* Returns true if tx interrupts have to be (kept) enabled  */
+static bool muart_tx_chars(struct uart_port *port, bool from_irq)
+{
+	struct circ_buf *xmit = &port->state->xmit;
+
+	if (unlikely(port->x_char)) {
+		if (!muart_tx_char(port, port->x_char, from_irq))
+			return true;
+		port->x_char = 0;
+	}
+
+	if (uart_circ_empty(xmit) || uart_tx_stopped(port)) {
+		muart_stop_tx(port);
+		return false;
+	}
+
+	// todo dma
+
+	do {
+		if (!muart_tx_char(port, xmit->buf[xmit->tail], from_irq))
+			break;
+
+		xmit->tail = (xmit->tail + 1) & (UART_XMIT_SIZE - 1);
+	} while (!uart_circ_empty(xmit));
+
+	if (uart_circ_chars_pending(xmit) < WAKEUP_CHARS)
+		uart_write_wakeup(port);
+
+	if (uart_circ_empty(xmit)) {
+		muart_stop_tx(port);
+		return false;
+	}
+	return true;
 }
 
 /*
@@ -225,41 +293,31 @@ static unsigned int muart_tx_empty(struct uart_port *port)
  */
 static void muart_start_tx(struct uart_port *port)
 {
-
+	if (muart_tx_chars(port, false))
+		muart_enable_interrupts(port, MUART_IRQ_TX);
 }
-
-
-/*
- * A note on the Interrupt handling state machine of this driver
- *
- * kernel printk writes funnel thru the console driver framework and in order
- * to keep things simple as well as efficient, it writes to UART in polled
- * mode, in one shot, and exits.
- *
- * OTOH, Userland output (via tty layer), uses interrupt based writes as there
- * can be undeterministic delay between char writes.
- *
- * Thus Rx-interrupts are always enabled, while tx-interrupts are by default
- * disabled.
- *
- * When tty has some data to send out, serial core calls driver's start_tx
- * which
- *   -checks-if-tty-buffer-has-char-to-send
- *   -writes-data-to-uart
- *   -enable-tx-intr
- *
- * Once data bits are pushed out, controller raises the Tx-room-avail-Interrupt.
- * The first thing Tx ISR does is disable further Tx interrupts (as this could
- * be the last char to send, before settling down into the quiet polled mode).
- * It then calls the exact routine used by tty layer write to send out any
- * more char in tty buffer. In case of sending, it re-enables Tx-intr. In case
- * of no data, it remains disabled.
- * This is how the transmit state machine is dynamically switched on/off
- */
 
 static irqreturn_t muart_isr(int irq, void *dev_id)
 {
+	struct uart_port *port = dev_id;
+	struct muart_regs *regs = (struct muart_regs *)port->membase;
+	unsigned int status = readl(&regs->status);
 
+	if (status & MUART_IRQ_RX) {
+		spin_lock(&port->lock);
+		muart_rx_chars(port);
+		spin_unlock(&port->lock);
+	}
+	if (status & MUART_IRQ_TX) {
+		muart_disable_interrupts(port, MUART_IRQ_TX);
+		spin_lock(&port->lock);
+
+		if (!uart_tx_stopped(port))
+			if (muart_tx_chars(port, true))
+				muart_enable_interrupts(port, MUART_IRQ_TX);
+
+		spin_unlock(&port->lock);
+	}
 	return IRQ_HANDLED;
 }
 
@@ -277,7 +335,16 @@ static unsigned int muart_get_mctrl(struct uart_port *port)
 
 static void muart_set_mctrl(struct uart_port *port, unsigned int mctrl)
 {
-	/* MCR not present */
+	struct muart_regs *regs = (struct muart_regs *)port->membase;
+
+	/* able to setup only LOOPBACK */
+	if (mctrl & TIOCM_LOOP) {
+		writel(readl(&regs->ctrl) | (1 << MUART_CTRL_LBE_i),
+		       &regs->ctrl);
+	} else {
+		writel(readl(&regs->ctrl) & ~(1 << MUART_CTRL_LBE_i),
+		       &regs->ctrl);
+	}
 }
 
 static void muart_break_ctl(struct uart_port *port, int break_state)
@@ -287,31 +354,160 @@ static void muart_break_ctl(struct uart_port *port, int break_state)
 
 static int muart_startup(struct uart_port *port)
 {
-	/* Before we hook up the ISR, Disable all UART Interrupts */
-	// ToDo
+	struct muart_port *uart = to_muart_port(port);
+	struct muart_regs *regs = (struct muart_regs *)port->membase;
+	int retval;
 
-	if (request_irq(port->irq, muart_isr, 0, "muart uart rx-tx", port)) {
+	retval = clk_prepare_enable(uart->clk);
+	if (retval)
+		return retval;
+
+	uart->port.uartclk = clk_get_rate(uart->clk);
+
+	// disable all interrupts
+	writel(0, &regs->mask);
+	// clear pending interrupts
+	readl(&regs->status);
+	readl(&regs->gen_status);
+
+	retval = request_irq(port->irq, muart_isr, 0, "muart uart rx-tx", port);
+	if (retval) {
 		dev_warn(port->dev, "Unable to attach MUART UART intr\n");
-		return -EBUSY;
+		goto clk_dis;
 	}
 
-	// enable RX IRQ
-                     /* Only Rx IRQ enabled to begin with */
+	// interrupt levels
+	writel(((MUART_TX_FIFO_SIZE / 8) << MUART_FIFOWM_TXFS_i) |
+		       (0 << MUART_FIFOWM_RXFS_i),
+	       &regs->fifowm); // half of tx fifo, 1 byte rx
 
-	return 0;
+	// enable RX IRQ
+	muart_enable_interrupts(port, MUART_IRQ_RX);
+
+clk_dis:
+	clk_disable_unprepare(uart->clk);
+
+	return retval;
 }
 
 static void muart_shutdown(struct uart_port *port)
 {
+	struct muart_regs *regs = (struct muart_regs *)port->membase;
+
+	// disable all interrupts
+	writel(0, &regs->mask);
+	// clear pending interrupts
+	readl(&regs->status);
+	readl(&regs->gen_status);
+
 	free_irq(port->irq, port);
 }
 
-static void
-muart_set_termios(struct uart_port *port, struct ktermios *new,
-		       struct ktermios *old)
+static void muart_setup_status_masks(struct uart_port *port,
+				     struct ktermios *termios)
 {
-	struct muart_port *uart = to_muart_port(port);
+	port->read_status_mask = MUART_DREG_OE | 255;
+	if (termios->c_iflag & INPCK)
+		port->read_status_mask |= MUART_DREG_FE | MUART_DREG_PE;
+	if (termios->c_iflag & (IGNBRK | BRKINT | PARMRK))
+		port->read_status_mask |= MUART_DREG_BE;
 
+	/*
+	 * Characters to ignore
+	 */
+	port->ignore_status_mask = 0;
+	if (termios->c_iflag & IGNPAR)
+		port->ignore_status_mask |= MUART_DREG_FE | MUART_DREG_PE;
+	if (termios->c_iflag & IGNBRK) {
+		port->ignore_status_mask |= MUART_DREG_BE;
+		/*
+		 * If we're ignoring parity and break indicators,
+		 * ignore overruns too (for real raw support).
+		 */
+		if (termios->c_iflag & IGNPAR)
+			port->ignore_status_mask |= MUART_DREG_OE;
+	}
+
+	/*
+	 * Ignore all characters if CREAD is not set.
+	 */
+	if ((termios->c_cflag & CREAD) == 0)
+		port->ignore_status_mask |= MUART_DREG_DUMMY_RX;
+}
+
+static void muart_set_termios(struct uart_port *port, struct ktermios *termios,
+			      struct ktermios *old)
+{
+	struct muart_regs *regs = (struct muart_regs *)port->membase;
+	unsigned int baud;
+	unsigned int N = 0;
+	unsigned int divisor;
+	unsigned int ctrl_value;
+	unsigned long flags;
+
+	baud = uart_get_baud_rate(port, termios, old, 0, port->uartclk / 8);
+
+	// there are two possible predividers 8 and 10 - choose best one to reach exact BR
+	if (((port->uartclk / 8) % baud) != 0)
+		if (((port->uartclk / 10) % baud) == 0)
+			N = 1;
+
+	divisor = port->uartclk / ((N ? 10 : 8) * baud);
+
+	// todo DMA
+	ctrl_value = (1 << MUART_CTRL_MEN_i) | (1 << MUART_CTRL_APB_MD_i);
+
+	switch (termios->c_cflag & CSIZE) {
+	case CS5:
+		ctrl_value |= 0 << MUART_CTRL_WLEN_i;
+		break;
+	case CS6:
+		ctrl_value |= 1 << MUART_CTRL_WLEN_i;
+		break;
+	case CS7:
+		ctrl_value |= 2 << MUART_CTRL_WLEN_i;
+		break;
+	default: // CS8
+		ctrl_value |= 3 << MUART_CTRL_WLEN_i;
+		break;
+	}
+	if (termios->c_cflag & CSTOPB)
+		ctrl_value |= 2 << MUART_CTRL_STP2_i;
+	else
+		ctrl_value |= 0 << MUART_CTRL_STP2_i;
+
+	if (termios->c_cflag & PARENB) {
+		ctrl_value |= 1 << MUART_CTRL_PEN_i;
+		if ((termios->c_cflag & PARODD))
+			ctrl_value |= 1 << MUART_CTRL_EPS_i;
+
+		if (termios->c_cflag & CMSPAR)
+			ctrl_value |= 1 << MUART_CTRL_SPS_i;
+	}
+
+	if (termios->c_cflag & CRTSCTS)
+		ctrl_value |=
+			(1 << MUART_CTRL_CTSen_i) | (1 << MUART_CTRL_RTSen_i);
+
+	spin_lock_irqsave(&port->lock, flags);
+
+	/*
+	 * Update the per-port timeout.
+	 */
+	uart_update_timeout(port, termios->c_cflag, baud);
+
+	muart_setup_status_masks(port, termios);
+
+	// disable MUART
+	writel(0, &regs->ctrl);
+
+	// set new baud rate
+	writel((N << MUART_N_DIV) | (divisor << MUART_BAUD_DIV_i), &regs->bdiv);
+
+	// enable MUART
+	writel(ctrl_value, &regs->ctrl);
+
+	spin_unlock_irqrestore(&port->lock, flags);
 }
 
 static const char *muart_type(struct uart_port *port)
@@ -331,12 +527,12 @@ static int muart_request_port(struct uart_port *port)
 /*
  * Verify the new serial_struct (for TIOCSSERIAL).
  */
-static int
-muart_verify_port(struct uart_port *port, struct serial_struct *ser)
+static int muart_verify_port(struct uart_port *port, struct serial_struct *ser)
 {
 	if (port->type != PORT_UNKNOWN && ser->type != PORT_RCM)
 		return -EINVAL;
-
+	if (ser->baud_base < 50 || ser->baud_base > 12500000)
+		return -EINVAL;
 	return 0;
 }
 
@@ -345,62 +541,64 @@ muart_verify_port(struct uart_port *port, struct serial_struct *ser)
  */
 static void muart_config_port(struct uart_port *port, int flags)
 {
-	if (flags & UART_CONFIG_TYPE)
+	if (flags & UART_CONFIG_TYPE) {
 		port->type = PORT_RCM;
+		muart_request_port(port);
+	}
 }
 
 #ifdef CONFIG_CONSOLE_POLL
 
 static void muart_poll_putchar(struct uart_port *port, unsigned char chr)
 {
-    struct muart_regs* regs = (struct muart_regs*) port->membase;
-     
-    while (((readl(&regs->fifo_state) >> MUART_TXFS_i) & 0x7ff) > 1023)
-        cpu_relax();
-    
- 	writel(chr, &regs->dtrans);
+	struct muart_regs *regs = (struct muart_regs *)port->membase;
+
+	while (((readl(&regs->fifo_state) >> MUART_TXFS_i) & MUART_FIFO_MASK) >
+	       1023)
+		cpu_relax();
+
+	writel(chr, &regs->dtrans);
 }
 
 static int muart_poll_getchar(struct uart_port *port)
 {
-     struct muart_regs* regs = (struct muart_regs*) port->membase;
+	struct muart_regs *regs = (struct muart_regs *)port->membase;
 
-     while ( readl(&regs->fifo_state) >> MUART_RXFS_i) & 0x7ff == 0)
+	while (readl(&regs->fifo_state) >> MUART_RXFS_i) & MUART_FIFO_MASK == 0)
         cpu_relax();
-    
-     return readl(&regs->drec) & 0xff;    
+
+	return readl(&regs->drec) & 0xff;
 }
 
 #endif /* CONFIG_CONSOLE_POLL */
 
-
 static const struct uart_ops muart_serial_pops = {
-	.tx_empty	= muart_tx_empty,
-	.set_mctrl	= muart_set_mctrl,
-	.get_mctrl	= muart_get_mctrl,
-	.stop_tx	= muart_stop_tx,
-	.start_tx	= muart_start_tx,
-	.stop_rx	= muart_stop_rx,
-	.break_ctl	= muart_break_ctl,
-	.startup	= muart_startup,
-	.shutdown	= muart_shutdown,
-	.set_termios	= muart_set_termios,
-	.type		= muart_type,
-	.release_port	= muart_release_port,
-	.request_port	= muart_request_port,
-	.config_port	= muart_config_port,
-	.verify_port	= muart_verify_port,
+	.tx_empty = muart_tx_empty,
+	.set_mctrl = muart_set_mctrl,
+	.get_mctrl = muart_get_mctrl,
+	.stop_tx = muart_stop_tx,
+	.start_tx = muart_start_tx,
+	.stop_rx = muart_stop_rx,
+	.break_ctl = muart_break_ctl,
+	.startup = muart_startup,
+	.shutdown = muart_shutdown,
+	.set_termios = muart_set_termios,
+	.type = muart_type,
+	.release_port = muart_release_port,
+	.request_port = muart_request_port,
+	.config_port = muart_config_port,
+	.verify_port = muart_verify_port,
 #ifdef CONFIG_CONSOLE_POLL
 	.poll_put_char = muart_poll_putchar,
 	.poll_get_char = muart_poll_getchar,
 #endif
 };
 
-
 #ifdef CONFIG_SERIAL_MUART_CONSOLE
 static int muart_serial_console_setup(struct console *co, char *options)
 {
 	struct uart_port *port;
+	int ret;
 	int baud = 6250000;
 	int bits = 8;
 	int parity = 'n';
@@ -422,6 +620,12 @@ static int muart_serial_console_setup(struct console *co, char *options)
 	if (!port->membase)
 		return -ENODEV;
 
+	ret = clk_prepare(muart_ports[co->index]->clk);
+	if (ret)
+		return ret;
+
+	port->uartclk = clk_get_rate(muart_ports[co->index]->clk);
+
 	if (options)
 		uart_parse_options(options, &baud, &parity, &bits, &flow);
 
@@ -434,19 +638,20 @@ static int muart_serial_console_setup(struct console *co, char *options)
 
 static void muart_serial_console_putchar(struct uart_port *port, int ch)
 {
-    struct muart_regs* regs = (struct muart_regs*) port->membase;
-     
-    while (((readl(&regs->fifo_state) >> MUART_TXFS_i) & 0x7ff) > 1023)
-        cpu_relax();
-    
- 	writel(ch, &regs->dtrans);
+	struct muart_regs *regs = (struct muart_regs *)port->membase;
+
+	while (((readl(&regs->fifo_state) >> MUART_TXFS_i) & MUART_FIFO_MASK) >
+	       1023)
+		cpu_relax();
+
+	writel(ch, &regs->dtrans);
 }
 
 /*
  * Interrupts are disabled on entering
  */
 static void muart_serial_console_write(struct console *co, const char *s,
-				     unsigned int count)
+				       unsigned int count)
 {
 	struct uart_port *port = &muart_ports[co->index]->port;
 	unsigned long flags;
@@ -455,7 +660,6 @@ static void muart_serial_console_write(struct console *co, const char *s,
 	uart_console_write(port, s, count, muart_serial_console_putchar);
 	spin_unlock_irqrestore(&port->lock, flags);
 }
-
 
 /**
  *	muart_console_match - non-standard console matching
@@ -477,7 +681,7 @@ static int __init muart_console_match(struct console *co, char *name, int idx,
 	resource_size_t addr;
 	int i;
 
-    printk("muart_console_match\n");
+	printk("muart_console_match\n");
 
 	if (strcmp(name, "muart") != 0)
 		return -ENODEV;
@@ -507,30 +711,28 @@ static int __init muart_console_match(struct console *co, char *name, int idx,
 	return -ENODEV;
 }
 
-
-static struct console muart_console = {
-	.name	= MUART_SERIAL_DEV_NAME,
-	.write	= muart_serial_console_write,
-	.device	= uart_console_device,
-	.setup	= muart_serial_console_setup,
-	.match	= muart_console_match,
-	.flags	= CON_PRINTBUFFER,
-	.index	= -1,
-	.data	= &muart_driver
-};
+static struct console muart_console = { .name = MUART_SERIAL_DEV_NAME,
+					.write = muart_serial_console_write,
+					.device = uart_console_device,
+					.setup = muart_serial_console_setup,
+					.match = muart_console_match,
+					.flags = CON_PRINTBUFFER,
+					.index = -1,
+					.data = &muart_driver };
 
 static void muart_putc(struct uart_port *port, int c)
 {
-    struct muart_regs* regs = (struct muart_regs*) port->membase;
+	struct muart_regs *regs = (struct muart_regs *)port->membase;
 
-	while ((readl(&regs->fifo_state) & 0x7ff0000) >= 0x3ff0000);
-		cpu_relax();
+	while ((readl(&regs->fifo_state) & 0x7ff0000) >= 0x3ff0000)
+		;
+	cpu_relax();
 
 	writel(c, &regs->dtrans);
 }
 
 static void muart_early_write(struct console *con, const char *s,
-				   unsigned int n)
+			      unsigned int n)
 {
 	struct earlycon_device *dev = con->data;
 
@@ -538,10 +740,8 @@ static void muart_early_write(struct console *con, const char *s,
 }
 
 static int __init muart_early_console_setup(struct earlycon_device *dev,
-					  const char *opt)
+					    const char *opt)
 {
-    printk("muart_early_console_setup\n");
-
 	if (!dev->port.membase)
 		return -ENODEV;
 
@@ -551,24 +751,7 @@ static int __init muart_early_console_setup(struct earlycon_device *dev,
 }
 OF_EARLYCON_DECLARE(muart_uart, "rcm,muart", muart_early_console_setup);
 
-#endif	/* CONFIG_SERIAL_MUART_CONSOLE */
-
-
-// default values
-// id:             0x55415254
-// version:        0x00010190
-// sw_rst:         0x00000000
-// gen_status:     0x00000000
-// fifo_state:     0x004e0000
-// status:         0x00000000
-// dtrans:         0x00000078
-// drec:           0x00000000
-// bdiv:           0x00000008
-// fifowm:         0x02000200
-// ctrl:           0x00003005
-// mask:           0x00000000
-// rxtimeout:      0x00000000
-// txtimeout:      0x00000000
+#endif /* CONFIG_SERIAL_MUART_CONSOLE */
 
 int muart_probe(struct platform_device *pdev)
 {
@@ -576,63 +759,61 @@ int muart_probe(struct platform_device *pdev)
 	struct muart_port *uart;
 	struct uart_port *port;
 	struct muart_regs *regs;
-	int dev_id;
-	unsigned int val, i;
+	int dev_id = -1;
+	unsigned int i;
 
-    printk("muart_probe %s\n", pdev->name);
+	printk("muart_probe %s\n", pdev->name);
 
 	/* no device tree device */
 	if (!np)
 		return -ENODEV;
 
-	for (i = 0; i < ARRAY_SIZE(muart_ports); i++)
-    {
-		if (muart_ports[i] == NULL)
-        {
+	for (i = 0; i < ARRAY_SIZE(muart_ports); i++) {
+		if (muart_ports[i] == NULL) {
 			dev_id = i;
-            break;
-        }
-    }
+			break;
+		}
+	}
 	if (dev_id >= ARRAY_SIZE(muart_ports)) {
 		dev_err(&pdev->dev, "serial%d out of range\n", dev_id);
 		return -EINVAL;
 	}
 
-    uart = devm_kzalloc(&pdev->dev, sizeof(struct muart_port),
-            GFP_KERNEL);
+	uart = devm_kzalloc(&pdev->dev, sizeof(struct muart_port), GFP_KERNEL);
 
 	port = &uart->port;
 
 	uart->clk = devm_clk_get(&pdev->dev, NULL);
 
-	if (IS_ERR(uart->clk))
-    {
-        dev_err(&pdev->dev, "%s: Unable to get parent clocks\n", pdev->name); 
+	if (IS_ERR(uart->clk)) {
+		dev_err(&pdev->dev, "%s: Unable to get parent clocks\n",
+			pdev->name);
 		return PTR_ERR(uart->clk);
-    }
+	}
 
 	port->membase = of_iomap(np, 0);
 	if (!port->membase)
 		/* No point of dev_err since UART itself is hosed here */
 		return -ENXIO;
 
-    regs = (struct muart_regs*) port->membase;
-    if(readl(&regs->id) != MUART_ID || readl(&regs->version) != MUART_VERSION)
-    {
-        dev_err(&pdev->dev, "%s: error: Detected illegal version of uart core: 0x%08x 0x%08x\n", pdev->name,
-            readl(&regs->id), 
-            readl(&regs->version));
-        return -EINVAL;
-    }
+	regs = (struct muart_regs *)port->membase;
+	if (readl(&regs->id) != MUART_ID ||
+	    readl(&regs->version) != MUART_VERSION) {
+		dev_err(&pdev->dev,
+			"%s: error: Detected illegal version of uart core: 0x%08x 0x%08x\n",
+			pdev->name, readl(&regs->id), readl(&regs->version));
+		return -EINVAL;
+	}
 
-    // switch on muart with APB mode (no dma), 8n1 
-    writel(
-        (1 << MUART_MEN_i)  |   // enable
-        (1 << MUART_APB_MD) |   // APB mode
-        (0 << MUART_EPS_i)  |   // n prity
-        (0 << MUART_STP2_i) |   // 1 stop bit
-        (3 << MUART_WLEN_i),    // 8 data bit 
-        &regs->ctrl);
+	dev_set_drvdata(&pdev->dev, uart);
+
+	// switch on muart with APB mode (no dma), 8n1
+	writel((1 << MUART_CTRL_MEN_i) | // enable
+		       (1 << MUART_CTRL_APB_MD_i) | // APB mode
+		       (0 << MUART_CTRL_EPS_i) | // n prity
+		       (0 << MUART_CTRL_STP2_i) | // 1 stop bit
+		       (3 << MUART_CTRL_WLEN_i), // 8 data bit
+	       &regs->ctrl);
 
 	port->irq = irq_of_parse_and_map(np, 0);
 
@@ -650,36 +831,20 @@ int muart_probe(struct platform_device *pdev)
 	 */
 	port->ignore_status_mask = 0;
 
-    muart_ports[dev_id] = uart;
+	muart_ports[dev_id] = uart;
 
 	return uart_add_one_port(&muart_driver, &muart_ports[dev_id]->port);
 }
 
 static int muart_remove(struct platform_device *pdev)
 {
-	struct muart_port *uart;// = (dev);
-    int i;
-	int busy = 0;
-
-	uart_remove_one_port(&muart_driver, &uart->port);
-
-	for (i = 0; i < ARRAY_SIZE(muart_ports); i++) {
-		if (muart_ports[i] == uart)
-			muart_ports[i] = NULL;
-		else if (muart_ports[i])
-			busy = 1;
-	}
-
-	if (busy == 0)
-		uart_unregister_driver(&muart_driver);
-
+	// not needed for a while
 	return 0;
 }
 
-static const struct of_device_id muart_dt_ids[] = {
-	{ .compatible = "rcm,muart" },
-	{ /* Sentinel */ }
-};
+static const struct of_device_id muart_dt_ids[] = { { .compatible =
+							      "rcm,muart" },
+						    { /* Sentinel */ } };
 MODULE_DEVICE_TABLE(of, muart_dt_ids);
 
 static struct platform_driver muart_platform_driver = {
@@ -713,7 +878,6 @@ static void __exit muart_exit(void)
 	platform_driver_unregister(&muart_platform_driver);
 	uart_unregister_driver(&muart_driver);
 }
-
 
 /*
  * While this can be a module, if builtin it's most likely the console

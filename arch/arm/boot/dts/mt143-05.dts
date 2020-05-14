@@ -18,7 +18,7 @@
     chosen {
         // bootargs = "console=ttyRCM0,6250000 earlyprintk debug  memblock=debug";
         //bootargs = "console=ttyRCM0,6250000 earlyprintk debug rootwait";
-        bootargs = "console=ttyRCM0,6250000 earlyprintk debug rootwait";
+        bootargs = "console=ttyRCM0,6250000 root=/dev/mmcblk0p1 rootwait";
         stdout-path = &uart0;
     };
 
@@ -169,7 +169,7 @@
 
 	    uart0: uart0@01044000 {
 		    compatible = "rcm,muart";			
-			clocks = <&clock_axi_fast>;
+			clocks = <&clock_axi_fast>, <&clock_axi_slow>;
 		    reg = <0x01044000 0x1000>;
             interrupt-parent = <&gic0>;
             interrupts = <0 44 4>;
@@ -177,7 +177,7 @@
 
 	    uart1: uart1@01045000 {
 		    compatible = "rcm,muart";			
-			clocks = <&clock_axi_fast>;
+			clocks = <&clock_axi_fast>, <&clock_axi_slow>;
 		    reg = <0x01045000 0x1000>;
             interrupt-parent = <&gic0>;
             interrupts = <0 45 4>;
@@ -188,7 +188,6 @@
             reg = <0x01048000 0x1000>;
             interrupts = <0 10 4>, <0 11 4>;
             interrupt-parent = <&gic0>;
-            /* arm,sp804-has-irq = <2>; */
             clocks = <&clock_axi_slow>;
             clock-names = "apb_pclk";
         };
@@ -198,7 +197,6 @@
             reg = <0x01049000 0x1000>;
             interrupts = <0 12 4>, <0 13 4>;
             interrupt-parent = <&gic0>;
-            arm,sp804-has-irq = <2>;
             clocks = <&clock_axi_slow>;
             clock-names = "apb_pclk";
             status = "disabled";
@@ -209,7 +207,6 @@
             reg = <0x0104a000 0x1000>;
             interrupts = <0 14 4>, <0 15 4>;
             interrupt-parent = <&gic0>;
-            arm,sp804-has-irq = <2>;
             clocks = <&clock_axi_slow>;
             clock-names = "apb_pclk";
             status = "disabled";
@@ -220,7 +217,6 @@
             reg = <0x0104b000 0x1000>;
             interrupts = <0 16 4>, <0 17 4>;
             interrupt-parent = <&gic0>;
-            arm,sp804-has-irq = <2>;
             clocks = <&clock_axi_slow>;
             clock-names = "apb_pclk";
             status = "disabled";

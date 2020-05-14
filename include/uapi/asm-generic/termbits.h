@@ -110,7 +110,7 @@ struct ktermios {
 #define   FF1	0100000
 
 /* c_cflag bit meaning */
-#define CBAUD	0010017
+#define CBAUD	0010037
 #define  B0	0000000		/* hang up */
 #define  B50	0000001
 #define  B75	0000002
@@ -157,6 +157,7 @@ struct ktermios {
 #define  B3000000 0010015
 #define  B3500000 0010016
 #define  B4000000 0010017
+#define  B6250000 0010020
 #define CIBAUD	  002003600000	/* input baud rate */
 #define CMSPAR	  010000000000	/* mark or space (stick) parity */
 #define CRTSCTS	  020000000000	/* flow control */

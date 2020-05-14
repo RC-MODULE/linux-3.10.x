@@ -61,6 +61,8 @@
 #include <linux/gpio.h>
 #include <linux/mmc/host.h>
 #include <linux/clk.h>
+#include <linux/of_address.h>
+#include <linux/of_device.h>
 
 #include "rcm-sdio.h"
 
@@ -258,7 +260,7 @@ static inline void rmsdio_dma_xfer(struct rmsdio_host *host,
 	BUG_ON(((u64) addr >> 32) != 0);  // !!! We use only 32 bits here	
 	
 	dev_dbg(host->dev, "dma %d bytes: 0x%Lx %s buf%d\n", 
-	                   sz, addr, (dir == DMA_FROM_DEVICE) ? "<=" : "=>", buf );  
+	                   sz, (long long) addr, (dir == DMA_FROM_DEVICE) ? "<=" : "=>", buf );  
 	/* channel 0 can only do 'to-device', whilst ch1 can only 'from-device' */
 	BUG_ON(buf>1);
 	channel = (dir == DMA_TO_DEVICE) ? RMSDIO_DMA_CH0 : RMSDIO_DMA_CH1;
@@ -1101,13 +1103,15 @@ static int rmsdio_probe(struct platform_device *pdev)
 	host->sdio_irq_enabled = 0;
 	spin_lock_init(&host->lock);	
 	host->base = ioremap(r->start, SZ_4K);
-	printk(KERN_INFO "rmsdio start is 0x%Lx, base is 0x%x\n", r->start, (uint) host->base);
+	printk(KERN_INFO "rmsdio start is 0x%Lx, base is 0x%x\n", (long long) r->start, (uint) host->base);
 	if (!host->base) {
 		ret = -ENOMEM;
 		goto out;
 	}
 
+#ifdef CONFIG_1888TX018
 	pdev->dev.archdata.dma_offset = - (pdev->dev.dma_pfn_offset << PAGE_SHIFT); /* before v5.5 it was: set_dma_offset(&pdev->dev, - (pdev->dev.dma_pfn_offset << PAGE_SHIFT)); */
+#endif
 
 	STEP(4);
 
