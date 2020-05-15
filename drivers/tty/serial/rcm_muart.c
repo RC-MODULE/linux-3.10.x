@@ -455,7 +455,10 @@ static void muart_set_termios(struct uart_port *port, struct ktermios *termios,
 	divisor = port->uartclk / ((N ? 10 : 8) * baud);
 
 	// todo DMA
-	ctrl_value = (1 << MUART_CTRL_MEN_i) | (1 << MUART_CTRL_APB_MD_i);
+	ctrl_value =
+		(1 << MUART_CTRL_MEN_i) | (1 << MUART_CTRL_APB_MD_i) |
+		(1
+		 << MUART_CTRL_RTS_POL); // Note: UART is assumed to be RTS active high.
 
 	switch (termios->c_cflag & CSIZE) {
 	case CS5:
@@ -545,6 +548,50 @@ static void muart_config_port(struct uart_port *port, int flags)
 		port->type = PORT_RCM;
 		muart_request_port(port);
 	}
+}
+
+static int muart_rs485_config(struct uart_port *port,
+			      struct serial_rs485 *rs485)
+{
+	struct muart_regs *regs = (struct muart_regs *)port->membase;
+	unsigned int ctrl = readl(&regs->ctrl);
+
+	if (rs485->flags & SER_RS485_ENABLED) {
+		/*
+		 * RTS needs to be logic HIGH either during transer _or_ after
+		 * transfer, other variants are not supported by the hardware.
+		 */
+
+		if (!(rs485->flags &
+		      (SER_RS485_RTS_ON_SEND | SER_RS485_RTS_AFTER_SEND)))
+			rs485->flags |= SER_RS485_RTS_ON_SEND;
+
+		if (rs485->flags & SER_RS485_RTS_ON_SEND &&
+		    rs485->flags & SER_RS485_RTS_AFTER_SEND)
+			rs485->flags &= ~SER_RS485_RTS_AFTER_SEND;
+
+		/*
+		 * The hardware defaults to RTS logic HIGH while transfer.
+		 * Switch polarity in case RTS shall be logic HIGH
+		 * after transfer.
+		 * Note: UART is assumed to be active high.
+		 */
+		if (rs485->flags & SER_RS485_RTS_ON_SEND)
+			ctrl |= 1 << MUART_CTRL_RTS_POL;
+		else if (rs485->flags & SER_RS485_RTS_AFTER_SEND)
+			ctrl &= ~(1 << MUART_CTRL_RTS_POL);
+
+		ctrl |= 1 << MUART_CTRL_MDS_i;
+	} else {
+		ctrl |= 1 << MUART_CTRL_MDS_i;
+		ctrl |= 1
+			<< MUART_CTRL_RTS_POL; // Note: UART is assumed to be active high.
+	}
+
+	writel(ctrl, &regs->ctrl);
+	port->rs485 = *rs485;
+
+	return 0;
 }
 
 #ifdef CONFIG_CONSOLE_POLL
@@ -822,6 +869,7 @@ int muart_probe(struct platform_device *pdev)
 	port->flags = UPF_BOOT_AUTOCONF;
 	port->line = dev_id;
 	port->ops = &muart_serial_pops;
+	port->rs485_config = muart_rs485_config;
 
 	port->fifosize = MUART_TX_FIFO_SIZE;
 
