@@ -20,6 +20,9 @@
 #include <linux/of_irq.h>
 #include <linux/of_address.h>
 #include <linux/clk.h>
+#include <linux/dmaengine.h>
+#include <linux/dma-mapping.h>
+#include <linux/scatterlist.h>
 
 #define MUART_ID 0x55415254
 #define MUART_VERSION 0x10190
@@ -107,10 +110,50 @@ struct muart_regs {
 	// dma control registers - not needed for a while
 };
 
+
+/* Deals with DMA transactions */
+
+struct muart_sgbuf {
+	struct scatterlist sg;
+	char *buf;
+};
+
+struct muart_dmarx_data {
+	struct dma_chan		*chan;
+	struct completion	complete;
+	bool			use_buf_b;
+	struct muart_sgbuf	sgbuf_a;
+	struct muart_sgbuf	sgbuf_b;
+	dma_cookie_t		cookie;
+	bool			running;
+	struct timer_list	timer;
+	unsigned int last_residue;
+	unsigned long last_jiffies;
+	bool auto_poll_rate;
+	unsigned int poll_rate;
+	unsigned int poll_timeout;
+};
+
+struct muart_dmatx_data {
+	struct dma_chan		*chan;
+	struct scatterlist	sg;
+	char			*buf;
+	bool			queued;
+};
+
 struct muart_port {
 	struct uart_port port;
 	struct clk *clk;
 	unsigned long baud;
+
+#if defined(CONFIG_DMA_ENGINE) 
+	/* DMA stuff */
+	bool		using_tx_dma;
+	bool		using_rx_dma;
+	struct muart_dmarx_data dmarx;
+	struct muart_dmatx_data	dmatx;
+	bool		dma_probed;
+#endif
 };
 
 #define to_muart_port(uport) container_of(uport, struct muart_port, port)
