@@ -27,36 +27,133 @@
 
 /* Max number of descriptors per channel */
 #define MDMA_NUM_DESCS	32
+#define MDMA_NUM_SUB_DESCS	32
 #define MDMA_DESC_SIZE(chan)	(chan->desc_size)
 #define MDMA_PM_TIMEOUT			100
 #define MDMA_BUS_WIDTH_128	128
+
+#define MDMA_MAX_TRANS_LEN 0x7FFFFFC
+
+// descriptor flags
+#define MDMA_BD_OWN  0x80000000
+#define MDMA_BD_LINK 0x40000000
+#define MDMA_BD_INT  0x20000000
+#define MDMA_BD_STOP 0x10000000
+#define MDMA_BD_INC  0x8000000
+
+// channel settings
+#define MDMA_CHAN_DESC_NORMAL 0x00000000
+#define MDMA_CHAN_DESC_LONG 0x00000002
+#define MDMA_CHAN_DESC_PITCH 0x00000003
+#define MDMA_CHAN_ADD_INFO 0x00000010
+#define MDMA_CHAN_DESC_GAP_SHIFT 16
 
 /* Reset values for data attributes */
 #define MDMA_AXCACHE_VAL    0x3
 #define MDMA_ARLEN_RST_VAL	0xF
 #define MDMA_AWLEN_RST_VAL	0xF
 
+#define MDMA_IRQ_SUSPEND_DONE   BIT(0)
+#define MDMA_IRQ_CANCEL_DONE    BIT(1)
+#define MDMA_IRQ_INT_DESC       BIT(2)
+#define MDMA_IRQ_BAD_DESC       BIT(3)
+#define MDMA_IRQ_STOP_DESC      BIT(4)
+#define MDMA_IRQ_DISCARD_DESC   BIT(5)
+#define MDMA_IRQ_WAXI_ERR       BIT(6)
+#define MDMA_IRQ_AXI_ERR        BIT(7)
+#define MDMA_IRQ_START_BY_EVENT BIT(8)
+#define MDMA_IRQ_IGNORE_EVENT   BIT(9)
+
+#define MDMA_IRQ_SENS_MASK (MDMA_IRQ_INT_DESC | MDMA_IRQ_BAD_DESC)
 
 #define to_chan(chan)		container_of(chan, struct mdma_chan, \
 					     slave)
 #define tx_to_desc(tx)		container_of(tx, struct mdma_desc_sw, \
 					     async_tx)
 
+
+typedef const volatile unsigned int roreg32;
+typedef volatile unsigned int rwreg32;
+typedef const volatile unsigned long long roreg64;
+typedef volatile unsigned long long rwreg64;
+
+struct channel_regs
+{
+    rwreg32 enable;                         /* 0x100 - enable channel       */
+    rwreg32 suspend;                        /* 0x104 - suspend channel      */
+    rwreg32 cancel;                         /* 0x108 - cancel channel       */
+    roreg32 _skip01;                        /* 0x10C                        */
+    rwreg32 settings;                       /* 0x110 - channel settings     */
+    rwreg32 irq_mask;                       /* 0x114 - channel irq mask     */
+    roreg32 status;                         /* 0x118 - channel status       */
+    roreg32 _skip02;                        /* 0x11C                        */
+    rwreg32 desc_addr;                      /* 0x120 - first decriptor addr */
+    roreg32 _skip03;                        /* 0x124                        */
+    roreg32 curr_desc_addr;                 /* 0x128 - current decript addr */
+    roreg32 curr_addr;                      /* 0x12C - current trans addr   */
+    roreg32 dma_state;                      /* 0x130 - state of DMA         */
+    roreg32 _skip04[3];                     /* 0x134 - 0x13C                */
+    rwreg32 desc_axlen;                     /* 0x140 - axlen for desc ops   */
+    rwreg32 desc_axcache;                   /* 0x144 - axcache for desc ops */
+    rwreg32 desc_axprot;                    /* 0x148 - axprot for desc ops  */
+    rwreg32 desc_axlock;                    /* 0x14C - axlock for desc ops  */
+    roreg32 desc_rresp;                     /* 0x150 - rresp of desc ops    */
+    roreg32 desc_raxi_err_addr;             /* 0x154 - addr of axi read err */
+    roreg32 desc_bresp;                     /* 0x158 - bresp of desc ops    */
+    roreg32 desc_waxi_err_addr;             /* 0x15C - addr of axi write err*/
+    rwreg32 desc_permut;                    /* 0x160 - byte swapping scheme */
+    roreg32 _skip05[7];                     /* 0x164 - 0x17C                */
+    rwreg32 max_trans;                      /* 0x180 - max unfinished trans */
+    rwreg32 axlen;                          /* 0x184 - axi awlen            */
+    rwreg32 axcache;                        /* 0x188 - axi awcache          */
+    rwreg32 axprot;                         /* 0x18C - axi awprot           */
+    rwreg32 axlock;                         /* 0x190 - axi awlock           */
+    roreg32 bresp;                          /* 0x194 - axi operation bresp  */
+    roreg32 xaxi_err_addr;                  /* 0x198 - addr of axi write err*/
+    roreg32 _skip06;                        /* 0x19C                        */
+    roreg32 state;                          /* 0x1A0 - axi state            */
+    roreg32 avaliable_space;                /* 0x1A4 - num of free bytes    */
+    rwreg32 permutation;                    /* 0x1A8 - byte swapping scheme */
+    roreg32 _skip07[5];                     /* 0x1AC - 0x1BC                */
+/************************ Device dependent registers ************************/
+    rwreg32 sense_list;                     /* 0x1C0 - event mask           */
+    rwreg32 signal_time;                    /* 0x1C4 - signal time in ticks */
+    rwreg32 events_prior_l;                 /* 0x1C8 - events priority      */
+    rwreg32 events_prior_h;                 /* 0x1CC - events priority      */
+    rwreg32 active_events;                  /* 0x1D0 - events activity state*/
+    rwreg32 ignore_events;                  /* 0x1D4 - events list - see ref*/
+    rwreg32 synch_events;                   /* 0x1D8 - synchronization prio */
+    roreg32 _skip08;                        /* 0x1DC                        */
+    rwreg32 event_desc_addr[8];             /* 0x1E0-0x1FF- enevts descriptors*/
+} __attribute__ ((packed));
+
+struct mdma_regs
+{
+    roreg32 id;                             /* 0x000 - device id            */
+    roreg32 version;                        /* 0x004 - device version       */
+    rwreg32 soft_reset;                     /* 0x008 - soft reset           */
+    roreg32 _skip01;                        /* 0x00C                        */
+    rwreg32 event_sence_channel;            /* 0x010 - 0-read channel, 1-w  */
+    roreg32 _skip02;                        /* 0x014                        */
+    rwreg32 status;                         /* 0x018 - DMA status           */
+    roreg32 _skip03[57];                    /* 0x01C - 0x0ff                */
+    struct channel_regs rx;                 /* 0x100 - 0x1FF                */
+    struct channel_regs tx;                 /* 0x200 - 0x2FF                */
+} __attribute__ ((packed));
+
 /**
- * struct mdma_desc_ll - Hw descriptor !!!todo
- * @addr: Buffer address
- * @size: Size of the buffer
- * @ctrl: Control word
- * @nxtdscraddr: Next descriptor base address
- * @rsvd: Reserved field and for Hw internal use.
+ * struct mdma_desc_long_ll - Long HW descriptor
+ * @usrdata_l: user data depends on descriptor kind
+ * @usrdata_h: user data depends on descriptor kind
+ * @memptr: Buffer address/Next descriptor address
+ * @flags_length: Control word
  */
-struct mdma_desc_ll {
-	u64 addr;
-	u32 size;
-	u32 ctrl;
-	u64 nxtdscraddr;
-	u64 rsvd;
-};
+struct mdma_desc_long_ll {
+	unsigned int usrdata_l;
+	unsigned int usrdata_h;
+	unsigned int memptr;
+	unsigned int flags_length;
+} __attribute__((packed, aligned(16)));
 
 /**
  * struct mdma_desc_sw - Per Transaction structure
@@ -64,7 +161,6 @@ struct mdma_desc_ll {
  * @dst: Destination address for simple mode dma
  * @len: Transfer length for simple mode dma
  * @node: Node in the channel descriptor list
- * @tx_list: List head for the current transfer
  * @async_tx: Async transaction descriptor
  * @src_v: Virtual address of the src descriptor
  * @src_p: Physical address of the src descriptor
@@ -76,17 +172,16 @@ struct mdma_desc_sw {
 	u64 dst;
 	u32 len;
 	struct list_head node;
-	struct list_head tx_list;
 	struct dma_async_tx_descriptor async_tx;
-	struct mdma_desc_ll *src_v;
+	void *src_v;
 	dma_addr_t src_p;
-	struct mdma_desc_ll *dst_v;
+	void *dst_v;
 	dma_addr_t dst_p;
 };
 
 struct mdma_chan {
 	struct mdma_device *mdev;
-	void __iomem *regs;
+	struct mdma_regs __iomem *regs;
 	spinlock_t lock;
 	struct list_head pending_list;
 	struct list_head free_list;
@@ -99,9 +194,11 @@ struct mdma_chan {
 	u32 desc_free_cnt;
 	struct device *dev;
 	int irq;
+	int last_irq_status;
 	struct tasklet_struct tasklet;
 	bool idle;
 	u32 desc_size;
+	u32 type;
 	bool err;
 	u32 bus_width;
 	u32 src_burst_len;
@@ -123,12 +220,11 @@ struct mdma_device {
  */
 static void mdma_start(struct mdma_chan *chan)
 {
-    // todo start channel
-	
-    //writel(ZYNQMP_DMA_INT_EN_DEFAULT_MASK, chan->regs + ZYNQMP_DMA_IER);
-	//writel(0, chan->regs + ZYNQMP_DMA_TOTAL_BYTE);
-	//chan->idle = false;
-	//writel(ZYNQMP_DMA_ENABLE, chan->regs + ZYNQMP_DMA_CTRL2);
+	writel(MDMA_IRQ_SENS_MASK, &chan->regs->tx.irq_mask);
+	writel(MDMA_IRQ_SENS_MASK, &chan->regs->rx.irq_mask);
+	writel(1, &chan->regs->tx.enable);
+	writel(1, &chan->regs->rx.enable);
+	chan->idle = false;
 }
 
 
@@ -140,32 +236,22 @@ static void mdma_start(struct mdma_chan *chan)
 static void mdma_update_desc_to_ctrlr(struct mdma_chan *chan,
 				      struct mdma_desc_sw *desc)
 {
-	dma_addr_t addr;
-
-    // todo write start descriptors addresses to controller
-	addr = desc->src_p;
-//	zynqmp_dma_writeq(chan, ZYNQMP_DMA_SRC_START_LSB, addr);
-	addr = desc->dst_p;
-//	zynqmp_dma_writeq(chan, ZYNQMP_DMA_DST_START_LSB, addr);
+	writel(desc->src_p, &chan->regs->rx.desc_addr);
+	writel(desc->dst_p, &chan->regs->tx.desc_addr);
 }
 
 
 static void mdma_config(struct mdma_chan *chan)
 {
-	//u32 val;
+	// todo ADD_INFO for slave mode
+	writel(chan->type | (MDMA_DESC_SIZE(chan) << MDMA_CHAN_DESC_GAP_SHIFT),
+		  &chan->regs->rx.settings);	
+	
+	writel(chan->type | (MDMA_DESC_SIZE(chan) << MDMA_CHAN_DESC_GAP_SHIFT),
+		  &chan->regs->tx.settings);	
 
-    // todo config channel
-
-	//val = readl(chan->regs + ZYNQMP_DMA_CTRL0);
-	//val |= ZYNQMP_DMA_POINT_TYPE_SG;
-	//writel(val, chan->regs + ZYNQMP_DMA_CTRL0);
-
-	//val = readl(chan->regs + ZYNQMP_DMA_DATA_ATTR);
-	//val = (val & ~ZYNQMP_DMA_ARLEN) |
-	//	(chan->src_burst_len << ZYNQMP_DMA_ARLEN_OFST);
-	//val = (val & ~ZYNQMP_DMA_AWLEN) |
-	//	(chan->dst_burst_len << ZYNQMP_DMA_AWLEN_OFST);
-	//writel(val, chan->regs + ZYNQMP_DMA_DATA_ATTR);
+	writel(chan->src_burst_len, &chan->regs->rx.axlen);
+	writel(chan->dst_burst_len, &chan->regs->tx.axlen);
 }
 
 
@@ -193,21 +279,41 @@ static void mdma_start_transfer(struct mdma_chan *chan)
 }
 
 /**
- * mdma_free_descriptor - Issue pending transactions
+ * mdma_get_descriptor - Get the sw descriptor from the pool
+ * @chan: MDMA channel pointer
+ *
+ * Return: The sw descriptor
+ */
+static struct mdma_desc_sw *
+mdma_get_descriptor(struct mdma_chan *chan)
+{
+	struct mdma_desc_sw *desc;
+	unsigned long irqflags;
+
+	spin_lock_irqsave(&chan->lock, irqflags);
+	desc = list_first_entry(&chan->free_list,
+				struct mdma_desc_sw, node);
+	list_del(&desc->node);
+	spin_unlock_irqrestore(&chan->lock, irqflags);
+
+	/* Clear the src and dst descriptor memory */
+	memset((void *)desc->src_v, 0, MDMA_DESC_SIZE(chan)*MDMA_NUM_SUB_DESCS);
+	memset((void *)desc->dst_v, 0, MDMA_DESC_SIZE(chan)*MDMA_NUM_SUB_DESCS);
+
+	return desc;
+}
+
+
+/**
+ * mdma_free_descriptor - Free descriptor
  * @chan: MDMA channel pointer
  * @sdesc: Transaction descriptor pointer
  */
 static void mdma_free_descriptor(struct mdma_chan *chan,
 				 struct mdma_desc_sw *sdesc)
 {
-	struct mdma_desc_sw *child, *next;
-
 	chan->desc_free_cnt++;
 	list_add_tail(&sdesc->node, &chan->free_list);
-	list_for_each_entry_safe(child, next, &sdesc->tx_list, node) {
-		chan->desc_free_cnt++;
-		list_move_tail(&child->node, &chan->free_list);
-	}
 }
 
 /**
@@ -245,30 +351,15 @@ static void mdma_free_descriptors(struct mdma_chan *chan)
 static dma_cookie_t mdma_tx_submit(struct dma_async_tx_descriptor *tx)
 {
 	struct mdma_chan *chan = to_chan(tx->chan);
-	struct mdma_desc_sw *desc, *new;
+	struct mdma_desc_sw *desc;
 	dma_cookie_t cookie;
 	unsigned long irqflags;
 
-	new = tx_to_desc(tx);
+	desc = tx_to_desc(tx);
 	spin_lock_irqsave(&chan->lock, irqflags);
 	cookie = dma_cookie_assign(tx);
 
-	if (!list_empty(&chan->pending_list)) {
-		desc = list_last_entry(&chan->pending_list,
-				     struct mdma_desc_sw, node);
-		if (!list_empty(&desc->tx_list))
-			desc = list_last_entry(&desc->tx_list,
-					       struct mdma_desc_sw, node);
-		
-        // todo setup 
-        
-        //desc->src_v->nxtdscraddr = new->src_p;
-		//desc->src_v->ctrl &= ~ZYNQMP_DMA_DESC_CTRL_STOP;
-		//desc->dst_v->nxtdscraddr = new->dst_p;
-		//desc->dst_v->ctrl &= ~ZYNQMP_DMA_DESC_CTRL_STOP;
-	}
-
-	list_add_tail(&new->node, &chan->pending_list);
+	list_add_tail(&desc->node, &chan->pending_list);
 	spin_unlock_irqrestore(&chan->lock, irqflags);
 
 	return cookie;
@@ -363,17 +454,58 @@ static struct dma_async_tx_descriptor *mdma_prep_memcpy(
 				dma_addr_t dma_src, size_t len, ulong flags)
 {
 	struct mdma_chan *chan;
-	struct mdma_desc_sw *new, *first = NULL;
-	void *desc = NULL, *prev = NULL;
+	struct mdma_desc_sw *sw_desc = NULL;
+	struct mdma_desc_long_ll *src_desc, *dst_desc;
 	size_t copy;
-	u32 desc_cnt;
 	unsigned long irqflags;
-
+	int addr_mask;
 	chan = to_chan(dchan);
 
-    // to do
+	addr_mask =	chan->bus_width/8 - 1;
+	if((dma_src & addr_mask) || (dma_dst & addr_mask))
+	{
+		dev_dbg(chan->dev, "DMA unalligned access %x -> %x\n", dma_src, dma_dst);
+		return NULL;
+	}
 
-    return 0;
+	spin_lock_irqsave(&chan->lock, irqflags);
+	if (!chan->desc_free_cnt) {
+		spin_unlock_irqrestore(&chan->lock, irqflags);
+		dev_dbg(chan->dev, "chan %p descs are not available\n", chan);
+		return NULL;
+	}
+	chan->desc_free_cnt--;
+	spin_unlock_irqrestore(&chan->lock, irqflags);
+
+	/* Allocate and populate the descriptor */
+	sw_desc = mdma_get_descriptor(chan);
+	src_desc = (struct mdma_desc_long_ll *)sw_desc->src_v;
+	dst_desc = (struct mdma_desc_long_ll *)sw_desc->dst_v;
+
+	do {
+		copy = min_t(size_t, len, MDMA_MAX_TRANS_LEN);
+		len -= copy;
+
+		if(!len)
+		{
+			// last sub descriptor
+			dst_desc->flags_length = copy | MDMA_BD_STOP | MDMA_BD_INT;
+			src_desc->flags_length = copy | MDMA_BD_STOP;
+		}	
+		else
+			dst_desc->flags_length = src_desc->flags_length = copy;	
+
+		src_desc->memptr = dma_src;
+		dst_desc->memptr = dma_dst;
+		dma_src += copy;
+		dma_dst += copy;
+		src_desc++;
+		dst_desc++;
+	} while (len);
+
+	async_tx_ack(&sw_desc->async_tx);
+	sw_desc->async_tx.flags = flags;
+	return &sw_desc->async_tx;
 }
 
 
@@ -389,8 +521,8 @@ static int mdma_device_terminate_all(struct dma_chan *dchan)
 	unsigned long irqflags;
 
 	spin_lock_irqsave(&chan->lock, irqflags);
-    // todo terminate transfers
-	// writel(ZYNQMP_DMA_IDS_DEFAULT_MASK, chan->regs + ZYNQMP_DMA_IDS);
+	writel(1, &chan->regs->rx.cancel);
+	writel(1, &chan->regs->tx.cancel);
 	mdma_free_descriptors(chan);
 	spin_unlock_irqrestore(&chan->lock, irqflags);
 	return 0;
@@ -462,19 +594,17 @@ static int mdma_alloc_chan_resources(struct dma_chan *dchan)
 	}
 
 	chan->desc_pool_v = dma_alloc_coherent(chan->dev,
-					       (2 * chan->desc_size * MDMA_NUM_DESCS),
+					       (2 * chan->desc_size * MDMA_NUM_DESCS * MDMA_NUM_SUB_DESCS),
 					       &chan->desc_pool_p, GFP_KERNEL);
 	if (!chan->desc_pool_v)
 		return -ENOMEM;
 
 	for (i = 0; i < MDMA_NUM_DESCS; i++) {
 		desc = chan->sw_desc_pool + i;
-		desc->src_v = (struct mdma_desc_ll *) (chan->desc_pool_v +
-					(i * MDMA_DESC_SIZE(chan) * 2));
-		desc->dst_v = (struct mdma_desc_ll *) (desc->src_v + 1);
-		desc->src_p = chan->desc_pool_p +
-				(i * MDMA_DESC_SIZE(chan) * 2);
-		desc->dst_p = desc->src_p + MDMA_DESC_SIZE(chan);
+		desc->src_v = chan->desc_pool_v + 2 * i * MDMA_DESC_SIZE(chan) * MDMA_NUM_SUB_DESCS;
+		desc->dst_v = desc->src_v + MDMA_DESC_SIZE(chan) * MDMA_NUM_SUB_DESCS;
+		desc->src_p = chan->desc_pool_p + 2 * i * MDMA_DESC_SIZE(chan) * MDMA_NUM_SUB_DESCS;
+		desc->dst_p = desc->src_p + MDMA_DESC_SIZE(chan) * MDMA_NUM_SUB_DESCS;
 	}
 
 	return MDMA_NUM_DESCS;
@@ -529,36 +659,22 @@ static int mdma_device_config(struct dma_chan *dchan,
 static irqreturn_t mdma_irq_handler(int irq, void *data)
 {
 	struct mdma_chan *chan = (struct mdma_chan *)data;
-	u32 isr, imr, status;
+	u32 status;
 	irqreturn_t ret = IRQ_NONE;
 
-    // todo handle int
+	status = readl(&chan->regs->status);
 
-//	isr = readl(chan->regs + ZYNQMP_DMA_ISR);
-//	imr = readl(chan->regs + ZYNQMP_DMA_IMR);
-//	status = isr & ~imr;
+	if((status>> 16) & MDMA_IRQ_INT_DESC)
+	{
+		// todo - for a while mdma works one descriptor set (memcpy) by one
+		chan->idle = true;
+		chan->last_irq_status = status;
 
-//	writel(isr, chan->regs + ZYNQMP_DMA_ISR);
-//	if (status & ZYNQMP_DMA_INT_DONE) {
-//		tasklet_schedule(&chan->tasklet);
-//		ret = IRQ_HANDLED;
-//	}
+		tasklet_schedule(&chan->tasklet);
+		ret = IRQ_HANDLED;
+	}
 
-//	if (status & ZYNQMP_DMA_DONE)
-//		chan->idle = true;
-
-//	if (status & ZYNQMP_DMA_INT_ERR) {
-//		chan->err = true;
-//		tasklet_schedule(&chan->tasklet);
-//		dev_err(chan->dev, "Channel %p has errors\n", chan);
-//		ret = IRQ_HANDLED;
-//	}
-
-//	if (status & ZYNQMP_DMA_INT_OVRFL) {
-//		zynqmp_dma_handle_ovfl_int(chan, status);
-//		dev_dbg(chan->dev, "Channel %p overflow interrupt\n", chan);
-//		ret = IRQ_HANDLED;
-//	}
+	dev_dbg(chan->dev, "Channel %p interrupt, status %x\n", chan, status);
 
 	return ret;
 }
@@ -614,27 +730,6 @@ static void mdma_complete_descriptor(struct mdma_chan *chan)
  */
 static void mdma_init(struct mdma_chan *chan)
 {
-	u32 val;
-
-// todo !!!
-
-//	writel(ZYNQMP_DMA_IDS_DEFAULT_MASK, chan->regs + ZYNQMP_DMA_IDS);
-//	val = readl(chan->regs + ZYNQMP_DMA_ISR);
-//	writel(val, chan->regs + ZYNQMP_DMA_ISR);
-
-//	val = readl(chan->regs + ZYNQMP_DMA_DATA_ATTR);
-//	if (chan->is_dmacoherent) {
-//		val = (val & ~ZYNQMP_DMA_ARCACHE) |
-//			(ZYNQMP_DMA_AXCACHE_VAL << ZYNQMP_DMA_ARCACHE_OFST);
-//		val = (val & ~ZYNQMP_DMA_AWCACHE) |
-//			(ZYNQMP_DMA_AXCACHE_VAL << ZYNQMP_DMA_AWCACHE_OFST);
-//	}
-//	writel(val, chan->regs + ZYNQMP_DMA_DATA_ATTR);
-
-	/* Clearing the interrupt account rgisters */
-//	val = readl(chan->regs + ZYNQMP_DMA_IRQ_SRC_ACCT);
-//	val = readl(chan->regs + ZYNQMP_DMA_IRQ_DST_ACCT);
-
 	chan->idle = true;
 }
 
@@ -645,8 +740,7 @@ static void mdma_init(struct mdma_chan *chan)
  */
 static void mdma_reset(struct mdma_chan *chan)
 {
-	//writel(ZYNQMP_DMA_IDS_DEFAULT_MASK, chan->regs + ZYNQMP_DMA_IDS);
-    // todo reset channels
+	writel(1, &chan->regs->soft_reset);
 
 	mdma_complete_descriptor(chan);
 	mdma_chan_desc_cleanup(chan);
@@ -662,7 +756,6 @@ static void mdma_reset(struct mdma_chan *chan)
 static void mdma_do_tasklet(unsigned long data)
 {
 	struct mdma_chan *chan = (struct mdma_chan *)data;
-	u32 count;
 	unsigned long irqflags;
 
 	spin_lock_irqsave(&chan->lock, irqflags);
@@ -673,14 +766,8 @@ static void mdma_do_tasklet(unsigned long data)
 		goto unlock;
 	}
 
-	count = 1; // readl(chan->regs + ZYNQMP_DMA_IRQ_DST_ACCT);
-
-	// todo iterate descriptors
-    while (count) {
-		mdma_complete_descriptor(chan);
-		mdma_chan_desc_cleanup(chan);
-		count--;
-	}
+	mdma_complete_descriptor(chan);
+	mdma_chan_desc_cleanup(chan);
 
 	if (chan->idle)
 		mdma_start_transfer(chan);
@@ -727,7 +814,7 @@ static int mdma_chan_probe(struct mdma_device *mdev,
 	chan->mdev = mdev;
 
 	res = platform_get_resource(pdev, IORESOURCE_MEM, 0);
-	chan->regs = devm_ioremap_resource(&pdev->dev, res);
+	chan->regs = (struct mdma_regs*) devm_ioremap_resource(&pdev->dev, res);
 	if (IS_ERR(chan->regs))
 		return PTR_ERR(chan->regs);
 
@@ -766,7 +853,8 @@ static int mdma_chan_probe(struct mdma_device *mdev,
 	if (err)
 		return err;
 
-	chan->desc_size = sizeof(struct mdma_desc_ll);
+	chan->desc_size = sizeof(struct mdma_desc_long_ll);  // max size
+	chan->type = MDMA_CHAN_DESC_LONG;
 	chan->idle = true;
 	return 0;
 }
@@ -790,6 +878,10 @@ static int rcm_mdma_probe(struct platform_device *pdev)
 
 	p = &mdev->slave;
 	p->device_prep_dma_memcpy = mdma_prep_memcpy;
+	// p->device_prep_interleaved_dma = mdma_prep_interleaved_dma; // todo
+	// p->device_prep_slave_sg = mdma_prep_slave_sg; // todo
+	// p->device_prep_dma_memset = mdma_prep_dma_memset; // todo
+	// p->device_prep_dma_memset_sg = mdma_prep_dma_memset_sg; // todo
 	p->device_terminate_all = mdma_device_terminate_all;
 	p->device_issue_pending = mdma_issue_pending;
 	p->device_alloc_chan_resources = mdma_alloc_chan_resources;
