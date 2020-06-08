@@ -1155,8 +1155,13 @@ static int of_mnand_probe(struct platform_device* ofdev)
         g_chip.mtd.type = MTD_NANDFLASH;
         g_chip.mtd.flags = MTD_WRITEABLE;
         g_chip.mtd._erase = mnand_erase;
+#ifndef OOB_USE
         g_chip.mtd._read = mnand_read;
         g_chip.mtd._write = mnand_write;
+#else
+        g_chip.mtd._read_oob = mnand_read_oob;
+        g_chip.mtd._write_oob = mnand_write_oob;
+#endif
         g_chip.mtd._block_isbad = mnand_isbad;
         g_chip.mtd._block_markbad = mnand_markbad;
         //g_chip.mtd.ecclayout = &g_ecclayout;
