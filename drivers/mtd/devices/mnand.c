@@ -1098,7 +1098,7 @@ static int of_mnand_probe(struct platform_device* ofdev)
 {
         const struct of_device_id *match;
         struct device_node *of_node = ofdev->dev.of_node;
-        const char *part_probes[] = { "cmdlinepart", NULL, };
+        const char *part_probes[] = { "ofpart"/*"cmdlinepart"*/, NULL, };
         int err;
 
         match = of_match_device(of_platform_nand_table, &ofdev->dev);
@@ -1159,13 +1159,11 @@ static int of_mnand_probe(struct platform_device* ofdev)
         g_chip.mtd._write = mnand_write;
         g_chip.mtd._block_isbad = mnand_isbad;
         g_chip.mtd._block_markbad = mnand_markbad;
-        g_chip.mtd._read_oob = mnand_read_oob;
-        g_chip.mtd._write_oob = mnand_write_oob;
         //g_chip.mtd.ecclayout = &g_ecclayout;
 	mtd_set_ooblayout(&g_chip.mtd, &nand_ooblayout_ops);
 	g_chip.mtd.oobavail = 39;
 
-        g_chip.mtd.dev.parent = &ofdev->dev;
+        g_chip.mtd.dev = ofdev->dev;
 
         memset(&priv_nand_chip, 0, sizeof (priv_nand_chip));
         priv_nand_chip.ecc.size = 1 << 8;
@@ -1205,7 +1203,7 @@ static int of_mnand_remove(struct platform_device* ofdev)
 }
 
 static struct of_device_id of_platform_nand_table[] = {
-        { .compatible = "rcm,mnand" },
+        { .compatible = "rcm,nand" },
         { /* end of list */ },
 };
 
