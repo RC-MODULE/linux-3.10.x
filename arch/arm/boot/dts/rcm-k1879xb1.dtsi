@@ -324,7 +324,7 @@
 			ethernet: greth@4000 {
 				#address-cells = <1>;
 				#size-cells = <1>;
-				compatible = "aeroflexgaisler,greth";
+				compatible = "rcm,greth";
 				reg = <0x4000 0x1000>;
 				cell-index = <0>;
 				device_type = "network";
@@ -377,33 +377,7 @@
 				interrupt-parent = <&vic1>;
 				clocks = <&clk_prf>;
 				clock-names = "clk_prf";
-				status = "okay";
-				partitions {
-					compatible = "fixed-partitions";
-					#address-cells = <1>;
-					#size-cells = <1>;
-					status = "okay";
-					partition@0 {
-						label = "boot";
-						reg = <0x00000000 0x00040000>;
-					};
-					partition@40000 {
-						label = "env";
-						reg = <0x00040000 0x00020000>;
-					};
-					partition@60000 {
-						label = "dtb";
-						reg = <0x00060000 0x00020000>;
-					};
-					partition@80000 {
-						label = "kernel";
-						reg = <0x0080000 0x00500000>;
-					};
-					partition@580000 {
-						label = "rootfs";
-						reg = <0x00580000 0x3FA80000>;
-					};
-				};
+				status = "disabled";
 			};
 		};
 

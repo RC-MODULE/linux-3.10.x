@@ -40,7 +40,7 @@
 	};
 
 	chosen {
-		bootargs = "ignore_loglevel console=ttyS0,38400n8 earlyprintk=serial mtdparts=nand:0x40000@0x0(boot),0x40000@0x40000(env),0x80000@0x80000(kernel_dtb),0x400000@0x100000(kernel),0x3FB00000@0x500000(rootfs) ubi.mtd=4,2048 root=ubi0:rootfs rootfstype=ubifs";
+		bootargs = "ignore_loglevel console=ttyS0,38400n8 earlyprintk=serial ubi.mtd=4,2048 root=ubi0:rootfs rootfstype=ubifs mtdparts=nand:0x40000@0x0(boot),0x40000@0x40000(env),0x80000@0x80000(kernel_dtb),0x400000@0x100000(kernel),0x3FB00000@0x500000(rootfs) irqpoll noapic";
 	};
 
 	leds {
@@ -91,84 +91,136 @@
 			clock-output-names = "clk_12m";
 		};
 	};
-};
 
-&ethernet {
-	local-mac-address = [ EC 17 66 77 07 00 ];
-	status = "okay";
-	mdio {
-	phy0: ethernet-phy@0 {
-			reg = <0x1f>;
+	axi {
+		apb_c {
+			spi0: spi@e000 {
+				status = "okay";
+				#address-cells = <1>;
+				#size-cells = <0>;
+				spidev@0 {
+					compatible = "rohm,dh2228fv";
+					reg = <0>;
+					spi-max-frequency = <25000000>;
+					spi-cpha;
+					pl022,hierarchy = <0>;
+					pl022,interface = <0>;
+					pl022,slave-tx-disable;
+					pl022,com-mode = <0x1>; /* polling mode */
+					pl022,rx-level-trig = <0>;
+					pl022,tx-level-trig = <0>;
+					pl022,ctrl-len = <0x11>;
+					pl022,wait-state = <0>;
+					pl022,duplex = <0>;
+				};
+			};
+
+			i2c1: i2c@1000 {
+				status = "okay";
+				speed = <100000>;
+				clock-frequency = <54000000>;
+			};
+
+			i2c2: i2c@6000 {
+				status = "okay";
+				speed = <100000>;
+				clock-frequency = <54000000>;
+				#address-cells = <1>;
+				#size-cells = <0>;
+				at24: at24@50 {
+							compatible = "at24,24c64";
+							reg = <0x50>;
+				};
+			};
+
+			i2c3: i2c@d000 {
+				status = "okay";
+				speed = <100000>;
+				clock-frequency = <54000000>;
+			};
+		};
+
+		apb_d {
+			ethernet: greth@4000 {
+				local-mac-address = [ EC 17 66 77 07 00 ];
+				status = "okay";
+				mdio {
+				phy0: ethernet-phy@0 {
+						reg = <0x1f>;
+					};
+				};
+			};
+
+			nand0: nand@f000 {
+				status = "okay";
+				partitions {
+					compatible = "fixed-partitions";
+					#address-cells = <1>;
+					#size-cells = <1>;
+					status = "okay";
+					partition@0 {
+						label = "boot";
+						reg = <0x00000000 0x00040000>;
+					};
+					partition@40000 {
+						label = "env";
+						reg = <0x00040000 0x00020000>;
+					};
+					partition@60000 {
+						label = "dtb";
+						reg = <0x00060000 0x00020000>;
+					};
+					partition@80000 {
+						label = "kernel";
+						reg = <0x0080000 0x00500000>;
+					};
+					partition@580000 {
+						label = "rootfs";
+						reg = <0x00580000 0x3FA80000>;
+					};
+				};
+			};
+		};
+
+		au@0 {
+
+		};
+
+		au@1 {
+
+		};
+
+		apb_mult {
+			i2c0: i2c@1000 {
+				speed = <100000>;
+				clock-frequency = <54000000>;
+				status = "okay";
+				#address-cells = <1>;
+				#size-cells = <0>;
+				hdmi0: hdmi@39 {
+					compatible = "rcm,hdmi";
+					reg = <0x39>;
+					force-dvi = <1>;
+				};
+			};
+
+			vdu: vdu@0x3000 {
+				memory-region = <&fb_reserved>;
+				status = "okay";
+			};
+		};
+
+		usbehci: ehci@0x10040000 {
+			status = "okay";
+		};
+
+		video_decoder: video_decoder@80180000 {
+			status = "okay";
+		};
+
+		sound: audio@0x80175000 {
+			status = "okay";
+			maudio,model = "RC Module MB77.07";
 		};
 	};
-};
-
-&spi0 {
-	status = "okay";
-	spidev@0 {
-		compatible = "rohm,dh2228fv";
-		reg = <0>;
-		spi-max-frequency = <25000000>;
-		spi-cpha;
-		pl022,hierarchy = <0>;
-		pl022,interface = <0>;
-		pl022,slave-tx-disable;
-		pl022,com-mode = <0x1>; /* polling mode */
-		pl022,rx-level-trig = <0>;
-		pl022,tx-level-trig = <0>;
-		pl022,ctrl-len = <0x11>;
-		pl022,wait-state = <0>;
-		pl022,duplex = <0>;
-	};
-};
-
-&i2c0 {
-	speed = <100000>;
-	clock-frequency = <54000000>;
-	status = "okay";
-	hdmi0: hdmi@39 {
-		compatible = "rcm,hdmi";
-		reg = <0x39>;
-		force-dvi = <1>;
-	};
-};
-
-&i2c2 {
-	status = "okay";
-	speed = <100000>;
-	clock-frequency = <54000000>;
-	at24: at24@50 {
-                compatible = "at24,24c64";
-                reg = <0x50>;
-        };
-};
-
-&i2c1 {
-       status = "okay";
-       speed = <100000>;
-       clock-frequency = <54000000>;
-};
-
-&i2c3 {
-        status = "okay";
-        speed = <100000>;
-        clock-frequency = <54000000>;
-};
-
-&vdu {
-	memory-region = <&fb_reserved>;
-	status = "okay";
-};
-
-&sound {
-	status = "okay";
-	maudio,model = "RC Module MB77.07";
-};
-
-&usbehci {
-	status = "okay";
-};
-
-&video_decoder {
-	status = "okay";
 };
