@@ -789,6 +789,10 @@ static int nand_check_wp(struct mtd_info *mtd)
 
 static uint8_t* mnand_fill_oob(uint8_t *oob, struct mtd_oob_ops *ops)
 {
+        struct mtd_oob_region *ffree;
+        uint32_t boffs = 0, woffs = ops->ooboffs;
+        size_t bytes = 0;
+
         size_t len = ops->ooblen;
 
         switch(ops->mode) {
@@ -798,11 +802,8 @@ static uint8_t* mnand_fill_oob(uint8_t *oob, struct mtd_oob_ops *ops)
                 return oob + len;
         case MTD_OPS_AUTO_OOB: {
                 //struct nand_oobfree *free = g_chip.mtd.ecclayout->oobfree;
-		struct mtd_oob_region *ffree;
                 ffree->length = 39;
                 ffree->offset = 25;
-                uint32_t boffs = 0, woffs = ops->ooboffs;
-                size_t bytes = 0;
 
                 for(; ffree->length && len; ffree++, len -= bytes) {
                         /* Write request not from offset 0 ? */
@@ -832,6 +833,10 @@ static uint8_t* mnand_fill_oob(uint8_t *oob, struct mtd_oob_ops *ops)
 
 static uint8_t* mnand_transfer_oob(uint8_t *oob, struct mtd_oob_ops *ops, size_t len)
 {
+        struct mtd_oob_region *ffree;
+        uint32_t boffs = 0, roffs = ops->ooboffs;
+        size_t bytes = 0;
+
         switch(ops->mode) {
 
         case MTD_OPS_PLACE_OOB:
@@ -842,12 +847,8 @@ static uint8_t* mnand_transfer_oob(uint8_t *oob, struct mtd_oob_ops *ops, size_t
 
         case MTD_OPS_AUTO_OOB: {
                // struct nand_oobfree *free = g_chip.mtd.ecclayout->oobfree;
-		struct mtd_oob_region *ffree;
 		ffree->length = 39;
 		ffree->offset = 25;
-                uint32_t boffs = 0, roffs = ops->ooboffs;
-                size_t bytes = 0;
-
                 for(; ffree->length && len; ffree++, len -= bytes) {
                         /* Read request not from offset 0 ? */
                         if (unlikely(roffs)) {
@@ -1060,6 +1061,8 @@ static int mnand_markbad(struct mtd_info* mtd, loff_t off)
         return mnand_write_oob(mtd, off, &ops);
 }
 
+#ifndef OOB_USE
+
 static int mnand_write(struct mtd_info* mtd, loff_t off, size_t len, size_t* retlen, const u_char* buf)
 {
         struct mtd_oob_ops ops = {
@@ -1093,12 +1096,15 @@ static int mnand_read(struct mtd_info* mtd, loff_t off, size_t len, size_t* retl
         return err;
 }
 
+#endif
+
 static struct of_device_id of_platform_nand_table[];
 static int of_mnand_probe(struct platform_device* ofdev)
 {
         const struct of_device_id *match;
         struct device_node *of_node = ofdev->dev.of_node;
         const char *part_probes[] = { "ofpart"/*"cmdlinepart"*/, NULL, };
+        struct mtd_info *mtd;
         int err;
 
         match = of_match_device(of_platform_nand_table, &ofdev->dev);
@@ -1183,7 +1189,7 @@ static int of_mnand_probe(struct platform_device* ofdev)
         }
 
 	//FixMe: hack
-        struct mtd_info *mtd = &g_chip.mtd;
+        mtd = &g_chip.mtd;
         mtd->erasesize_shift = ffs(mtd->erasesize) - 1;
         mtd->writesize_shift = ffs(mtd->writesize) - 1;
         mtd->erasesize_mask = (1 << mtd->erasesize_shift) - 1;
