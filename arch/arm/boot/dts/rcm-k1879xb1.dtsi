@@ -387,11 +387,47 @@
 			#size-cells = <1>;
 			ranges = <0 0x80150000 0x10000>;
 
-			i2s: i2s@0 {
-				compatible = "rcm,i2s";
+			i2sc0: i2s@c0 {
+				status = "disabled";
+				compatible = "rcm,i2s-ctrl";
+				#i2s-cells = <1>;
 				reg = <0 0x40>;
 				interrupts = <18>; /* 50 */
 				interrupt-parent = <&vic1>;
+				clocks = <&clk_prf>; //???????????
+				rcm,disable11025;
+			};
+
+			i2s0: i2s0@0 {
+				compatible = "rcm,i2s";
+				#sound-dai-cells = <0>;
+				ctrl = <&i2sc0 0>;
+				dmas = <&audio_dma 0>;
+				dma-names = "rx";
+			};
+
+			i2s1: i2s1@0 {
+				compatible = "rcm,i2s";
+				#sound-dai-cells = <0>;
+				ctrl = <&i2sc0 1>;
+				dmas = <&audio_dma 1>;
+				dma-names = "rx";
+			};
+
+			i2s2: i2s2@0 {
+				compatible = "rcm,i2s";
+				#sound-dai-cells = <0>;
+				ctrl = <&i2sc0 2>;
+				dmas = <&audio_dma 2>;
+				dma-names = "rx";
+			};
+
+			i2s3: i2s3@0 {
+				compatible = "rcm,i2s";
+				#sound-dai-cells = <0>;
+				ctrl = <&i2sc0 3>;
+				dmas = <&audio_dma 3>;
+				dma-names = "rx";
 			};
 		};
 
@@ -402,10 +438,15 @@
 			ranges = <0x0 0x80160000 0x10000>;
 
 			spdif: spdif@0 {
+				status = "disabled";
 				compatible = "rcm,spdif";
 				reg = <0x0 0x40>;
 				interrupts = <19>; /* 51 */
+				#sound-dai-cells = <0>;
 				interrupt-parent = <&vic1>;
+				clocks = <&clk_prf>;//???????????
+				dmas = <&audio_dma 4>;
+				dma-names = "rx";
 			};
 		};
 
@@ -430,12 +471,13 @@
 				status = "disabled";
 			};
 
-			dmac: dmac@0x2800 {
-				/* Missing driver */
-				compatible = "rcm,dmac";
-				reg = <0x2800 0x200>;
-				interrupts = <21>; /* 53 */
-				interrupt-parent = <&vic1>;
+			audio_dma: audio_dma@0x2800 {
+				status = "disabled";
+				compatible = "rcm,audio-dma";
+				reg = <0x2800 0x200>;					// <0x38017000 0x1000>;
+				#dma-cells = <1>;
+				interrupt-parent = <&vic1>;				// <&MPIC>;
+				interrupts = <21>;						// <127 0>;
 			};
 
 			vdu: vdu@0x3000 {
@@ -453,17 +495,6 @@
 				vdubuffer = <0xc0000000 0x2000000>; /* 32MB  EM1 !*/
 				status = "disabled";
 			};
-		};
-
-		sound: audio@0x80175000 {
-			compatible = "rcm,audio";
-			reg = <0x80175000 0x40>; /* control */
-			interrupts = <21>; /* 53 */
-			interrupt-parent = <&vic1>;
-			maudio,dmac = <&dmac>;
-			maudio,i2s = <&i2s>;
-			maudio,spdif = <&spdif>;
-			status = "disabled";
 		};
 
 		video_decoder: video_decoder@80180000 {

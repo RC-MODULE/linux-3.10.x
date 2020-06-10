@@ -183,14 +183,34 @@
 		};
 
 		au@0 {
-
+			ii2sc0: i2s@c0 {
+				status = "okay";
+			};
+			i2s0: i2s0@0 {
+				status = "okay";
+			};
+			i2s1: i2s1@0 {
+				status = "okay";
+			};
+			i2s2: i2s2@0 {
+				status = "okay";
+			};
+			i2s3: i2s3@0 {
+				status = "okay";
+			};
 		};
 
 		au@1 {
-
+			spdif: spdif@0 {
+				status = "okay";
+			};
 		};
 
 		apb_mult {
+			audio_dma: audio_dma@0x2800 {
+				status = "okay";
+			};
+
 			i2c0: i2c@1000 {
 				speed = <100000>;
 				clock-frequency = <54000000>;
@@ -216,11 +236,6 @@
 
 		video_decoder: video_decoder@80180000 {
 			status = "okay";
-		};
-
-		sound: audio@0x80175000 {
-			status = "okay";
-			maudio,model = "RC Module MB77.07";
 		};
 	};
 };

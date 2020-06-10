@@ -499,7 +499,7 @@ config PXA_DMA
 
 config RCM_AUDIO_DMA
 	tristate "RCM Audio DMA support"
-	depends on 1888TX018
+	depends on 1888TX018 || ARCH_RCM_K1879XB1
 	select DMA_ENGINE
 	select DMA_VIRTUAL_CHANNELS
 	help
