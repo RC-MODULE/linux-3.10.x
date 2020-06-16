@@ -187,8 +187,10 @@ static int rcm_i2s_hw_params(struct snd_pcm_substream *substream,
 		return -EINVAL;
 	}
 
+#ifndef CONFIG_ARCH_RCM_K1879XB1
 	// allow interrupts
 	ctrl0 |= 0xFF0;
+#endif
 
 	if (is_big_endian)
 		ctrl0 |= 0x4;

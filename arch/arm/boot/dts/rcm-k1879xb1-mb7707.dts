@@ -190,18 +190,45 @@
 				status = "okay";
 			};
 			i2s1: i2s1@0 {
-				status = "okay";
+				//status = "okay";
 			};
 			i2s2: i2s2@0 {
-				status = "okay";
+				//status = "okay";
 			};
 			i2s3: i2s3@0 {
-				status = "okay";
+				//status = "okay";
 			};
 		};
 
 		au@1 {
 			spdif: spdif@0 {
+				//status = "okay";
+			};
+
+			sound {
+				status = "okay";
+				compatible = "simple-audio-card";
+				simple-audio-card,name = "RCM Audio";
+				#address-cells = <1>;
+				#size-cells = <0>;
+				#sound-dai-cells = <0>;
+
+				simple-audio-card,dai-link@0 {
+					reg = <0>;
+					format = "i2s";
+					//reg = <4>; (spdif)
+					cpu {
+						sound-dai = <&i2s0>; //<&spdif>;
+					};
+					codec {
+						sound-dai = <&i2s_codec0>;
+					};
+				};
+			};
+
+			i2s_codec0: i2scodec0 {
+				compatible = "linux,spdif-dit";//"simple-audio-amplifier";
+				#sound-dai-cells = <0>;
 				status = "okay";
 			};
 		};
@@ -237,5 +264,10 @@
 		video_decoder: video_decoder@80180000 {
 			status = "okay";
 		};
+
+		//sound: audio@0x80175000 {
+		//	status = "okay";
+		//	maudio,model = "Module MB7707";
+		//};
 	};
 };
