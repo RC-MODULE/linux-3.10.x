@@ -226,7 +226,8 @@
 				clocks = <&pclk>;
 				clock-names = "apb_pclk";
 				arm,primecell-periphid = <0x141805>;
-				};
+				status = "okay";
+			};
 
 			i2c2: i2c@6000 {
 				#address-cells = <1>;
