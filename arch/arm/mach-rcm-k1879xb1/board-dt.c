@@ -100,17 +100,18 @@ static void __init setup_i2c_fixups(void)
 		irq_set_handler(irq, k1879_i2c_fixups[fixup_id]);
 	}
 }
-
-static void __init k1879_dt_timer_init(void)
+/*
+static void __init k1879_dt_timer_init(void) // need?
 {
 	of_clk_init(NULL);
 	timer_probe();
 }
-
+*/
 static void __init k1879_dt_mach_init(void)
 {
 	struct device_node *np;
 	void __iomem *address;
+	void __iomem *mif;
 
 	of_platform_populate(NULL, of_default_bus_match_table, NULL, NULL);
 	k1879_mif = ioremap(RCM_K1879_MIF_PHYS_BASE,
@@ -168,9 +169,7 @@ static void __init k1879_dt_mach_init(void)
 #if defined(CONFIG_RCM_GRI2C_HDMI)
 	/* I2C0 (Internal, HDMI) needs some extra love */
 	do {
-pr_notice("i2c hdmi init\n");
-		void __iomem *mif;
-
+		pr_notice("i2c hdmi init\n");
 		mif = k1879_mif_base();
 		writel(1, mif + RCM_K1879_MIF_I2C_INT_TYPE_ENA);
 		writel(1, mif + RCM_K1879_MIF_I2C_INT_TYPE);
@@ -182,7 +181,7 @@ pr_notice("i2c hdmi init\n");
 #if defined(CONFIG_RCM_MVDU_CORE)
 int rcm_setup_vmode(/*unsigned int hz, int hd*/struct mvdu_device *dev)
 {
-	struct mvdu_mode *mode = mvdu_get_modeinfo(dev, dev->current_mode);
+	const struct mvdu_mode *mode = mvdu_get_modeinfo(dev, dev->current_mode);
 	unsigned int hz = mode->pixclock;
 	bool hd = (mode->mode > 2);
 	u32 __iomem *mif_regs = k1879_mif_base();
