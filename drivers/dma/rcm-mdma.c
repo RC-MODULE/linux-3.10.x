@@ -25,11 +25,11 @@
 #include "dmaengine.h"
 
 /* Max number of descriptors per channel */
-#define MDMA_NUM_DESCS	32
-#define MDMA_NUM_SUB_DESCS	32
-#define MDMA_DESC_SIZE(chan)	(chan->desc_size)
-#define MDMA_PM_TIMEOUT			100
-#define MDMA_BUS_WIDTH_128	128
+#define MDMA_NUM_DESCS          32
+#define MDMA_NUM_SUB_DESCS      32
+#define MDMA_DESC_SIZE(chan)    (chan->desc_size)
+#define MDMA_PM_TIMEOUT         100
+#define MDMA_BUS_WIDTH_128      128
 
 #define MDMA_MAX_TRANS_LEN 0x7FFFFFC
 
@@ -42,15 +42,15 @@
 
 // channel settings
 #define MDMA_CHAN_DESC_NORMAL 0x00000000
-#define MDMA_CHAN_DESC_LONG 0x00000002
-#define MDMA_CHAN_DESC_PITCH 0x00000003
-#define MDMA_CHAN_ADD_INFO 0x00000010
+#define MDMA_CHAN_DESC_LONG   0x00000002
+#define MDMA_CHAN_DESC_PITCH  0x00000003
+#define MDMA_CHAN_ADD_INFO    0x00000010
 #define MDMA_CHAN_DESC_GAP_SHIFT 16
 
 /* Reset values for data attributes */
-#define MDMA_AXCACHE_VAL    0x3
-#define MDMA_ARLEN_RST_VAL	0xF
-#define MDMA_AWLEN_RST_VAL	0xF
+#define MDMA_AXCACHE_VAL        0x3
+#define MDMA_ARLEN_RST_VAL      0xF
+#define MDMA_AWLEN_RST_VAL      0xF
 
 #define MDMA_IRQ_STATUS_RX      BIT(0)
 #define MDMA_IRQ_STATUS_TX      BIT(16)
@@ -212,7 +212,7 @@ struct mdma_device {
 	spinlock_t lock;
 	struct dma_device slave;
 	struct mdma_chan *chan;
-    struct device* dev;
+	struct device* dev;
 	struct clk *clk;
 };
 
@@ -247,10 +247,10 @@ static void mdma_config(struct mdma_chan *chan)
 {
 	// todo ADD_INFO for slave mode
 	writel(chan->type | (MDMA_DESC_SIZE(chan) << MDMA_CHAN_DESC_GAP_SHIFT),
-		  &chan->regs->rx.settings);	
-	
+	       &chan->regs->rx.settings);
+
 	writel(chan->type | (MDMA_DESC_SIZE(chan) << MDMA_CHAN_DESC_GAP_SHIFT),
-		  &chan->regs->tx.settings);	
+	       &chan->regs->tx.settings);
 
 	writel(chan->src_burst_len, &chan->regs->rx.axlen);
 	writel(chan->dst_burst_len, &chan->regs->tx.axlen);
@@ -463,7 +463,7 @@ static struct dma_async_tx_descriptor *mdma_prep_memcpy(
 	int addr_mask;
 	chan = to_chan(dchan);
 
-	addr_mask =	chan->bus_width/8 - 1;
+	addr_mask = chan->bus_width/8 - 1;
 	if((dma_src & addr_mask) || (dma_dst & addr_mask))
 	{
 		dev_dbg(chan->dev, "DMA unalligned access %x -> %x\n", dma_src, dma_dst);
@@ -493,9 +493,9 @@ static struct dma_async_tx_descriptor *mdma_prep_memcpy(
 			// last sub descriptor
 			dst_desc->flags_length = copy | MDMA_BD_STOP | MDMA_BD_INT;
 			src_desc->flags_length = copy | MDMA_BD_STOP;
-		}	
+		}
 		else
-			dst_desc->flags_length = src_desc->flags_length = copy;	
+			dst_desc->flags_length = src_desc->flags_length = copy;
 
 		src_desc->memptr = dma_src;
 		dst_desc->memptr = dma_dst;
@@ -555,7 +555,7 @@ static void mdma_issue_pending(struct dma_chan *dchan)
  * Return: DMA channel pointer on success and NULL on error
  */
 static struct dma_chan *of_mdma_xlate(struct of_phandle_args *dma_spec,
-					    struct of_dma *ofdma)
+                                      struct of_dma *ofdma)
 {
 	struct mdma_device *mdev = ofdma->of_dma_data;
 
@@ -626,8 +626,8 @@ static void mdma_free_chan_resources(struct dma_chan *dchan)
 	mdma_free_descriptors(chan);
 	spin_unlock_irqrestore(&chan->lock, irqflags);
 	dma_free_coherent(chan->dev,
-		(2 * MDMA_DESC_SIZE(chan) * MDMA_NUM_DESCS),
-		chan->desc_pool_v, chan->desc_pool_p);
+	                  (2 * MDMA_DESC_SIZE(chan) * MDMA_NUM_DESCS),
+	                  chan->desc_pool_v, chan->desc_pool_p);
 	kfree(chan->sw_desc_pool);
 	pm_runtime_mark_last_busy(chan->dev);
 	pm_runtime_put_autosuspend(chan->dev);
@@ -642,7 +642,7 @@ static void mdma_free_chan_resources(struct dma_chan *dchan)
  * Return: 0 always
  */
 static int mdma_device_config(struct dma_chan *dchan,
-				    struct dma_slave_config *config)
+                              struct dma_slave_config *config)
 {
 	struct mdma_chan *chan = to_chan(dchan);
 
@@ -859,7 +859,7 @@ static int mdma_chan_probe(struct mdma_device *mdev,
 	if (chan->irq < 0)
 		return -ENXIO;
 	err = devm_request_irq(&pdev->dev, chan->irq, mdma_irq_handler, 0,
-			       "mdma", chan);
+	                       "mdma", chan);
 	if (err)
 		return err;
 
@@ -900,7 +900,7 @@ static int rcm_mdma_probe(struct platform_device *pdev)
 	p->device_config = mdma_device_config;
 	p->dev = &pdev->dev;
 
-    mdev->clk = devm_clk_get(&pdev->dev, NULL);
+	mdev->clk = devm_clk_get(&pdev->dev, NULL);
 	if (IS_ERR(mdev->clk)) {
 		dev_err(&pdev->dev, "main clock not found.\n");
 		return PTR_ERR(mdev->clk);
@@ -920,7 +920,7 @@ static int rcm_mdma_probe(struct platform_device *pdev)
 	ret = mdma_chan_probe(mdev, pdev);
 	if (ret) {
 		dev_err(&pdev->dev, "Probing channel failed\n");
-        goto err_disable_pm;
+		goto err_disable_pm;
 	}
 
 	p->dst_addr_widths = BIT(mdev->chan->bus_width / 8);
@@ -981,7 +981,7 @@ static struct platform_driver rcm_mdma_driver = {
 		{
 			.name = "rcm-mdma",
 			.of_match_table = rcm_mdma_dt_ids,
-            .pm = &mdma_dev_pm_ops,
+			.pm = &mdma_dev_pm_ops,
 		},
 	.probe = rcm_mdma_probe,
 	.remove = rcm_mdma_remove,
