@@ -506,6 +506,14 @@ config RCM_AUDIO_DMA
 	  Support the DMA engine for RC Module platforms
 	  devices.
 
+config RCM_MDMA
+	tristate "RCM MDMA support"
+	depends on TARGET_1888BC048
+	select DMA_ENGINE
+	select DMA_VIRTUAL_CHANNELS
+	help
+	  Support the MDMA engine for RC Module Basis platform.
+	  
 config RCM_CDNS_DMA
 	tristate "RCM Cadence PCIE internal DMA support"
 	select DMA_ENGINE
