@@ -5,7 +5,6 @@
  *
  *  Copyright (C) 2020 Alexey Spirkov <dev@alsp.net>
  */
-
 #include <linux/kernel.h>
 #include <linux/module.h>
 #include <linux/of.h>
@@ -52,6 +51,9 @@
 #define MDMA_AXCACHE_VAL    0x3
 #define MDMA_ARLEN_RST_VAL	0xF
 #define MDMA_AWLEN_RST_VAL	0xF
+
+#define MDMA_IRQ_STATUS_RX      BIT(0)
+#define MDMA_IRQ_STATUS_TX      BIT(16)
 
 #define MDMA_IRQ_SUSPEND_DONE   BIT(0)
 #define MDMA_IRQ_CANCEL_DONE    BIT(1)
@@ -505,6 +507,7 @@ static struct dma_async_tx_descriptor *mdma_prep_memcpy(
 
 	async_tx_ack(&sw_desc->async_tx);
 	sw_desc->async_tx.flags = flags;
+
 	return &sw_desc->async_tx;
 }
 
@@ -664,10 +667,17 @@ static irqreturn_t mdma_irq_handler(int irq, void *data)
 
 	status = readl(&chan->regs->status);
 
-	if((status>> 16) & MDMA_IRQ_INT_DESC)
+	if (status & MDMA_IRQ_STATUS_TX)
 	{
-		// todo - for a while mdma works one descriptor set (memcpy) by one
-		chan->idle = true;
+		status = readl(&chan->regs->tx.status);
+
+		if (status & MDMA_IRQ_INT_DESC) {
+			// todo - for a while mdma works one descriptor set (memcpy) by one
+			chan->idle = true;
+		} else {
+			chan->err = true;
+		}
+
 		chan->last_irq_status = status;
 
 		tasklet_schedule(&chan->tasklet);
