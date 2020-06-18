@@ -513,6 +513,13 @@ config RCM_MDMA
 	select DMA_VIRTUAL_CHANNELS
 	help
 	  Support the MDMA engine for RC Module Basis platform.
+	  
+config RCM_CDNS_DMA
+	tristate "RCM Cadence PCIE internal DMA support"
+	select DMA_ENGINE
+	help
+	  Support the DMA engine for RC Module Cadence PCIE
+	  internal DMA controller.
 
 config SIRF_DMA
 	tristate "CSR SiRFprimaII/SiRFmarco DMA support"

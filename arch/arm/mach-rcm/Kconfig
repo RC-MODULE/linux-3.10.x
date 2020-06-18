@@ -7,6 +7,7 @@ config TARGET_1879VM8YA
 	bool "Support 1879VM8YA based boards"
 	select CACHE_L2X0
 	select SPI
+	select HAVE_PCI
 
 config TARGET_1888BC048
 	bool "Support 1888BC048 based boards"

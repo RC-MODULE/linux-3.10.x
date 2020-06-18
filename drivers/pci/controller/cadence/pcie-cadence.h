@@ -13,7 +13,11 @@
 /*
  * Local Management Registers
  */
-#define CDNS_PCIE_LM_BASE	0x00100000
+#if defined(CONFIG_RCM_PCIE_CADENCE_EP) || defined(CONFIG_RCM_PCIE_CADENCE_HOST)
+#	define CDNS_PCIE_LM_BASE	0x00001000
+#else
+#	define CDNS_PCIE_LM_BASE	0x00100000
+#endif
 
 /* Vendor ID Register */
 #define CDNS_PCIE_LM_ID		(CDNS_PCIE_LM_BASE + 0x0044)
@@ -98,13 +102,20 @@
 /*
  * Root Port Registers (PCI configuration space for the root port function)
  */
-#define CDNS_PCIE_RP_BASE	0x00200000
-
+#ifdef CONFIG_RCM_PCIE_CADENCE_HOST
+#	define CDNS_PCIE_RP_BASE	0x00000000
+#else
+#	define CDNS_PCIE_RP_BASE	0x00200000
+#endif
 
 /*
  * Address Translation Registers
  */
-#define CDNS_PCIE_AT_BASE	0x00400000
+#if defined(CONFIG_RCM_PCIE_CADENCE_EP) || defined(CONFIG_RCM_PCIE_CADENCE_HOST)
+#	define CDNS_PCIE_AT_BASE	0x00004000
+#else
+#	define CDNS_PCIE_AT_BASE	0x00400000
+#endif
 
 /* Region r Outbound AXI to PCIe Address Translation Register 0 */
 #define CDNS_PCIE_AT_OB_REGION_PCI_ADDR0(r) \
