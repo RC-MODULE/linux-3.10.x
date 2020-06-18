@@ -85,7 +85,8 @@
 
         mdma_gp0: dma@01010000 {
             compatible = "rcm,mdma";
-            reg = <0x010100000 0x1000>;
+            reg = <0x01010000 0x1000>;
+            #dma-cells = <1>;
             interrupt-parent = <&gic0>;
             interrupts = <0 32 4>;
             clocks = <&clock_axi_fast>;
@@ -94,6 +95,7 @@
         mdma_gp1: dma@01011000 {
             compatible = "rcm,mdma";
             reg = <0x01011000 0x1000>;
+            #dma-cells = <1>;
             interrupt-parent = <&gic0>;
             interrupts = <0 33 4>;
             clocks = <&clock_axi_fast>;
@@ -101,7 +103,8 @@
         };
         mdma_gp2: dma@01012000 {
             compatible = "rcm,mdma";
-            reg = <0x010120000 0x1000>;
+            reg = <0x01012000 0x1000>;
+            #dma-cells = <1>;
             interrupt-parent = <&gic0>;
             interrupts = <0 34 4>;
             clocks = <&clock_axi_fast>;
@@ -109,7 +112,8 @@
         };
         mdma_gp3: dma@01013000 {
             compatible = "rcm,mdma";
-            reg = <0x010130000 0x1000>;
+            reg = <0x01013000 0x1000>;
+            #dma-cells = <1>;
             interrupt-parent = <&gic0>;
             interrupts = <0 35 4>;
             clocks = <&clock_axi_fast>;
