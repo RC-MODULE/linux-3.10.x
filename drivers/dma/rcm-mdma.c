@@ -5,6 +5,8 @@
  *
  *  Copyright (C) 2020 Alexey Spirkov <dev@alsp.net>
  */
+#define DEBUG
+
 #include <linux/kernel.h>
 #include <linux/module.h>
 #include <linux/of.h>
@@ -28,6 +30,7 @@
 #define MDMA_NUM_DESCS          32
 #define MDMA_NUM_SUB_DESCS      32
 #define MDMA_DESC_SIZE(chan)    (chan->desc_size)
+#define MDMA_POOL_SIZE          262144
 #define MDMA_PM_TIMEOUT         100
 #define MDMA_BUS_WIDTH_128      128
 
@@ -66,12 +69,18 @@
 #define MDMA_IRQ_START_BY_EVENT BIT(8)
 #define MDMA_IRQ_IGNORE_EVENT   BIT(9)
 
-#define MDMA_IRQ_SENS_MASK (MDMA_IRQ_INT_DESC | MDMA_IRQ_BAD_DESC)
+#define MDMA_IRQ_SENS_MASK (MDMA_IRQ_INT_DESC | MDMA_IRQ_BAD_DESC | \
+                            MDMA_IRQ_DISCARD_DESC | MDMA_IRQ_WAXI_ERR | \
+                            MDMA_IRQ_AXI_ERR)
+
+#define MDMA_DESC_ALIGNMENT 16
 
 #define to_chan(chan)		container_of(chan, struct mdma_chan, \
 					     slave)
 #define tx_to_desc(tx)		container_of(tx, struct mdma_desc_sw, \
 					     async_tx)
+#define pool_to_chan(pool)	container_of(pool, struct mdma_chan, \
+					     desc_pool)
 
 
 typedef const volatile unsigned int roreg32;
@@ -155,7 +164,7 @@ struct mdma_desc_long_ll {
 	unsigned int usrdata_h;
 	unsigned int memptr;
 	unsigned int flags_length;
-} __attribute__((packed, aligned(16)));
+} __attribute__((packed, aligned(MDMA_DESC_ALIGNMENT)));
 
 /**
  * struct mdma_desc_sw - Per Transaction structure
@@ -170,15 +179,24 @@ struct mdma_desc_long_ll {
  * @dst_p: Physical address of the dst descriptor
  */
 struct mdma_desc_sw {
-	u64 src;
-	u64 dst;
-	u32 len;
 	struct list_head node;
 	struct dma_async_tx_descriptor async_tx;
-	void *src_v;
-	dma_addr_t src_p;
-	void *dst_v;
-	dma_addr_t dst_p;
+	unsigned pos_src;
+	unsigned cnt_src;
+	unsigned pos_dst;
+	unsigned cnt_dst;
+};
+
+struct mdma_desc_pool {
+	struct mdma_desc_long_ll *descs;
+	unsigned                  size;
+	unsigned                  cnt;
+	unsigned                  head;
+	unsigned                  next;
+
+	struct sg_table           sgt;
+	struct page             **pages;
+	void*                     ptr;
 };
 
 struct mdma_chan {
@@ -188,15 +206,13 @@ struct mdma_chan {
 	struct list_head pending_list;
 	struct list_head free_list;
 	struct list_head active_list;
-	struct mdma_desc_sw *sw_desc_pool;
 	struct list_head done_list;
-	struct dma_chan slave;
-	void *desc_pool_v;
-	dma_addr_t desc_pool_p;
+	struct mdma_desc_sw *sw_desc_pool;
 	u32 desc_free_cnt;
+	struct dma_chan slave;
+	struct mdma_desc_pool desc_pool;
 	struct device *dev;
 	int irq;
-	int last_irq_status;
 	struct tasklet_struct tasklet;
 	bool idle;
 	u32 desc_size;
@@ -215,6 +231,262 @@ struct mdma_device {
 	struct device* dev;
 	struct clk *clk;
 };
+
+static void mdma_desc_pool_free(struct mdma_desc_pool* pool)
+{
+	struct mdma_chan *chan = pool_to_chan(pool);
+
+	if (pool->sgt.sgl) {
+		dma_unmap_sg(chan->mdev->dev, pool->sgt.sgl, pool->sgt.nents,
+		             DMA_TO_DEVICE);
+		sg_free_table(&pool->sgt);
+	}
+
+	if (pool->pages) {
+		kfree(pool->pages);
+		pool->pages = NULL;
+	}
+
+	if (pool->ptr) {
+		vfree(pool->ptr);
+		pool->ptr = NULL;
+	}
+}
+
+static int mdma_desc_pool_alloc(struct mdma_desc_pool* pool, unsigned cnt)
+{
+	struct mdma_chan *chan = pool_to_chan(pool);
+	int ret = 0;
+	int nr_pages; 
+	struct scatterlist* sg;
+	void *p; 
+	int i;
+	unsigned long size = cnt * sizeof(struct mdma_desc_long_ll);
+	struct mdma_desc_long_ll link = {0};
+
+	pool->ptr = vmalloc(size + MDMA_DESC_ALIGNMENT);
+
+	if (!pool->ptr) {
+		pr_err("%s: Failed to allocate memory (%lu bytes).\n", __func__,
+		       size + MDMA_DESC_ALIGNMENT);
+		return -ENOMEM;
+	}
+
+	memset(pool->ptr, 0, size + MDMA_DESC_ALIGNMENT);
+
+	pool->descs = (struct mdma_desc_long_ll *)ALIGN((size_t)pool->ptr, 
+	                                                MDMA_DESC_ALIGNMENT);
+
+	pool->size = cnt;
+	pool->cnt = cnt;
+	pool->next = 0;
+	pool->head = 0;
+
+	nr_pages = DIV_ROUND_UP((unsigned long)pool->descs + size, PAGE_SIZE) -
+	           (unsigned long)pool->descs / PAGE_SIZE;
+	pool->pages = kmalloc_array(nr_pages, sizeof(struct page *), 
+	                            GFP_KERNEL);
+	if (!pool->pages) {
+		pr_err("%s: Failed to allocate array for %d pages.\n",
+		       __func__, nr_pages);
+		ret = -ENOMEM;
+		goto err_free_pool;
+	}
+
+	p = (void*)pool->descs - offset_in_page(pool->descs);
+	for (i = 0; i < nr_pages; i++) {
+		if (is_vmalloc_addr(p))
+			pool->pages[i] = vmalloc_to_page(p);
+		else
+			pool->pages[i] = virt_to_page((void *)p);
+		if (!pool->pages[i]) {
+			pr_err("%s: Failed to get page for address 0x%px.\n",
+			       __func__, p);
+			ret = -EFAULT;
+			goto err_free_pool;
+		}
+
+		p += PAGE_SIZE;
+	}
+
+/*
+	ret = __sg_alloc_table_from_pages(&pool->sgt, pool->pages, nr_pages,
+	                                  offset_in_page(pool->descs), size,
+	                                  PAGE_SIZE, GFP_KERNEL);
+*/
+
+	ret = sg_alloc_table_from_pages(&pool->sgt, pool->pages, nr_pages,
+	                                offset_in_page(pool->descs), size,
+	                                GFP_KERNEL);
+
+	if (ret) {
+		pr_err("%s: Failed to allocate SG-table (%d pages).\n",
+		       __func__, nr_pages);
+		ret = -EFAULT;
+		goto err_free_pool;
+	}
+
+	ret = dma_map_sg(chan->mdev->dev, pool->sgt.sgl, pool->sgt.nents, 
+	                 DMA_TO_DEVICE);
+	if (ret == 0) {
+		pr_err("%s: Failed to map SG-table.\n", __func__);
+		ret = -EFAULT;
+		goto err_free_pool;
+	}
+
+	link.flags_length = MDMA_BD_LINK;
+
+	p = (void*)pool->descs;
+
+	for_each_sg(pool->sgt.sgl, sg, pool->sgt.nents, i) {
+		u32 len  = sg_dma_len(sg);
+
+		if (i == pool->sgt.nents - 1) {
+			link.memptr = sg_dma_address(pool->sgt.sgl);
+		} else {
+			link.memptr = sg_dma_address(sg_next(sg));
+		}
+
+		memcpy(p + len - sizeof(link), &link, sizeof(link));
+
+		p += len;
+	}
+
+	pr_debug("%s: descriptor's pool allocated "
+	         "(%u descriptors in %u sg-entries)\n",
+	         __func__, cnt, pool->sgt.nents);
+
+	return 0;
+
+err_free_pool:
+	mdma_desc_pool_free(pool);
+	return ret;
+}
+
+static dma_addr_t mdma_desc_pool_get_addr(struct mdma_desc_pool* pool,
+                                          unsigned pos)
+{
+	struct scatterlist* sg;
+	int i;
+
+	for_each_sg(pool->sgt.sgl, sg, pool->sgt.nents, i) {
+		u32 len = sg_dma_len(sg);
+		u32 cnt = len / sizeof(struct mdma_desc_long_ll);
+
+		if (cnt <= pos) {
+			pos -= cnt;
+		} else {
+			dma_addr_t addr = sg_dma_address(sg);
+			return addr + pos * sizeof(struct mdma_desc_long_ll);
+		}
+	}
+
+	return 0;
+}
+
+static unsigned mdma_desc_pool_get(struct mdma_desc_pool* pool, 
+                                   unsigned cnt, unsigned *pos)
+{
+	unsigned i;
+	unsigned n;
+
+	pr_debug("%s(%u) >>> next = %u, head = %u, cnt = %u, size = %u\n",
+	          __func__, cnt, pool->next, pool->head, pool->cnt, pool->size);
+
+	if (cnt > pool->cnt)
+		return 0;
+
+	i = pool->next;
+	n = 0;
+
+	while ((n != cnt) && (cnt <= pool->cnt)) {
+		if (pool->descs[i].flags_length & MDMA_BD_LINK)
+			++cnt;
+		++n;
+		i = (i + 1) % pool->size;
+	}
+
+	if (n != cnt) {
+		pr_debug("%s: n = %u, cnt = %u\n", __func__, n, cnt);
+		return 0;
+	}
+
+	i = pool->next;
+
+	if (pos)
+		*pos = i;
+
+	pool->cnt -= cnt;
+	pool->next = (pool->next + cnt) % pool->size;
+
+	pr_debug("%s(%u) <<< next = %u, head = %u, cnt = %u, size = %u\n",
+	          __func__, cnt, pool->next, pool->head, pool->cnt, pool->size);
+
+	return cnt;
+}
+
+static void mdma_desc_pool_put(struct mdma_desc_pool* pool,
+                               unsigned pos, unsigned cnt)
+{
+	pr_debug("%s(%u, %u) >>> next = %u, head = %u, cnt = %u, size = %u\n",
+	          __func__, pos, cnt, pool->next, pool->head, pool->cnt, pool->size);
+
+	if (pos != pool->head) {
+		pr_warn("%s: incorrect pool operation: pool(head = %u, cnt = %u)"
+		        ", trying to put %u items to pos %u.\n",
+		        __func__, pool->head, pool->cnt, cnt, pos);
+	}
+
+	if (cnt > pool->size - pool->cnt) {
+		pr_warn("%s: incorrect pool operation: "
+		        "pool(size = %u, cnt = %u), trying to put %u items.\n",
+		        __func__, pool->size, pool->cnt, cnt);
+		cnt = pool->size - pool->cnt;
+	}
+
+	pool->head = (pool->head + cnt) % pool->size;
+	pool->cnt += cnt;
+
+	pr_debug("%s(%u, %u) <<< next = %u, head = %u, cnt = %u, size = %u\n",
+	          __func__, pos, cnt, pool->next, pool->head, pool->cnt, pool->size);
+}
+
+static void mdma_desc_pool_sync(struct mdma_desc_pool* pool,
+                                unsigned pos, unsigned cnt)
+{
+	struct mdma_chan *chan = pool_to_chan(pool);
+	struct scatterlist* sg;
+	int i;
+	unsigned cnt_sync = 0;
+
+	for_each_sg(pool->sgt.sgl, sg, pool->sgt.nents, i) {
+		u32 len = sg_dma_len(sg);
+		u32 n = len / sizeof(struct mdma_desc_long_ll);
+
+		if (n <= pos) {
+			pos -= n;
+		} else {
+			break;
+		}
+	}
+
+	do {
+		dma_addr_t addr = sg_dma_address(sg);
+		u32 len = sg_dma_len(sg);
+
+		dma_sync_single_for_device(chan->mdev->dev, addr, len, 
+		                           DMA_TO_DEVICE);
+
+		cnt_sync += len / sizeof(struct mdma_desc_long_ll);
+
+		if (pos != 0) {
+			cnt_sync -= pos;
+			pos = 0;
+		}
+
+		sg = (sg_is_last(sg)) ? pool->sgt.sgl : sg_next(sg);
+	} while (cnt_sync < cnt);
+}
 
 /**
  * mdma_start - Start DMA channel
@@ -238,8 +510,13 @@ static void mdma_start(struct mdma_chan *chan)
 static void mdma_update_desc_to_ctrlr(struct mdma_chan *chan,
 				      struct mdma_desc_sw *desc)
 {
-	writel(desc->src_p, &chan->regs->rx.desc_addr);
-	writel(desc->dst_p, &chan->regs->tx.desc_addr);
+	dma_addr_t src_addr = mdma_desc_pool_get_addr(&chan->desc_pool, 
+	                                              desc->pos_src);
+	dma_addr_t dst_addr = mdma_desc_pool_get_addr(&chan->desc_pool, 
+	                                              desc->pos_dst);
+
+	writel(src_addr, &chan->regs->rx.desc_addr);
+	writel(dst_addr, &chan->regs->tx.desc_addr);
 }
 
 
@@ -290,17 +567,19 @@ static struct mdma_desc_sw *
 mdma_get_descriptor(struct mdma_chan *chan)
 {
 	struct mdma_desc_sw *desc;
-	unsigned long irqflags;
 
-	spin_lock_irqsave(&chan->lock, irqflags);
+	if (!chan->desc_free_cnt) {
+		dev_dbg(chan->dev, "chan %p descs are not available\n", chan);
+		return NULL;
+	}
+
 	desc = list_first_entry(&chan->free_list,
 				struct mdma_desc_sw, node);
 	list_del(&desc->node);
-	spin_unlock_irqrestore(&chan->lock, irqflags);
+	chan->desc_free_cnt--;
 
-	/* Clear the src and dst descriptor memory */
-	memset((void *)desc->src_v, 0, MDMA_DESC_SIZE(chan)*MDMA_NUM_SUB_DESCS);
-	memset((void *)desc->dst_v, 0, MDMA_DESC_SIZE(chan)*MDMA_NUM_SUB_DESCS);
+	desc->cnt_src = 0;
+	desc->cnt_dst = 0;
 
 	return desc;
 }
@@ -314,6 +593,12 @@ mdma_get_descriptor(struct mdma_chan *chan)
 static void mdma_free_descriptor(struct mdma_chan *chan,
 				 struct mdma_desc_sw *sdesc)
 {
+	if (sdesc->cnt_src)
+		mdma_desc_pool_put(&chan->desc_pool, sdesc->pos_src,
+		                   sdesc->cnt_src);
+	if (sdesc->cnt_dst)
+		mdma_desc_pool_put(&chan->desc_pool, sdesc->pos_dst,
+		                   sdesc->cnt_dst);
 	chan->desc_free_cnt++;
 	list_add_tail(&sdesc->node, &chan->free_list);
 }
@@ -328,8 +613,10 @@ static void mdma_free_desc_list(struct mdma_chan *chan,
 {
 	struct mdma_desc_sw *desc, *next;
 
-	list_for_each_entry_safe(desc, next, list, node)
+	list_for_each_entry_safe(desc, next, list, node) {
+		list_del(&desc->node);
 		mdma_free_descriptor(chan, desc);
+	}
 }
 
 
@@ -457,10 +744,15 @@ static struct dma_async_tx_descriptor *mdma_prep_memcpy(
 {
 	struct mdma_chan *chan;
 	struct mdma_desc_sw *sw_desc = NULL;
+	unsigned cnt_descs = 0;
 	struct mdma_desc_long_ll *src_desc, *dst_desc;
+	unsigned pos_src;
+	unsigned pos_dst;
 	size_t copy;
 	unsigned long irqflags;
 	int addr_mask;
+	struct mdma_desc_pool pool_save;
+
 	chan = to_chan(dchan);
 
 	addr_mask = chan->bus_width/8 - 1;
@@ -470,23 +762,69 @@ static struct dma_async_tx_descriptor *mdma_prep_memcpy(
 		return NULL;
 	}
 
+	copy = len;
+
+	do {
+		++cnt_descs;
+		copy -= min_t(size_t, copy, MDMA_MAX_TRANS_LEN);
+	} while (copy);
+
 	spin_lock_irqsave(&chan->lock, irqflags);
-	if (!chan->desc_free_cnt) {
+
+	sw_desc = mdma_get_descriptor(chan);
+
+	pool_save = chan->desc_pool;
+
+	sw_desc->cnt_src = mdma_desc_pool_get(&chan->desc_pool, cnt_descs,
+	                                      &sw_desc->pos_src);
+	sw_desc->cnt_dst = mdma_desc_pool_get(&chan->desc_pool, cnt_descs,
+	                                      &sw_desc->pos_dst);
+
+	if ((!sw_desc->cnt_src) || (!sw_desc->cnt_dst)) {
+		chan->desc_pool = pool_save;
+		mdma_free_descriptor(chan, sw_desc);
 		spin_unlock_irqrestore(&chan->lock, irqflags);
-		dev_dbg(chan->dev, "chan %p descs are not available\n", chan);
+		dev_dbg(chan->dev, 
+		        "chan %p: can't get %u descriptors from pool\n",
+		        chan, cnt_descs);
 		return NULL;
 	}
-	chan->desc_free_cnt--;
+
 	spin_unlock_irqrestore(&chan->lock, irqflags);
 
-	/* Allocate and populate the descriptor */
-	sw_desc = mdma_get_descriptor(chan);
-	src_desc = (struct mdma_desc_long_ll *)sw_desc->src_v;
-	dst_desc = (struct mdma_desc_long_ll *)sw_desc->dst_v;
+	src_desc = &chan->desc_pool.descs[sw_desc->pos_src];
+	dst_desc = &chan->desc_pool.descs[sw_desc->pos_dst];
+
+	pos_src = sw_desc->pos_src;
+	pos_dst = sw_desc->pos_dst;
 
 	do {
 		copy = min_t(size_t, len, MDMA_MAX_TRANS_LEN);
 		len -= copy;
+
+		if (src_desc->flags_length & MDMA_BD_LINK) {
+			pr_debug("%s: Link at pos %u (RX)\n", __func__, pos_src);
+			src_desc->flags_length = MDMA_BD_LINK;
+
+			if (pos_src + 1 == chan->desc_pool.size)
+				src_desc = chan->desc_pool.descs;
+			else
+				++src_desc;
+
+			pos_src = (pos_src + 1) % chan->desc_pool.size;
+		}
+
+		if (dst_desc->flags_length & MDMA_BD_LINK) {
+			pr_debug("%s: Link at pos %u (TX)\n", __func__, pos_dst);
+			dst_desc->flags_length = MDMA_BD_LINK;
+
+			if (pos_dst + 1 == chan->desc_pool.size)
+				dst_desc = chan->desc_pool.descs;
+			else
+				++dst_desc;
+
+			pos_dst = (pos_dst + 1) % chan->desc_pool.size;
+		}
 
 		if(!len)
 		{
@@ -501,9 +839,25 @@ static struct dma_async_tx_descriptor *mdma_prep_memcpy(
 		dst_desc->memptr = dma_dst;
 		dma_src += copy;
 		dma_dst += copy;
-		src_desc++;
-		dst_desc++;
+
+		if (pos_src + 1 == chan->desc_pool.size)
+			src_desc = chan->desc_pool.descs;
+		else
+			++src_desc;
+
+		if (pos_dst + 1 == chan->desc_pool.size)
+			dst_desc = chan->desc_pool.descs;
+		else
+			++dst_desc;
+
+		pos_src = (pos_src + 1) % chan->desc_pool.size;
+		pos_dst = (pos_dst + 1) % chan->desc_pool.size;
 	} while (len);
+
+	mdma_desc_pool_sync(&chan->desc_pool, sw_desc->pos_src,
+	                    sw_desc->cnt_src);
+	mdma_desc_pool_sync(&chan->desc_pool, sw_desc->pos_dst,
+	                    sw_desc->cnt_dst);
 
 	async_tx_ack(&sw_desc->async_tx);
 	sw_desc->async_tx.flags = flags;
@@ -596,21 +950,12 @@ static int mdma_alloc_chan_resources(struct dma_chan *dchan)
 		list_add_tail(&desc->node, &chan->free_list);
 	}
 
-	chan->desc_pool_v = dma_alloc_coherent(chan->dev,
-					       (2 * chan->desc_size * MDMA_NUM_DESCS * MDMA_NUM_SUB_DESCS),
-					       &chan->desc_pool_p, GFP_KERNEL);
-	if (!chan->desc_pool_v)
-		return -ENOMEM;
+	ret = mdma_desc_pool_alloc(&chan->desc_pool, MDMA_POOL_SIZE);
 
-	for (i = 0; i < MDMA_NUM_DESCS; i++) {
-		desc = chan->sw_desc_pool + i;
-		desc->src_v = chan->desc_pool_v + 2 * i * MDMA_DESC_SIZE(chan) * MDMA_NUM_SUB_DESCS;
-		desc->dst_v = desc->src_v + MDMA_DESC_SIZE(chan) * MDMA_NUM_SUB_DESCS;
-		desc->src_p = chan->desc_pool_p + 2 * i * MDMA_DESC_SIZE(chan) * MDMA_NUM_SUB_DESCS;
-		desc->dst_p = desc->src_p + MDMA_DESC_SIZE(chan) * MDMA_NUM_SUB_DESCS;
-	}
+	if (ret)
+		return ret;
 
-	return MDMA_NUM_DESCS;
+	return MDMA_POOL_SIZE;
 }
 
 /**
@@ -625,9 +970,7 @@ static void mdma_free_chan_resources(struct dma_chan *dchan)
 	spin_lock_irqsave(&chan->lock, irqflags);
 	mdma_free_descriptors(chan);
 	spin_unlock_irqrestore(&chan->lock, irqflags);
-	dma_free_coherent(chan->dev,
-	                  (2 * MDMA_DESC_SIZE(chan) * MDMA_NUM_DESCS),
-	                  chan->desc_pool_v, chan->desc_pool_p);
+	mdma_desc_pool_free(&chan->desc_pool);
 	kfree(chan->sw_desc_pool);
 	pm_runtime_mark_last_busy(chan->dev);
 	pm_runtime_put_autosuspend(chan->dev);
@@ -663,30 +1006,43 @@ static irqreturn_t mdma_irq_handler(int irq, void *data)
 {
 	struct mdma_chan *chan = (struct mdma_chan *)data;
 	u32 status;
-	irqreturn_t ret = IRQ_NONE;
+	bool need_tasklet = false;
 
 	status = readl(&chan->regs->status);
 
-	if (status & MDMA_IRQ_STATUS_TX)
-	{
-		status = readl(&chan->regs->tx.status);
+	pr_debug("%s: Channel %p interrupt, status %x\n",
+	          __func__, chan, status);
 
-		if (status & MDMA_IRQ_INT_DESC) {
-			// todo - for a while mdma works one descriptor set (memcpy) by one
+	if ((status & (MDMA_IRQ_STATUS_TX | MDMA_IRQ_STATUS_RX)) == 0)
+		return IRQ_NONE;
+
+	if (status & MDMA_IRQ_STATUS_RX) {
+		u32 rx_status = readl(&chan->regs->rx.status);
+		pr_debug("%s: Channel %p RX-interrupt, status %x\n",
+		         __func__, chan, rx_status);
+
+		chan->err = true;
+		need_tasklet = true;
+	}
+
+	if (status & MDMA_IRQ_STATUS_TX) {
+		u32 tx_status = readl(&chan->regs->tx.status);
+		pr_debug("%s: Channel %p TX-interrupt, status %x\n",
+		         __func__, chan, tx_status);
+
+		if (tx_status & MDMA_IRQ_INT_DESC) {
 			chan->idle = true;
 		} else {
 			chan->err = true;
 		}
 
-		chan->last_irq_status = status;
-
-		tasklet_schedule(&chan->tasklet);
-		ret = IRQ_HANDLED;
+		need_tasklet = true;
 	}
 
-	dev_dbg(chan->dev, "Channel %p interrupt, status %x\n", chan, status);
+	if (need_tasklet)
+		tasklet_schedule(&chan->tasklet);
 
-	return ret;
+	return IRQ_HANDLED;
 }
 
 /**
