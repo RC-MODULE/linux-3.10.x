@@ -181,6 +181,7 @@ struct mdma_desc_long_ll {
 struct mdma_desc_sw {
 	struct list_head node;
 	struct dma_async_tx_descriptor async_tx;
+	struct dma_slave_config config;
 	unsigned pos_src;
 	unsigned cnt_src;
 	unsigned pos_dst;
@@ -219,8 +220,7 @@ struct mdma_chan {
 	u32 type;
 	bool err;
 	u32 bus_width;
-	u32 src_burst_len;
-	u32 dst_burst_len;
+	struct dma_slave_config config;
 };
 
 struct mdma_device {
@@ -520,7 +520,7 @@ static void mdma_update_desc_to_ctrlr(struct mdma_chan *chan,
 }
 
 
-static void mdma_config(struct mdma_chan *chan)
+static void mdma_config(struct mdma_chan *chan, struct mdma_desc_sw *desc)
 {
 	// todo ADD_INFO for slave mode
 	writel(chan->type | (MDMA_DESC_SIZE(chan) << MDMA_CHAN_DESC_GAP_SHIFT),
@@ -529,8 +529,8 @@ static void mdma_config(struct mdma_chan *chan)
 	writel(chan->type | (MDMA_DESC_SIZE(chan) << MDMA_CHAN_DESC_GAP_SHIFT),
 	       &chan->regs->tx.settings);
 
-	writel(chan->src_burst_len, &chan->regs->rx.axlen);
-	writel(chan->dst_burst_len, &chan->regs->tx.axlen);
+	writel(desc->config.src_maxburst, &chan->regs->rx.axlen);
+	writel(desc->config.dst_maxburst, &chan->regs->tx.axlen);
 }
 
 
@@ -545,12 +545,12 @@ static void mdma_start_transfer(struct mdma_chan *chan)
 	if (!chan->idle)
 		return;
 
-	mdma_config(chan);
-
 	desc = list_first_entry_or_null(&chan->pending_list,
 					struct mdma_desc_sw, node);
 	if (!desc)
 		return;
+
+	mdma_config(chan, desc);
 
 	list_splice_tail_init(&chan->pending_list, &chan->active_list);
 	mdma_update_desc_to_ctrlr(chan, desc);
@@ -580,6 +580,8 @@ mdma_get_descriptor(struct mdma_chan *chan)
 
 	desc->cnt_src = 0;
 	desc->cnt_dst = 0;
+
+	desc->config = chan->config;
 
 	return desc;
 }
@@ -989,8 +991,7 @@ static int mdma_device_config(struct dma_chan *dchan,
 {
 	struct mdma_chan *chan = to_chan(dchan);
 
-	chan->src_burst_len = config->src_maxburst;
-	chan->dst_burst_len = config->dst_maxburst;
+	chan->config = *config;
 
 	return 0;
 }
@@ -1185,8 +1186,8 @@ static int mdma_chan_probe(struct mdma_device *mdev,
 		return PTR_ERR(chan->regs);
 
 	chan->bus_width = MDMA_BUS_WIDTH_128;
-	chan->dst_burst_len = MDMA_AWLEN_RST_VAL;
-	chan->src_burst_len = MDMA_ARLEN_RST_VAL;
+	chan->config.src_maxburst = MDMA_AWLEN_RST_VAL;
+	chan->config.dst_maxburst = MDMA_ARLEN_RST_VAL;
 	err = of_property_read_u32(node, "rcm,bus-width", &chan->bus_width);
 	if (err < 0) {
 		dev_err(&pdev->dev, "missing rcm,bus-width property\n");
