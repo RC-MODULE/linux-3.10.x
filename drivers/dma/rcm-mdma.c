@@ -1111,7 +1111,7 @@ static void mdma_reset(struct mdma_chan *chan)
 
 	mdma_complete_descriptor(chan);
 	mdma_chan_desc_cleanup(chan);
-	mdma_free_descriptors(chan);
+//	mdma_free_descriptors(chan);
 	mdma_init(chan);
 }
 
