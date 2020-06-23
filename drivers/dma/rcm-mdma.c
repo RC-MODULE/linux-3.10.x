@@ -208,6 +208,7 @@ struct mdma_chan {
 	struct list_head pending_list;
 	struct list_head free_list;
 	struct mdma_desc_sw *active_desc;
+	struct mdma_desc_sw *prepared_desc;
 	struct mdma_desc_sw *sw_desc_pool;
 	u32 desc_free_cnt;
 	struct dma_chan slave;
@@ -629,6 +630,10 @@ static void mdma_free_desc_list(struct mdma_chan *chan,
  */
 static void mdma_free_descriptors(struct mdma_chan *chan)
 {
+	if (chan->prepared_desc) {
+		mdma_free_descriptor(chan, chan->prepared_desc);
+		chan->prepared_desc = NULL;
+	}
 	if (chan->active_desc) {
 		mdma_free_descriptor(chan, chan->active_desc);
 		chan->active_desc = NULL;
@@ -651,6 +656,16 @@ static dma_cookie_t mdma_tx_submit(struct dma_async_tx_descriptor *tx)
 
 	desc = tx_to_desc(tx);
 	spin_lock_irqsave(&chan->lock, irqflags);
+
+	if (desc != chan->prepared_desc) {
+		spin_unlock_irqrestore(&chan->lock, irqflags);
+		pr_err("%s: Attempt to submit unexpected descriptor.\n",
+		       __func__);
+		return -EFAULT;
+	}
+
+	chan->prepared_desc = NULL;
+
 	cookie = dma_cookie_assign(tx);
 
 	list_add_tail(&desc->node, &chan->pending_list);
@@ -776,6 +791,13 @@ static struct dma_async_tx_descriptor *mdma_prep_memcpy(
 
 	spin_lock_irqsave(&chan->lock, irqflags);
 
+	if (chan->prepared_desc) {
+		spin_unlock_irqrestore(&chan->lock, irqflags);
+		pr_err("%s: Previous prepared descriptor was not submitted.\n",
+		       __func__);
+		return NULL;
+	}
+
 	sw_desc = mdma_get_descriptor(chan);
 
 	pool_save = chan->desc_pool;
@@ -794,6 +816,8 @@ static struct dma_async_tx_descriptor *mdma_prep_memcpy(
 		        chan, cnt_descs);
 		return NULL;
 	}
+
+	chan->prepared_desc = sw_desc;
 
 	spin_unlock_irqrestore(&chan->lock, irqflags);
 
@@ -944,6 +968,7 @@ static int mdma_alloc_chan_resources(struct dma_chan *dchan)
 		return -ENOMEM;
 
 	chan->active_desc = NULL;
+	chan->prepared_desc = NULL;
 	chan->desc_free_cnt = MDMA_NUM_DESCS;
 
 	INIT_LIST_HEAD(&chan->free_list);
