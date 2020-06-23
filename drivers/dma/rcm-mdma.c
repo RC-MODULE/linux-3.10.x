@@ -207,7 +207,6 @@ struct mdma_chan {
 	struct list_head pending_list;
 	struct list_head free_list;
 	struct list_head active_list;
-	struct list_head done_list;
 	struct mdma_desc_sw *sw_desc_pool;
 	u32 desc_free_cnt;
 	struct dma_chan slave;
@@ -630,7 +629,6 @@ static void mdma_free_descriptors(struct mdma_chan *chan)
 {
 	mdma_free_desc_list(chan, &chan->active_list);
 	mdma_free_desc_list(chan, &chan->pending_list);
-	mdma_free_desc_list(chan, &chan->done_list);
 }
 
 /**
@@ -1190,7 +1188,6 @@ static int mdma_chan_probe(struct mdma_device *mdev,
 	spin_lock_init(&chan->lock);
 	INIT_LIST_HEAD(&chan->active_list);
 	INIT_LIST_HEAD(&chan->pending_list);
-	INIT_LIST_HEAD(&chan->done_list);
 	INIT_LIST_HEAD(&chan->free_list);
 
 	dma_cookie_init(&chan->slave);
