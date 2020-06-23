@@ -1047,37 +1047,11 @@ static irqreturn_t mdma_irq_handler(int irq, void *data)
 }
 
 /**
- * mdma_chan_desc_cleanup - Cleanup the completed descriptors
- * @chan: MDMA channel
- */
-static void mdma_chan_desc_cleanup(struct mdma_chan *chan)
-{
-	struct mdma_desc_sw *desc, *next;
-
-	list_for_each_entry_safe(desc, next, &chan->done_list, node) {
-		dma_async_tx_callback callback;
-		void *callback_param;
-
-		list_del(&desc->node);
-
-		callback = desc->async_tx.callback;
-		callback_param = desc->async_tx.callback_param;
-		if (callback) {
-			spin_unlock(&chan->lock);
-			callback(callback_param);
-			spin_lock(&chan->lock);
-		}
-
-		/* Run any dependencies, then free the descriptor */
-		mdma_free_descriptor(chan, desc);
-	}
-}
-
-/**
  * mdma_complete_descriptor - Mark the active descriptor as complete
  * @chan: MDMA channel pointer
  */
-static void mdma_complete_descriptor(struct mdma_chan *chan)
+static void mdma_complete_descriptor(struct mdma_chan *chan, bool status,
+                                     struct dmaengine_desc_callback* cb)
 {
 	struct mdma_desc_sw *desc;
 
@@ -1086,8 +1060,13 @@ static void mdma_complete_descriptor(struct mdma_chan *chan)
 	if (!desc)
 		return;
 	list_del(&desc->node);
-	dma_cookie_complete(&desc->async_tx);
-	list_add_tail(&desc->node, &chan->done_list);
+
+	if (status)
+		dma_cookie_complete(&desc->async_tx);
+
+	dmaengine_desc_get_callback(&desc->async_tx, cb);
+
+	mdma_free_descriptor(chan, desc);
 }
 
 
@@ -1109,9 +1088,6 @@ static void mdma_reset(struct mdma_chan *chan)
 {
 	writel(1, &chan->regs->soft_reset);
 
-	mdma_complete_descriptor(chan);
-	mdma_chan_desc_cleanup(chan);
-//	mdma_free_descriptors(chan);
 	mdma_init(chan);
 }
 
@@ -1124,25 +1100,35 @@ static void mdma_do_tasklet(unsigned long data)
 {
 	struct mdma_chan *chan = (struct mdma_chan *)data;
 	unsigned long irqflags;
+	struct dmaengine_desc_callback cb = {
+		.callback = NULL,
+		.callback_param = NULL,
+		.callback_result = NULL
+	};
 
 	spin_lock_irqsave(&chan->lock, irqflags);
 
 	if (chan->err) {
 		mdma_reset(chan);
-		chan->err = false;
-		goto unlock;
 	}
 
-	mdma_complete_descriptor(chan);
-	mdma_chan_desc_cleanup(chan);
+	mdma_complete_descriptor(chan, !chan->err, &cb);
+
+	chan->err = false;
+
+	if (dmaengine_desc_callback_valid(&cb)) {
+		spin_unlock_irqrestore(&chan->lock, irqflags);
+
+		dmaengine_desc_callback_invoke(&cb, NULL);
+
+		spin_lock_irqsave(&chan->lock, irqflags);
+	}
 
 	if (chan->idle)
 		mdma_start_transfer(chan);
 
-unlock:
 	spin_unlock_irqrestore(&chan->lock, irqflags);
 }
-
 
 /**
  * mdma_chan_remove - Channel remove function
