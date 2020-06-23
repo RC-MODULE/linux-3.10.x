@@ -186,6 +186,7 @@ struct mdma_desc_sw {
 	unsigned cnt_src;
 	unsigned pos_dst;
 	unsigned cnt_dst;
+	bool completed;
 };
 
 struct mdma_desc_pool {
@@ -206,15 +207,12 @@ struct mdma_chan {
 	spinlock_t lock;
 	struct list_head pending_list;
 	struct list_head free_list;
-	struct list_head active_list;
+	struct mdma_desc_sw *active_desc;
 	struct mdma_desc_sw *sw_desc_pool;
 	u32 desc_free_cnt;
 	struct dma_chan slave;
 	struct mdma_desc_pool desc_pool;
 	struct device *dev;
-	int irq;
-	struct tasklet_struct tasklet;
-	bool idle;
 	u32 desc_size;
 	u32 type;
 	bool err;
@@ -229,6 +227,7 @@ struct mdma_device {
 	struct mdma_chan *chan;
 	struct device* dev;
 	struct clk *clk;
+	struct tasklet_struct tasklet;
 };
 
 static void mdma_desc_pool_free(struct mdma_desc_pool* pool)
@@ -497,7 +496,6 @@ static void mdma_start(struct mdma_chan *chan)
 	writel(MDMA_IRQ_SENS_MASK, &chan->regs->rx.irq_mask);
 	writel(1, &chan->regs->tx.enable);
 	writel(1, &chan->regs->rx.enable);
-	chan->idle = false;
 }
 
 
@@ -541,7 +539,7 @@ static void mdma_start_transfer(struct mdma_chan *chan)
 {
 	struct mdma_desc_sw *desc;
 
-	if (!chan->idle)
+	if (chan->active_desc)
 		return;
 
 	desc = list_first_entry_or_null(&chan->pending_list,
@@ -549,9 +547,13 @@ static void mdma_start_transfer(struct mdma_chan *chan)
 	if (!desc)
 		return;
 
+	list_del(&desc->node);
+
+	desc->completed = false;
+	chan->active_desc = desc;
+
 	mdma_config(chan, desc);
 
-	list_splice_tail_init(&chan->pending_list, &chan->active_list);
 	mdma_update_desc_to_ctrlr(chan, desc);
 	mdma_start(chan);
 }
@@ -627,7 +629,10 @@ static void mdma_free_desc_list(struct mdma_chan *chan,
  */
 static void mdma_free_descriptors(struct mdma_chan *chan)
 {
-	mdma_free_desc_list(chan, &chan->active_list);
+	if (chan->active_desc) {
+		mdma_free_descriptor(chan, chan->active_desc);
+		chan->active_desc = NULL;
+	}
 	mdma_free_desc_list(chan, &chan->pending_list);
 }
 
@@ -938,7 +943,7 @@ static int mdma_alloc_chan_resources(struct dma_chan *dchan)
 	if (!chan->sw_desc_pool)
 		return -ENOMEM;
 
-	chan->idle = true;
+	chan->active_desc = NULL;
 	chan->desc_free_cnt = MDMA_NUM_DESCS;
 
 	INIT_LIST_HEAD(&chan->free_list);
@@ -1003,7 +1008,8 @@ static int mdma_device_config(struct dma_chan *dchan,
  */
 static irqreturn_t mdma_irq_handler(int irq, void *data)
 {
-	struct mdma_chan *chan = (struct mdma_chan *)data;
+	struct mdma_device *mdev = (struct mdma_device *)data;
+	struct mdma_chan *chan = mdev->chan;
 	u32 status;
 	bool need_tasklet = false;
 
@@ -1029,17 +1035,19 @@ static irqreturn_t mdma_irq_handler(int irq, void *data)
 		pr_debug("%s: Channel %p TX-interrupt, status %x\n",
 		         __func__, chan, tx_status);
 
-		if (tx_status & MDMA_IRQ_INT_DESC) {
-			chan->idle = true;
-		} else {
+		if ((tx_status & MDMA_IRQ_INT_DESC) == 0) {
 			chan->err = true;
+		} else if (!chan->active_desc) {
+			pr_debug("%s: Interrupt without active descriptor\n",
+			         __func__);
+		} else {
+			chan->active_desc->completed = true;
+			need_tasklet = true;
 		}
-
-		need_tasklet = true;
 	}
 
 	if (need_tasklet)
-		tasklet_schedule(&chan->tasklet);
+		tasklet_schedule(&mdev->tasklet);
 
 	return IRQ_HANDLED;
 }
@@ -1048,17 +1056,10 @@ static irqreturn_t mdma_irq_handler(int irq, void *data)
  * mdma_complete_descriptor - Mark the active descriptor as complete
  * @chan: MDMA channel pointer
  */
-static void mdma_complete_descriptor(struct mdma_chan *chan, bool status,
+static void mdma_complete_descriptor(struct mdma_chan *chan, 
+                                     struct mdma_desc_sw *desc, bool status,
                                      struct dmaengine_desc_callback* cb)
 {
-	struct mdma_desc_sw *desc;
-
-	desc = list_first_entry_or_null(&chan->active_list,
-					struct mdma_desc_sw, node);
-	if (!desc)
-		return;
-	list_del(&desc->node);
-
 	if (status)
 		dma_cookie_complete(&desc->async_tx);
 
@@ -1067,17 +1068,6 @@ static void mdma_complete_descriptor(struct mdma_chan *chan, bool status,
 	mdma_free_descriptor(chan, desc);
 }
 
-
-/**
- * mdma_init - Initialize the channel
- * @chan: MDMA channel pointer
- */
-static void mdma_init(struct mdma_chan *chan)
-{
-	chan->idle = true;
-}
-
-
 /**
  * mdma_reset - Reset the channel
  * @chan: MDMA channel pointer
@@ -1085,10 +1075,7 @@ static void mdma_init(struct mdma_chan *chan)
 static void mdma_reset(struct mdma_chan *chan)
 {
 	writel(1, &chan->regs->soft_reset);
-
-	mdma_init(chan);
 }
-
 
 /**
  * mdma_do_tasklet - Schedule completion tasklet
@@ -1096,7 +1083,8 @@ static void mdma_reset(struct mdma_chan *chan)
  */
 static void mdma_do_tasklet(unsigned long data)
 {
-	struct mdma_chan *chan = (struct mdma_chan *)data;
+	struct mdma_device *mdev = (struct mdma_device *)data;
+	struct mdma_chan *chan = mdev->chan;
 	unsigned long irqflags;
 	struct dmaengine_desc_callback cb = {
 		.callback = NULL,
@@ -1106,11 +1094,15 @@ static void mdma_do_tasklet(unsigned long data)
 
 	spin_lock_irqsave(&chan->lock, irqflags);
 
-	if (chan->err) {
+	if (chan->err)
 		mdma_reset(chan);
-	}
 
-	mdma_complete_descriptor(chan, !chan->err, &cb);
+	if ( (chan->active_desc) && 
+	     ((chan->err) || (chan->active_desc->completed)) ) {
+		mdma_complete_descriptor(chan, chan->active_desc, 
+		                         !chan->err, &cb);
+		chan->active_desc = NULL;
+	}
 
 	chan->err = false;
 
@@ -1122,8 +1114,7 @@ static void mdma_do_tasklet(unsigned long data)
 		spin_lock_irqsave(&chan->lock, irqflags);
 	}
 
-	if (chan->idle)
-		mdma_start_transfer(chan);
+	mdma_start_transfer(chan);
 
 	spin_unlock_irqrestore(&chan->lock, irqflags);
 }
@@ -1137,9 +1128,6 @@ static void mdma_chan_remove(struct mdma_chan *chan)
 	if (!chan)
 		return;
 
-	if (chan->irq)
-		devm_free_irq(chan->mdev->dev, chan->irq, chan);
-	tasklet_kill(&chan->tasklet);
 	list_del(&chan->slave.device_node);
 }
 
@@ -1184,28 +1172,18 @@ static int mdma_chan_probe(struct mdma_device *mdev,
 	}
 
 	mdev->chan = chan;
-	tasklet_init(&chan->tasklet, mdma_do_tasklet, (ulong)chan);
 	spin_lock_init(&chan->lock);
-	INIT_LIST_HEAD(&chan->active_list);
 	INIT_LIST_HEAD(&chan->pending_list);
 	INIT_LIST_HEAD(&chan->free_list);
+
+	chan->active_desc = NULL;
 
 	dma_cookie_init(&chan->slave);
 	chan->slave.device = &mdev->slave;
 	list_add_tail(&chan->slave.device_node, &mdev->slave.channels);
 
-	mdma_init(chan);
-	chan->irq = platform_get_irq(pdev, 0);
-	if (chan->irq < 0)
-		return -ENXIO;
-	err = devm_request_irq(&pdev->dev, chan->irq, mdma_irq_handler, 0,
-	                       "mdma", chan);
-	if (err)
-		return err;
-
 	chan->desc_size = sizeof(struct mdma_desc_long_ll);  // max size
 	chan->type = MDMA_CHAN_DESC_LONG;
-	chan->idle = true;
 	return 0;
 }
 
@@ -1215,6 +1193,7 @@ static int rcm_mdma_probe(struct platform_device *pdev)
 	struct mdma_device *mdev;
 	struct dma_device *p;
 	int ret;
+	int irq;
 
 	mdev = devm_kzalloc(&pdev->dev, sizeof(*mdev), GFP_KERNEL);
 	if (!mdev)
@@ -1239,6 +1218,20 @@ static int rcm_mdma_probe(struct platform_device *pdev)
 	p->device_tx_status = dma_cookie_status;
 	p->device_config = mdma_device_config;
 	p->dev = &pdev->dev;
+
+	tasklet_init(&mdev->tasklet, mdma_do_tasklet, (ulong)mdev);
+
+	irq = platform_get_irq(pdev, 0);
+	if (irq < 0) {
+		dev_err(&pdev->dev, "unable to get interrupt property.\n");
+		return -ENXIO;
+	}
+	ret = devm_request_irq(&pdev->dev, irq, mdma_irq_handler, 0, 
+	                       "mdma", mdev);
+	if (ret) {
+		dev_err(&pdev->dev, "failed to allocate interrupt.\n");
+		return ret;
+	}
 
 	mdev->clk = devm_clk_get(&pdev->dev, NULL);
 	if (IS_ERR(mdev->clk)) {
@@ -1304,6 +1297,8 @@ static int rcm_mdma_remove(struct platform_device *pdev)
 	pm_runtime_disable(mdev->dev);
 	if (!pm_runtime_enabled(mdev->dev))
 		mdma_runtime_suspend(mdev->dev);
+
+	tasklet_kill(&mdev->tasklet);
 
 	return 0;
 }
