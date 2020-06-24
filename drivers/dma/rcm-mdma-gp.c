@@ -10,6 +10,8 @@
 #include "dmaengine.h"
 #include "rcm-mdma.h"
 
+#define MDMA_GP_MAX_TRANS_LEN 0x7FFFFFC
+
 static dma_cookie_t mdma_gp_tx_submit(struct dma_async_tx_descriptor *tx)
 {
 	struct mdma_chan *chan = to_chan(tx->chan);
@@ -64,7 +66,7 @@ mdma_gp_prep_memcpy(struct dma_chan *dchan, dma_addr_t dma_dst,
 
 	do {
 		++cnt_descs;
-		copy -= min_t(size_t, copy, MDMA_MAX_TRANS_LEN);
+		copy -= min_t(size_t, copy, mdev->ch[0]->max_transaction);
 	} while (copy);
 
 	spin_lock_irqsave(&mdev->ch[0]->lock, irqflags);
@@ -493,7 +495,7 @@ static void mdma_gp_do_tasklet(unsigned long data)
 }
 
 const struct mdma_of_data mdma_gp_of_data = {
-	.max_transaction             = MDMA_MAX_TRANS_LEN,
+	.max_transaction             = MDMA_GP_MAX_TRANS_LEN,
 
 	.dirs = {DMA_MEM_TO_MEM, DMA_MEM_TO_MEM},
 

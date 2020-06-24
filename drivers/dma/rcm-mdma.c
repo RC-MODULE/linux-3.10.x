@@ -176,15 +176,9 @@ int mdma_desc_pool_alloc(struct mdma_desc_pool* pool, unsigned cnt)
 		p += PAGE_SIZE;
 	}
 
-
-static unsigned x = 11;
-
 	ret = mdma_sg_alloc_from_pages(&pool->sgt, pool->pages, nr_pages,
 	                               offset_in_page(pool->descs), size,
-	                               x * PAGE_SIZE, GFP_KERNEL);
-//	                               SCATTERLIST_MAX_SEGMENT, GFP_KERNEL);
-
-x = 17;
+	                               SCATTERLIST_MAX_SEGMENT, GFP_KERNEL);
 
 	if (ret) {
 		dev_err(chan->dev,
@@ -348,6 +342,7 @@ void mdma_desc_pool_sync(struct mdma_desc_pool* pool,
 unsigned mdma_desc_pool_fill(struct mdma_desc_pool* pool, unsigned pos, 
                              dma_addr_t dma_addr, size_t len, bool stop_int)
 {
+	struct mdma_chan *chan = pool_to_chan(pool);
 	struct mdma_desc_long_ll *desc;
 	size_t seg_len;
 	unsigned cnt = 0;
@@ -358,7 +353,7 @@ unsigned mdma_desc_pool_fill(struct mdma_desc_pool* pool, unsigned pos,
 		if (desc->flags_length & MDMA_BD_LINK) {
 			desc->flags_length = MDMA_BD_LINK;
 		} else {
-			seg_len = min_t(size_t, len, MDMA_MAX_TRANS_LEN);
+			seg_len = min_t(size_t, len, chan->max_transaction);
 			len -= seg_len;
 
 			desc->flags_length = seg_len;
@@ -455,6 +450,7 @@ unsigned mdma_desc_pool_fill_sg(struct mdma_desc_pool* pool, unsigned pos,
                                 struct scatterlist *sg, unsigned int sg_len,
                                 bool stop_int)
 {
+	struct mdma_chan *chan = pool_to_chan(pool);
 	struct mdma_desc_long_ll *desc;
 	size_t seg_len;
 	unsigned cnt = 0;
@@ -468,7 +464,7 @@ unsigned mdma_desc_pool_fill_sg(struct mdma_desc_pool* pool, unsigned pos,
 		size_t dma_len  = sg_dma_len(s);
 
 		while (dma_len > 0) {
-			seg_len = min_t(size_t, dma_len, MDMA_MAX_TRANS_LEN);
+			seg_len = min_t(size_t, dma_len, chan->max_transaction);
 			dma_len -= seg_len;
 
 			if (desc->flags_length & MDMA_BD_LINK) {
@@ -523,9 +519,9 @@ unsigned mdma_cnt_desc_needed(struct mdma_chan *chan, struct scatterlist *sgl,
 		if (len)
 			*len += seg_len;
 
-		while (seg_len > MDMA_MAX_TRANS_LEN) {
+		while (seg_len > chan->max_transaction) {
 			++cnt_descs;
-			seg_len -= MDMA_MAX_TRANS_LEN;
+			seg_len -= chan->max_transaction;
 		}
 
 		++cnt_descs;
@@ -899,7 +895,6 @@ mdma_prep_slave_sg(struct dma_chan *dchan, struct scatterlist *sgl,
                    unsigned long flags, void *context)
 {
 	struct mdma_chan *chan = to_chan(dchan);
-	struct mdma_device *mdev = chan->mdev;
 	unsigned long irqflags;
 	struct mdma_desc_sw *sw_desc = NULL;
 	struct mdma_desc_pool pool_save;
@@ -1025,6 +1020,8 @@ static int mdma_chan_probe(struct mdma_chan *chan)
 {
 	struct device_node *node = chan->dev->of_node;
 	int err;
+
+	chan->max_transaction = chan->mdev->of_data->max_transaction;
 
 	chan->config.src_addr = 0;
 	chan->config.dst_addr = 0;
@@ -1185,7 +1182,6 @@ free_chan_resources:
 	mdma_chan_remove(mdev->ch[0]);
 	mdma_chan_remove(mdev->ch[1]);
 
-err_disable_pm:
 	if (!pm_runtime_enabled(mdev->dev))
 		mdma_runtime_suspend(mdev->dev);
 	pm_runtime_disable(mdev->dev);

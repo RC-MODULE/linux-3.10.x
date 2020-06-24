@@ -17,9 +17,6 @@
 #define MDMA_PM_TIMEOUT         100
 #define MDMA_BUS_WIDTH_128      128
 
-//#define MDMA_MAX_TRANS_LEN 0x7FFFFFC
-#define MDMA_MAX_TRANS_LEN 128
-
 // descriptor flags
 #define MDMA_BD_OWN  0x80000000
 #define MDMA_BD_LINK 0x40000000
@@ -201,10 +198,11 @@ struct mdma_chan {
 	bool err;
 	u32 bus_width;
 	struct dma_slave_config config;
+	size_t max_transaction;
 };
 
 struct mdma_of_data {
-	bool max_transaction;
+	size_t max_transaction;
 	enum dma_transfer_direction dirs[2];
 
 	int (*device_alloc_chan_resources)(struct dma_chan *chan);
