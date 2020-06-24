@@ -51,21 +51,20 @@ struct dma_async_tx_descriptor *mdma_prep_memcpy_gp(
 	struct mdma_desc_sw *sw_desc0 = NULL;
 	struct mdma_desc_sw *sw_desc1 = NULL;
 	unsigned cnt_descs = 0;
-	struct mdma_desc_long_ll *src_desc, *dst_desc;
-	unsigned pos_src;
-	unsigned pos_dst;
 	size_t copy;
 	unsigned long irqflags;
 	int addr_mask;
 	struct mdma_desc_pool pool_save0;
 	struct mdma_desc_pool pool_save1;
+	unsigned cnt;
 
 	pr_debug("%s >>>\n", __func__);
 
 	addr_mask = mdev->ch[0]->bus_width/8 - 1;
 	if((dma_src & addr_mask) || (dma_dst & addr_mask))
 	{
-		dev_dbg(mdev->ch[0]->dev, "DMA unalligned access %x -> %x\n", dma_src, dma_dst);
+		dev_dbg(mdev->ch[0]->dev, "DMA unalligned access %x -> %x\n",
+		        dma_src, dma_dst);
 		return NULL;
 	}
 
@@ -127,67 +126,18 @@ struct dma_async_tx_descriptor *mdma_prep_memcpy_gp(
 	spin_unlock(&mdev->ch[1]->lock);
 	spin_unlock_irqrestore(&mdev->ch[0]->lock, irqflags);
 
-	src_desc = &mdev->ch[0]->desc_pool.descs[sw_desc0->pos];
-	dst_desc = &mdev->ch[1]->desc_pool.descs[sw_desc1->pos];
+	cnt = mdma_desc_pool_fill(&mdev->ch[0]->desc_pool, sw_desc0->pos,
+	                          dma_src, len, false);
+	if (cnt != sw_desc0->cnt)
+		pr_warn("%s: Descpitors number does not match (%u != %u)\n",
+		        __func__, cnt, sw_desc0->cnt);
 
-	pos_src = sw_desc0->pos;
-	pos_dst = sw_desc1->pos;
-
-	do {
-		copy = min_t(size_t, len, MDMA_MAX_TRANS_LEN);
-		len -= copy;
-
-		if (src_desc->flags_length & MDMA_BD_LINK) {
-			pr_debug("%s: Link at pos %u (RX)\n", __func__, pos_src);
-			src_desc->flags_length = MDMA_BD_LINK;
-
-			if (pos_src + 1 == mdev->ch[0]->desc_pool.size)
-				src_desc = mdev->ch[0]->desc_pool.descs;
-			else
-				++src_desc;
-
-			pos_src = (pos_src + 1) % mdev->ch[1]->desc_pool.size;
-		}
-
-		if (dst_desc->flags_length & MDMA_BD_LINK) {
-			pr_debug("%s: Link at pos %u (TX)\n", __func__, pos_dst);
-			dst_desc->flags_length = MDMA_BD_LINK;
-
-			if (pos_dst + 1 == mdev->ch[1]->desc_pool.size)
-				dst_desc = mdev->ch[1]->desc_pool.descs;
-			else
-				++dst_desc;
-
-			pos_dst = (pos_dst + 1) % mdev->ch[1]->desc_pool.size;
-		}
-
-		if(!len)
-		{
-			// last sub descriptor
-			dst_desc->flags_length = copy | MDMA_BD_STOP | MDMA_BD_INT;
-			src_desc->flags_length = copy | MDMA_BD_STOP;
-		}
-		else
-			dst_desc->flags_length = src_desc->flags_length = copy;
-
-		src_desc->memptr = dma_src;
-		dst_desc->memptr = dma_dst;
-		dma_src += copy;
-		dma_dst += copy;
-
-		if (pos_src + 1 == mdev->ch[0]->desc_pool.size)
-			src_desc = mdev->ch[0]->desc_pool.descs;
-		else
-			++src_desc;
-
-		if (pos_dst + 1 == mdev->ch[1]->desc_pool.size)
-			dst_desc = mdev->ch[1]->desc_pool.descs;
-		else
-			++dst_desc;
-
-		pos_src = (pos_src + 1) % mdev->ch[0]->desc_pool.size;
-		pos_dst = (pos_dst + 1) % mdev->ch[1]->desc_pool.size;
-	} while (len);
+	cnt = mdma_desc_pool_fill_like(&mdev->ch[1]->desc_pool, sw_desc1->pos,
+	                               dma_dst, len, true,
+	                               &mdev->ch[0]->desc_pool, sw_desc0->pos);
+	if (cnt != sw_desc1->cnt)
+		pr_warn("%s: Descpitors number does not match (%u != %u)\n",
+		        __func__, cnt, sw_desc1->cnt);
 
 	mdma_desc_pool_sync(&mdev->ch[0]->desc_pool, sw_desc0->pos,
 	                    sw_desc0->cnt);

@@ -17,7 +17,8 @@
 #define MDMA_PM_TIMEOUT         100
 #define MDMA_BUS_WIDTH_128      128
 
-#define MDMA_MAX_TRANS_LEN 0x7FFFFFC
+//#define MDMA_MAX_TRANS_LEN 0x7FFFFFC
+#define MDMA_MAX_TRANS_LEN 128
 
 // descriptor flags
 #define MDMA_BD_OWN  0x80000000
@@ -25,6 +26,8 @@
 #define MDMA_BD_INT  0x20000000
 #define MDMA_BD_STOP 0x10000000
 #define MDMA_BD_INC  0x8000000
+
+#define MDMA_BD_LEN_MASK 0x03FFFFFF
 
 // channel settings
 #define MDMA_CHAN_DESC_NORMAL 0x00000000
@@ -218,6 +221,13 @@ void mdma_desc_pool_free(struct mdma_desc_pool* pool);
 dma_addr_t mdma_desc_pool_get_addr(struct mdma_desc_pool* pool, unsigned pos);
 unsigned mdma_desc_pool_get(struct mdma_desc_pool* pool, 
                             unsigned cnt, unsigned *pos);
+unsigned mdma_desc_pool_fill(struct mdma_desc_pool* pool, unsigned pos, 
+                             dma_addr_t dma_addr, size_t len, bool stop_int);
+unsigned mdma_desc_pool_fill_like(struct mdma_desc_pool* pool, unsigned pos, 
+                                  dma_addr_t dma_addr, size_t len,
+                                  bool stop_int,
+                                  struct mdma_desc_pool* pool_base, 
+                                  unsigned pos_base);
 void mdma_desc_pool_put(struct mdma_desc_pool* pool,
                         unsigned pos, unsigned cnt);
 void mdma_desc_pool_sync(struct mdma_desc_pool* pool,

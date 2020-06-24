@@ -155,9 +155,14 @@ int mdma_desc_pool_alloc(struct mdma_desc_pool* pool, unsigned cnt)
 	}
 
 
+static unsigned x = 11;
+
 	ret = mdma_sg_alloc_from_pages(&pool->sgt, pool->pages, nr_pages,
 	                               offset_in_page(pool->descs), size,
-	                               SCATTERLIST_MAX_SEGMENT, GFP_KERNEL);
+	                               x * PAGE_SIZE, GFP_KERNEL);
+//	                               SCATTERLIST_MAX_SEGMENT, GFP_KERNEL);
+
+x = 17;
 
 	if (ret) {
 		pr_err("%s: Failed to allocate SG-table (%d pages).\n",
@@ -325,6 +330,110 @@ void mdma_desc_pool_sync(struct mdma_desc_pool* pool,
 
 		sg = (sg_is_last(sg)) ? pool->sgt.sgl : sg_next(sg);
 	} while (cnt_sync < cnt);
+}
+
+unsigned mdma_desc_pool_fill(struct mdma_desc_pool* pool, unsigned pos, 
+                             dma_addr_t dma_addr, size_t len, bool stop_int)
+{
+	struct mdma_desc_long_ll *desc;
+	size_t seg_len;
+	unsigned cnt = 0;
+
+	desc = &pool->descs[pos];
+
+	do {
+		if (desc->flags_length & MDMA_BD_LINK) {
+			desc->flags_length = MDMA_BD_LINK;
+		} else {
+			seg_len = min_t(size_t, len, MDMA_MAX_TRANS_LEN);
+			len -= seg_len;
+
+			desc->flags_length = seg_len;
+
+			if(!len) {
+				desc->flags_length |= MDMA_BD_STOP;
+				if (stop_int) 
+					desc->flags_length |= MDMA_BD_INT;
+			}
+
+			desc->memptr = dma_addr;
+			dma_addr += seg_len;
+		}
+
+		if (pos + 1 == pool->size)
+			desc = pool->descs;
+		else
+			++desc;
+
+		pos = (pos + 1) % pool->size;
+		++cnt;
+	} while (len);
+
+	return cnt;
+}
+
+unsigned mdma_desc_pool_fill_like(struct mdma_desc_pool* pool, unsigned pos, 
+                                  dma_addr_t dma_addr, size_t len,
+                                  bool stop_int,
+                                  struct mdma_desc_pool* pool_base, 
+                                  unsigned pos_base)
+{
+	struct mdma_desc_long_ll *desc;
+	size_t seg_len;
+	unsigned cnt = 0;
+
+	desc = &pool->descs[pos];
+
+	do {
+		if (pool_base->descs[pos_base].flags_length & MDMA_BD_LINK) {
+			pos_base = (pos_base + 1) % pool_base->size;
+			continue;
+		}
+
+		seg_len = (pool_base->descs[pos_base].flags_length &
+		           MDMA_BD_LEN_MASK);
+		pos_base = (pos_base + 1) % pool_base->size;
+
+		if (desc->flags_length & MDMA_BD_LINK) {
+			desc->flags_length = MDMA_BD_LINK;
+
+			if (pos + 1 == pool->size)
+				desc = pool->descs;
+			else
+				++desc;
+
+			pos = (pos + 1) % pool->size;
+			++cnt;
+		}
+
+		if (len < seg_len) {
+			pr_err("%s: Incorrect data passed.\n", __func__);
+			break;
+		}
+
+		len -= seg_len;
+
+		desc->flags_length = seg_len;
+
+		if(!len) {
+			desc->flags_length |= MDMA_BD_STOP;
+			if (stop_int) 
+				desc->flags_length |= MDMA_BD_INT;
+		}
+
+		desc->memptr = dma_addr;
+		dma_addr += seg_len;
+
+		if (pos + 1 == pool->size)
+			desc = pool->descs;
+		else
+			++desc;
+
+		pos = (pos + 1) % pool->size;
+		++cnt;
+	} while (len);
+
+	return cnt;
 }
 
 /**
