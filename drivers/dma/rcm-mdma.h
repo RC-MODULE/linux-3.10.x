@@ -200,6 +200,7 @@ struct mdma_chan {
 	struct device *dev;
 	u32 desc_size;
 	u32 type;
+	enum dma_transfer_direction dir;
 	bool err;
 	u32 bus_width;
 	struct dma_slave_config config;
@@ -228,10 +229,16 @@ unsigned mdma_desc_pool_fill_like(struct mdma_desc_pool* pool, unsigned pos,
                                   bool stop_int,
                                   struct mdma_desc_pool* pool_base, 
                                   unsigned pos_base);
+unsigned mdma_desc_pool_fill_sg(struct mdma_desc_pool* pool, unsigned pos, 
+                                struct scatterlist *sg, unsigned int sg_len,
+                                bool stop_int);
 void mdma_desc_pool_put(struct mdma_desc_pool* pool,
                         unsigned pos, unsigned cnt);
 void mdma_desc_pool_sync(struct mdma_desc_pool* pool,
                          unsigned pos, unsigned cnt);
+
+unsigned mdma_cnt_desc_needed(struct mdma_chan *chan, struct scatterlist *sgl,
+                              unsigned int sg_len, size_t *len);
 
 bool mdma_prepare_transfer(struct mdma_chan *chan);
 void mdma_start_transfer(struct mdma_chan *chan);
@@ -252,6 +259,10 @@ struct dma_async_tx_descriptor *mdma_prep_memcpy_gp(struct dma_chan *dchan,
                                                     dma_addr_t dma_dst,
                                                     dma_addr_t dma_src,
                                                     size_t len, ulong flags);
+struct dma_async_tx_descriptor *
+mdma_prep_slave_sg_gp(struct dma_chan *dchan, struct scatterlist *sgl,
+                      unsigned int sg_len, enum dma_transfer_direction dir,
+                      unsigned long flags, void *context);
 int mdma_device_terminate_all_gp(struct dma_chan *dchan);
 void mdma_issue_pending_gp(struct dma_chan *dchan);
 int mdma_alloc_chan_resources_gp(struct dma_chan *dchan);
@@ -260,3 +271,6 @@ int mdma_device_config_gp(struct dma_chan *dchan,
                           struct dma_slave_config *config);
 irqreturn_t mdma_irq_handler_gp(int irq, void *data);
 void mdma_do_tasklet_gp(unsigned long data);
+
+bool mdma_check_align(struct mdma_chan *chan, dma_addr_t dma_addr);
+bool mdma_check_align_sg(struct mdma_chan *chan, struct scatterlist *sg);

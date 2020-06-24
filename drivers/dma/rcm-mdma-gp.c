@@ -153,6 +153,143 @@ struct dma_async_tx_descriptor *mdma_prep_memcpy_gp(
 	return &sw_desc0->async_tx;
 }
 
+struct dma_async_tx_descriptor *
+mdma_prep_slave_sg_gp(struct dma_chan *dchan, struct scatterlist *sgl,
+                      unsigned int sg_len, enum dma_transfer_direction dir,
+                      unsigned long flags, void *context)
+{
+	struct mdma_chan *chan = to_chan(dchan);
+	struct mdma_device *mdev = chan->mdev;
+	struct mdma_desc_sw *sw_desc0 = NULL;
+	struct mdma_desc_sw *sw_desc1 = NULL;
+	struct mdma_desc_sw *sw_desc;
+	struct mdma_desc_sw *sw_desc_linked;
+	struct mdma_chan *chan_linked;
+	dma_addr_t dma_addr;
+	size_t len;
+	unsigned cnt_descs = 0;
+	unsigned long irqflags;
+	struct mdma_desc_pool pool_save0;
+	struct mdma_desc_pool pool_save1;
+	unsigned cnt;
+	bool stop_int;
+
+	pr_debug("%s >>>\n", __func__);
+
+	if (dir != DMA_MEM_TO_MEM) {
+		pr_err("%s: MDMA-GP supports mem-to-mem transfers only.\n",
+		       __func__);
+		return NULL;
+	}
+
+	dma_addr = (chan == mdev->ch[0]) ? chan->config.dst_addr : 
+	                                   chan->config.src_addr;
+
+	if (dma_addr == 0) {
+		pr_err("%s: DMA-address is not specified. "
+		       "Use dmaengine_slave_config() to specify it.\n",
+		       __func__);
+		return NULL;
+	}
+
+	if (!mdma_check_align_sg(chan, sgl))
+		return NULL;
+
+	cnt_descs = mdma_cnt_desc_needed(chan, sgl, sg_len, &len);
+
+	spin_lock_irqsave(&mdev->ch[0]->lock, irqflags);
+	spin_lock(&mdev->ch[1]->lock);
+
+	if ((mdev->ch[0]->prepared_desc) || (mdev->ch[1]->prepared_desc)) {
+		spin_unlock(&mdev->ch[1]->lock);
+		spin_unlock_irqrestore(&mdev->ch[0]->lock, irqflags);
+		pr_err("%s: Previous prepared descriptor was not submitted.\n",
+		       __func__);
+		return NULL;
+	}
+
+	pool_save0 = mdev->ch[0]->desc_pool;
+	pool_save1 = mdev->ch[1]->desc_pool;
+
+	sw_desc0 = mdma_get_descriptor(mdev->ch[0]);
+	sw_desc1 = mdma_get_descriptor(mdev->ch[1]);
+
+	if ((!sw_desc0) || (!sw_desc1))
+		goto rollback;
+
+	sw_desc0->cnt = mdma_desc_pool_get(&mdev->ch[0]->desc_pool, cnt_descs,
+	                                   &sw_desc0->pos);
+	sw_desc1->cnt = mdma_desc_pool_get(&mdev->ch[1]->desc_pool, cnt_descs,
+	                                   &sw_desc1->pos);
+
+	if ((!sw_desc0->cnt) || (!sw_desc1->cnt)) {
+		dev_dbg(mdev->dev, "can't get %u descriptors from pool\n",
+		        cnt_descs);
+		goto rollback;
+	}
+
+	mdev->ch[0]->prepared_desc = sw_desc0;
+	mdev->ch[1]->prepared_desc = sw_desc1;
+
+	chan_linked    = (chan == mdev->ch[0]) ? mdev->ch[1] : mdev->ch[0];
+
+	sw_desc        = (chan == mdev->ch[0]) ? sw_desc0 : sw_desc1;
+	sw_desc_linked = (chan == mdev->ch[0]) ? sw_desc1 : sw_desc0;
+
+	stop_int       = (chan == mdev->ch[0]) ? false : true;
+
+	cnt = mdma_desc_pool_fill_sg(&chan->desc_pool, sw_desc->pos,
+	                             sgl, sg_len, stop_int);
+	if (cnt != sw_desc->cnt) {
+		pr_err("%s: Descpitors number does not match (%u != %u)\n",
+		       __func__, cnt, sw_desc->cnt);
+		goto rollback;
+	}
+
+	cnt = mdma_desc_pool_fill_like(&chan_linked->desc_pool,
+	                               sw_desc_linked->pos,
+	                               dma_addr, len, !stop_int,
+	                               &chan->desc_pool, sw_desc->pos);
+	if (cnt != sw_desc_linked->cnt) {
+		pr_warn("%s: Descpitors number does not match (%u != %u)\n",
+		        __func__, cnt, sw_desc_linked->cnt);
+		goto rollback;
+	}
+
+	spin_unlock(&mdev->ch[1]->lock);
+	spin_unlock_irqrestore(&mdev->ch[0]->lock, irqflags);
+
+	mdma_desc_pool_sync(&mdev->ch[0]->desc_pool, sw_desc0->pos,
+	                    sw_desc0->cnt);
+	mdma_desc_pool_sync(&mdev->ch[1]->desc_pool, sw_desc1->pos,
+	                    sw_desc1->cnt);
+
+	async_tx_ack(&sw_desc0->async_tx);
+	sw_desc0->async_tx.flags = flags;
+
+	async_tx_ack(&sw_desc1->async_tx);
+	sw_desc1->async_tx.flags = flags;
+
+	return &sw_desc0->async_tx;
+
+rollback:
+	mdev->ch[0]->prepared_desc = NULL;
+	mdev->ch[1]->prepared_desc = NULL;
+
+	mdev->ch[0]->desc_pool = pool_save0;
+	mdev->ch[1]->desc_pool = pool_save1;
+
+	if (sw_desc0)
+		mdma_free_descriptor(mdev->ch[0], sw_desc0);
+	if (sw_desc1)
+		mdma_free_descriptor(mdev->ch[1], sw_desc1);
+
+	spin_unlock(&mdev->ch[1]->lock);
+	spin_unlock_irqrestore(&mdev->ch[0]->lock, irqflags);
+
+	return NULL;
+}
+
 int mdma_device_terminate_all_gp(struct dma_chan *dchan)
 {
 	struct mdma_device *mdev = to_chan(dchan)->mdev;

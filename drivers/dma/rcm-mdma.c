@@ -76,6 +76,24 @@ static int mdma_sg_alloc_from_pages(struct sg_table* sgt,
 	return 0;
 }
 
+bool mdma_check_align(struct mdma_chan *chan, dma_addr_t dma_addr)
+{
+	int addr_mask = chan->bus_width / 8 - 1;
+	bool res = ((dma_addr & addr_mask) == 0);
+
+	if (!res)
+		dev_dbg(chan->dev, "DMA unalligned access (addr: 0x%x)\n",
+		        dma_addr);
+
+	return res;
+}
+
+bool mdma_check_align_sg(struct mdma_chan *chan, struct scatterlist *sg)
+{
+	dma_addr_t dma_addr = sg_dma_address(sg);
+	return mdma_check_align(chan, dma_addr);
+}
+
 void mdma_desc_pool_free(struct mdma_desc_pool* pool)
 {
 	struct mdma_chan *chan = pool_to_chan(pool);
@@ -434,6 +452,89 @@ unsigned mdma_desc_pool_fill_like(struct mdma_desc_pool* pool, unsigned pos,
 	} while (len);
 
 	return cnt;
+}
+
+unsigned mdma_desc_pool_fill_sg(struct mdma_desc_pool* pool, unsigned pos, 
+                                struct scatterlist *sg, unsigned int sg_len,
+                                bool stop_int)
+{
+	struct mdma_desc_long_ll *desc;
+	size_t seg_len;
+	unsigned cnt = 0;
+	struct scatterlist *s;
+	int i;
+
+	desc = &pool->descs[pos];
+
+	for_each_sg(sg, s, sg_len, i) {
+		dma_addr_t dma_addr = sg_dma_address(s);
+		size_t dma_len  = sg_dma_len(s);
+
+		while (dma_len > 0) {
+			seg_len = min_t(size_t, dma_len, MDMA_MAX_TRANS_LEN);
+			dma_len -= seg_len;
+
+			if (desc->flags_length & MDMA_BD_LINK) {
+				desc->flags_length = MDMA_BD_LINK;
+
+				if (pos + 1 == pool->size)
+					desc = pool->descs;
+				else
+					++desc;
+
+				pos = (pos + 1) % pool->size;
+				++cnt;
+			}
+
+			desc->flags_length = seg_len;
+
+			if ((i + 1 == sg_len) && (dma_len == 0)) {
+				desc->flags_length |= MDMA_BD_STOP;
+				if (stop_int) 
+					desc->flags_length |= MDMA_BD_INT;
+			}
+
+			desc->memptr = dma_addr;
+			dma_addr += seg_len;
+
+			if (pos + 1 == pool->size)
+				desc = pool->descs;
+			else
+				++desc;
+
+			pos = (pos + 1) % pool->size;
+			++cnt;
+		}
+	}
+
+	return cnt;
+}
+
+unsigned mdma_cnt_desc_needed(struct mdma_chan *chan, struct scatterlist *sgl,
+                              unsigned int sg_len, size_t *len)
+{
+	struct scatterlist *s;
+	int i;
+	unsigned cnt_descs = 0;
+
+	if (len)
+		*len = 0;
+
+	for_each_sg(sgl, s, sg_len, i) {
+		size_t seg_len  = sg_dma_len(s);
+
+		if (len)
+			*len += seg_len;
+
+		while (seg_len > MDMA_MAX_TRANS_LEN) {
+			++cnt_descs;
+			seg_len -= MDMA_MAX_TRANS_LEN;
+		}
+
+		++cnt_descs;
+	}
+
+	return cnt_descs;
 }
 
 /**
@@ -803,6 +904,87 @@ int mdma_device_config(struct dma_chan *dchan, struct dma_slave_config *config)
 	return 0;
 }
 
+static struct dma_async_tx_descriptor *
+mdma_prep_slave_sg(struct dma_chan *dchan, struct scatterlist *sgl,
+                   unsigned int sg_len, enum dma_transfer_direction dir,
+                   unsigned long flags, void *context)
+{
+	struct mdma_chan *chan = to_chan(dchan);
+	struct mdma_device *mdev = chan->mdev;
+	unsigned long irqflags;
+	struct mdma_desc_sw *sw_desc = NULL;
+	struct mdma_desc_pool pool_save;
+	unsigned cnt_descs = 0;
+	unsigned cnt;
+
+	if (dir != chan->dir) {
+		pr_err("%s: Unexpected transfer direction.\n", __func__);
+		return NULL;
+	}
+
+	if (!mdma_check_align_sg(chan, sgl))
+		return NULL;
+
+	cnt_descs = mdma_cnt_desc_needed(chan, sgl, sg_len, NULL);
+
+	spin_lock_irqsave(&chan->lock, irqflags);
+
+	if (chan->prepared_desc) {
+		spin_unlock_irqrestore(&chan->lock, irqflags);
+		pr_err("%s: Previous prepared descriptor was not submitted.\n",
+		       __func__);
+		return NULL;
+	}
+
+	pool_save = chan->desc_pool;
+
+	sw_desc = mdma_get_descriptor(chan);
+
+	if (!sw_desc)
+		goto rollback;
+
+	sw_desc->cnt = mdma_desc_pool_get(&chan->desc_pool, cnt_descs,
+	                                  &sw_desc->pos);
+
+	if (!sw_desc->cnt) {
+		dev_dbg(chan->dev, 
+		        "chan #%d: can't get %u descriptors from pool\n",
+		        dchan->chan_id, cnt_descs);
+		goto rollback;
+	}
+
+	chan->prepared_desc = sw_desc;
+
+	cnt = mdma_desc_pool_fill_sg(&chan->desc_pool, sw_desc->pos,
+	                             sgl, sg_len, true);
+	if (cnt != sw_desc->cnt) {
+		pr_err("%s: Descpitors number does not match (%u != %u)\n",
+		       __func__, cnt, sw_desc->cnt);
+		goto rollback;
+	}
+
+	spin_unlock_irqrestore(&chan->lock, irqflags);
+
+	mdma_desc_pool_sync(&chan->desc_pool, sw_desc->pos, sw_desc->cnt);
+
+	async_tx_ack(&sw_desc->async_tx);
+	sw_desc->async_tx.flags = flags;
+
+	return &sw_desc->async_tx;
+
+rollback:
+	chan->prepared_desc = NULL;
+
+	chan->desc_pool = pool_save;
+
+	if (sw_desc)
+		mdma_free_descriptor(chan, sw_desc);
+
+	spin_unlock_irqrestore(&chan->lock, irqflags);
+
+	return NULL;
+}
+
 /**
  * mdma_complete_descriptor - Mark the active descriptor as complete
  * @chan: MDMA channel pointer
@@ -851,6 +1033,9 @@ static int mdma_chan_probe(struct mdma_chan *chan)
 {
 	struct device_node *node = chan->dev->of_node;
 	int err;
+
+	chan->config.src_addr = 0;
+	chan->config.dst_addr = 0;
 
 	chan->bus_width = MDMA_BUS_WIDTH_128;
 	chan->config.src_maxburst = MDMA_AWLEN_RST_VAL;
@@ -909,7 +1094,7 @@ static int rcm_mdma_probe(struct platform_device *pdev)
 	p = &mdev->slave;
 	p->device_prep_dma_memcpy = mdma_prep_memcpy_gp;
 	// p->device_prep_interleaved_dma = mdma_prep_interleaved_dma; // todo
-	// p->device_prep_slave_sg = mdma_prep_slave_sg; // todo
+	p->device_prep_slave_sg = mdma_prep_slave_sg_gp;
 	// p->device_prep_dma_memset = mdma_prep_dma_memset; // todo
 	// p->device_prep_dma_memset_sg = mdma_prep_dma_memset_sg; // todo
 	p->device_terminate_all = mdma_device_terminate_all_gp;
