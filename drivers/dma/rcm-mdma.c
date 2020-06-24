@@ -555,7 +555,7 @@ void mdma_start_transfer(struct mdma_chan *chan)
  * @desc: Transaction descriptor pointer
  */
 static void mdma_update_desc_to_ctrlr(struct mdma_chan *chan,
-				      struct mdma_desc_sw *desc)
+                                      struct mdma_desc_sw *desc)
 {
 	dma_addr_t addr = mdma_desc_pool_get_addr(&chan->desc_pool, desc->pos);
 
@@ -587,7 +587,7 @@ bool mdma_prepare_transfer(struct mdma_chan *chan)
 		return false;
 
 	desc = list_first_entry_or_null(&chan->pending_list,
-					struct mdma_desc_sw, node);
+	                                struct mdma_desc_sw, node);
 	if (!desc)
 		return false;
 
@@ -638,8 +638,7 @@ struct mdma_desc_sw *mdma_get_descriptor(struct mdma_chan *chan)
  * @chan: MDMA channel pointer
  * @sdesc: Transaction descriptor pointer
  */
-void mdma_free_descriptor(struct mdma_chan *chan,
-				 struct mdma_desc_sw *sdesc)
+void mdma_free_descriptor(struct mdma_chan *chan, struct mdma_desc_sw *sdesc)
 {
 	if (sdesc->cnt)
 		mdma_desc_pool_put(&chan->desc_pool, sdesc->pos, sdesc->cnt);
@@ -652,8 +651,7 @@ void mdma_free_descriptor(struct mdma_chan *chan,
  * @chan: MDMA channel pointer
  * @list: List to parse and delete the descriptor
  */
-static void mdma_free_desc_list(struct mdma_chan *chan,
-				struct list_head *list)
+static void mdma_free_desc_list(struct mdma_chan *chan, struct list_head *list)
 {
 	struct mdma_desc_sw *desc, *next;
 
@@ -786,7 +784,7 @@ static int __maybe_unused mdma_runtime_resume(struct device *dev)
 static const struct dev_pm_ops mdma_dev_pm_ops = {
 	SET_SYSTEM_SLEEP_PM_OPS(mdma_suspend, mdma_resume)
 	SET_RUNTIME_PM_OPS(mdma_runtime_suspend,
-			   mdma_runtime_resume, NULL)
+	                   mdma_runtime_resume, NULL)
 };
 
 /**
@@ -843,8 +841,7 @@ int mdma_alloc_chan_resources(struct dma_chan *dchan)
 		return -EFAULT;
 	}
 
-	chan->sw_desc_pool = kcalloc(MDMA_NUM_DESCS, sizeof(*desc),
-				     GFP_KERNEL);
+	chan->sw_desc_pool = kcalloc(MDMA_NUM_DESCS, sizeof(*desc), GFP_KERNEL);
 	if (!chan->sw_desc_pool)
 		return -ENOMEM;
 
@@ -1160,7 +1157,7 @@ static int rcm_mdma_probe(struct platform_device *pdev)
 	dma_async_device_register(&mdev->slave);
 
 	ret = of_dma_controller_register(pdev->dev.of_node,
-					 of_dma_xlate_by_chan_id, &mdev->slave);
+	                                 of_dma_xlate_by_chan_id, &mdev->slave);
 	if (ret) {
 		dev_err(&pdev->dev, "Unable to register DMA to DT\n");
 		dma_async_device_unregister(&mdev->slave);

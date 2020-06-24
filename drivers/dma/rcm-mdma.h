@@ -61,12 +61,9 @@
 
 #define MDMA_DESC_ALIGNMENT 16
 
-#define to_chan(chan)		container_of(chan, struct mdma_chan, \
-					     slave)
-#define tx_to_desc(tx)		container_of(tx, struct mdma_desc_sw, \
-					     async_tx)
-#define pool_to_chan(pool)	container_of(pool, struct mdma_chan, \
-					     desc_pool)
+#define to_chan(chan)      container_of(chan, struct mdma_chan, slave)
+#define tx_to_desc(tx)     container_of(tx, struct mdma_desc_sw, async_tx)
+#define pool_to_chan(pool) container_of(pool, struct mdma_chan, desc_pool)
 
 
 typedef const volatile unsigned int roreg32;

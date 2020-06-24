@@ -21,8 +21,8 @@ dma_cookie_t mdma_gp_tx_submit(struct dma_async_tx_descriptor *tx)
 	pr_debug("%s >>>\n", __func__);
 
 	if (!mdev->ch[num_ch]->prepared_desc) {
-		pr_err("%s: Attempt to submit incorrectly prepared descriptor.\n",
-		       __func__);
+		pr_err("%s: Attempt to submit incorrectly prepared "
+		       "descriptor.\n", __func__);
 		return -EFAULT;
 	}
 
@@ -43,9 +43,9 @@ dma_cookie_t mdma_gp_tx_submit(struct dma_async_tx_descriptor *tx)
  *
  * Return: Async transaction descriptor on success and NULL on failure
  */
-struct dma_async_tx_descriptor *mdma_gp_prep_memcpy(
-				struct dma_chan *dchan, dma_addr_t dma_dst,
-				dma_addr_t dma_src, size_t len, ulong flags)
+struct dma_async_tx_descriptor *
+mdma_gp_prep_memcpy(struct dma_chan *dchan, dma_addr_t dma_dst,
+                    dma_addr_t dma_src, size_t len, ulong flags)
 {
 	struct mdma_device *mdev = to_chan(dchan)->mdev;
 	struct mdma_desc_sw *sw_desc0 = NULL;
