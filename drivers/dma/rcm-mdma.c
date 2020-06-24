@@ -857,7 +857,7 @@ int mdma_alloc_chan_resources(struct dma_chan *dchan)
 	for (i = 0; i < MDMA_NUM_DESCS; i++) {
 		desc = chan->sw_desc_pool + i;
 		dma_async_tx_descriptor_init(&desc->async_tx, &chan->slave);
-		desc->async_tx.tx_submit = mdma_tx_submit_gp;
+		desc->async_tx.tx_submit = mdma_gp_tx_submit;
 		list_add_tail(&desc->node, &chan->free_list);
 	}
 
@@ -1092,27 +1092,27 @@ static int rcm_mdma_probe(struct platform_device *pdev)
 	dma_cap_set(DMA_MEMCPY, mdev->slave.cap_mask);
 
 	p = &mdev->slave;
-	p->device_prep_dma_memcpy = mdma_prep_memcpy_gp;
+	p->device_prep_dma_memcpy = mdma_gp_prep_memcpy;
 	// p->device_prep_interleaved_dma = mdma_prep_interleaved_dma; // todo
-	p->device_prep_slave_sg = mdma_prep_slave_sg_gp;
+	p->device_prep_slave_sg = mdma_gp_prep_slave_sg;
 	// p->device_prep_dma_memset = mdma_prep_dma_memset; // todo
 	// p->device_prep_dma_memset_sg = mdma_prep_dma_memset_sg; // todo
-	p->device_terminate_all = mdma_device_terminate_all_gp;
-	p->device_issue_pending = mdma_issue_pending_gp;
-	p->device_alloc_chan_resources = mdma_alloc_chan_resources_gp;
-	p->device_free_chan_resources = mdma_free_chan_resources_gp;
+	p->device_terminate_all = mdma_gp_device_terminate_all;
+	p->device_issue_pending = mdma_gp_issue_pending;
+	p->device_alloc_chan_resources = mdma_gp_alloc_chan_resources;
+	p->device_free_chan_resources = mdma_gp_free_chan_resources;
 	p->device_tx_status = dma_cookie_status;
-	p->device_config = mdma_device_config_gp;
+	p->device_config = mdma_gp_device_config;
 	p->dev = &pdev->dev;
 
-	tasklet_init(&mdev->tasklet, mdma_do_tasklet_gp, (ulong)mdev);
+	tasklet_init(&mdev->tasklet, mdma_gp_do_tasklet, (ulong)mdev);
 
 	irq = platform_get_irq(pdev, 0);
 	if (irq < 0) {
 		dev_err(&pdev->dev, "unable to get interrupt property.\n");
 		return -ENXIO;
 	}
-	ret = devm_request_irq(&pdev->dev, irq, mdma_irq_handler_gp, 0, 
+	ret = devm_request_irq(&pdev->dev, irq, mdma_gp_irq_handler, 0, 
 	                       "mdma", mdev);
 	if (ret) {
 		dev_err(&pdev->dev, "failed to allocate interrupt.\n");

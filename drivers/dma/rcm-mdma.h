@@ -254,23 +254,23 @@ void mdma_complete_descriptor(struct mdma_chan *chan,
                               struct dmaengine_desc_callback* cb);
 void mdma_reset(struct mdma_device *mdev);
 
-dma_cookie_t mdma_tx_submit_gp(struct dma_async_tx_descriptor *tx);
-struct dma_async_tx_descriptor *mdma_prep_memcpy_gp(struct dma_chan *dchan,
+dma_cookie_t mdma_gp_tx_submit(struct dma_async_tx_descriptor *tx);
+struct dma_async_tx_descriptor *mdma_gp_prep_memcpy(struct dma_chan *dchan,
                                                     dma_addr_t dma_dst,
                                                     dma_addr_t dma_src,
                                                     size_t len, ulong flags);
 struct dma_async_tx_descriptor *
-mdma_prep_slave_sg_gp(struct dma_chan *dchan, struct scatterlist *sgl,
+mdma_gp_prep_slave_sg(struct dma_chan *dchan, struct scatterlist *sgl,
                       unsigned int sg_len, enum dma_transfer_direction dir,
                       unsigned long flags, void *context);
-int mdma_device_terminate_all_gp(struct dma_chan *dchan);
-void mdma_issue_pending_gp(struct dma_chan *dchan);
-int mdma_alloc_chan_resources_gp(struct dma_chan *dchan);
-void mdma_free_chan_resources_gp(struct dma_chan *dchan);
-int mdma_device_config_gp(struct dma_chan *dchan,
+int mdma_gp_device_terminate_all(struct dma_chan *dchan);
+void mdma_gp_issue_pending(struct dma_chan *dchan);
+int mdma_gp_alloc_chan_resources(struct dma_chan *dchan);
+void mdma_gp_free_chan_resources(struct dma_chan *dchan);
+int mdma_gp_device_config(struct dma_chan *dchan,
                           struct dma_slave_config *config);
-irqreturn_t mdma_irq_handler_gp(int irq, void *data);
-void mdma_do_tasklet_gp(unsigned long data);
+irqreturn_t mdma_gp_irq_handler(int irq, void *data);
+void mdma_gp_do_tasklet(unsigned long data);
 
 bool mdma_check_align(struct mdma_chan *chan, dma_addr_t dma_addr);
 bool mdma_check_align_sg(struct mdma_chan *chan, struct scatterlist *sg);
