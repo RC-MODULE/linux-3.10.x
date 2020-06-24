@@ -82,8 +82,9 @@ bool mdma_check_align(struct mdma_chan *chan, dma_addr_t dma_addr)
 	bool res = ((dma_addr & addr_mask) == 0);
 
 	if (!res)
-		dev_dbg(chan->dev, "DMA unalligned access (addr: 0x%x)\n",
-		        dma_addr);
+		dev_dbg(chan->dev,
+		        "[ch%d] DMA unalligned access (addr: 0x%x)\n",
+		        chan->slave.chan_id, dma_addr);
 
 	return res;
 }
@@ -130,8 +131,9 @@ int mdma_desc_pool_alloc(struct mdma_desc_pool* pool, unsigned cnt)
 	pool->ptr = vmalloc(size + MDMA_DESC_ALIGNMENT);
 
 	if (!pool->ptr) {
-		pr_err("%s: Failed to allocate memory (%lu bytes).\n", __func__,
-		       size + MDMA_DESC_ALIGNMENT);
+		dev_err(chan->dev, 
+		        "%s: Failed to allocate memory (%lu bytes).\n",
+		        __func__, size + MDMA_DESC_ALIGNMENT);
 		return -ENOMEM;
 	}
 
@@ -150,8 +152,9 @@ int mdma_desc_pool_alloc(struct mdma_desc_pool* pool, unsigned cnt)
 	pool->pages = kmalloc_array(nr_pages, sizeof(struct page *), 
 	                            GFP_KERNEL);
 	if (!pool->pages) {
-		pr_err("%s: Failed to allocate array for %d pages.\n",
-		       __func__, nr_pages);
+		dev_err(chan->dev,
+		        "%s: Failed to allocate array for %d pages.\n",
+		        __func__, nr_pages);
 		ret = -ENOMEM;
 		goto err_free_pool;
 	}
@@ -163,8 +166,9 @@ int mdma_desc_pool_alloc(struct mdma_desc_pool* pool, unsigned cnt)
 		else
 			pool->pages[i] = virt_to_page((void *)p);
 		if (!pool->pages[i]) {
-			pr_err("%s: Failed to get page for address 0x%px.\n",
-			       __func__, p);
+			dev_err(chan->dev,
+			        "%s: Failed to get page for address 0x%px.\n",
+			        __func__, p);
 			ret = -EFAULT;
 			goto err_free_pool;
 		}
@@ -183,8 +187,9 @@ static unsigned x = 11;
 x = 17;
 
 	if (ret) {
-		pr_err("%s: Failed to allocate SG-table (%d pages).\n",
-		       __func__, nr_pages);
+		dev_err(chan->dev,
+		        "%s: Failed to allocate SG-table (%d pages).\n",
+		        __func__, nr_pages);
 		ret = -EFAULT;
 		goto err_free_pool;
 	}
@@ -192,7 +197,7 @@ x = 17;
 	ret = dma_map_sg(chan->mdev->dev, pool->sgt.sgl, pool->sgt.nents, 
 	                 DMA_TO_DEVICE);
 	if (ret == 0) {
-		pr_err("%s: Failed to map SG-table.\n", __func__);
+		dev_err(chan->dev, "%s: Failed to map SG-table.\n", __func__);
 		ret = -EFAULT;
 		goto err_free_pool;
 	}
@@ -215,9 +220,9 @@ x = 17;
 		p += len;
 	}
 
-	pr_debug("%s: descriptor's pool allocated "
-	         "(%u descriptors in %u sg-entries)\n",
-	         __func__, cnt, pool->sgt.nents);
+	dev_dbg(chan->dev, "[ch%d] descriptor's pool allocated "
+	                   "(%u descriptors in %u sg-entries)\n",
+	                   chan->slave.chan_id, cnt, pool->sgt.nents);
 
 	return 0;
 
@@ -252,9 +257,6 @@ unsigned mdma_desc_pool_get(struct mdma_desc_pool* pool,
 	unsigned i;
 	unsigned n;
 
-	pr_debug("%s(%u) >>> next = %u, head = %u, cnt = %u, size = %u\n",
-	          __func__, cnt, pool->next, pool->head, pool->cnt, pool->size);
-
 	if (cnt > pool->cnt)
 		return 0;
 
@@ -268,10 +270,8 @@ unsigned mdma_desc_pool_get(struct mdma_desc_pool* pool,
 		i = (i + 1) % pool->size;
 	}
 
-	if (n != cnt) {
-		pr_debug("%s: n = %u, cnt = %u\n", __func__, n, cnt);
+	if (n != cnt)
 		return 0;
-	}
 
 	i = pool->next;
 
@@ -281,36 +281,31 @@ unsigned mdma_desc_pool_get(struct mdma_desc_pool* pool,
 	pool->cnt -= cnt;
 	pool->next = (pool->next + cnt) % pool->size;
 
-	pr_debug("%s(%u) <<< next = %u, head = %u, cnt = %u, size = %u\n",
-	          __func__, cnt, pool->next, pool->head, pool->cnt, pool->size);
-
 	return cnt;
 }
 
 void mdma_desc_pool_put(struct mdma_desc_pool* pool,
                         unsigned pos, unsigned cnt)
 {
-	pr_debug("%s(%u, %u) >>> next = %u, head = %u, cnt = %u, size = %u\n",
-	          __func__, pos, cnt, pool->next, pool->head, pool->cnt, pool->size);
+	struct mdma_chan *chan = pool_to_chan(pool);
 
 	if (pos != pool->head) {
-		pr_warn("%s: incorrect pool operation: pool(head = %u, cnt = %u)"
-		        ", trying to put %u items to pos %u.\n",
-		        __func__, pool->head, pool->cnt, cnt, pos);
+		dev_warn(chan->dev,
+		         "%s: incorrect pool operation: pool(head = %u, "
+		         "cnt = %u), trying to put %u items to pos %u.\n",
+		         __func__, pool->head, pool->cnt, cnt, pos);
 	}
 
 	if (cnt > pool->size - pool->cnt) {
-		pr_warn("%s: incorrect pool operation: "
-		        "pool(size = %u, cnt = %u), trying to put %u items.\n",
-		        __func__, pool->size, pool->cnt, cnt);
+		dev_warn(chan->dev,
+		         "%s: incorrect pool operation: "
+		         "pool(size = %u, cnt = %u), trying to put %u items.\n",
+		         __func__, pool->size, pool->cnt, cnt);
 		cnt = pool->size - pool->cnt;
 	}
 
 	pool->head = (pool->head + cnt) % pool->size;
 	pool->cnt += cnt;
-
-	pr_debug("%s(%u, %u) <<< next = %u, head = %u, cnt = %u, size = %u\n",
-	          __func__, pos, cnt, pool->next, pool->head, pool->cnt, pool->size);
 }
 
 void mdma_desc_pool_sync(struct mdma_desc_pool* pool,
@@ -396,6 +391,7 @@ unsigned mdma_desc_pool_fill_like(struct mdma_desc_pool* pool, unsigned pos,
                                   struct mdma_desc_pool* pool_base, 
                                   unsigned pos_base)
 {
+	struct mdma_chan *chan = pool_to_chan(pool);
 	struct mdma_desc_long_ll *desc;
 	size_t seg_len;
 	unsigned cnt = 0;
@@ -425,7 +421,8 @@ unsigned mdma_desc_pool_fill_like(struct mdma_desc_pool* pool, unsigned pos,
 		}
 
 		if (len < seg_len) {
-			pr_err("%s: Incorrect data passed.\n", __func__);
+			dev_err(chan->dev, "%s: Incorrect data passed.\n",
+			        __func__);
 			break;
 		}
 
@@ -543,10 +540,8 @@ unsigned mdma_cnt_desc_needed(struct mdma_chan *chan, struct scatterlist *sgl,
  */
 void mdma_start_transfer(struct mdma_chan *chan)
 {
-	pr_debug("%s >>>\n", __func__);
 	writel(MDMA_IRQ_SENS_MASK, &chan->regs->irq_mask);
 	writel(1, &chan->regs->enable);
-	pr_debug("%s <<<\n", __func__);
 }
 
 /**
@@ -581,8 +576,6 @@ bool mdma_prepare_transfer(struct mdma_chan *chan)
 {
 	struct mdma_desc_sw *desc;
 
-	pr_debug("%s >>>\n", __func__);
-
 	if (chan->active_desc)
 		return false;
 
@@ -600,8 +593,6 @@ bool mdma_prepare_transfer(struct mdma_chan *chan)
 
 	mdma_update_desc_to_ctrlr(chan, desc);
 
-	pr_debug("%s <<<\n", __func__);
-
 	return true;
 }
 
@@ -616,7 +607,8 @@ struct mdma_desc_sw *mdma_get_descriptor(struct mdma_chan *chan)
 	struct mdma_desc_sw *desc;
 
 	if (!chan->desc_free_cnt) {
-		dev_dbg(chan->dev, "chan %p descs are not available\n", chan);
+		dev_dbg(chan->dev, "[ch%d] descs are not available\n",
+		        chan->slave.chan_id);
 		return NULL;
 	}
 
@@ -692,15 +684,14 @@ dma_cookie_t mdma_tx_submit(struct dma_async_tx_descriptor *tx)
 	dma_cookie_t cookie;
 	unsigned long irqflags;
 
-	pr_debug("%s >>>\n", __func__);
-
 	desc = tx_to_desc(tx);
 	spin_lock_irqsave(&chan->lock, irqflags);
 
 	if (desc != chan->prepared_desc) {
 		spin_unlock_irqrestore(&chan->lock, irqflags);
-		pr_err("%s: Attempt to submit unexpected descriptor.\n",
-		       __func__);
+		dev_err(chan->dev,
+		        "[ch%d] Attempt to submit unexpected descriptor.\n",
+		        chan->slave.chan_id);
 		return -EFAULT;
 	}
 
@@ -837,7 +828,8 @@ int mdma_alloc_chan_resources(struct dma_chan *dchan)
 		return ret;
 
 	if (chan->sw_desc_pool) {
-		pr_warn("%s: Channel already allocated.\n", __func__);
+		dev_warn(chan->dev, "%s: [ch%d] Channel already allocated.\n",
+		         __func__, dchan->chan_id);
 		return -EFAULT;
 	}
 
@@ -915,7 +907,8 @@ mdma_prep_slave_sg(struct dma_chan *dchan, struct scatterlist *sgl,
 	unsigned cnt;
 
 	if (dir != chan->dir) {
-		pr_err("%s: Unexpected transfer direction.\n", __func__);
+		dev_err(chan->dev, "[ch%d] Unexpected transfer direction.\n",
+		        dchan->chan_id);
 		return NULL;
 	}
 
@@ -928,8 +921,9 @@ mdma_prep_slave_sg(struct dma_chan *dchan, struct scatterlist *sgl,
 
 	if (chan->prepared_desc) {
 		spin_unlock_irqrestore(&chan->lock, irqflags);
-		pr_err("%s: Previous prepared descriptor was not submitted.\n",
-		       __func__);
+		dev_err(chan->dev,
+		        "[ch%d] Previous prepared descriptor was not submitted.\n",
+		        dchan->chan_id);
 		return NULL;
 	}
 
@@ -945,7 +939,7 @@ mdma_prep_slave_sg(struct dma_chan *dchan, struct scatterlist *sgl,
 
 	if (!sw_desc->cnt) {
 		dev_dbg(chan->dev, 
-		        "chan #%d: can't get %u descriptors from pool\n",
+		        "[ch%d] can't get %u descriptors from pool\n",
 		        dchan->chan_id, cnt_descs);
 		goto rollback;
 	}
@@ -955,8 +949,9 @@ mdma_prep_slave_sg(struct dma_chan *dchan, struct scatterlist *sgl,
 	cnt = mdma_desc_pool_fill_sg(&chan->desc_pool, sw_desc->pos,
 	                             sgl, sg_len, true);
 	if (cnt != sw_desc->cnt) {
-		pr_err("%s: Descpitors number does not match (%u != %u)\n",
-		       __func__, cnt, sw_desc->cnt);
+		dev_err(chan->dev, 
+		        "[ch%d] Descpitors number does not match (%u != %u)\n",
+		        dchan->chan_id, cnt, sw_desc->cnt);
 		goto rollback;
 	}
 

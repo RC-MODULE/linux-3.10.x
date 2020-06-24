@@ -18,11 +18,10 @@ static dma_cookie_t mdma_gp_tx_submit(struct dma_async_tx_descriptor *tx)
 
 	int num_ch = (chan == mdev->ch[0]) ? 1 : 0;
 
-	pr_debug("%s >>>\n", __func__);
-
 	if (!mdev->ch[num_ch]->prepared_desc) {
-		pr_err("%s: Attempt to submit incorrectly prepared "
-		       "descriptor.\n", __func__);
+		dev_err(chan->dev,
+		        "[ch%d] Attempt to submit incorrectly prepared "
+		       "descriptor.\n", chan->slave.chan_id);
 		return -EFAULT;
 	}
 
@@ -57,8 +56,6 @@ mdma_gp_prep_memcpy(struct dma_chan *dchan, dma_addr_t dma_dst,
 	struct mdma_desc_pool pool_save1;
 	unsigned cnt;
 
-	pr_debug("%s >>>\n", __func__);
-
 	if ((!mdma_check_align(mdev->ch[0], dma_src)) ||
 	    (!mdma_check_align(mdev->ch[0], dma_dst)))
 		return NULL;
@@ -76,8 +73,9 @@ mdma_gp_prep_memcpy(struct dma_chan *dchan, dma_addr_t dma_dst,
 	if ((mdev->ch[0]->prepared_desc) || (mdev->ch[1]->prepared_desc)) {
 		spin_unlock(&mdev->ch[1]->lock);
 		spin_unlock_irqrestore(&mdev->ch[0]->lock, irqflags);
-		pr_err("%s: Previous prepared descriptor was not submitted.\n",
-		       __func__);
+		dev_err(mdev->dev,
+		        "%s: Previous prepared descriptor was not submitted.\n",
+		        __func__);
 		return NULL;
 	}
 
@@ -96,9 +94,9 @@ mdma_gp_prep_memcpy(struct dma_chan *dchan, dma_addr_t dma_dst,
 	                                   &sw_desc1->pos);
 
 	if ((!sw_desc0->cnt) || (!sw_desc1->cnt)) {
-		dev_dbg(mdev->ch[0]->dev, 
-		        "chan %p: can't get %u descriptors from pool\n",
-		        mdev->ch[0], cnt_descs);
+		dev_dbg(mdev->dev, 
+		        "%s: can't get %u descriptors from pool\n",
+		        __func__, cnt_descs);
 		goto rollback;
 	}
 
@@ -108,8 +106,9 @@ mdma_gp_prep_memcpy(struct dma_chan *dchan, dma_addr_t dma_dst,
 	cnt = mdma_desc_pool_fill(&mdev->ch[0]->desc_pool, sw_desc0->pos,
 	                          dma_src, len, false);
 	if (cnt != sw_desc0->cnt) {
-		pr_err("%s: Descpitors number does not match (%u != %u)\n",
-		       __func__, cnt, sw_desc0->cnt);
+		dev_err(mdev->dev,
+		        "%s: Descpitors number does not match (%u != %u)\n",
+		        __func__, cnt, sw_desc0->cnt);
 		goto rollback;
 	}
 
@@ -117,8 +116,9 @@ mdma_gp_prep_memcpy(struct dma_chan *dchan, dma_addr_t dma_dst,
 	                               dma_dst, len, true,
 	                               &mdev->ch[0]->desc_pool, sw_desc0->pos);
 	if (cnt != sw_desc1->cnt) {
-		pr_err("%s: Descpitors number does not match (%u != %u)\n",
-		       __func__, cnt, sw_desc1->cnt);
+		dev_err(mdev->dev,
+		        "%s: Descpitors number does not match (%u != %u)\n",
+		        __func__, cnt, sw_desc0->cnt);
 		goto rollback;
 	}
 
@@ -177,11 +177,10 @@ mdma_gp_prep_slave_sg(struct dma_chan *dchan, struct scatterlist *sgl,
 	unsigned cnt;
 	bool stop_int;
 
-	pr_debug("%s >>>\n", __func__);
-
 	if (dir != DMA_MEM_TO_MEM) {
-		pr_err("%s: MDMA-GP supports mem-to-mem transfers only.\n",
-		       __func__);
+		dev_err(mdev->dev,
+		        "%s: MDMA-GP supports mem-to-mem transfers only.\n",
+		        __func__);
 		return NULL;
 	}
 
@@ -189,9 +188,10 @@ mdma_gp_prep_slave_sg(struct dma_chan *dchan, struct scatterlist *sgl,
 	                                   chan->config.src_addr;
 
 	if (dma_addr == 0) {
-		pr_err("%s: DMA-address is not specified. "
-		       "Use dmaengine_slave_config() to specify it.\n",
-		       __func__);
+		dev_err(mdev->dev,
+		        "%s: DMA-address is not specified. "
+		        "Use dmaengine_slave_config() to specify it.\n",
+		        __func__);
 		return NULL;
 	}
 
@@ -206,8 +206,9 @@ mdma_gp_prep_slave_sg(struct dma_chan *dchan, struct scatterlist *sgl,
 	if ((mdev->ch[0]->prepared_desc) || (mdev->ch[1]->prepared_desc)) {
 		spin_unlock(&mdev->ch[1]->lock);
 		spin_unlock_irqrestore(&mdev->ch[0]->lock, irqflags);
-		pr_err("%s: Previous prepared descriptor was not submitted.\n",
-		       __func__);
+		dev_err(mdev->dev,
+		        "%s: Previous prepared descriptor was not submitted.\n",
+		        __func__);
 		return NULL;
 	}
 
@@ -226,8 +227,8 @@ mdma_gp_prep_slave_sg(struct dma_chan *dchan, struct scatterlist *sgl,
 	                                   &sw_desc1->pos);
 
 	if ((!sw_desc0->cnt) || (!sw_desc1->cnt)) {
-		dev_dbg(mdev->dev, "can't get %u descriptors from pool\n",
-		        cnt_descs);
+		dev_dbg(mdev->dev, "%s: can't get %u descriptors from pool\n",
+		        __func__, cnt_descs);
 		goto rollback;
 	}
 
@@ -244,8 +245,9 @@ mdma_gp_prep_slave_sg(struct dma_chan *dchan, struct scatterlist *sgl,
 	cnt = mdma_desc_pool_fill_sg(&chan->desc_pool, sw_desc->pos,
 	                             sgl, sg_len, stop_int);
 	if (cnt != sw_desc->cnt) {
-		pr_err("%s: Descpitors number does not match (%u != %u)\n",
-		       __func__, cnt, sw_desc->cnt);
+		dev_err(mdev->dev,
+		        "%s: Descpitors number does not match (%u != %u)\n",
+		        __func__, cnt, sw_desc->cnt);
 		goto rollback;
 	}
 
@@ -254,8 +256,9 @@ mdma_gp_prep_slave_sg(struct dma_chan *dchan, struct scatterlist *sgl,
 	                               dma_addr, len, !stop_int,
 	                               &chan->desc_pool, sw_desc->pos);
 	if (cnt != sw_desc_linked->cnt) {
-		pr_warn("%s: Descpitors number does not match (%u != %u)\n",
-		        __func__, cnt, sw_desc_linked->cnt);
+		dev_err(mdev->dev,
+		        "%s: Descpitors number does not match (%u != %u)\n",
+		        __func__, cnt, sw_desc->cnt);
 		goto rollback;
 	}
 
@@ -308,8 +311,6 @@ static void mdma_gp_issue_pending(struct dma_chan *dchan)
 	struct mdma_device *mdev = to_chan(dchan)->mdev;
 
 	unsigned long irqflags;
-
-	pr_debug("%s >>>\n", __func__);
 
 	spin_lock_irqsave(&mdev->ch[0]->lock, irqflags);
 	spin_lock(&mdev->ch[1]->lock);
@@ -377,7 +378,7 @@ static irqreturn_t mdma_gp_irq_handler(int irq, void *data)
 
 	status = readl(&mdev->regs->status);
 
-	pr_debug("%s: Interrupt, status %x\n", __func__, status);
+	dev_dbg(mdev->dev, "Interrupt, status %x\n", status);
 
 	if ((status & (MDMA_IRQ_STATUS_TX | MDMA_IRQ_STATUS_RX)) == 0)
 		return IRQ_NONE;
@@ -387,7 +388,7 @@ static irqreturn_t mdma_gp_irq_handler(int irq, void *data)
 
 	if (status & MDMA_IRQ_STATUS_RX) {
 		u32 rx_status = readl(&mdev->ch[0]->regs->status);
-		pr_debug("%s: RX-interrupt, status %x\n", __func__, rx_status);
+		dev_dbg(mdev->dev, "RX-interrupt, status %x\n", rx_status);
 
 		mdev->ch[0]->err = true;
 		need_tasklet = true;
@@ -395,13 +396,13 @@ static irqreturn_t mdma_gp_irq_handler(int irq, void *data)
 
 	if (status & MDMA_IRQ_STATUS_TX) {
 		u32 tx_status = readl(&mdev->ch[1]->regs->status);
-		pr_debug("%s: TX-interrupt, status %x\n", __func__, tx_status);
+		dev_dbg(mdev->dev, "TX-interrupt, status %x\n", tx_status);
 
 		if ((tx_status & MDMA_IRQ_INT_DESC) == 0) {
 			mdev->ch[1]->err = true;
 		} else if (!mdev->ch[1]->active_desc) {
-			pr_debug("%s: Interrupt without active descriptor\n",
-			         __func__);
+			dev_dbg(mdev->dev,
+			        "Interrupt without active descriptor\n");
 		} else {
 			mdev->ch[0]->active_desc->completed = true;
 			mdev->ch[1]->active_desc->completed = true;
