@@ -854,7 +854,7 @@ int mdma_alloc_chan_resources(struct dma_chan *dchan)
 	for (i = 0; i < MDMA_NUM_DESCS; i++) {
 		desc = chan->sw_desc_pool + i;
 		dma_async_tx_descriptor_init(&desc->async_tx, &chan->slave);
-		desc->async_tx.tx_submit = mdma_gp_tx_submit;
+		desc->async_tx.tx_submit = chan->mdev->of_data->tx_submit;
 		list_add_tail(&desc->node, &chan->free_list);
 	}
 
@@ -1063,19 +1063,30 @@ static int mdma_chan_probe(struct mdma_chan *chan)
 	return 0;
 }
 
+static const struct of_device_id rcm_mdma_dt_ids[];
 
 static int rcm_mdma_probe(struct platform_device *pdev)
 {
 	struct mdma_device *mdev;
+	const struct of_device_id *match;
+	const struct mdma_of_data *of_data;
 	struct dma_device *p;
 	struct resource *res;
 	int ret;
 	int irq;
 	int i;
 
+	match = of_match_device(rcm_mdma_dt_ids, &pdev->dev);
+	if (!match)
+		return -EINVAL;
+
+	of_data = (struct mdma_of_data *)match->data;
+
 	mdev = devm_kzalloc(&pdev->dev, sizeof(*mdev), GFP_KERNEL);
 	if (!mdev)
 		return -ENOMEM;
+
+	mdev->of_data = of_data;
 
 	res = platform_get_resource(pdev, IORESOURCE_MEM, 0);
 	mdev->regs = (struct mdma_regs*) devm_ioremap_resource(&pdev->dev, res);
@@ -1086,30 +1097,33 @@ static int rcm_mdma_probe(struct platform_device *pdev)
 	INIT_LIST_HEAD(&mdev->slave.channels);
 
 	dma_set_mask(&pdev->dev, DMA_BIT_MASK(32));
-	dma_cap_set(DMA_MEMCPY, mdev->slave.cap_mask);
+	if (of_data->device_prep_dma_memcpy)
+		dma_cap_set(DMA_MEMCPY, mdev->slave.cap_mask);
+	if (of_data->device_prep_slave_sg)
+		dma_cap_set(DMA_SLAVE, mdev->slave.cap_mask);
 
 	p = &mdev->slave;
-	p->device_prep_dma_memcpy = mdma_gp_prep_memcpy;
+	p->device_prep_dma_memcpy      = of_data->device_prep_dma_memcpy;
 	// p->device_prep_interleaved_dma = mdma_prep_interleaved_dma; // todo
-	p->device_prep_slave_sg = mdma_gp_prep_slave_sg;
+	p->device_prep_slave_sg        = of_data->device_prep_slave_sg;
 	// p->device_prep_dma_memset = mdma_prep_dma_memset; // todo
 	// p->device_prep_dma_memset_sg = mdma_prep_dma_memset_sg; // todo
-	p->device_terminate_all = mdma_gp_device_terminate_all;
-	p->device_issue_pending = mdma_gp_issue_pending;
-	p->device_alloc_chan_resources = mdma_gp_alloc_chan_resources;
-	p->device_free_chan_resources = mdma_gp_free_chan_resources;
-	p->device_tx_status = dma_cookie_status;
-	p->device_config = mdma_gp_device_config;
+	p->device_terminate_all        = of_data->device_terminate_all;
+	p->device_issue_pending        = of_data->device_issue_pending;
+	p->device_alloc_chan_resources = of_data->device_alloc_chan_resources;
+	p->device_free_chan_resources  = of_data->device_free_chan_resources;
+	p->device_tx_status            = dma_cookie_status;
+	p->device_config               = of_data->device_config;
 	p->dev = &pdev->dev;
 
-	tasklet_init(&mdev->tasklet, mdma_gp_do_tasklet, (ulong)mdev);
+	tasklet_init(&mdev->tasklet, of_data->tasklet_func, (ulong)mdev);
 
 	irq = platform_get_irq(pdev, 0);
 	if (irq < 0) {
 		dev_err(&pdev->dev, "unable to get interrupt property.\n");
 		return -ENXIO;
 	}
-	ret = devm_request_irq(&pdev->dev, irq, mdma_gp_irq_handler, 0, 
+	ret = devm_request_irq(&pdev->dev, irq, of_data->irq_handler, 0, 
 	                       "mdma", mdev);
 	if (ret) {
 		dev_err(&pdev->dev, "failed to allocate interrupt.\n");
@@ -1149,6 +1163,7 @@ static int rcm_mdma_probe(struct platform_device *pdev)
 			dev_err(&pdev->dev, "Probing channel #%d failed\n", i);
 			goto free_chan_resources;
 		}
+		mdev->ch[i]->dir = of_data->dirs[i];
 	}
 
 	p->dst_addr_widths = BIT(mdev->ch[0]->bus_width / 8);
@@ -1200,9 +1215,12 @@ static int rcm_mdma_remove(struct platform_device *pdev)
 	return 0;
 }
 
+extern const struct mdma_of_data mdma_gp_of_data;
+
 static const struct of_device_id rcm_mdma_dt_ids[] = {
 	{
-		.compatible = "rcm,mdma",
+		.compatible = "rcm,mdma-gp",
+		.data = &mdma_gp_of_data,
 	},
 	{}
 };

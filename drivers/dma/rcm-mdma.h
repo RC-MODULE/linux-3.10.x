@@ -203,6 +203,31 @@ struct mdma_chan {
 	struct dma_slave_config config;
 };
 
+struct mdma_of_data {
+	bool max_transaction;
+	enum dma_transfer_direction dirs[2];
+
+	int (*device_alloc_chan_resources)(struct dma_chan *chan);
+	void (*device_free_chan_resources)(struct dma_chan *chan);
+
+	struct dma_async_tx_descriptor *(*device_prep_dma_memcpy)(
+		struct dma_chan *chan, dma_addr_t dst, dma_addr_t src,
+		size_t len, unsigned long flags);
+	struct dma_async_tx_descriptor *(*device_prep_slave_sg)(
+		struct dma_chan *chan, struct scatterlist *sgl,
+		unsigned int sg_len, enum dma_transfer_direction direction,
+		unsigned long flags, void *context);
+	int (*device_config)(struct dma_chan *chan,
+	                     struct dma_slave_config *config);
+	int (*device_terminate_all)(struct dma_chan *chan);
+	void (*device_issue_pending)(struct dma_chan *chan);
+
+	dma_cookie_t (*tx_submit)(struct dma_async_tx_descriptor *tx);
+
+	irq_handler_t irq_handler;
+	void (*tasklet_func)(unsigned long);
+};
+
 struct mdma_device {
 	struct mdma_regs __iomem *regs;
 	/* To protect channel manipulation */
@@ -212,6 +237,7 @@ struct mdma_device {
 	struct device* dev;
 	struct clk *clk;
 	struct tasklet_struct tasklet;
+	const struct mdma_of_data* of_data;
 };
 
 int mdma_desc_pool_alloc(struct mdma_desc_pool* pool, unsigned cnt);

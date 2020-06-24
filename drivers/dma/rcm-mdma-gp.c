@@ -10,7 +10,7 @@
 #include "dmaengine.h"
 #include "rcm-mdma.h"
 
-dma_cookie_t mdma_gp_tx_submit(struct dma_async_tx_descriptor *tx)
+static dma_cookie_t mdma_gp_tx_submit(struct dma_async_tx_descriptor *tx)
 {
 	struct mdma_chan *chan = to_chan(tx->chan);
 	struct mdma_device *mdev = chan->mdev;
@@ -43,7 +43,7 @@ dma_cookie_t mdma_gp_tx_submit(struct dma_async_tx_descriptor *tx)
  *
  * Return: Async transaction descriptor on success and NULL on failure
  */
-struct dma_async_tx_descriptor *
+static struct dma_async_tx_descriptor *
 mdma_gp_prep_memcpy(struct dma_chan *dchan, dma_addr_t dma_dst,
                     dma_addr_t dma_src, size_t len, ulong flags)
 {
@@ -156,7 +156,7 @@ rollback:
 	return NULL;
 }
 
-struct dma_async_tx_descriptor *
+static struct dma_async_tx_descriptor *
 mdma_gp_prep_slave_sg(struct dma_chan *dchan, struct scatterlist *sgl,
                       unsigned int sg_len, enum dma_transfer_direction dir,
                       unsigned long flags, void *context)
@@ -293,7 +293,7 @@ rollback:
 	return NULL;
 }
 
-int mdma_gp_device_terminate_all(struct dma_chan *dchan)
+static int mdma_gp_device_terminate_all(struct dma_chan *dchan)
 {
 	struct mdma_device *mdev = to_chan(dchan)->mdev;
 
@@ -303,7 +303,7 @@ int mdma_gp_device_terminate_all(struct dma_chan *dchan)
 	return 0;
 }
 
-void mdma_gp_issue_pending(struct dma_chan *dchan)
+static void mdma_gp_issue_pending(struct dma_chan *dchan)
 {
 	struct mdma_device *mdev = to_chan(dchan)->mdev;
 
@@ -324,7 +324,7 @@ void mdma_gp_issue_pending(struct dma_chan *dchan)
 	spin_unlock_irqrestore(&mdev->ch[0]->lock, irqflags);
 }
 
-int mdma_gp_alloc_chan_resources(struct dma_chan *dchan)
+static int mdma_gp_alloc_chan_resources(struct dma_chan *dchan)
 {
 	struct mdma_device *mdev = to_chan(dchan)->mdev;
 	int ret0;
@@ -344,14 +344,14 @@ int mdma_gp_alloc_chan_resources(struct dma_chan *dchan)
 	return ret0;
 }
 
-void mdma_gp_free_chan_resources(struct dma_chan *dchan)
+static void mdma_gp_free_chan_resources(struct dma_chan *dchan)
 {
 	struct mdma_device *mdev = to_chan(dchan)->mdev;
 	mdma_free_chan_resources(&mdev->ch[0]->slave);
 	mdma_free_chan_resources(&mdev->ch[1]->slave);
 }
 
-int mdma_gp_device_config(struct dma_chan *dchan,
+static int mdma_gp_device_config(struct dma_chan *dchan,
                           struct dma_slave_config *config)
 {
 	struct mdma_device *mdev = to_chan(dchan)->mdev;
@@ -369,7 +369,7 @@ int mdma_gp_device_config(struct dma_chan *dchan,
  *
  * Return: IRQ_HANDLED/IRQ_NONE
  */
-irqreturn_t mdma_gp_irq_handler(int irq, void *data)
+static irqreturn_t mdma_gp_irq_handler(int irq, void *data)
 {
 	struct mdma_device *mdev = (struct mdma_device *)data;
 	u32 status;
@@ -423,7 +423,7 @@ irqreturn_t mdma_gp_irq_handler(int irq, void *data)
  * mdma_do_tasklet - Schedule completion tasklet
  * @data: Pointer to the MDMA channel structure
  */
-void mdma_gp_do_tasklet(unsigned long data)
+static void mdma_gp_do_tasklet(unsigned long data)
 {
 	struct mdma_device *mdev = (struct mdma_device *)data;
 	unsigned long irqflags;
@@ -490,3 +490,22 @@ void mdma_gp_do_tasklet(unsigned long data)
 	spin_unlock(&mdev->ch[1]->lock);
 	spin_unlock_irqrestore(&mdev->ch[0]->lock, irqflags);
 }
+
+const struct mdma_of_data mdma_gp_of_data = {
+	.max_transaction             = MDMA_MAX_TRANS_LEN,
+
+	.dirs = {DMA_MEM_TO_MEM, DMA_MEM_TO_MEM},
+
+	.device_alloc_chan_resources = mdma_gp_alloc_chan_resources,
+	.device_free_chan_resources  = mdma_gp_free_chan_resources,
+	.device_prep_dma_memcpy      = mdma_gp_prep_memcpy,
+	.device_prep_slave_sg        = mdma_gp_prep_slave_sg,
+	.device_config               = mdma_gp_device_config,
+	.device_terminate_all        = mdma_gp_device_terminate_all,
+	.device_issue_pending        = mdma_gp_issue_pending,
+
+	.tx_submit                   = mdma_gp_tx_submit,
+
+	.irq_handler                 = mdma_gp_irq_handler,
+	.tasklet_func                = mdma_gp_do_tasklet,
+};
