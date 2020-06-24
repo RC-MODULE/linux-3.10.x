@@ -99,7 +99,7 @@ int rcm_dma_test_dma_memcpy(struct rcm_dma_test *data,
 	return ret;
 }
 
-static int rcm_dma_test_0(struct rcm_dma_test *data, unsigned size)
+static int rcm_dma_test_memcpy(struct rcm_dma_test *data, unsigned size)
 {
 	void *src = NULL;
 	void *dst = NULL;
@@ -190,7 +190,7 @@ static long rcm_dma_test_ioctl(struct file *file, unsigned int cmd,
 	mutex_lock(&data->lock);
 	switch (cmd) {
 	case 0:
-		ret = rcm_dma_test_0(data, arg);
+		ret = rcm_dma_test_memcpy(data, arg);
 		break;
 	}
 	mutex_unlock(&data->lock);
