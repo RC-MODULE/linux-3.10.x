@@ -189,6 +189,7 @@ struct mdma_chan {
 	struct dma_slave_config config;
 	size_t max_transaction;
 	char name[8];
+	struct tasklet_struct tasklet;
 };
 
 struct mdma_of_data {
@@ -224,7 +225,6 @@ struct mdma_device {
 	struct mdma_chan tx[MDMA_MAX_CHANNELS];
 	struct device* dev;
 	struct clk *clk;
-	struct tasklet_struct tasklet;
 	const struct mdma_of_data* of_data;
 };
 

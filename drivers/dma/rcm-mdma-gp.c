@@ -397,7 +397,8 @@ static int mdma_gp_device_config(struct dma_chan *dchan,
  */
 static irqreturn_t mdma_gp_irq_handler(int irq, void *data)
 {
-	struct mdma_device *mdev = (struct mdma_device *)data;
+	struct mdma_chan *chan = (struct mdma_chan *)data;
+	struct mdma_device *mdev = chan->mdev;
 	u32 status;
 	bool need_tasklet = false;
 	
@@ -442,7 +443,7 @@ static irqreturn_t mdma_gp_irq_handler(int irq, void *data)
 	spin_unlock(&mdev->rx[0].lock);
 
 	if (need_tasklet)
-		tasklet_schedule(&mdev->tasklet);
+		tasklet_schedule(&chan->tasklet);
 
 	return IRQ_HANDLED;
 }
@@ -453,7 +454,8 @@ static irqreturn_t mdma_gp_irq_handler(int irq, void *data)
  */
 static void mdma_gp_do_tasklet(unsigned long data)
 {
-	struct mdma_device *mdev = (struct mdma_device *)data;
+	struct mdma_chan *chan = (struct mdma_chan *)data;
+	struct mdma_device *mdev = chan->mdev;
 	unsigned long irqflags;
 	bool err = false;
 

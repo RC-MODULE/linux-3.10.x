@@ -997,6 +997,9 @@ static void mdma_chan_remove(struct mdma_chan *chan)
 	if ((!chan) || (!chan->regs))
 		return;
 
+	if (chan->tasklet.func)
+		tasklet_kill(&chan->tasklet);
+
 	list_del(&chan->slave.device_node);
 }
 
@@ -1109,6 +1112,74 @@ static int mdma_init_channels(struct platform_device *pdev,
 	return ret;
 }
 
+static int mdma_init_interrupts(struct platform_device *pdev,
+                                struct mdma_device *mdev)
+{
+	int cnt_ints =  platform_irq_count(pdev);
+	int i;
+	int irq;
+	int ret;
+
+	if (cnt_ints == 0) {
+		dev_err(&pdev->dev, "No interrupts found.\n");
+		return -ENXIO;
+	}
+
+	if (cnt_ints == 1) {
+		tasklet_init(&mdev->rx[0].tasklet, mdev->of_data->tasklet_func,
+		             (ulong)&mdev->rx[0]);
+
+		irq = platform_get_irq(pdev, 0);
+		if (irq < 0) {
+			dev_err(&pdev->dev,
+			        "unable to get interrupt property.\n");
+			return -ENXIO;
+		}
+		ret = devm_request_irq(&pdev->dev,
+		                       irq, mdev->of_data->irq_handler, 0, 
+		                       "mdma", &mdev->rx[0]);
+		if (ret) {
+			dev_err(&pdev->dev, "failed to allocate interrupt.\n");
+			return ret;
+		}
+	} else {
+		for (i = 0; i < 2 * MDMA_MAX_CHANNELS; ++i) {
+			char name[16];
+			struct mdma_chan* chan =  ((i % 2) == 0) ?
+			                           &mdev->rx[i / 2] : 
+			                           &mdev->tx[i / 2];
+
+			if (!chan->regs)
+				continue;
+
+			tasklet_init(&chan->tasklet,
+			             mdev->of_data->tasklet_func, (ulong)chan);
+
+			irq = platform_get_irq_byname(pdev, chan->name);
+			if (irq < 0) {
+				dev_err(&pdev->dev,
+				        "unable to get interrupt for \"%s\" "
+				        "channel.\n", chan->name);
+				return -ENXIO;
+			}
+
+			snprintf(name, sizeof(name), "mdma-%s", chan->name);
+
+			ret = devm_request_irq(&pdev->dev, irq,
+			                       mdev->of_data->irq_handler, 0, 
+			                       name, chan);
+			if (ret) {
+				dev_err(&pdev->dev,
+				        "failed to allocate interrupt for "
+				        "\"%s\" channel.\n", chan->name);
+				return ret;
+			}
+		}
+	}
+
+	return 0;
+}
+
 static const struct of_device_id rcm_mdma_dt_ids[];
 
 static int rcm_mdma_probe(struct platform_device *pdev)
@@ -1119,7 +1190,6 @@ static int rcm_mdma_probe(struct platform_device *pdev)
 	struct dma_device *p;
 	struct resource *res;
 	int ret;
-	int irq;
 	int i;
 
 	match = of_match_device(rcm_mdma_dt_ids, &pdev->dev);
@@ -1164,20 +1234,6 @@ static int rcm_mdma_probe(struct platform_device *pdev)
 	p->device_config               = of_data->device_config;
 	p->dev = &pdev->dev;
 
-	tasklet_init(&mdev->tasklet, of_data->tasklet_func, (ulong)mdev);
-
-	irq = platform_get_irq(pdev, 0);
-	if (irq < 0) {
-		dev_err(&pdev->dev, "unable to get interrupt property.\n");
-		return -ENXIO;
-	}
-	ret = devm_request_irq(&pdev->dev, irq, of_data->irq_handler, 0, 
-	                       "mdma", mdev);
-	if (ret) {
-		dev_err(&pdev->dev, "failed to allocate interrupt.\n");
-		return ret;
-	}
-
 	mdev->clk = devm_clk_get(&pdev->dev, NULL);
 	if (IS_ERR(mdev->clk)) {
 		dev_err(&pdev->dev, "main clock not found.\n");
@@ -1197,6 +1253,10 @@ static int rcm_mdma_probe(struct platform_device *pdev)
 
 	ret = mdma_init_channels(pdev, mdev);
 	if (ret) 
+		goto free_chan_resources;
+
+	ret = mdma_init_interrupts(pdev, mdev);
+	if (ret)
 		goto free_chan_resources;
 
 	p->dst_addr_widths = BIT(mdev->rx[0].bus_width / 8);
@@ -1247,8 +1307,6 @@ static int rcm_mdma_remove(struct platform_device *pdev)
 	pm_runtime_disable(mdev->dev);
 	if (!pm_runtime_enabled(mdev->dev))
 		mdma_runtime_suspend(mdev->dev);
-
-	tasklet_kill(&mdev->tasklet);
 
 	return 0;
 }
