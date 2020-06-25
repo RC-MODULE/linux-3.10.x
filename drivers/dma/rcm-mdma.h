@@ -9,6 +9,9 @@
 #include <linux/interrupt.h>
 #include <linux/dmaengine.h>
 
+// Max number of channels (in specific direction)
+#define MDMA_MAX_CHANNELS 4
+
 /* Max number of descriptors per channel */
 #define MDMA_NUM_DESCS          32
 #define MDMA_NUM_SUB_DESCS      32
@@ -107,29 +110,15 @@ struct channel_regs
     rwreg32 permutation;                    /* 0x1A8 - byte swapping scheme */
     roreg32 _skip07[5];                     /* 0x1AC - 0x1BC                */
 /************************ Device dependent registers ************************/
-    rwreg32 sense_list;                     /* 0x1C0 - event mask           */
-    rwreg32 signal_time;                    /* 0x1C4 - signal time in ticks */
-    rwreg32 events_prior_l;                 /* 0x1C8 - events priority      */
-    rwreg32 events_prior_h;                 /* 0x1CC - events priority      */
-    rwreg32 active_events;                  /* 0x1D0 - events activity state*/
-    rwreg32 ignore_events;                  /* 0x1D4 - events list - see ref*/
-    rwreg32 synch_events;                   /* 0x1D8 - synchronization prio */
-    roreg32 _skip08;                        /* 0x1DC                        */
-    rwreg32 event_desc_addr[8];             /* 0x1E0-0x1FF- enevts descriptors*/
-} __attribute__ ((packed));
-
-struct mdma_regs
-{
-    roreg32 id;                             /* 0x000 - device id            */
-    roreg32 version;                        /* 0x004 - device version       */
-    rwreg32 soft_reset;                     /* 0x008 - soft reset           */
-    roreg32 _skip01;                        /* 0x00C                        */
-    rwreg32 event_sence_channel;            /* 0x010 - 0-read channel, 1-w  */
-    roreg32 _skip02;                        /* 0x014                        */
-    rwreg32 status;                         /* 0x018 - DMA status           */
-    roreg32 _skip03[57];                    /* 0x01C - 0x0ff                */
-    struct channel_regs rx;                 /* 0x100 - 0x1FF                */
-    struct channel_regs tx;                 /* 0x200 - 0x2FF                */
+//    rwreg32 sense_list;                     /* 0x1C0 - event mask           */
+//    rwreg32 signal_time;                    /* 0x1C4 - signal time in ticks */
+//    rwreg32 events_prior_l;                 /* 0x1C8 - events priority      */
+//    rwreg32 events_prior_h;                 /* 0x1CC - events priority      */
+//    rwreg32 active_events;                  /* 0x1D0 - events activity state*/
+//    rwreg32 ignore_events;                  /* 0x1D4 - events list - see ref*/
+//    rwreg32 synch_events;                   /* 0x1D8 - synchronization prio */
+//    roreg32 _skip08;                        /* 0x1DC                        */
+//    rwreg32 event_desc_addr[8];             /* 0x1E0-0x1FF- enevts descriptors*/
 } __attribute__ ((packed));
 
 /**
@@ -199,11 +188,11 @@ struct mdma_chan {
 	u32 bus_width;
 	struct dma_slave_config config;
 	size_t max_transaction;
+	char name[8];
 };
 
 struct mdma_of_data {
 	size_t max_transaction;
-	enum dma_transfer_direction dirs[2];
 
 	int (*device_alloc_chan_resources)(struct dma_chan *chan);
 	void (*device_free_chan_resources)(struct dma_chan *chan);
@@ -227,11 +216,12 @@ struct mdma_of_data {
 };
 
 struct mdma_device {
-	struct mdma_regs __iomem *regs;
+	void __iomem *cfg;
 	/* To protect channel manipulation */
 	spinlock_t lock;
 	struct dma_device slave;
-	struct mdma_chan *ch[2];
+	struct mdma_chan rx[MDMA_MAX_CHANNELS];
+	struct mdma_chan tx[MDMA_MAX_CHANNELS];
 	struct device* dev;
 	struct clk *clk;
 	struct tasklet_struct tasklet;
@@ -273,7 +263,6 @@ int mdma_device_config(struct dma_chan *dchan, struct dma_slave_config *config);
 void mdma_complete_descriptor(struct mdma_chan *chan, 
                               struct mdma_desc_sw *desc, bool status,
                               struct dmaengine_desc_callback* cb);
-void mdma_reset(struct mdma_device *mdev);
 
 bool mdma_check_align(struct mdma_chan *chan, dma_addr_t dma_addr);
 bool mdma_check_align_sg(struct mdma_chan *chan, struct scatterlist *sg);

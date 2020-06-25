@@ -83,8 +83,8 @@ bool mdma_check_align(struct mdma_chan *chan, dma_addr_t dma_addr)
 
 	if (!res)
 		dev_dbg(chan->dev,
-		        "[ch%d] DMA unalligned access (addr: 0x%x)\n",
-		        chan->slave.chan_id, dma_addr);
+		        "[%s] DMA unalligned access (addr: 0x%x)\n",
+		        chan->name, dma_addr);
 
 	return res;
 }
@@ -214,9 +214,9 @@ int mdma_desc_pool_alloc(struct mdma_desc_pool* pool, unsigned cnt)
 		p += len;
 	}
 
-	dev_dbg(chan->dev, "[ch%d] descriptor's pool allocated "
+	dev_dbg(chan->dev, "[%s] descriptor's pool allocated "
 	                   "(%u descriptors in %u sg-entries)\n",
-	                   chan->slave.chan_id, cnt, pool->sgt.nents);
+	                   chan->name, cnt, pool->sgt.nents);
 
 	return 0;
 
@@ -603,8 +603,8 @@ struct mdma_desc_sw *mdma_get_descriptor(struct mdma_chan *chan)
 	struct mdma_desc_sw *desc;
 
 	if (!chan->desc_free_cnt) {
-		dev_dbg(chan->dev, "[ch%d] descs are not available\n",
-		        chan->slave.chan_id);
+		dev_dbg(chan->dev, "[%s] descs are not available\n",
+		        chan->name);
 		return NULL;
 	}
 
@@ -686,8 +686,8 @@ dma_cookie_t mdma_tx_submit(struct dma_async_tx_descriptor *tx)
 	if (desc != chan->prepared_desc) {
 		spin_unlock_irqrestore(&chan->lock, irqflags);
 		dev_err(chan->dev,
-		        "[ch%d] Attempt to submit unexpected descriptor.\n",
-		        chan->slave.chan_id);
+		        "[%s] Attempt to submit unexpected descriptor.\n",
+		        chan->name);
 		return -EFAULT;
 	}
 
@@ -824,8 +824,8 @@ int mdma_alloc_chan_resources(struct dma_chan *dchan)
 		return ret;
 
 	if (chan->sw_desc_pool) {
-		dev_warn(chan->dev, "%s: [ch%d] Channel already allocated.\n",
-		         __func__, dchan->chan_id);
+		dev_warn(chan->dev, "%s: [%s] Channel already allocated.\n",
+		         __func__, chan->name);
 		return -EFAULT;
 	}
 
@@ -902,8 +902,8 @@ mdma_prep_slave_sg(struct dma_chan *dchan, struct scatterlist *sgl,
 	unsigned cnt;
 
 	if (dir != chan->dir) {
-		dev_err(chan->dev, "[ch%d] Unexpected transfer direction.\n",
-		        dchan->chan_id);
+		dev_err(chan->dev, "[%s] Unexpected transfer direction.\n",
+		        chan->name);
 		return NULL;
 	}
 
@@ -917,8 +917,8 @@ mdma_prep_slave_sg(struct dma_chan *dchan, struct scatterlist *sgl,
 	if (chan->prepared_desc) {
 		spin_unlock_irqrestore(&chan->lock, irqflags);
 		dev_err(chan->dev,
-		        "[ch%d] Previous prepared descriptor was not submitted.\n",
-		        dchan->chan_id);
+		        "[%s] Previous prepared descriptor was not submitted.\n",
+		        chan->name);
 		return NULL;
 	}
 
@@ -934,8 +934,8 @@ mdma_prep_slave_sg(struct dma_chan *dchan, struct scatterlist *sgl,
 
 	if (!sw_desc->cnt) {
 		dev_dbg(chan->dev, 
-		        "[ch%d] can't get %u descriptors from pool\n",
-		        dchan->chan_id, cnt_descs);
+		        "[%s] can't get %u descriptors from pool\n",
+		        chan->name, cnt_descs);
 		goto rollback;
 	}
 
@@ -945,8 +945,8 @@ mdma_prep_slave_sg(struct dma_chan *dchan, struct scatterlist *sgl,
 	                             sgl, sg_len, true);
 	if (cnt != sw_desc->cnt) {
 		dev_err(chan->dev, 
-		        "[ch%d] Descpitors number does not match (%u != %u)\n",
-		        dchan->chan_id, cnt, sw_desc->cnt);
+		        "[%s] Descpitors number does not match (%u != %u)\n",
+		        chan->name, cnt, sw_desc->cnt);
 		goto rollback;
 	}
 
@@ -989,21 +989,12 @@ void mdma_complete_descriptor(struct mdma_chan *chan,
 }
 
 /**
- * mdma_reset - Reset the channel
- * @chan: MDMA channel pointer
- */
-void mdma_reset(struct mdma_device *mdev)
-{
-	writel(1, &mdev->regs->soft_reset);
-}
-
-/**
  * mdma_chan_remove - Channel remove function
  * @chan: MDMA channel pointer
  */
 static void mdma_chan_remove(struct mdma_chan *chan)
 {
-	if (!chan)
+	if ((!chan) || (!chan->regs))
 		return;
 
 	list_del(&chan->slave.device_node);
@@ -1055,6 +1046,69 @@ static int mdma_chan_probe(struct mdma_chan *chan)
 	return 0;
 }
 
+static int mdma_init_channels(struct platform_device *pdev,
+                              struct mdma_device *mdev)
+{
+	int ret = 0;
+	int i;
+	struct resource *res;
+	bool have_tx = false;
+	bool have_rx = false;
+
+	for (i = 0; i < 2 * MDMA_MAX_CHANNELS; ++i) {
+		char ch_name[8];
+		struct mdma_chan* chan =  ((i % 2) == 0) ? &mdev->rx[i / 2] : 
+		                                           &mdev->tx[i / 2];
+
+		if ((i % 2) == 0)
+			snprintf(ch_name, sizeof(ch_name), "rx%d", i / 2);
+		else
+			snprintf(ch_name, sizeof(ch_name), "tx%d", i / 2);
+
+		res = platform_get_resource_byname(pdev, IORESOURCE_MEM,
+		                                   ch_name);
+		if (!res)
+			continue;
+		chan->regs = (struct channel_regs __iomem *)
+		             devm_ioremap_resource(&pdev->dev, res);
+		if (IS_ERR(chan->regs)) {
+			chan->regs = NULL;
+			continue;
+		}
+
+		chan->dev = mdev->dev;
+		chan->mdev = mdev;
+		chan->dir = ((i % 2) == 0) ? DMA_MEM_TO_DEV : DMA_DEV_TO_MEM;
+		memcpy(chan->name, ch_name, sizeof(ch_name));
+
+		ret = mdma_chan_probe(chan);
+		if (ret) {
+			dev_err(&pdev->dev, "Probing channel %s failed\n",
+			        ch_name);
+			break;
+		}
+
+		if ((i % 2) == 0)
+			have_rx = true;
+		else
+			have_tx = true;
+	}
+
+	if (ret == 0) {
+		if (!have_tx) {
+			dev_err(&pdev->dev, "No TX channel specified.\n");
+			ret = -ENODEV;
+		}
+
+		if (!have_rx) {
+			dev_err(&pdev->dev, "No RX channel specified.\n");
+			ret = -ENODEV;
+		}
+	}
+
+	return ret;
+}
+
 static const struct of_device_id rcm_mdma_dt_ids[];
 
 static int rcm_mdma_probe(struct platform_device *pdev)
@@ -1080,10 +1134,12 @@ static int rcm_mdma_probe(struct platform_device *pdev)
 
 	mdev->of_data = of_data;
 
-	res = platform_get_resource(pdev, IORESOURCE_MEM, 0);
-	mdev->regs = (struct mdma_regs*) devm_ioremap_resource(&pdev->dev, res);
-	if (IS_ERR(mdev->regs))
-		return PTR_ERR(mdev->regs);
+	res = platform_get_resource_byname(pdev, IORESOURCE_MEM, "cfg");
+	if (res) {
+		mdev->cfg = devm_ioremap_resource(&pdev->dev, res);
+		if (IS_ERR(mdev->cfg))
+			mdev->cfg = NULL;
+	}
 
 	mdev->dev = &pdev->dev;
 	INIT_LIST_HEAD(&mdev->slave.channels);
@@ -1139,27 +1195,12 @@ static int rcm_mdma_probe(struct platform_device *pdev)
 			return ret;
 	}
 
-	for (i = 0; i < 2; ++i) {
-		mdev->ch[i] = devm_kzalloc(mdev->dev, sizeof(struct mdma_chan),
-		                           GFP_KERNEL);
-		if (!mdev->ch[i])
-			return -ENOMEM;
+	ret = mdma_init_channels(pdev, mdev);
+	if (ret) 
+		goto free_chan_resources;
 
-		mdev->ch[i]->dev = mdev->dev;
-		mdev->ch[i]->mdev = mdev;
-		mdev->ch[i]->regs = (i == 0) ? &mdev->regs->rx : 
-		                               &mdev->regs->tx;
-
-		ret = mdma_chan_probe(mdev->ch[i]);
-		if (ret) {
-			dev_err(&pdev->dev, "Probing channel #%d failed\n", i);
-			goto free_chan_resources;
-		}
-		mdev->ch[i]->dir = of_data->dirs[i];
-	}
-
-	p->dst_addr_widths = BIT(mdev->ch[0]->bus_width / 8);
-	p->src_addr_widths = BIT(mdev->ch[0]->bus_width / 8);
+	p->dst_addr_widths = BIT(mdev->rx[0].bus_width / 8);
+	p->src_addr_widths = BIT(mdev->rx[0].bus_width / 8);
 
 	dma_async_device_register(&mdev->slave);
 
@@ -1179,8 +1220,10 @@ static int rcm_mdma_probe(struct platform_device *pdev)
 	return 0;
 
 free_chan_resources:
-	mdma_chan_remove(mdev->ch[0]);
-	mdma_chan_remove(mdev->ch[1]);
+	for (i = 0; i < MDMA_MAX_CHANNELS; ++i) {
+		mdma_chan_remove(&mdev->rx[i]);
+		mdma_chan_remove(&mdev->tx[i]);
+	}
 
 	if (!pm_runtime_enabled(mdev->dev))
 		mdma_runtime_suspend(mdev->dev);
@@ -1191,11 +1234,15 @@ free_chan_resources:
 static int rcm_mdma_remove(struct platform_device *pdev)
 {
 	struct mdma_device *mdev = platform_get_drvdata(pdev);
+	int i;
 
 	of_dma_controller_free(mdev->dev->of_node);
 	dma_async_device_unregister(&mdev->slave);
-	mdma_chan_remove(mdev->ch[0]);
-	mdma_chan_remove(mdev->ch[1]);
+
+	for (i = 0; i < MDMA_MAX_CHANNELS; ++i) {
+		mdma_chan_remove(&mdev->rx[i]);
+		mdma_chan_remove(&mdev->tx[i]);
+	}
 
 	pm_runtime_disable(mdev->dev);
 	if (!pm_runtime_enabled(mdev->dev))

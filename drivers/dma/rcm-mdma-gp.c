@@ -12,24 +12,47 @@
 
 #define MDMA_GP_MAX_TRANS_LEN 0x7FFFFFC
 
+struct mdma_gp_cfg
+{
+    roreg32 id;                             /* 0x000 - device id            */
+    roreg32 version;                        /* 0x004 - device version       */
+    rwreg32 soft_reset;                     /* 0x008 - soft reset           */
+    roreg32 _skip01;                        /* 0x00C                        */
+    rwreg32 event_sence_channel;            /* 0x010 - 0-read channel, 1-w  */
+    roreg32 _skip02;                        /* 0x014                        */
+    rwreg32 status;                         /* 0x018 - DMA status           */
+    roreg32 _skip03[57];                    /* 0x01C - 0x0ff                */
+} __attribute__ ((packed));
+
+/**
+ * mdma_reset - Reset the channel
+ * @chan: MDMA channel pointer
+ */
+static void mdma_gp_reset(struct mdma_device *mdev)
+{
+	struct mdma_gp_cfg __iomem *cfg = mdev->cfg;
+
+	writel(1, &cfg->soft_reset);
+}
+
 static dma_cookie_t mdma_gp_tx_submit(struct dma_async_tx_descriptor *tx)
 {
 	struct mdma_chan *chan = to_chan(tx->chan);
 	struct mdma_device *mdev = chan->mdev;
+	struct mdma_chan *chan1 = (chan == &mdev->rx[0]) ? 
+	                          &mdev->tx[0] : &mdev->rx[0];
 	dma_cookie_t cookie;
 
-	int num_ch = (chan == mdev->ch[0]) ? 1 : 0;
-
-	if (!mdev->ch[num_ch]->prepared_desc) {
+	if (!chan1->prepared_desc) {
 		dev_err(chan->dev,
-		        "[ch%d] Attempt to submit incorrectly prepared "
-		       "descriptor.\n", chan->slave.chan_id);
+		        "[%s] Attempt to submit incorrectly prepared "
+		       "descriptor.\n", chan1->name);
 		return -EFAULT;
 	}
 
 	cookie = mdma_tx_submit(tx);
 
-	mdma_tx_submit(&mdev->ch[num_ch]->prepared_desc->async_tx);
+	mdma_tx_submit(&chan1->prepared_desc->async_tx);
 
 	return cookie;
 }
@@ -49,111 +72,111 @@ mdma_gp_prep_memcpy(struct dma_chan *dchan, dma_addr_t dma_dst,
                     dma_addr_t dma_src, size_t len, ulong flags)
 {
 	struct mdma_device *mdev = to_chan(dchan)->mdev;
-	struct mdma_desc_sw *sw_desc0 = NULL;
-	struct mdma_desc_sw *sw_desc1 = NULL;
+	struct mdma_desc_sw *sw_desc_rx = NULL;
+	struct mdma_desc_sw *sw_desc_tx = NULL;
 	unsigned cnt_descs = 0;
 	size_t copy;
 	unsigned long irqflags;
-	struct mdma_desc_pool pool_save0;
-	struct mdma_desc_pool pool_save1;
+	struct mdma_desc_pool pool_save_rx;
+	struct mdma_desc_pool pool_save_tx;
 	unsigned cnt;
 
-	if ((!mdma_check_align(mdev->ch[0], dma_src)) ||
-	    (!mdma_check_align(mdev->ch[0], dma_dst)))
+	if ((!mdma_check_align(&mdev->rx[0], dma_src)) ||
+	    (!mdma_check_align(&mdev->rx[0], dma_dst)))
 		return NULL;
 
 	copy = len;
 
 	do {
 		++cnt_descs;
-		copy -= min_t(size_t, copy, mdev->ch[0]->max_transaction);
+		copy -= min_t(size_t, copy, mdev->rx[0].max_transaction);
 	} while (copy);
 
-	spin_lock_irqsave(&mdev->ch[0]->lock, irqflags);
-	spin_lock(&mdev->ch[1]->lock);
+	spin_lock_irqsave(&mdev->rx[0].lock, irqflags);
+	spin_lock(&mdev->tx[0].lock);
 
-	if ((mdev->ch[0]->prepared_desc) || (mdev->ch[1]->prepared_desc)) {
-		spin_unlock(&mdev->ch[1]->lock);
-		spin_unlock_irqrestore(&mdev->ch[0]->lock, irqflags);
+	if ((mdev->rx[0].prepared_desc) || (mdev->tx[0].prepared_desc)) {
+		spin_unlock(&mdev->tx[0].lock);
+		spin_unlock_irqrestore(&mdev->rx[0].lock, irqflags);
 		dev_err(mdev->dev,
 		        "%s: Previous prepared descriptor was not submitted.\n",
 		        __func__);
 		return NULL;
 	}
 
-	pool_save0 = mdev->ch[0]->desc_pool;
-	pool_save1 = mdev->ch[1]->desc_pool;
+	pool_save_rx = mdev->rx[0].desc_pool;
+	pool_save_tx = mdev->tx[0].desc_pool;
 
-	sw_desc0 = mdma_get_descriptor(mdev->ch[0]);
-	sw_desc1 = mdma_get_descriptor(mdev->ch[1]);
+	sw_desc_rx = mdma_get_descriptor(&mdev->rx[0]);
+	sw_desc_tx = mdma_get_descriptor(&mdev->tx[0]);
 
-	if ((!sw_desc0) || (!sw_desc1))
+	if ((!sw_desc_rx) || (!sw_desc_tx))
 		goto rollback;
 
-	sw_desc0->cnt = mdma_desc_pool_get(&mdev->ch[0]->desc_pool, cnt_descs,
-	                                   &sw_desc0->pos);
-	sw_desc1->cnt = mdma_desc_pool_get(&mdev->ch[1]->desc_pool, cnt_descs,
-	                                   &sw_desc1->pos);
+	sw_desc_rx->cnt = mdma_desc_pool_get(&mdev->rx[0].desc_pool, cnt_descs,
+	                                     &sw_desc_rx->pos);
+	sw_desc_tx->cnt = mdma_desc_pool_get(&mdev->tx[0].desc_pool, cnt_descs,
+	                                     &sw_desc_tx->pos);
 
-	if ((!sw_desc0->cnt) || (!sw_desc1->cnt)) {
+	if ((!sw_desc_rx->cnt) || (!sw_desc_tx->cnt)) {
 		dev_dbg(mdev->dev, 
 		        "%s: can't get %u descriptors from pool\n",
 		        __func__, cnt_descs);
 		goto rollback;
 	}
 
-	mdev->ch[0]->prepared_desc = sw_desc0;
-	mdev->ch[1]->prepared_desc = sw_desc1;
+	mdev->rx[0].prepared_desc = sw_desc_rx;
+	mdev->tx[0].prepared_desc = sw_desc_tx;
 
-	cnt = mdma_desc_pool_fill(&mdev->ch[0]->desc_pool, sw_desc0->pos,
+	cnt = mdma_desc_pool_fill(&mdev->rx[0].desc_pool, sw_desc_rx->pos,
 	                          dma_src, len, false);
-	if (cnt != sw_desc0->cnt) {
+	if (cnt != sw_desc_rx->cnt) {
 		dev_err(mdev->dev,
 		        "%s: Descpitors number does not match (%u != %u)\n",
-		        __func__, cnt, sw_desc0->cnt);
+		        __func__, cnt, sw_desc_rx->cnt);
 		goto rollback;
 	}
 
-	cnt = mdma_desc_pool_fill_like(&mdev->ch[1]->desc_pool, sw_desc1->pos,
+	cnt = mdma_desc_pool_fill_like(&mdev->tx[0].desc_pool, sw_desc_tx->pos,
 	                               dma_dst, len, true,
-	                               &mdev->ch[0]->desc_pool, sw_desc0->pos);
-	if (cnt != sw_desc1->cnt) {
+	                               &mdev->rx[0].desc_pool, sw_desc_rx->pos);
+	if (cnt != sw_desc_tx->cnt) {
 		dev_err(mdev->dev,
 		        "%s: Descpitors number does not match (%u != %u)\n",
-		        __func__, cnt, sw_desc0->cnt);
+		        __func__, cnt, sw_desc_tx->cnt);
 		goto rollback;
 	}
 
-	spin_unlock(&mdev->ch[1]->lock);
-	spin_unlock_irqrestore(&mdev->ch[0]->lock, irqflags);
+	spin_unlock(&mdev->tx[0].lock);
+	spin_unlock_irqrestore(&mdev->rx[0].lock, irqflags);
 
-	mdma_desc_pool_sync(&mdev->ch[0]->desc_pool, sw_desc0->pos,
-	                    sw_desc0->cnt);
-	mdma_desc_pool_sync(&mdev->ch[1]->desc_pool, sw_desc1->pos,
-	                    sw_desc1->cnt);
+	mdma_desc_pool_sync(&mdev->rx[0].desc_pool, sw_desc_rx->pos,
+	                    sw_desc_rx->cnt);
+	mdma_desc_pool_sync(&mdev->tx[0].desc_pool, sw_desc_tx->pos,
+	                    sw_desc_tx->cnt);
 
-	async_tx_ack(&sw_desc0->async_tx);
-	sw_desc0->async_tx.flags = flags;
+	async_tx_ack(&sw_desc_rx->async_tx);
+	sw_desc_rx->async_tx.flags = flags;
 
-	async_tx_ack(&sw_desc1->async_tx);
-	sw_desc1->async_tx.flags = flags;
+	async_tx_ack(&sw_desc_tx->async_tx);
+	sw_desc_tx->async_tx.flags = flags;
 
-	return &sw_desc0->async_tx;
+	return &sw_desc_rx->async_tx;
 
 rollback:
-	mdev->ch[0]->prepared_desc = NULL;
-	mdev->ch[1]->prepared_desc = NULL;
+	mdev->rx[0].prepared_desc = NULL;
+	mdev->tx[0].prepared_desc = NULL;
 
-	mdev->ch[0]->desc_pool = pool_save0;
-	mdev->ch[1]->desc_pool = pool_save1;
+	mdev->rx[0].desc_pool = pool_save_rx;
+	mdev->tx[0].desc_pool = pool_save_tx;
 
-	if (sw_desc0)
-		mdma_free_descriptor(mdev->ch[0], sw_desc0);
-	if (sw_desc1)
-		mdma_free_descriptor(mdev->ch[1], sw_desc1);
+	if (sw_desc_rx)
+		mdma_free_descriptor(&mdev->rx[0], sw_desc_rx);
+	if (sw_desc_tx)
+		mdma_free_descriptor(&mdev->tx[0], sw_desc_tx);
 
-	spin_unlock(&mdev->ch[1]->lock);
-	spin_unlock_irqrestore(&mdev->ch[0]->lock, irqflags);
+	spin_unlock(&mdev->tx[0].lock);
+	spin_unlock_irqrestore(&mdev->rx[0].lock, irqflags);
 
 	return NULL;
 }
@@ -165,8 +188,8 @@ mdma_gp_prep_slave_sg(struct dma_chan *dchan, struct scatterlist *sgl,
 {
 	struct mdma_chan *chan = to_chan(dchan);
 	struct mdma_device *mdev = chan->mdev;
-	struct mdma_desc_sw *sw_desc0 = NULL;
-	struct mdma_desc_sw *sw_desc1 = NULL;
+	struct mdma_desc_sw *sw_desc_rx = NULL;
+	struct mdma_desc_sw *sw_desc_tx = NULL;
 	struct mdma_desc_sw *sw_desc;
 	struct mdma_desc_sw *sw_desc_linked;
 	struct mdma_chan *chan_linked;
@@ -174,8 +197,8 @@ mdma_gp_prep_slave_sg(struct dma_chan *dchan, struct scatterlist *sgl,
 	size_t len;
 	unsigned cnt_descs = 0;
 	unsigned long irqflags;
-	struct mdma_desc_pool pool_save0;
-	struct mdma_desc_pool pool_save1;
+	struct mdma_desc_pool pool_save_rx;
+	struct mdma_desc_pool pool_save_tx;
 	unsigned cnt;
 	bool stop_int;
 
@@ -186,8 +209,8 @@ mdma_gp_prep_slave_sg(struct dma_chan *dchan, struct scatterlist *sgl,
 		return NULL;
 	}
 
-	dma_addr = (chan == mdev->ch[0]) ? chan->config.dst_addr : 
-	                                   chan->config.src_addr;
+	dma_addr = (chan == &mdev->rx[0]) ? chan->config.dst_addr : 
+	                                    chan->config.src_addr;
 
 	if (dma_addr == 0) {
 		dev_err(mdev->dev,
@@ -202,47 +225,47 @@ mdma_gp_prep_slave_sg(struct dma_chan *dchan, struct scatterlist *sgl,
 
 	cnt_descs = mdma_cnt_desc_needed(chan, sgl, sg_len, &len);
 
-	spin_lock_irqsave(&mdev->ch[0]->lock, irqflags);
-	spin_lock(&mdev->ch[1]->lock);
+	spin_lock_irqsave(&mdev->rx[0].lock, irqflags);
+	spin_lock(&mdev->tx[0].lock);
 
-	if ((mdev->ch[0]->prepared_desc) || (mdev->ch[1]->prepared_desc)) {
-		spin_unlock(&mdev->ch[1]->lock);
-		spin_unlock_irqrestore(&mdev->ch[0]->lock, irqflags);
+	if ((mdev->rx[0].prepared_desc) || (mdev->tx[0].prepared_desc)) {
+		spin_unlock(&mdev->tx[0].lock);
+		spin_unlock_irqrestore(&mdev->rx[0].lock, irqflags);
 		dev_err(mdev->dev,
 		        "%s: Previous prepared descriptor was not submitted.\n",
 		        __func__);
 		return NULL;
 	}
 
-	pool_save0 = mdev->ch[0]->desc_pool;
-	pool_save1 = mdev->ch[1]->desc_pool;
+	pool_save_rx = mdev->rx[0].desc_pool;
+	pool_save_tx = mdev->tx[0].desc_pool;
 
-	sw_desc0 = mdma_get_descriptor(mdev->ch[0]);
-	sw_desc1 = mdma_get_descriptor(mdev->ch[1]);
+	sw_desc_rx = mdma_get_descriptor(&mdev->rx[0]);
+	sw_desc_tx = mdma_get_descriptor(&mdev->tx[0]);
 
-	if ((!sw_desc0) || (!sw_desc1))
+	if ((!sw_desc_rx) || (!sw_desc_tx))
 		goto rollback;
 
-	sw_desc0->cnt = mdma_desc_pool_get(&mdev->ch[0]->desc_pool, cnt_descs,
-	                                   &sw_desc0->pos);
-	sw_desc1->cnt = mdma_desc_pool_get(&mdev->ch[1]->desc_pool, cnt_descs,
-	                                   &sw_desc1->pos);
+	sw_desc_rx->cnt = mdma_desc_pool_get(&mdev->rx[0].desc_pool, cnt_descs,
+	                                     &sw_desc_rx->pos);
+	sw_desc_tx->cnt = mdma_desc_pool_get(&mdev->tx[0].desc_pool, cnt_descs,
+	                                     &sw_desc_tx->pos);
 
-	if ((!sw_desc0->cnt) || (!sw_desc1->cnt)) {
+	if ((!sw_desc_rx->cnt) || (!sw_desc_tx->cnt)) {
 		dev_dbg(mdev->dev, "%s: can't get %u descriptors from pool\n",
 		        __func__, cnt_descs);
 		goto rollback;
 	}
 
-	mdev->ch[0]->prepared_desc = sw_desc0;
-	mdev->ch[1]->prepared_desc = sw_desc1;
+	mdev->rx[0].prepared_desc = sw_desc_rx;
+	mdev->tx[0].prepared_desc = sw_desc_tx;
 
-	chan_linked    = (chan == mdev->ch[0]) ? mdev->ch[1] : mdev->ch[0];
+	chan_linked    = (chan == &mdev->rx[0]) ? &mdev->tx[0] : &mdev->rx[0];
 
-	sw_desc        = (chan == mdev->ch[0]) ? sw_desc0 : sw_desc1;
-	sw_desc_linked = (chan == mdev->ch[0]) ? sw_desc1 : sw_desc0;
+	sw_desc        = (chan == &mdev->rx[0]) ? sw_desc_rx : sw_desc_tx;
+	sw_desc_linked = (chan == &mdev->rx[0]) ? sw_desc_tx : sw_desc_rx;
 
-	stop_int       = (chan == mdev->ch[0]) ? false : true;
+	stop_int       = (chan == &mdev->rx[0]) ? false : true;
 
 	cnt = mdma_desc_pool_fill_sg(&chan->desc_pool, sw_desc->pos,
 	                             sgl, sg_len, stop_int);
@@ -264,36 +287,36 @@ mdma_gp_prep_slave_sg(struct dma_chan *dchan, struct scatterlist *sgl,
 		goto rollback;
 	}
 
-	spin_unlock(&mdev->ch[1]->lock);
-	spin_unlock_irqrestore(&mdev->ch[0]->lock, irqflags);
+	spin_unlock(&mdev->tx[0].lock);
+	spin_unlock_irqrestore(&mdev->rx[0].lock, irqflags);
 
-	mdma_desc_pool_sync(&mdev->ch[0]->desc_pool, sw_desc0->pos,
-	                    sw_desc0->cnt);
-	mdma_desc_pool_sync(&mdev->ch[1]->desc_pool, sw_desc1->pos,
-	                    sw_desc1->cnt);
+	mdma_desc_pool_sync(&mdev->rx[0].desc_pool, sw_desc_rx->pos,
+	                    sw_desc_rx->cnt);
+	mdma_desc_pool_sync(&mdev->tx[0].desc_pool, sw_desc_tx->pos,
+	                    sw_desc_tx->cnt);
 
-	async_tx_ack(&sw_desc0->async_tx);
-	sw_desc0->async_tx.flags = flags;
+	async_tx_ack(&sw_desc_rx->async_tx);
+	sw_desc_rx->async_tx.flags = flags;
 
-	async_tx_ack(&sw_desc1->async_tx);
-	sw_desc1->async_tx.flags = flags;
+	async_tx_ack(&sw_desc_tx->async_tx);
+	sw_desc_tx->async_tx.flags = flags;
 
-	return &sw_desc0->async_tx;
+	return &sw_desc_rx->async_tx;
 
 rollback:
-	mdev->ch[0]->prepared_desc = NULL;
-	mdev->ch[1]->prepared_desc = NULL;
+	mdev->rx[0].prepared_desc = NULL;
+	mdev->tx[0].prepared_desc = NULL;
 
-	mdev->ch[0]->desc_pool = pool_save0;
-	mdev->ch[1]->desc_pool = pool_save1;
+	mdev->rx[0].desc_pool = pool_save_rx;
+	mdev->tx[0].desc_pool = pool_save_tx;
 
-	if (sw_desc0)
-		mdma_free_descriptor(mdev->ch[0], sw_desc0);
-	if (sw_desc1)
-		mdma_free_descriptor(mdev->ch[1], sw_desc1);
+	if (sw_desc_rx)
+		mdma_free_descriptor(&mdev->rx[0], sw_desc_rx);
+	if (sw_desc_tx)
+		mdma_free_descriptor(&mdev->tx[0], sw_desc_tx);
 
-	spin_unlock(&mdev->ch[1]->lock);
-	spin_unlock_irqrestore(&mdev->ch[0]->lock, irqflags);
+	spin_unlock(&mdev->tx[0].lock);
+	spin_unlock_irqrestore(&mdev->rx[0].lock, irqflags);
 
 	return NULL;
 }
@@ -302,8 +325,8 @@ static int mdma_gp_device_terminate_all(struct dma_chan *dchan)
 {
 	struct mdma_device *mdev = to_chan(dchan)->mdev;
 
-	mdma_device_terminate_all(&mdev->ch[0]->slave);
-	mdma_device_terminate_all(&mdev->ch[1]->slave);
+	mdma_device_terminate_all(&mdev->rx[0].slave);
+	mdma_device_terminate_all(&mdev->tx[0].slave);
 
 	return 0;
 }
@@ -314,17 +337,17 @@ static void mdma_gp_issue_pending(struct dma_chan *dchan)
 
 	unsigned long irqflags;
 
-	spin_lock_irqsave(&mdev->ch[0]->lock, irqflags);
-	spin_lock(&mdev->ch[1]->lock);
+	spin_lock_irqsave(&mdev->rx[0].lock, irqflags);
+	spin_lock(&mdev->tx[0].lock);
 
-	if ((mdma_prepare_transfer(mdev->ch[0])) && 
-	    (mdma_prepare_transfer(mdev->ch[1]))) {
-		mdma_start_transfer(mdev->ch[0]);
-		mdma_start_transfer(mdev->ch[1]);
+	if ((mdma_prepare_transfer(&mdev->rx[0])) && 
+	    (mdma_prepare_transfer(&mdev->tx[0]))) {
+		mdma_start_transfer(&mdev->rx[0]);
+		mdma_start_transfer(&mdev->tx[0]);
 	}
 
-	spin_unlock(&mdev->ch[1]->lock);
-	spin_unlock_irqrestore(&mdev->ch[0]->lock, irqflags);
+	spin_unlock(&mdev->tx[0].lock);
+	spin_unlock_irqrestore(&mdev->rx[0].lock, irqflags);
 }
 
 static int mdma_gp_alloc_chan_resources(struct dma_chan *dchan)
@@ -333,14 +356,14 @@ static int mdma_gp_alloc_chan_resources(struct dma_chan *dchan)
 	int ret0;
 	int ret1;
 
-	ret0 = mdma_alloc_chan_resources(&mdev->ch[0]->slave);
-	ret1 = mdma_alloc_chan_resources(&mdev->ch[1]->slave);
+	ret0 = mdma_alloc_chan_resources(&mdev->rx[0].slave);
+	ret1 = mdma_alloc_chan_resources(&mdev->tx[0].slave);
 
 	if ((ret0 != ret1) || (ret0 <= 0)) {
 		if (ret0 > 0)
-			mdma_free_chan_resources(&mdev->ch[0]->slave);
+			mdma_free_chan_resources(&mdev->rx[0].slave);
 		if (ret1 > 0)
-			mdma_free_chan_resources(&mdev->ch[1]->slave);
+			mdma_free_chan_resources(&mdev->tx[0].slave);
 		return -EFAULT;
 	}
 
@@ -350,8 +373,8 @@ static int mdma_gp_alloc_chan_resources(struct dma_chan *dchan)
 static void mdma_gp_free_chan_resources(struct dma_chan *dchan)
 {
 	struct mdma_device *mdev = to_chan(dchan)->mdev;
-	mdma_free_chan_resources(&mdev->ch[0]->slave);
-	mdma_free_chan_resources(&mdev->ch[1]->slave);
+	mdma_free_chan_resources(&mdev->rx[0].slave);
+	mdma_free_chan_resources(&mdev->tx[0].slave);
 }
 
 static int mdma_gp_device_config(struct dma_chan *dchan,
@@ -359,8 +382,8 @@ static int mdma_gp_device_config(struct dma_chan *dchan,
 {
 	struct mdma_device *mdev = to_chan(dchan)->mdev;
 
-	mdma_device_config(&mdev->ch[0]->slave, config);
-	mdma_device_config(&mdev->ch[1]->slave, config);
+	mdma_device_config(&mdev->rx[0].slave, config);
+	mdma_device_config(&mdev->tx[0].slave, config);
 
 	return 0;
 }
@@ -377,44 +400,46 @@ static irqreturn_t mdma_gp_irq_handler(int irq, void *data)
 	struct mdma_device *mdev = (struct mdma_device *)data;
 	u32 status;
 	bool need_tasklet = false;
+	
+	struct mdma_gp_cfg __iomem *cfg = mdev->cfg;
 
-	status = readl(&mdev->regs->status);
+	status = readl(&cfg->status);
 
 	dev_dbg(mdev->dev, "Interrupt, status %x\n", status);
 
 	if ((status & (MDMA_IRQ_STATUS_TX | MDMA_IRQ_STATUS_RX)) == 0)
 		return IRQ_NONE;
 
-	spin_lock(&mdev->ch[0]->lock);
-	spin_lock(&mdev->ch[1]->lock);
+	spin_lock(&mdev->rx[0].lock);
+	spin_lock(&mdev->tx[0].lock);
 
 	if (status & MDMA_IRQ_STATUS_RX) {
-		u32 rx_status = readl(&mdev->ch[0]->regs->status);
+		u32 rx_status = readl(&mdev->rx[0].regs->status);
 		dev_dbg(mdev->dev, "RX-interrupt, status %x\n", rx_status);
 
-		mdev->ch[0]->err = true;
+		mdev->rx[0].err = true;
 		need_tasklet = true;
 	}
 
 	if (status & MDMA_IRQ_STATUS_TX) {
-		u32 tx_status = readl(&mdev->ch[1]->regs->status);
+		u32 tx_status = readl(&mdev->tx[0].regs->status);
 		dev_dbg(mdev->dev, "TX-interrupt, status %x\n", tx_status);
 
 		if ((tx_status & MDMA_IRQ_INT_DESC) == 0) {
-			mdev->ch[1]->err = true;
-		} else if (!mdev->ch[1]->active_desc) {
+			mdev->tx[0].err = true;
+		} else if (!mdev->tx[0].active_desc) {
 			dev_dbg(mdev->dev,
 			        "Interrupt without active descriptor\n");
 		} else {
-			mdev->ch[0]->active_desc->completed = true;
-			mdev->ch[1]->active_desc->completed = true;
+			mdev->rx[0].active_desc->completed = true;
+			mdev->tx[0].active_desc->completed = true;
 			need_tasklet = true;
 		}
 
 	}
 
-	spin_unlock(&mdev->ch[1]->lock);
-	spin_unlock(&mdev->ch[0]->lock);
+	spin_unlock(&mdev->tx[0].lock);
+	spin_unlock(&mdev->rx[0].lock);
 
 	if (need_tasklet)
 		tasklet_schedule(&mdev->tasklet);
@@ -432,72 +457,70 @@ static void mdma_gp_do_tasklet(unsigned long data)
 	unsigned long irqflags;
 	bool err = false;
 
-	struct dmaengine_desc_callback cb0 = {
+	struct dmaengine_desc_callback cb_rx = {
 		.callback = NULL,
 		.callback_param = NULL,
 		.callback_result = NULL
 	};
-	struct dmaengine_desc_callback cb1 = {
+	struct dmaengine_desc_callback cb_tx = {
 		.callback = NULL,
 		.callback_param = NULL,
 		.callback_result = NULL
 	};
 
-	spin_lock_irqsave(&mdev->ch[0]->lock, irqflags);
-	spin_lock(&mdev->ch[1]->lock);
+	spin_lock_irqsave(&mdev->rx[0].lock, irqflags);
+	spin_lock(&mdev->tx[0].lock);
 
-	if ((mdev->ch[0]->err) || (mdev->ch[1]->err)) {
-		mdma_reset(mdev);
+	if ((mdev->rx[0].err) || (mdev->tx[0].err)) {
+		mdma_gp_reset(mdev);
 		err = true;
 	}
 
-	if ( (mdev->ch[0]->active_desc) && 
-	     ((err) || (mdev->ch[0]->active_desc->completed)) ) {
-		mdma_complete_descriptor(mdev->ch[0], mdev->ch[0]->active_desc, 
-		                         !err, &cb0);
-		mdma_complete_descriptor(mdev->ch[1], mdev->ch[1]->active_desc, 
-		                         !err, &cb1);
-		mdev->ch[0]->active_desc = NULL;
-		mdev->ch[1]->active_desc = NULL;
+	if ( (mdev->rx[0].active_desc) && 
+	     ((err) || (mdev->rx[0].active_desc->completed)) ) {
+		mdma_complete_descriptor(&mdev->rx[0], mdev->rx[0].active_desc, 
+		                         !err, &cb_rx);
+		mdma_complete_descriptor(&mdev->tx[0], mdev->tx[0].active_desc, 
+		                         !err, &cb_tx);
+		mdev->rx[0].active_desc = NULL;
+		mdev->tx[0].active_desc = NULL;
 	}
 
-	mdev->ch[0]->err = false;
-	mdev->ch[1]->err = false;
+	mdev->rx[0].err = false;
+	mdev->tx[0].err = false;
 
-	if (dmaengine_desc_callback_valid(&cb0)) {
-		spin_unlock(&mdev->ch[1]->lock);
-		spin_unlock_irqrestore(&mdev->ch[0]->lock, irqflags);
+	if (dmaengine_desc_callback_valid(&cb_rx)) {
+		spin_unlock(&mdev->tx[0].lock);
+		spin_unlock_irqrestore(&mdev->rx[0].lock, irqflags);
 
-		dmaengine_desc_callback_invoke(&cb0, NULL);
+		dmaengine_desc_callback_invoke(&cb_rx, NULL);
 
-		spin_lock_irqsave(&mdev->ch[0]->lock, irqflags);
-		spin_lock(&mdev->ch[1]->lock);
+		spin_lock_irqsave(&mdev->rx[0].lock, irqflags);
+		spin_lock(&mdev->tx[0].lock);
 	}
 
-	if (dmaengine_desc_callback_valid(&cb1)) {
-		spin_unlock(&mdev->ch[1]->lock);
-		spin_unlock_irqrestore(&mdev->ch[0]->lock, irqflags);
+	if (dmaengine_desc_callback_valid(&cb_tx)) {
+		spin_unlock(&mdev->tx[0].lock);
+		spin_unlock_irqrestore(&mdev->rx[0].lock, irqflags);
 
-		dmaengine_desc_callback_invoke(&cb1, NULL);
+		dmaengine_desc_callback_invoke(&cb_tx, NULL);
 
-		spin_lock_irqsave(&mdev->ch[0]->lock, irqflags);
-		spin_lock(&mdev->ch[1]->lock);
+		spin_lock_irqsave(&mdev->rx[0].lock, irqflags);
+		spin_lock(&mdev->tx[0].lock);
 	}
 
-	if ((mdma_prepare_transfer(mdev->ch[0])) &&
-	    (mdma_prepare_transfer(mdev->ch[1]))) {
-		mdma_start_transfer(mdev->ch[0]);
-		mdma_start_transfer(mdev->ch[1]);
+	if ((mdma_prepare_transfer(&mdev->rx[0])) &&
+	    (mdma_prepare_transfer(&mdev->tx[0]))) {
+		mdma_start_transfer(&mdev->rx[0]);
+		mdma_start_transfer(&mdev->tx[0]);
 	}
 
-	spin_unlock(&mdev->ch[1]->lock);
-	spin_unlock_irqrestore(&mdev->ch[0]->lock, irqflags);
+	spin_unlock(&mdev->tx[0].lock);
+	spin_unlock_irqrestore(&mdev->rx[0].lock, irqflags);
 }
 
 const struct mdma_of_data mdma_gp_of_data = {
 	.max_transaction             = MDMA_GP_MAX_TRANS_LEN,
-
-	.dirs = {DMA_MEM_TO_MEM, DMA_MEM_TO_MEM},
 
 	.device_alloc_chan_resources = mdma_gp_alloc_chan_resources,
 	.device_free_chan_resources  = mdma_gp_free_chan_resources,

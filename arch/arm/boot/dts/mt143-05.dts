@@ -85,7 +85,10 @@
 
         mdma_gp0: dma@01010000 {
             compatible = "rcm,mdma-gp";
-            reg = <0x01010000 0x1000>;
+            reg = <0x01010000 0x100>,
+                  <0x01010100 0x100>,
+                  <0x01010200 0x100>;
+            reg-names = "cfg", "rx0", "tx0";
             #dma-cells = <1>;
             interrupt-parent = <&gic0>;
             interrupts = <0 32 4>;
@@ -94,7 +97,10 @@
         };
         mdma_gp1: dma@01011000 {
             compatible = "rcm,mdma-gp";
-            reg = <0x01011000 0x1000>;
+            reg = <0x01011000 0x100>,
+                  <0x01011100 0x100>,
+                  <0x01011200 0x100>;
+            reg-names = "cfg", "rx0", "tx0";
             #dma-cells = <1>;
             interrupt-parent = <&gic0>;
             interrupts = <0 33 4>;
@@ -103,7 +109,10 @@
         };
         mdma_gp2: dma@01012000 {
             compatible = "rcm,mdma-gp";
-            reg = <0x01012000 0x1000>;
+            reg = <0x01012000 0x100>,
+                  <0x01012100 0x100>,
+                  <0x01012200 0x100>;
+            reg-names = "cfg", "rx0", "tx0";
             #dma-cells = <1>;
             interrupt-parent = <&gic0>;
             interrupts = <0 34 4>;
@@ -112,7 +121,10 @@
         };
         mdma_gp3: dma@01013000 {
             compatible = "rcm,mdma-gp";
-            reg = <0x01013000 0x1000>;
+            reg = <0x01013000 0x100>,
+                  <0x01013100 0x100>,
+                  <0x01013200 0x100>;
+            reg-names = "cfg", "rx0", "tx0";
             #dma-cells = <1>;
             interrupt-parent = <&gic0>;
             interrupts = <0 35 4>;
