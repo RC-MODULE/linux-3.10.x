@@ -22,4 +22,4 @@ config SND_SOC_RCM_SPDIF
 	select RCM_AUDIO_DMA
 	select SND_SOC_GENERIC_DMAENGINE_PCM
 	help
-	  Driver for 1888TX018v and 1879XB1 SoC SPDIF subsystem.
+	  Driver for 1888TX018 and 1879XB1 SoC SPDIF subsystem.

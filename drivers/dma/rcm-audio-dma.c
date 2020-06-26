@@ -171,6 +171,11 @@ static struct dma_async_tx_descriptor *
 	unsigned long lock_flags;
 	unsigned int ena;
 	unsigned long dma_offset = 0x40000000; // to do fix on upper level
+
+#ifdef CONFIG_ARCH_RCM_K1879XB1
+	dma_offset = 0;
+#endif
+
 	// setup addresses for each descriptors based on numer of channels
 	u32 page0_start = (u32)dma_addr + period_len + dma_offset;
 	u32 page1_start = (u32)dma_addr + dma_offset;
@@ -179,10 +184,6 @@ static struct dma_async_tx_descriptor *
 
 	TRACE("len: %d, period_len: %d, flags: %d, dma_addr: %llx", (int)len,
 	      (int)period_len, (int)flags, (long long unsigned int)dma_addr);
-
-#ifdef CONFIG_ARCH_RCM_K1879XB1
-	dma_offset = 0;
-#endif
 
 	// we always have only 2 DMA descriptios for each hw channel.
 	// call hw channels should works simultaniously, so we should prepare all of its at the same time

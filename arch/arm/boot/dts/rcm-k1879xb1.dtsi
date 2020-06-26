@@ -388,7 +388,7 @@
 			#size-cells = <1>;
 			ranges = <0 0x80150000 0x10000>;
 
-			i2sc0: i2s@c0 {
+			i2sc0: i2sc@0 {
 				status = "disabled";
 				compatible = "rcm,i2s-ctrl";
 				#i2s-cells = <1>;
@@ -396,7 +396,7 @@
 				interrupts = <18>; // 50
 				interrupt-parent = <&vic1>;
 				clocks = <&clk_prf>;
-				rcm,disable11025;
+				rcm,disable11025; // ??
 			};
 
 			i2s0: i2s0@0 {

@@ -183,7 +183,7 @@
 		};
 
 		au@0 {
-			ii2sc0: i2s@c0 {
+			i2sc0: i2sc@0 {
 				status = "okay";
 			};
 			i2s0: i2s0@0 {
@@ -205,10 +205,10 @@
 				//status = "okay";
 			};
 
-			sound {
+			sound0 {
 				status = "okay";
 				compatible = "simple-audio-card";
-				simple-audio-card,name = "RCM Audio";
+				simple-audio-card,name = "RCM Audio 0";
 				#address-cells = <1>;
 				#size-cells = <0>;
 				#sound-dai-cells = <0>;
@@ -216,20 +216,90 @@
 				simple-audio-card,dai-link@0 {
 					reg = <0>;
 					format = "i2s";
-					//reg = <4>; (spdif)
 					cpu {
-						sound-dai = <&i2s0>; //<&spdif>;
+						sound-dai = <&i2s0>;
 					};
 					codec {
 						sound-dai = <&i2s_codec0>;
 					};
 				};
 			};
+			sound1 {
+				//status = "okay";
+				compatible = "simple-audio-card";
+				simple-audio-card,name = "RCM Audio 1";
+				#address-cells = <1>;
+				#size-cells = <0>;
+				#sound-dai-cells = <0>;
 
+				simple-audio-card,dai-link@1 {
+					reg = <1>;
+					format = "i2s";
+					cpu {
+						sound-dai = <&i2s1>;
+					};
+					codec {
+						sound-dai = <&i2s_codec1>;
+					};
+				};
+			};
+			sound2 {
+				//status = "okay";
+				compatible = "simple-audio-card";
+				simple-audio-card,name = "RCM Audio 2";
+				#address-cells = <1>;
+				#size-cells = <0>;
+				#sound-dai-cells = <0>;
+
+				simple-audio-card,dai-link@2 {
+					reg = <2>;
+					format = "i2s";
+					cpu {
+						sound-dai = <&i2s2>;
+					};
+					codec {
+						sound-dai = <&i2s_codec2>;
+					};
+				};
+			};
+			sound3 {
+				//status = "okay";
+				compatible = "simple-audio-card";
+				simple-audio-card,name = "RCM Audio 3";
+				#address-cells = <1>;
+				#size-cells = <0>;
+				#sound-dai-cells = <0>;
+
+				simple-audio-card,dai-link@3 {
+					reg = <3>;
+					format = "i2s";
+					cpu {
+						sound-dai = <&i2s3>;
+					};
+					codec {
+						sound-dai = <&i2s_codec3>;
+					};
+				};
+			};
 			i2s_codec0: i2scodec0 {
-				compatible = "linux,spdif-dit";//"simple-audio-amplifier";
+				compatible = "linux,spdif-dit";
 				#sound-dai-cells = <0>;
 				status = "okay";
+			};
+			i2s_codec1: i2scodec1 {
+				compatible = "linux,spdif-dit";
+				#sound-dai-cells = <0>;
+				//status = "okay";
+			};
+			i2s_codec2: i2scodec2 {
+				compatible = "linux,spdif-dit";
+				#sound-dai-cells = <0>;
+				//status = "okay";
+			};
+			i2s_codec3: i2scodec3 {
+				compatible = "linux,spdif-dit";
+				#sound-dai-cells = <0>;
+				//status = "okay";
 			};
 		};
 
