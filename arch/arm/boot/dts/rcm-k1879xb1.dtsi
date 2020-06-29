@@ -10,7 +10,13 @@
  * published by the Free Software Foundation.
  */
 
-//#include "skeleton.dtsi"
+/ {
+	#address-cells = <1>;
+	#size-cells = <1>;
+	chosen { };
+	aliases { };
+	memory { device_type = "memory"; reg = <0 0>; };
+};
 
 / {
 	model = "RC Module K1879XB1YA";
@@ -82,29 +88,31 @@
 		usbehci: ehci@0x10040000 {
 			compatible = "generic-ehci";
 			reg = <0x10040000 0x2000>;
-			interrupt-parent = <&vic1>;
 			interrupts = <3>; /* 35 */
+			interrupt-parent = <&vic1>;
 			status = "disabled";
 		};
 
 		usbohci: ohci@0x10048000 {
 			compatible = "generic-ohci";
 			reg = <0x10048000 0x2000>;
-			interrupt-parent = <&vic1>;
 			interrupts = <3>; /* 35 */
+			interrupt-parent = <&vic1>;
 			status = "disabled";
 		};
 
 		dvb_ci0: dvb-ci@10050000 {
 			compatible = "rcm,mdvbci";
 			reg = <0x10050000 0x10000>;
-			interrupts = <37>;
+			interrupts = <5>; /* 37 */
+			interrupt-parent = <&vic1>;
 		};
 
 		xdmac0: xdmac@10070000 {
 			compatible = "rcm,xdmac";
 			reg = <0x10070000 0x10000>;
 			interrupts = <16 17 18 19 20 21 22 23>;
+			interrupt-parent = <&vic0>;
 		};
 
 		vic0: interrupt-controller@20000000 {
@@ -129,13 +137,14 @@
 			compatible = "rcm,pinmux";
 			reg = <0x20033084 0x4>;
 			reg-names = "controlH";
+			settings = <0 0 0 1>; // DVB, TS1, TS2, NAND; 0 = GPIO, 1 = peripheral
 		};
 
 		crypto_aes: aes@20040000 {
 			compatible = "rcm,mcrypto_aes";
 			reg = <0x20040000 0x80>;
+			interrupts = <7>; /* 39 */
 			interrupt-parent = <&vic1>;
-			interrupts = <7>;
 		};
 
 		apb_c {
@@ -149,10 +158,11 @@
 				#size-cells = <0>;
 				reg = <0x1000 0x1000>;
 				compatible = "rcm,i2c-ocores";
-				interrupt-parent = <&vic0>;
 				interrupts = <28>;
+				interrupt-parent = <&vic0>;
 				clocks = <&pclk>;
 				clock-names = "apb_pclk";
+				clock-frequency = <54000000>;
 				reg-shift = <2>;
 				rcm-irq-fixup-id = <1>;
 				status = "disabled";
@@ -164,8 +174,9 @@
 				compatible = "ns8250";
 				clocks = <&pclk>;
 				clock-names = "apb_pclk";
-				interrupt-parent = <&vic0>;
+				clock-frequency = <54000000>;
 				interrupts = <7>;
+				interrupt-parent = <&vic0>;
 				reg-shift = <2>;
 			};
 
@@ -175,12 +186,13 @@
 				compatible = "ns8250";
 				clocks = <&pclk>;
 				clock-names = "apb_pclk";
-				interrupt-parent = <&vic0>;
+				clock-frequency = <54000000>;
 				interrupts = <9>;
+				interrupt-parent = <&vic0>;
 				reg-shift = <2>;
 			};
 
-			ssp0: ssp@e000 {
+			spi0: spi@e000 {
 				compatible = "arm,pl022", "arm,primecell";
 				bus-id = <0>;
 				reg = <0xe000 0x1000>;
@@ -192,6 +204,7 @@
 				clock-names = "apb_pclk";
 				num-cs = <2>;
 				status = "disabled";
+				/* Silicon BUG: no periphid at 0xe000 reg */
 				arm,primecell-periphid = <0x41022>;
 			};
 
@@ -209,20 +222,23 @@
 				reg = <0x5000 0x1000>;
 				compatible = "arm,sp805", "arm,primecell";
 				interrupts = <6>;
+				interrupt-parent = <&vic0>;
 				clocks = <&pclk>;
 				clock-names = "apb_pclk";
 				arm,primecell-periphid = <0x141805>;
-				};
+				status = "okay";
+			};
 
 			i2c2: i2c@6000 {
 				#address-cells = <1>;
 				#size-cells = <0>;
 				reg = <0x6000 0x1000>;
 				compatible = "rcm,i2c-ocores";
-				interrupt-parent = <&vic0>;
 				interrupts = <29>;
+				interrupt-parent = <&vic0>;
 				clocks = <&pclk>;
 				clock-names = "apb_pclk";
+				clock-frequency = <54000000>;
 				reg-shift = <2>;
 				rcm-irq-fixup-id = <2>;
 				status = "disabled";
@@ -232,12 +248,14 @@
 				reg = <0x7000 0x1000>;
 				compatible = "rcm,sci";
 				interrupts = <11>;
+				interrupt-parent = <&vic0>;
 			};
 
 			exirc@8000 {
 				reg = <0x8000 0x1000>;
 				compatible = "rcm,exirc";
 				interrupts = <24>;
+				interrupt-parent = <&vic0>;
 			};
 
 			gpiofj: gpio@9000 {
@@ -253,8 +271,8 @@
 				compatible = "arm,pl061", "arm,primecell";
 				gpio-controller;
 				reg = <0xa000 0x1000>;
-				interrupt-parent = <&vic1>;
 				interrupts = <31>; /* 63 */
+				interrupt-parent = <&vic1>;
 				clocks = <&pclk>;
 				clock-names = "apb_pclk";
 			};
@@ -265,8 +283,9 @@
 				compatible = "ns8250";
 				clocks = <&pclk>;
 				clock-names = "apb_pclk";
-				interrupt-parent = <&vic0>;
+				clock-frequency = <54000000>;
 				interrupts = <8>;
+				interrupt-parent = <&vic0>;
 				reg-shift = <2>;
 			};
 
@@ -279,6 +298,7 @@
 				interrupt-parent = <&vic0>;
 				clocks = <&pclk>;
 				clock-names = "apb_pclk";
+				clock-frequency = <54000000>;
 				reg-shift = <2>;
 				rcm-irq-fixup-id = <3>;
 				status = "disabled";
@@ -289,8 +309,8 @@
 				compatible = "arm,pl061", "arm,primecell";
 				gpio-controller;
 				reg = <0xf000 0x1000>;
-				interrupt-parent = <&vic1>;
 				interrupts = <25>; /* 57 */
+				interrupt-parent = <&vic1>;
 				clocks = <&pclk>;
 				clock-names = "apb_pclk";
 			};
@@ -305,14 +325,14 @@
 			ethernet: greth@4000 {
 				#address-cells = <1>;
 				#size-cells = <1>;
-				compatible = "aeroflexgaisler,greth";
+				compatible = "rcm,greth";
 				reg = <0x4000 0x1000>;
 				cell-index = <0>;
 				device_type = "network";
 				clocks = <&clk_axi>;
 				clock-names = "clk_axi";
-				interrupt-parent = <&vic1>;
 				interrupts = <2>; /* 34 */
+				interrupt-parent = <&vic1>;
 				status = "disabled";
 
 				mdio {
@@ -327,8 +347,8 @@
 				compatible = "arm,pl061", "arm,primecell";
 				gpio-controller;
 				reg = <0x5000 0x1000>;
-				interrupt-parent = <&vic1>;
 				interrupts = <26>; /* 58 */
+				interrupt-parent = <&vic1>;
 				clocks = <&pclk>;
 				clock-names = "apb_pclk";
 			};
@@ -338,8 +358,8 @@
 				compatible = "arm,pl061", "arm,primecell";
 				gpio-controller;
 				reg = <0x6000 0x1000>;
+				interrupts = <27>;
 				interrupt-parent = <&vic0>;
-				interrupts = <27>; /* 27 */
 				clocks = <&pclk>;
 				clock-names = "apb_pclk";
 			};
@@ -347,17 +367,18 @@
 			crypto_des: des@d000 {
 				compatible = "rcm,mcrypto_des";
 				reg = <0xd000 0x1000>;
+				interrupts = <8>; /* 40 */
 				interrupt-parent = <&vic1>;
-				interrupts = <8>;
 			};
 
 			nand0: nand@f000 {
 				reg = <0xf000 0x1000>;
-				compatible = "rcm,mnand";
+				compatible = "rcm,nand";
+				interrupts = <4>; /* 36 */
 				interrupt-parent = <&vic1>;
-				interrupts = <4>;
 				clocks = <&clk_prf>;
 				clock-names = "clk_prf";
+				status = "disabled";
 			};
 		};
 
@@ -367,12 +388,59 @@
 			#size-cells = <1>;
 			ranges = <0 0x80150000 0x10000>;
 
-			i2s: i2s@0 {
-				compatible = "rcm,i2s";
+			i2sc0: i2sc@0 {
+				status = "disabled";
+				compatible = "rcm,i2s-ctrl";
+				#i2s-cells = <1>;
 				reg = <0 0x40>;
-				interrupts = <18>; /* 50 */
+				interrupts = <18>; // 50
 				interrupt-parent = <&vic1>;
+				clocks = <&clk_prf>;
+				rcm,disable11025; // ??
 			};
+
+			i2s0: i2s0@0 {
+				status = "disabled";
+				compatible = "rcm,i2s";
+				#sound-dai-cells = <0>;
+				ctrl = <&i2sc0 0>;
+				dmas = <&audio_dma 0>;
+				dma-names = "rx";
+			};
+
+			i2s1: i2s1@0 {
+				status = "disabled";
+				compatible = "rcm,i2s";
+				#sound-dai-cells = <0>;
+				ctrl = <&i2sc0 1>;
+				dmas = <&audio_dma 1>;
+				dma-names = "rx";
+			};
+
+			i2s2: i2s2@0 {
+				status = "disabled";
+				compatible = "rcm,i2s";
+				#sound-dai-cells = <0>;
+				ctrl = <&i2sc0 2>;
+				dmas = <&audio_dma 2>;
+				dma-names = "rx";
+			};
+
+			i2s3: i2s3@0 {
+				status = "disabled";
+				compatible = "rcm,i2s";
+				#sound-dai-cells = <0>;
+				ctrl = <&i2sc0 3>;
+				dmas = <&audio_dma 3>;
+				dma-names = "rx";
+			};
+
+			//i2s: i2s@0 {
+			//	compatible = "module,i2s";
+			//	reg = <0 0x40>;
+			//	interrupts = <18>; /* 50 */
+			//	interrupt-parent = <&vic1>;
+			//};
 		};
 
 		au@1 {
@@ -382,11 +450,23 @@
 			ranges = <0x0 0x80160000 0x10000>;
 
 			spdif: spdif@0 {
+				status = "disabled";
 				compatible = "rcm,spdif";
 				reg = <0x0 0x40>;
-				interrupts = <19>; /* 51 */
+				interrupts = <19>; // 51
+				#sound-dai-cells = <0>;
 				interrupt-parent = <&vic1>;
+				clocks = <&clk_prf>;//???????????
+				dmas = <&audio_dma 4>;
+				dma-names = "rx";
 			};
+
+			//spdif: spdif@0 {
+			//	compatible = "module,spdif";
+			//	reg = <0x0 0x40>;
+			//	interrupts = <19>; /* 51 */
+			//	interrupt-parent = <&vic1>;
+			//};
 		};
 
 		apb_mult {
@@ -400,29 +480,43 @@
 				#size-cells = <0>;
 				reg = <0x1000 0x1000>;
 				compatible = "rcm,i2c-ocores";
-				interrupts = <1>;
+				interrupts = <1>; /* 33 */
 				interrupt-parent = <&vic1>;
 				clocks = <&clk_prf>;
 				clock-names = "clk_prf";
+				clock-frequency = <81000000>;
 				reg-shift = <2>;
 				rcm-irq-fixup-id = <0>;
 				status = "disabled";
 			};
 
-			dmac: dmac@0x2800 {
-				/* Missing driver */
-				compatible = "rcm,dmac";
-				reg = <0x2800 0x200>;
-				interrupts = <21>;
-				interrupt-parent = <&vic1>;
+			audio_dma_control: audio_dma_control@5000 {
+				reg = <0x5000 0x40>; /* control */
 			};
+
+			audio_dma: audio_dma@0x2800 {
+				status = "disabled";
+				compatible = "rcm,audio-dma";
+				reg = <0x2800 0x200>;					// <0x38017000 0x1000>;
+				#dma-cells = <1>;
+				interrupt-parent = <&vic1>;				// <&MPIC>;
+				interrupts = <21>;						// <127 0>;
+				control = <&audio_dma_control>;
+			};
+
+			//dmac: dmac@0x2800 {
+			//	compatible = "module,dmac";
+			//	reg = <0x2800 0x200>;
+			//	interrupts = <21>; /* 53 */
+			//	interrupt-parent = <&vic1>;
+			//};
 
 			vdu: vdu@0x3000 {
 				#address-cells = <1>;
 				#size-cells = <1>;
 				compatible = "rcm,vdu";
 				reg = <0x3000 0x1000>;
-				interrupts = <10>;
+				interrupts = <10>; /* 42 */
 				interrupt-parent = <&vic1>;
 				supported_modes = <0x7FFE>;
 				default_mode = <0x4>;
@@ -434,16 +528,16 @@
 			};
 		};
 
-		sound: audio@0x80175000 {
-			compatible = "rcm,audio";
-			reg = <0x80175000 0x40>; /* control */
-			interrupts = <21>;
-			interrupt-parent = <&vic1>;
-			maudio,dmac = <&dmac>;
-			maudio,i2s = <&i2s>;
-			maudio,spdif = <&spdif>;
-			status = "disabled";
-		};
+		//sound: audio@0x80175000 {
+		//	compatible = "module,audio";
+		//	reg = <0x80175000 0x40>; /* control */
+		//	interrupts = <21>; /* 53 */
+		//	interrupt-parent = <&vic1>;
+		//	maudio,dmac = <&dmac>;
+		//	maudio,i2s = <&i2s>;
+		//	maudio,spdif = <&spdif>;
+		//	status = "disabled";
+		//};
 
 		video_decoder: video_decoder@80180000 {
 			compatible = "module,msvdhd";
@@ -452,8 +546,8 @@
 					<0x80100000 0x40000>;
 			reg-names = "registers", "extmem", "intmem";
 			interrupts = <12>; /* 44 */
-			interrupt-names = "irq";
 			interrupt-parent = <&vic1>;
+			interrupt-names = "irq";
 			status = "disabled";
 		};
 
@@ -510,10 +604,11 @@
 				"lp_clr_reg",
 				"hp_set_reg",
 				"lp_set_reg";
-			interrupt-parent = <&vic0>;
 			interrupts = <14>, <15>;
+			interrupt-parent = <&vic0>;
 			interrupt-names = "HP", "LP";
 			status = "okay";
 		};
+
 	};
 };

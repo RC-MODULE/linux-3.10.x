@@ -308,8 +308,9 @@ static int rcm_spdif_hw_params(struct snd_pcm_substream *substream,
 	spin_lock_irqsave(&spdif->lock, flags);
 
 	regmap_update_bits(spdif->regmap, RCM_SPDIF_CTRL, 0x3FFFFFF, ctrl);
+#ifndef CONFIG_ARCH_RCM_K1879XB1
 	regmap_write(spdif->regmap, RCM_SPDIF_MASK, 0x3f7fffff /*0x18000000*/);
-
+#endif
 	regmap_write(spdif->regmap, RCM_SPDIF_NONLIN_PARAMS,
 		     0x1); // todo investigate
 

@@ -110,7 +110,7 @@ struct ktermios {
 #define   FF1	0100000
 
 /* c_cflag bit meaning */
-#define CBAUD	0010037
+#define CBAUD	0010017 //37
 #define  B0	0000000		/* hang up */
 #define  B50	0000001
 #define  B75	0000002
