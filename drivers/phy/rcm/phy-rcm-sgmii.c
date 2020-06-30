@@ -30,8 +30,6 @@ static int rcm_sgmii_phy_power_on(struct phy *phy)
 	u32 val;
 	int ret;
 
-	pr_debug("%s >>>\n", __func__);
-
 	ret = regmap_write(data->ctrl, data->ctrl_offset, 1);
 	if(ret) {
 		pr_debug("%s: failed to write to CTRL register.", __func__);
@@ -46,15 +44,12 @@ static int rcm_sgmii_phy_power_on(struct phy *phy)
 		return -EIO;
 	}
 
-	pr_debug("%s <<<<\n", __func__);
 	return 0;
 }
 
 static int rcm_sgmii_phy_power_off(struct phy *phy)
 {
 	struct rcm_sgmii_phy_data *data = phy_get_drvdata(phy);
-
-	pr_debug("%s >>>\n", __func__);
 
 	return regmap_write(data->ctrl, data->ctrl_offset, 0);
 }
@@ -94,8 +89,6 @@ static int rcm_sgmii_phy_init(struct phy *phy)
 
 static int rcm_sgmii_phy_exit(struct phy *phy)
 {
-	pr_debug("%s >>>\n", __func__);
-
 	return 0;
 }
 
