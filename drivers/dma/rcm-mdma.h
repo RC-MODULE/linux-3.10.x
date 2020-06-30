@@ -151,9 +151,11 @@ struct mdma_desc_sw {
 	struct list_head node;
 	struct dma_async_tx_descriptor async_tx;
 	struct dma_slave_config config;
+	size_t len;
 	unsigned pos;
 	unsigned cnt;
 	bool completed;
+	dma_cookie_t cookie;
 };
 
 struct mdma_desc_pool {
@@ -182,18 +184,23 @@ struct mdma_chan {
 	struct mdma_desc_pool desc_pool;
 	struct device *dev;
 	u32 desc_size;
-	u32 type;
 	enum dma_transfer_direction dir;
 	bool err;
 	u32 bus_width;
 	struct dma_slave_config config;
 	size_t max_transaction;
+	size_t len_mask;
+	u32 ch_settings;
 	char name[8];
+	int irq;
 	struct tasklet_struct tasklet;
+	char irq_name[16];
 };
 
 struct mdma_of_data {
 	size_t max_transaction;
+	size_t len_mask;
+	u32 ch_settings;
 
 	int (*device_alloc_chan_resources)(struct dma_chan *chan);
 	void (*device_free_chan_resources)(struct dma_chan *chan);
@@ -208,6 +215,9 @@ struct mdma_of_data {
 	int (*device_config)(struct dma_chan *chan,
 	                     struct dma_slave_config *config);
 	int (*device_terminate_all)(struct dma_chan *chan);
+	enum dma_status (*device_tx_status)(struct dma_chan *chan,
+	                                    dma_cookie_t cookie,
+	                                    struct dma_tx_state *txstate);
 	void (*device_issue_pending)(struct dma_chan *chan);
 
 	dma_cookie_t (*tx_submit)(struct dma_async_tx_descriptor *tx);
@@ -224,6 +234,7 @@ struct mdma_device {
 	struct mdma_chan rx[MDMA_MAX_CHANNELS];
 	struct mdma_chan tx[MDMA_MAX_CHANNELS];
 	struct device* dev;
+	struct platform_device *pdev;
 	struct clk *clk;
 	const struct mdma_of_data* of_data;
 };
@@ -246,7 +257,7 @@ unsigned mdma_desc_pool_fill_sg(struct mdma_desc_pool* pool, unsigned pos,
 void mdma_desc_pool_put(struct mdma_desc_pool* pool,
                         unsigned pos, unsigned cnt);
 void mdma_desc_pool_sync(struct mdma_desc_pool* pool,
-                         unsigned pos, unsigned cnt);
+                         unsigned pos, unsigned cnt, bool to_device);
 
 unsigned mdma_cnt_desc_needed(struct mdma_chan *chan, struct scatterlist *sgl,
                               unsigned int sg_len, size_t *len);

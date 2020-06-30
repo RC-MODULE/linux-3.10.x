@@ -11,6 +11,7 @@
 #include "rcm-mdma.h"
 
 #define MDMA_GP_MAX_TRANS_LEN 0x7FFFFFC
+#define MDMA_GP_LEN_MASK      0x7FFFFFF
 
 struct mdma_gp_cfg
 {
@@ -113,6 +114,9 @@ mdma_gp_prep_memcpy(struct dma_chan *dchan, dma_addr_t dma_dst,
 	if ((!sw_desc_rx) || (!sw_desc_tx))
 		goto rollback;
 
+	sw_desc_rx->len = len;
+	sw_desc_tx->len = len;
+
 	sw_desc_rx->cnt = mdma_desc_pool_get(&mdev->rx[0].desc_pool, cnt_descs,
 	                                     &sw_desc_rx->pos);
 	sw_desc_tx->cnt = mdma_desc_pool_get(&mdev->tx[0].desc_pool, cnt_descs,
@@ -151,9 +155,9 @@ mdma_gp_prep_memcpy(struct dma_chan *dchan, dma_addr_t dma_dst,
 	spin_unlock_irqrestore(&mdev->rx[0].lock, irqflags);
 
 	mdma_desc_pool_sync(&mdev->rx[0].desc_pool, sw_desc_rx->pos,
-	                    sw_desc_rx->cnt);
+	                    sw_desc_rx->cnt, true);
 	mdma_desc_pool_sync(&mdev->tx[0].desc_pool, sw_desc_tx->pos,
-	                    sw_desc_tx->cnt);
+	                    sw_desc_tx->cnt, true);
 
 	async_tx_ack(&sw_desc_rx->async_tx);
 	sw_desc_rx->async_tx.flags = flags;
@@ -246,6 +250,9 @@ mdma_gp_prep_slave_sg(struct dma_chan *dchan, struct scatterlist *sgl,
 	if ((!sw_desc_rx) || (!sw_desc_tx))
 		goto rollback;
 
+	sw_desc_rx->len = len;
+	sw_desc_tx->len = len;
+
 	sw_desc_rx->cnt = mdma_desc_pool_get(&mdev->rx[0].desc_pool, cnt_descs,
 	                                     &sw_desc_rx->pos);
 	sw_desc_tx->cnt = mdma_desc_pool_get(&mdev->tx[0].desc_pool, cnt_descs,
@@ -291,9 +298,9 @@ mdma_gp_prep_slave_sg(struct dma_chan *dchan, struct scatterlist *sgl,
 	spin_unlock_irqrestore(&mdev->rx[0].lock, irqflags);
 
 	mdma_desc_pool_sync(&mdev->rx[0].desc_pool, sw_desc_rx->pos,
-	                    sw_desc_rx->cnt);
+	                    sw_desc_rx->cnt, true);
 	mdma_desc_pool_sync(&mdev->tx[0].desc_pool, sw_desc_tx->pos,
-	                    sw_desc_tx->cnt);
+	                    sw_desc_tx->cnt, true);
 
 	async_tx_ack(&sw_desc_rx->async_tx);
 	sw_desc_rx->async_tx.flags = flags;
@@ -523,6 +530,10 @@ static void mdma_gp_do_tasklet(unsigned long data)
 
 const struct mdma_of_data mdma_gp_of_data = {
 	.max_transaction             = MDMA_GP_MAX_TRANS_LEN,
+	.len_mask                    = MDMA_GP_LEN_MASK,
+	.ch_settings                 = 
+		MDMA_CHAN_DESC_LONG | 
+		(sizeof(struct mdma_desc_long_ll) << MDMA_CHAN_DESC_GAP_SHIFT),
 
 	.device_alloc_chan_resources = mdma_gp_alloc_chan_resources,
 	.device_free_chan_resources  = mdma_gp_free_chan_resources,
@@ -530,6 +541,7 @@ const struct mdma_of_data mdma_gp_of_data = {
 	.device_prep_slave_sg        = mdma_gp_prep_slave_sg,
 	.device_config               = mdma_gp_device_config,
 	.device_terminate_all        = mdma_gp_device_terminate_all,
+	.device_tx_status            = dma_cookie_status,
 	.device_issue_pending        = mdma_gp_issue_pending,
 
 	.tx_submit                   = mdma_gp_tx_submit,
