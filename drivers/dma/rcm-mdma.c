@@ -325,6 +325,15 @@ void mdma_desc_pool_sync(struct mdma_desc_pool* pool,
 		dma_addr_t addr = sg_dma_address(sg);
 		u32 len = sg_dma_len(sg);
 
+		if (pos != 0) {
+			addr += pos * sizeof(struct mdma_desc_long_ll);
+			len  -= pos * sizeof(struct mdma_desc_long_ll);
+			pos = 0;
+		}
+
+		if (len > cnt * sizeof(struct mdma_desc_long_ll))
+			len = cnt * sizeof(struct mdma_desc_long_ll);
+
 		if (to_device)
 			dma_sync_single_for_device(chan->mdev->dev, addr, len, 
 		                                   DMA_BIDIRECTIONAL);
@@ -332,15 +341,10 @@ void mdma_desc_pool_sync(struct mdma_desc_pool* pool,
 			dma_sync_single_for_cpu(chan->mdev->dev, addr, len, 
 		                                DMA_BIDIRECTIONAL);
 
-		cnt_sync += len / sizeof(struct mdma_desc_long_ll);
-
-		if (pos != 0) {
-			cnt_sync -= pos;
-			pos = 0;
-		}
+		cnt -= len / sizeof(struct mdma_desc_long_ll);
 
 		sg = (sg_is_last(sg)) ? pool->sgt.sgl : sg_next(sg);
-	} while (cnt_sync < cnt);
+	} while (cnt != 0);
 }
 
 unsigned mdma_desc_pool_fill(struct mdma_desc_pool* pool, unsigned pos, 
