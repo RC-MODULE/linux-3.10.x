@@ -134,7 +134,7 @@ mdma_gp_prep_memcpy(struct dma_chan *dchan, dma_addr_t dma_dst,
 
 	cnt = mdma_desc_pool_fill(&mdev->rx[0].desc_pool, sw_desc_rx->pos,
 	                          dma_src, len, false);
-	if (cnt != sw_desc_rx->cnt) {
+	if (cnt > sw_desc_rx->cnt) {
 		dev_err(mdev->dev,
 		        "%s: Descpitors number does not match (%u != %u)\n",
 		        __func__, cnt, sw_desc_rx->cnt);
@@ -144,7 +144,7 @@ mdma_gp_prep_memcpy(struct dma_chan *dchan, dma_addr_t dma_dst,
 	cnt = mdma_desc_pool_fill_like(&mdev->tx[0].desc_pool, sw_desc_tx->pos,
 	                               dma_dst, len, true,
 	                               &mdev->rx[0].desc_pool, sw_desc_rx->pos);
-	if (cnt != sw_desc_tx->cnt) {
+	if (cnt > sw_desc_tx->cnt) {
 		dev_err(mdev->dev,
 		        "%s: Descpitors number does not match (%u != %u)\n",
 		        __func__, cnt, sw_desc_tx->cnt);
@@ -276,7 +276,7 @@ mdma_gp_prep_slave_sg(struct dma_chan *dchan, struct scatterlist *sgl,
 
 	cnt = mdma_desc_pool_fill_sg(&chan->desc_pool, sw_desc->pos,
 	                             sgl, sg_len, stop_int);
-	if (cnt != sw_desc->cnt) {
+	if (cnt > sw_desc->cnt) {
 		dev_err(mdev->dev,
 		        "%s: Descpitors number does not match (%u != %u)\n",
 		        __func__, cnt, sw_desc->cnt);
@@ -287,7 +287,7 @@ mdma_gp_prep_slave_sg(struct dma_chan *dchan, struct scatterlist *sgl,
 	                               sw_desc_linked->pos,
 	                               dma_addr, len, !stop_int,
 	                               &chan->desc_pool, sw_desc->pos);
-	if (cnt != sw_desc_linked->cnt) {
+	if (cnt > sw_desc_linked->cnt) {
 		dev_err(mdev->dev,
 		        "%s: Descpitors number does not match (%u != %u)\n",
 		        __func__, cnt, sw_desc->cnt);

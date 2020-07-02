@@ -267,6 +267,10 @@ unsigned mdma_desc_pool_get(struct mdma_desc_pool* pool,
 	if (n != cnt)
 		return 0;
 
+	while (!IS_ALIGNED((size_t)&pool->descs[pool->next + cnt],
+	                   dma_get_cache_alignment()))
+		++cnt;
+
 	i = pool->next;
 
 	if (pos)
@@ -713,14 +717,17 @@ static size_t mdma_get_residue(struct mdma_chan *chan,
 {
 	struct mdma_desc_pool* pool = &chan->desc_pool;
 	size_t len = 0;
-	unsigned i;
+	unsigned i = 0;
+	unsigned pos;
 
 	mdma_desc_pool_sync(pool, desc->pos, desc->cnt, false);
 
-	for (i = 0; i < desc->cnt; ++i) {
-		unsigned pos = (desc->pos + i) % pool->size;
-		len += pool->descs[pos + i].flags_length & chan->len_mask;
-	}
+	do {
+		pos = (desc->pos + i) % pool->size;
+		len += pool->descs[pos].flags_length & chan->len_mask;
+		++i;
+	} while (((pool->descs[pos].flags_length & MDMA_BD_STOP) == 0) &&
+	         (i < desc->cnt));
 
 	if (len > desc->len) {
 		dev_warn(chan->dev, "[%s] Transferred length more than "
@@ -1043,7 +1050,7 @@ mdma_prep_slave_sg(struct dma_chan *dchan, struct scatterlist *sgl,
 
 	cnt = mdma_desc_pool_fill_sg(&chan->desc_pool, sw_desc->pos,
 	                             sgl, sg_len, true);
-	if (cnt != sw_desc->cnt) {
+	if (cnt > sw_desc->cnt) {
 		dev_err(chan->dev, 
 		        "[%s] Descpitors number does not match (%u != %u)\n",
 		        chan->name, cnt, sw_desc->cnt);
