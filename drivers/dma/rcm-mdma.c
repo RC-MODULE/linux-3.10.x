@@ -593,6 +593,7 @@ bool mdma_prepare_transfer(struct mdma_chan *chan)
 	list_del(&desc->node);
 
 	desc->completed = false;
+	desc->err       = false;
 	chan->active_desc = desc;
 
 	mdma_config(chan, desc);
@@ -674,6 +675,7 @@ static void mdma_free_descriptors(struct mdma_chan *chan)
 		mdma_free_descriptor(chan, chan->active_desc);
 		chan->active_desc = NULL;
 	}
+	mdma_free_desc_list(chan, &chan->done_list);
 	mdma_free_desc_list(chan, &chan->pending_list);
 }
 
@@ -719,6 +721,7 @@ static size_t mdma_get_residue(struct mdma_chan *chan,
 	size_t len = 0;
 	unsigned i = 0;
 	unsigned pos;
+	u32 flags_length;
 
 	mdma_desc_pool_sync(pool, desc->pos, desc->cnt, false);
 
@@ -746,6 +749,8 @@ static enum dma_status mdma_device_tx_status(struct dma_chan *dchan,
 	struct mdma_chan *chan = to_chan(dchan);
 	int ret;
 	unsigned long irqflags;
+	struct mdma_desc_sw *desc;
+	bool found = false;
 
 	ret = dma_cookie_status(dchan, cookie, txstate);
 	if (ret != DMA_COMPLETE)
@@ -756,19 +761,21 @@ static enum dma_status mdma_device_tx_status(struct dma_chan *dchan,
 
 	spin_lock_irqsave(&chan->lock, irqflags);
 
-	if ((chan->active_desc) && 
-	    (chan->active_desc->cookie == cookie)) {
-		size_t residue = mdma_get_residue(chan, chan->active_desc);
+	list_for_each_entry(desc, &chan->done_list, node) {
+		if (desc->cookie == cookie) {
+			size_t residue = mdma_get_residue(chan, desc);
 
-		dma_set_residue(txstate, residue);
-	} else if ((chan->active_desc) && 
-	           (chan->active_desc->cookie != cookie)) {
+			dma_set_residue(txstate, residue);
+
+			found = true;
+
+			break;
+		}
+	}
+
+	if (!found) {
 		dev_warn(chan->dev,
-		         "Cookie mismatch: 0x%08X != 0x%08X.\n",
-		         chan->active_desc->cookie, cookie);
-	} else {
-		dev_warn(chan->dev,
-		         "No active descriptor. Try to call "
+		         "Descriptor was not found in DONE-list. Try to call "
 		         "dmaengine_tx_status() from callback.\n");
 	}
 
@@ -935,8 +942,6 @@ int mdma_alloc_chan_resources(struct dma_chan *dchan)
 	chan->active_desc = NULL;
 	chan->prepared_desc = NULL;
 	chan->desc_free_cnt = MDMA_NUM_DESCS;
-
-	INIT_LIST_HEAD(&chan->free_list);
 
 	for (i = 0; i < MDMA_NUM_DESCS; i++) {
 		desc = chan->sw_desc_pool + i;
@@ -1113,15 +1118,25 @@ static irqreturn_t mdma_irq_handler(int irq, void *data)
 
 	spin_lock(&chan->lock);
 
-	if ((status & MDMA_IRQ_INT_DESC) == 0) {
-		chan->err = true;
-	} else if (!chan->active_desc) {
-		dev_dbg(chan->dev, "[%s] Interrupt without active descriptor\n",
+	if (!chan->active_desc) {
+		dev_info(chan->dev, "[%s] Interrupt without active descriptor\n",
 		        chan->name);
 	} else {
-		chan->active_desc->completed = true;
+//		dev_info(chan->dev, "[%s] Interrupt status = 0x%08X\n",
+//		        chan->name, status);
+
+		if ((status & MDMA_IRQ_INT_DESC) == 0)
+			chan->active_desc->err = true;
+		else 
+			chan->active_desc->completed = true;
 		need_tasklet = true;
+
+		list_add_tail(&chan->active_desc->node, &chan->done_list);
+		chan->active_desc = NULL;
 	}
+
+	if (mdma_prepare_transfer(chan))
+		mdma_start_transfer(chan);
 
 	spin_unlock(&chan->lock);
 
@@ -1139,7 +1154,7 @@ static void mdma_do_tasklet(unsigned long data)
 {
 	struct mdma_chan *chan = (struct mdma_chan *)data;
 	unsigned long irqflags;
-	bool err = false;
+	struct mdma_desc_sw *desc;
 
 	struct dmaengine_desc_callback cb = {
 		.callback = NULL,
@@ -1149,30 +1164,26 @@ static void mdma_do_tasklet(unsigned long data)
 
 	spin_lock_irqsave(&chan->lock, irqflags);
 
-	if (chan->err) {
-//		mdma_reset(chan->mdev);
-		err = true;
-	}
+	while (!list_empty(&chan->done_list)) {
+		desc = list_first_entry(&chan->done_list,
+		                        struct mdma_desc_sw, node);
 
-	if ( (chan->active_desc) && 
-	     ((err) || (chan->active_desc->completed)) ) {
-		mdma_complete_descriptor(chan, chan->active_desc, !err, &cb);
-	}
+		if (desc->err) {
+//			mdma_reset(chan->mdev);
+		}
 
-	chan->err = false;
+		mdma_complete_descriptor(chan, desc, !desc->err, &cb);
 
-	if (dmaengine_desc_callback_valid(&cb)) {
-		spin_unlock_irqrestore(&chan->lock, irqflags);
+		if (dmaengine_desc_callback_valid(&cb)) {
+			spin_unlock_irqrestore(&chan->lock, irqflags);
 
-		dmaengine_desc_callback_invoke(&cb, NULL);
+			dmaengine_desc_callback_invoke(&cb, NULL);
 
-		spin_lock_irqsave(&chan->lock, irqflags);
-	}
+			spin_lock_irqsave(&chan->lock, irqflags);
+		}
 
-	if ( (chan->active_desc) && 
-	     ((err) || (chan->active_desc->completed)) ) {
-		mdma_free_descriptor(chan, chan->active_desc);
-		chan->active_desc = NULL;
+		list_del(&desc->node);
+		mdma_free_descriptor(chan, desc);
 	}
 
 	if (mdma_prepare_transfer(chan))
@@ -1236,6 +1247,7 @@ static int mdma_chan_probe(struct platform_device *pdev, struct mdma_chan *chan)
 	spin_lock_init(&chan->lock);
 	INIT_LIST_HEAD(&chan->pending_list);
 	INIT_LIST_HEAD(&chan->free_list);
+	INIT_LIST_HEAD(&chan->done_list);
 
 	chan->active_desc = NULL;
 

@@ -14,7 +14,6 @@
 
 /* Max number of descriptors per channel */
 #define MDMA_NUM_DESCS          32
-#define MDMA_NUM_SUB_DESCS      32
 #define MDMA_DESC_SIZE(chan)    (chan->desc_size)
 #define MDMA_POOL_SIZE          262144
 #define MDMA_PM_TIMEOUT         100
@@ -155,6 +154,7 @@ struct mdma_desc_sw {
 	unsigned pos;
 	unsigned cnt;
 	bool completed;
+	bool err;
 	dma_cookie_t cookie;
 };
 
@@ -176,6 +176,7 @@ struct mdma_chan {
 	spinlock_t lock;
 	struct list_head pending_list;
 	struct list_head free_list;
+	struct list_head done_list;
 	struct mdma_desc_sw *active_desc;
 	struct mdma_desc_sw *prepared_desc;
 	struct mdma_desc_sw *sw_desc_pool;
@@ -185,7 +186,6 @@ struct mdma_chan {
 	struct device *dev;
 	u32 desc_size;
 	enum dma_transfer_direction dir;
-	bool err;
 	u32 bus_width;
 	struct dma_slave_config config;
 	size_t max_transaction;

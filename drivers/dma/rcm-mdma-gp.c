@@ -425,22 +425,30 @@ static irqreturn_t mdma_gp_irq_handler(int irq, void *data)
 		u32 rx_status = readl(&mdev->rx[0].regs->status);
 		dev_dbg(mdev->dev, "RX-interrupt, status %x\n", rx_status);
 
-		mdev->rx[0].err = true;
-		need_tasklet = true;
+		if (!mdev->rx[0].active_desc) {
+			dev_dbg(mdev->dev,
+			        "Interrupt without active descriptor\n");
+		} else {
+			mdev->rx[0].active_desc->err = true;
+			need_tasklet = true;
+		}
 	}
 
 	if (status & MDMA_IRQ_STATUS_TX) {
 		u32 tx_status = readl(&mdev->tx[0].regs->status);
 		dev_dbg(mdev->dev, "TX-interrupt, status %x\n", tx_status);
 
-		if ((tx_status & MDMA_IRQ_INT_DESC) == 0) {
-			mdev->tx[0].err = true;
-		} else if (!mdev->tx[0].active_desc) {
+		if (!mdev->tx[0].active_desc) {
 			dev_dbg(mdev->dev,
 			        "Interrupt without active descriptor\n");
 		} else {
-			mdev->rx[0].active_desc->completed = true;
-			mdev->tx[0].active_desc->completed = true;
+			if ((tx_status & MDMA_IRQ_INT_DESC) == 0) {
+				mdev->tx[0].active_desc->err = true;
+			}
+			else {
+				mdev->rx[0].active_desc->completed = true;
+				mdev->tx[0].active_desc->completed = true;
+			}
 			need_tasklet = true;
 		}
 
@@ -480,13 +488,12 @@ static void mdma_gp_do_tasklet(unsigned long data)
 	spin_lock_irqsave(&mdev->rx[0].lock, irqflags);
 	spin_lock(&mdev->tx[0].lock);
 
-	if ((mdev->rx[0].err) || (mdev->tx[0].err)) {
+	if ((mdev->rx[0].active_desc->err) || (mdev->tx[0].active_desc->err)) {
 		mdma_gp_reset(mdev);
 		err = true;
 	}
 
-	if ( (mdev->rx[0].active_desc) && 
-	     ((err) || (mdev->rx[0].active_desc->completed)) ) {
+	if ((err) || (mdev->rx[0].active_desc->completed)) {
 		mdma_complete_descriptor(&mdev->rx[0], mdev->rx[0].active_desc, 
 		                         !err, &cb_rx);
 		mdma_complete_descriptor(&mdev->tx[0], mdev->tx[0].active_desc, 
@@ -494,9 +501,6 @@ static void mdma_gp_do_tasklet(unsigned long data)
 		mdev->rx[0].active_desc = NULL;
 		mdev->tx[0].active_desc = NULL;
 	}
-
-	mdev->rx[0].err = false;
-	mdev->tx[0].err = false;
 
 	if (dmaengine_desc_callback_valid(&cb_rx)) {
 		spin_unlock(&mdev->tx[0].lock);
