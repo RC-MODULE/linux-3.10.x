@@ -12,5 +12,7 @@ config RCM_MGETH
 config RCM_MDIO
 	bool "RC-Module MDIO Support"
 	select PHYLIB
+	select PINCTRL
+	select PINCTRL_SINGLE
 	help
 	  This driver supports RC-Module MDIO module.

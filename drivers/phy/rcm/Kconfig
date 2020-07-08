@@ -14,5 +14,6 @@ config PHY_RCM_SGMII
 	depends on ARCH_RCM_ARM
 	select GENERIC_PHY
 	select REGMAP_MMIO
+	select MFD_SYSCON
 	help
 	  Support for SBMII PHY device on RCM SoCs.
