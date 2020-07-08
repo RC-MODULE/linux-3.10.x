@@ -676,8 +676,6 @@ static int rcm_mgeth_rx_process(struct rcm_mgeth_dma* dma)
 			            "DMA error (RX%u, cookie = 0x%08X).\n",
 			            dma->ch_num, buff->cookie);
 		} else {
-			char* pkt = dma->buff + dma->first_buff * RCM_MGETH_DMA_BUFF_SIZE;
-
 			skb = netdev_alloc_skb(data->netdev,
 			                       sg_dma_len(&buff->sg) -
 			                       buff->residue);
