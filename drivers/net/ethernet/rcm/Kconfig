@@ -1,0 +1,16 @@
+#
+# Ethernet drivers for RC Module platforms
+#
+config RCM_MGETH
+	bool "RC-Module MGETH Ethernet controller"
+	select RCM_SGMII_PHY
+	select RCM_MDIO
+	select GENERIC_IRQ_CHIP
+	help
+	  This driver supports the RC-Module based MGETH Ethernet controller.
+
+config RCM_MDIO
+	bool "RC-Module MDIO Support"
+	select PHYLIB
+	help
+	  This driver supports RC-Module MDIO module.

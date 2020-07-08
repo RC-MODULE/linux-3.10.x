@@ -41,13 +41,6 @@ static int rcm_mdio_reset(struct mii_bus *bus)
 	struct rcm_mdio_data *data = bus->priv;
 	int ret;
 
-	pr_debug("%s: >>>\n", __func__);
-
-//	ret = regmap_write(data->reg, RCM_MDIO_ETH_RST_N, 0);
-
-//	if (ret < 0)
-//		return ret;
-
 	ret = regmap_write(data->reg, RCM_MDIO_ETH_RST_N, 1);
 
 	if (ret < 0)
@@ -66,8 +59,6 @@ static int rcm_mdio_read(struct mii_bus *bus, int phy_id, int phy_reg)
 	struct rcm_mdio_data *data = bus->priv;
 	u32 val;
 	int ret;
-
-	pr_debug("%s(0x%X, 0x%X): >>>\n", __func__, phy_id, phy_reg);
 
 	if (phy_reg & ~PHY_REG_MASK || phy_id & ~PHY_ID_MASK)
 		return -EINVAL;
@@ -105,9 +96,6 @@ static int rcm_mdio_read(struct mii_bus *bus, int phy_id, int phy_reg)
 	if (ret < 0)
 		return ret;
 
-	pr_debug("%s(0x%X, 0x%X) -> 0x%04X\n", __func__,
-	         phy_id, phy_reg, val >> 16);
-
 	return val >> 16;
 }
 
@@ -117,9 +105,6 @@ static int rcm_mdio_write(struct mii_bus *bus, int phy_id,
 	struct rcm_mdio_data *data = bus->priv;
 	u32 val;
 	int ret;
-
-	pr_debug("%s(0x%X, 0x%X, 0x%04X): >>>\n", __func__,
-	         phy_id, phy_reg, (u32)phy_data);
 
 	if (phy_reg & ~PHY_REG_MASK || phy_id & ~PHY_ID_MASK)
 		return -EINVAL;
@@ -141,8 +126,6 @@ static int rcm_mdio_write(struct mii_bus *bus, int phy_id,
 
 	if (ret < 0)
 		return ret;
-
-	pr_debug("%s: <<<\n", __func__);
 
 	return 0;
 }
@@ -170,8 +153,6 @@ static int rcm_mdio_probe(struct platform_device *pdev)
 	int addr;
 	u32 id;
 	u32 ver;
-
-	pr_debug("%s: >>> devname = \"%s\"\n", __func__, dev_name(dev));
 
 	match = of_match_device(rcm_mdio_of_mtable, dev);
 	if (!match)
