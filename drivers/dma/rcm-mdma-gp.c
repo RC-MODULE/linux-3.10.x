@@ -154,11 +154,6 @@ mdma_gp_prep_memcpy(struct dma_chan *dchan, dma_addr_t dma_dst,
 	spin_unlock(&mdev->tx[0].lock);
 	spin_unlock_irqrestore(&mdev->rx[0].lock, irqflags);
 
-	mdma_desc_pool_sync(&mdev->rx[0].desc_pool, sw_desc_rx->pos,
-	                    sw_desc_rx->cnt, true);
-	mdma_desc_pool_sync(&mdev->tx[0].desc_pool, sw_desc_tx->pos,
-	                    sw_desc_tx->cnt, true);
-
 	async_tx_ack(&sw_desc_rx->async_tx);
 	sw_desc_rx->async_tx.flags = flags;
 
@@ -296,11 +291,6 @@ mdma_gp_prep_slave_sg(struct dma_chan *dchan, struct scatterlist *sgl,
 
 	spin_unlock(&mdev->tx[0].lock);
 	spin_unlock_irqrestore(&mdev->rx[0].lock, irqflags);
-
-	mdma_desc_pool_sync(&mdev->rx[0].desc_pool, sw_desc_rx->pos,
-	                    sw_desc_rx->cnt, true);
-	mdma_desc_pool_sync(&mdev->tx[0].desc_pool, sw_desc_tx->pos,
-	                    sw_desc_tx->cnt, true);
 
 	async_tx_ack(&sw_desc_rx->async_tx);
 	sw_desc_rx->async_tx.flags = flags;

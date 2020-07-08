@@ -23,59 +23,6 @@
 #include "dmaengine.h"
 #include "rcm-mdma.h"
 
-static int mdma_sg_alloc_from_pages(struct sg_table* sgt, 
-                                    struct page **pages, unsigned int n_pages,
-                                    unsigned int offset, unsigned long size,
-                                    unsigned int max_segment, gfp_t gfp_mask)
-{
-	unsigned int chunks, cur_page, seg_len, i;
-	struct scatterlist *s;
-
-	chunks = 1;
-	seg_len = 0;
-	for (i = 1; i < n_pages; i++) {
-		seg_len += PAGE_SIZE;
-		if ((seg_len >= max_segment) ||
-		    (page_to_pfn(pages[i]) != page_to_pfn(pages[i - 1]) + 1)) {
-			chunks++;
-			seg_len = 0;
-		}
-	}
-
-	sgt->sgl = kmalloc(chunks * sizeof(struct scatterlist), gfp_mask);
-
-	if (sgt->sgl == NULL)
-		return -ENOMEM;
-
-	sg_init_table(sgt->sgl, chunks);
-	sgt->nents = sgt->orig_nents = chunks;
-
-	/* merging chunks and putting them into the scatterlist */
-	cur_page = 0;
-	for_each_sg(sgt->sgl, s, sgt->orig_nents, i) {
-		unsigned int j, chunk_size;
-
-		/* look for the end of the current chunk */
-		seg_len = 0;
-		for (j = cur_page + 1; j < n_pages; j++) {
-			seg_len += PAGE_SIZE;
-			if (seg_len >= max_segment ||
-			    page_to_pfn(pages[j]) !=
-			    page_to_pfn(pages[j - 1]) + 1)
-				break;
-		}
-
-		chunk_size = ((j - cur_page) << PAGE_SHIFT) - offset;
-		sg_set_page(s, pages[cur_page],
-			    min_t(unsigned long, size, chunk_size), offset);
-		size -= chunk_size;
-		offset = 0;
-		cur_page = j;
-	}
-
-	return 0;
-}
-
 bool mdma_check_align(struct mdma_chan *chan, dma_addr_t dma_addr)
 {
 	int addr_mask = chan->bus_width / 8 - 1;
@@ -98,22 +45,20 @@ bool mdma_check_align_sg(struct mdma_chan *chan, struct scatterlist *sg)
 void mdma_desc_pool_free(struct mdma_desc_pool* pool)
 {
 	struct mdma_chan *chan = pool_to_chan(pool);
+	int i;
 
-	if (pool->sgt.sgl) {
-		dma_unmap_sg(chan->mdev->dev, pool->sgt.sgl, pool->sgt.nents,
-		             DMA_BIDIRECTIONAL);
-		kfree(pool->sgt.sgl);
-		pool->sgt.sgl = NULL;
+	for (i = 0; i < pool->cnt_chunks; ++i) {
+		if (pool->chunks[i].descs) {
+			dma_free_coherent(chan->dev, MDMA_POOL_CHUNK_SIZE,
+			                  pool->chunks[i].descs,
+			                  pool->chunks[i].dma_addr);
+			pool->chunks[i].descs = NULL;
+		}
 	}
 
-	if (pool->pages) {
-		kfree(pool->pages);
-		pool->pages = NULL;
-	}
-
-	if (pool->ptr) {
-		vfree(pool->ptr);
-		pool->ptr = NULL;
+	if (pool->chunks) {
+		kfree(pool->chunks);
+		pool->chunks = NULL;
 	}
 }
 
@@ -121,102 +66,72 @@ int mdma_desc_pool_alloc(struct mdma_desc_pool* pool, unsigned cnt)
 {
 	struct mdma_chan *chan = pool_to_chan(pool);
 	int ret = 0;
-	int nr_pages; 
-	struct scatterlist* sg;
-	void *p; 
-	int i;
-	unsigned long size = cnt * sizeof(struct mdma_desc_long_ll);
+	unsigned i = 0;
+	unsigned cnt_chunks;
 	struct mdma_desc_long_ll link = {0};
+	const unsigned cnt_in_chunk = MDMA_POOL_CHUNK_SIZE / 
+	                              sizeof(struct mdma_desc_long_ll);
 
-	pool->ptr = vmalloc(size + MDMA_DESC_ALIGNMENT);
+	pool->cnt_chunks = (cnt + cnt_in_chunk - 1) / cnt_in_chunk;
 
-	if (!pool->ptr) {
+	pool->chunks = kmalloc_array(pool->cnt_chunks,
+	                             sizeof(struct mdma_pool_chunk),
+	                             GFP_KERNEL);
+
+	if (!pool->chunks) {
+		pool->cnt_chunks = 0;
 		dev_err(chan->dev, 
-		        "%s: Failed to allocate memory (%lu bytes).\n",
-		        __func__, size + MDMA_DESC_ALIGNMENT);
-		return -ENOMEM;
-	}
-
-	memset(pool->ptr, 0, size + MDMA_DESC_ALIGNMENT);
-
-	pool->descs = (struct mdma_desc_long_ll *)ALIGN((size_t)pool->ptr, 
-	                                                MDMA_DESC_ALIGNMENT);
-
-	pool->size = cnt;
-	pool->cnt = cnt;
-	pool->next = 0;
-	pool->head = 0;
-
-	nr_pages = DIV_ROUND_UP((unsigned long)pool->descs + size, PAGE_SIZE) -
-	           (unsigned long)pool->descs / PAGE_SIZE;
-	pool->pages = kmalloc_array(nr_pages, sizeof(struct page *), 
-	                            GFP_KERNEL);
-	if (!pool->pages) {
-		dev_err(chan->dev,
-		        "%s: Failed to allocate array for %d pages.\n",
-		        __func__, nr_pages);
+		        "%s: Failed to allocate chunks array (%u items).\n",
+		        __func__, pool->cnt_chunks);
 		ret = -ENOMEM;
 		goto err_free_pool;
 	}
 
-	p = (void*)pool->descs - offset_in_page(pool->descs);
-	for (i = 0; i < nr_pages; i++) {
-		if (is_vmalloc_addr(p))
-			pool->pages[i] = vmalloc_to_page(p);
-		else
-			pool->pages[i] = virt_to_page((void *)p);
-		if (!pool->pages[i]) {
-			dev_err(chan->dev,
-			        "%s: Failed to get page for address 0x%px.\n",
-			        __func__, p);
-			ret = -EFAULT;
+	memset(pool->chunks, 0,
+	       sizeof(struct mdma_pool_chunk) * pool->cnt_chunks);
+
+	pool->size = 0;
+
+	while (pool->size < cnt) {
+		pool->chunks[i].descs = 
+			dma_alloc_coherent(chan->dev, MDMA_POOL_CHUNK_SIZE,
+			                   &pool->chunks[i].dma_addr,
+			                   GFP_KERNEL);
+
+		if (!pool->chunks[i].descs) {
+			dev_err(chan->dev, 
+			        "%s: Failed to allocate DMA-coherent memory "
+			        "(%d bytes).\n",
+			        __func__, MDMA_POOL_CHUNK_SIZE);
+			ret = -ENOMEM;
 			goto err_free_pool;
 		}
 
-		p += PAGE_SIZE;
+		memset(pool->chunks[i].descs, 0, MDMA_POOL_CHUNK_SIZE);
+
+		pool->size += cnt_in_chunk;
+
+		++i;
 	}
 
-	ret = mdma_sg_alloc_from_pages(&pool->sgt, pool->pages, nr_pages,
-	                               offset_in_page(pool->descs), size,
-	                               SCATTERLIST_MAX_SEGMENT, GFP_KERNEL);
-
-	if (ret) {
-		dev_err(chan->dev,
-		        "%s: Failed to allocate SG-table (%d pages).\n",
-		        __func__, nr_pages);
-		ret = -EFAULT;
-		goto err_free_pool;
-	}
-
-	ret = dma_map_sg(chan->mdev->dev, pool->sgt.sgl, pool->sgt.nents, 
-	                 DMA_BIDIRECTIONAL);
-	if (ret == 0) {
-		dev_err(chan->dev, "%s: Failed to map SG-table.\n", __func__);
-		ret = -EFAULT;
-		goto err_free_pool;
-	}
+	pool->cnt = pool->size;
+	pool->next = 0;
+	pool->head = 0;
 
 	link.flags_length = MDMA_BD_LINK;
 
-	p = (void*)pool->descs;
+	for (i = 0; i < pool->cnt_chunks; ++i) {
+		if (i + 1 < pool->cnt_chunks)
+			link.memptr = pool->chunks[i + 1].dma_addr;
+		else
+			link.memptr = pool->chunks[0].dma_addr;
 
-	for_each_sg(pool->sgt.sgl, sg, pool->sgt.nents, i) {
-		u32 len  = sg_dma_len(sg);
-
-		if (i == pool->sgt.nents - 1) {
-			link.memptr = sg_dma_address(pool->sgt.sgl);
-		} else {
-			link.memptr = sg_dma_address(sg_next(sg));
-		}
-
-		memcpy(p + len - sizeof(link), &link, sizeof(link));
-
-		p += len;
+		pool->chunks[i].descs[cnt_in_chunk - 1] = link;
 	}
 
 	dev_dbg(chan->dev, "[%s] descriptor's pool allocated "
-	                   "(%u descriptors in %u sg-entries)\n",
-	                   chan->name, cnt, pool->sgt.nents);
+	                   "(%u descriptors in %u chunks)\n",
+	                   chan->name, cnt, cnt_chunks);
 
 	return 0;
 
@@ -227,27 +142,29 @@ err_free_pool:
 
 dma_addr_t mdma_desc_pool_get_addr(struct mdma_desc_pool* pool, unsigned pos)
 {
-	struct scatterlist* sg;
-	int i;
+	const unsigned cnt_in_chunk = MDMA_POOL_CHUNK_SIZE / 
+	                              sizeof(struct mdma_desc_long_ll);
+	unsigned num_chunk = pos / cnt_in_chunk;
 
-	for_each_sg(pool->sgt.sgl, sg, pool->sgt.nents, i) {
-		u32 len = sg_dma_len(sg);
-		u32 cnt = len / sizeof(struct mdma_desc_long_ll);
+	return pool->chunks[num_chunk].dma_addr + 
+	       (pos % cnt_in_chunk) * sizeof(struct mdma_desc_long_ll);
+}
 
-		if (cnt <= pos) {
-			pos -= cnt;
-		} else {
-			dma_addr_t addr = sg_dma_address(sg);
-			return addr + pos * sizeof(struct mdma_desc_long_ll);
-		}
-	}
+struct mdma_desc_long_ll* mdma_desc_pool_get_desc(struct mdma_desc_pool* pool,
+                                                  unsigned pos)
+{
+	const unsigned cnt_in_chunk = MDMA_POOL_CHUNK_SIZE / 
+	                              sizeof(struct mdma_desc_long_ll);
+	unsigned num_chunk = pos / cnt_in_chunk;
 
-	return 0;
+	return pool->chunks[num_chunk].descs + (pos % cnt_in_chunk);
 }
 
 unsigned mdma_desc_pool_get(struct mdma_desc_pool* pool, 
                             unsigned cnt, unsigned *pos)
 {
+	const unsigned cnt_in_chunk = MDMA_POOL_CHUNK_SIZE / 
+	                              sizeof(struct mdma_desc_long_ll);
 	unsigned i;
 	unsigned n;
 
@@ -258,7 +175,7 @@ unsigned mdma_desc_pool_get(struct mdma_desc_pool* pool,
 	n = 0;
 
 	while ((n != cnt) && (cnt <= pool->cnt)) {
-		if (pool->descs[i].flags_length & MDMA_BD_LINK)
+		if ((i % cnt_in_chunk) == cnt_in_chunk - 1)
 			++cnt;
 		++n;
 		i = (i + 1) % pool->size;
@@ -266,10 +183,6 @@ unsigned mdma_desc_pool_get(struct mdma_desc_pool* pool,
 
 	if (n != cnt)
 		return 0;
-
-	while (!IS_ALIGNED((size_t)&pool->descs[pool->next + cnt],
-	                   dma_get_cache_alignment()))
-		++cnt;
 
 	i = pool->next;
 
@@ -306,51 +219,6 @@ void mdma_desc_pool_put(struct mdma_desc_pool* pool,
 	pool->cnt += cnt;
 }
 
-void mdma_desc_pool_sync(struct mdma_desc_pool* pool,
-                         unsigned pos, unsigned cnt, bool to_device)
-{
-	struct mdma_chan *chan = pool_to_chan(pool);
-	struct scatterlist* sg;
-	int i;
-	unsigned cnt_sync = 0;
-
-	for_each_sg(pool->sgt.sgl, sg, pool->sgt.nents, i) {
-		u32 len = sg_dma_len(sg);
-		u32 n = len / sizeof(struct mdma_desc_long_ll);
-
-		if (n <= pos) {
-			pos -= n;
-		} else {
-			break;
-		}
-	}
-
-	do {
-		dma_addr_t addr = sg_dma_address(sg);
-		u32 len = sg_dma_len(sg);
-
-		if (pos != 0) {
-			addr += pos * sizeof(struct mdma_desc_long_ll);
-			len  -= pos * sizeof(struct mdma_desc_long_ll);
-			pos = 0;
-		}
-
-		if (len > cnt * sizeof(struct mdma_desc_long_ll))
-			len = cnt * sizeof(struct mdma_desc_long_ll);
-
-		if (to_device)
-			dma_sync_single_for_device(chan->mdev->dev, addr, len, 
-		                                   DMA_BIDIRECTIONAL);
-		else
-			dma_sync_single_for_cpu(chan->mdev->dev, addr, len, 
-		                                DMA_BIDIRECTIONAL);
-
-		cnt -= len / sizeof(struct mdma_desc_long_ll);
-
-		sg = (sg_is_last(sg)) ? pool->sgt.sgl : sg_next(sg);
-	} while (cnt != 0);
-}
-
 unsigned mdma_desc_pool_fill(struct mdma_desc_pool* pool, unsigned pos, 
                              dma_addr_t dma_addr, size_t len, bool stop_int)
 {
@@ -359,9 +227,9 @@ unsigned mdma_desc_pool_fill(struct mdma_desc_pool* pool, unsigned pos,
 	size_t seg_len;
 	unsigned cnt = 0;
 
-	desc = &pool->descs[pos];
-
 	do {
+		desc = mdma_desc_pool_get_desc(pool, pos);
+
 		if (desc->flags_length & MDMA_BD_LINK) {
 			desc->flags_length = MDMA_BD_LINK;
 		} else {
@@ -380,11 +248,6 @@ unsigned mdma_desc_pool_fill(struct mdma_desc_pool* pool, unsigned pos,
 			dma_addr += seg_len;
 		}
 
-		if (pos + 1 == pool->size)
-			desc = pool->descs;
-		else
-			++desc;
-
 		pos = (pos + 1) % pool->size;
 		++cnt;
 	} while (len);
@@ -400,31 +263,29 @@ unsigned mdma_desc_pool_fill_like(struct mdma_desc_pool* pool, unsigned pos,
 {
 	struct mdma_chan *chan = pool_to_chan(pool);
 	struct mdma_desc_long_ll *desc;
+	struct mdma_desc_long_ll *desc_base;
 	size_t seg_len;
 	unsigned cnt = 0;
 
-	desc = &pool->descs[pos];
-
 	do {
-		if (pool_base->descs[pos_base].flags_length & MDMA_BD_LINK) {
+		desc = mdma_desc_pool_get_desc(pool, pos);
+		desc_base = mdma_desc_pool_get_desc(pool_base, pos_base);
+
+		if (desc_base->flags_length & MDMA_BD_LINK) {
 			pos_base = (pos_base + 1) % pool_base->size;
 			continue;
 		}
 
-		seg_len = (pool_base->descs[pos_base].flags_length &
-		           MDMA_BD_LEN_MASK);
+		seg_len = (desc_base->flags_length & MDMA_BD_LEN_MASK);
 		pos_base = (pos_base + 1) % pool_base->size;
 
 		if (desc->flags_length & MDMA_BD_LINK) {
 			desc->flags_length = MDMA_BD_LINK;
 
-			if (pos + 1 == pool->size)
-				desc = pool->descs;
-			else
-				++desc;
-
 			pos = (pos + 1) % pool->size;
 			++cnt;
+
+			desc = mdma_desc_pool_get_desc(pool, pos);
 		}
 
 		if (len < seg_len) {
@@ -446,11 +307,6 @@ unsigned mdma_desc_pool_fill_like(struct mdma_desc_pool* pool, unsigned pos,
 		desc->memptr = dma_addr;
 		dma_addr += seg_len;
 
-		if (pos + 1 == pool->size)
-			desc = pool->descs;
-		else
-			++desc;
-
 		pos = (pos + 1) % pool->size;
 		++cnt;
 	} while (len);
@@ -469,26 +325,23 @@ unsigned mdma_desc_pool_fill_sg(struct mdma_desc_pool* pool, unsigned pos,
 	struct scatterlist *s;
 	int i;
 
-	desc = &pool->descs[pos];
-
 	for_each_sg(sg, s, sg_len, i) {
 		dma_addr_t dma_addr = sg_dma_address(s);
 		size_t dma_len  = sg_dma_len(s);
 
 		while (dma_len > 0) {
+			desc = mdma_desc_pool_get_desc(pool, pos);
+
 			seg_len = min_t(size_t, dma_len, chan->max_transaction);
 			dma_len -= seg_len;
 
 			if (desc->flags_length & MDMA_BD_LINK) {
 				desc->flags_length = MDMA_BD_LINK;
 
-				if (pos + 1 == pool->size)
-					desc = pool->descs;
-				else
-					++desc;
-
 				pos = (pos + 1) % pool->size;
 				++cnt;
+
+				desc = mdma_desc_pool_get_desc(pool, pos);
 			}
 
 			desc->flags_length = seg_len;
@@ -501,11 +354,6 @@ unsigned mdma_desc_pool_fill_sg(struct mdma_desc_pool* pool, unsigned pos,
 
 			desc->memptr = dma_addr;
 			dma_addr += seg_len;
-
-			if (pos + 1 == pool->size)
-				desc = pool->descs;
-			else
-				++desc;
 
 			pos = (pos + 1) % pool->size;
 			++cnt;
@@ -715,31 +563,30 @@ dma_cookie_t mdma_tx_submit(struct dma_async_tx_descriptor *tx)
 }
 
 static size_t mdma_get_residue(struct mdma_chan *chan,
-                               struct mdma_desc_sw *desc)
+                               struct mdma_desc_sw *sw_desc)
 {
 	struct mdma_desc_pool* pool = &chan->desc_pool;
 	size_t len = 0;
 	unsigned i = 0;
 	unsigned pos;
-	u32 flags_length;
-
-	mdma_desc_pool_sync(pool, desc->pos, desc->cnt, false);
+	struct mdma_desc_long_ll *desc;
 
 	do {
-		pos = (desc->pos + i) % pool->size;
-		len += pool->descs[pos].flags_length & chan->len_mask;
+		pos = (sw_desc->pos + i) % pool->size;
+		desc = mdma_desc_pool_get_desc(pool, pos);
+		len += desc->flags_length & chan->len_mask;
 		++i;
-	} while (((pool->descs[pos].flags_length & MDMA_BD_STOP) == 0) &&
-	         (i < desc->cnt));
+	} while (((desc->flags_length & MDMA_BD_STOP) == 0) &&
+	         (i < sw_desc->cnt));
 
-	if (len > desc->len) {
+	if (len > sw_desc->len) {
 		dev_warn(chan->dev, "[%s] Transferred length more than "
 		                    "requested (%u > %u).\n",
-		                    chan->name, len, desc->len);
-		len = desc->len;
+		                    chan->name, len, sw_desc->len);
+		len = sw_desc->len;
 	}
 
-	return desc->len - len;
+	return sw_desc->len - len;
 }
 
 static enum dma_status mdma_device_tx_status(struct dma_chan *dchan,
@@ -1064,8 +911,6 @@ mdma_prep_slave_sg(struct dma_chan *dchan, struct scatterlist *sgl,
 
 	spin_unlock_irqrestore(&chan->lock, irqflags);
 
-	mdma_desc_pool_sync(&chan->desc_pool, sw_desc->pos, sw_desc->cnt, true);
-
 	async_tx_ack(&sw_desc->async_tx);
 	sw_desc->async_tx.flags = flags;
 
@@ -1137,6 +982,9 @@ static irqreturn_t mdma_irq_handler(int irq, void *data)
 
 	if (mdma_prepare_transfer(chan))
 		mdma_start_transfer(chan);
+	else if (chan->dir == DMA_DEV_TO_MEM)
+		dev_dbg(chan->dev, "[%s] IRQ: no pending descriptors.",
+		        chan->name);
 
 	spin_unlock(&chan->lock);
 

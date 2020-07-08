@@ -14,8 +14,8 @@
 
 /* Max number of descriptors per channel */
 #define MDMA_NUM_DESCS          32
-#define MDMA_DESC_SIZE(chan)    (chan->desc_size)
 #define MDMA_POOL_SIZE          262144
+#define MDMA_POOL_CHUNK_SIZE    16384
 #define MDMA_PM_TIMEOUT         100
 #define MDMA_BUS_WIDTH_128      128
 
@@ -158,16 +158,19 @@ struct mdma_desc_sw {
 	dma_cookie_t cookie;
 };
 
-struct mdma_desc_pool {
+struct mdma_pool_chunk {
 	struct mdma_desc_long_ll *descs;
+	dma_addr_t                dma_addr;
+};
+
+struct mdma_desc_pool {
+	struct mdma_pool_chunk*   chunks;
+	unsigned                  cnt_chunks;
+
 	unsigned                  size;
 	unsigned                  cnt;
 	unsigned                  head;
 	unsigned                  next;
-
-	struct sg_table           sgt;
-	struct page             **pages;
-	void*                     ptr;
 };
 
 struct mdma_chan {
@@ -256,8 +259,6 @@ unsigned mdma_desc_pool_fill_sg(struct mdma_desc_pool* pool, unsigned pos,
                                 bool stop_int);
 void mdma_desc_pool_put(struct mdma_desc_pool* pool,
                         unsigned pos, unsigned cnt);
-void mdma_desc_pool_sync(struct mdma_desc_pool* pool,
-                         unsigned pos, unsigned cnt, bool to_device);
 
 unsigned mdma_cnt_desc_needed(struct mdma_chan *chan, struct scatterlist *sgl,
                               unsigned int sg_len, size_t *len);
