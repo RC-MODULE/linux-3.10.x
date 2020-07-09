@@ -5,7 +5,7 @@
  *
  *  Copyright (C) 2020 Alexey Spirkov <dev@alsp.net>
  */
-#define DEBUG
+//#define DEBUG
 
 #include <linux/kernel.h>
 #include <linux/module.h>
@@ -233,7 +233,8 @@ unsigned mdma_desc_pool_fill(struct mdma_desc_pool* pool, unsigned pos,
 		if (desc->flags_length & MDMA_BD_LINK) {
 			desc->flags_length = MDMA_BD_LINK;
 		} else {
-			seg_len = min_t(size_t, len, chan->max_transaction);
+			seg_len = min_t(size_t, len,
+			                chan->mdev->of_data->max_transaction);
 			len -= seg_len;
 
 			desc->flags_length = seg_len;
@@ -276,7 +277,8 @@ unsigned mdma_desc_pool_fill_like(struct mdma_desc_pool* pool, unsigned pos,
 			continue;
 		}
 
-		seg_len = (desc_base->flags_length & MDMA_BD_LEN_MASK);
+		seg_len = (desc_base->flags_length & 
+		           chan->mdev->of_data->len_mask);
 		pos_base = (pos_base + 1) % pool_base->size;
 
 		if (desc->flags_length & MDMA_BD_LINK) {
@@ -332,7 +334,8 @@ unsigned mdma_desc_pool_fill_sg(struct mdma_desc_pool* pool, unsigned pos,
 		while (dma_len > 0) {
 			desc = mdma_desc_pool_get_desc(pool, pos);
 
-			seg_len = min_t(size_t, dma_len, chan->max_transaction);
+			seg_len = min_t(size_t, dma_len,
+			                chan->mdev->of_data->max_transaction);
 			dma_len -= seg_len;
 
 			if (desc->flags_length & MDMA_BD_LINK) {
@@ -379,9 +382,9 @@ unsigned mdma_cnt_desc_needed(struct mdma_chan *chan, struct scatterlist *sgl,
 		if (len)
 			*len += seg_len;
 
-		while (seg_len > chan->max_transaction) {
+		while (seg_len > chan->mdev->of_data->max_transaction) {
 			++cnt_descs;
-			seg_len -= chan->max_transaction;
+			seg_len -= chan->mdev->of_data->max_transaction;
 		}
 
 		++cnt_descs;
@@ -416,7 +419,7 @@ static void mdma_update_desc_to_ctrlr(struct mdma_chan *chan,
 
 void mdma_config(struct mdma_chan *chan, struct mdma_desc_sw *desc)
 {
-	writel(chan->ch_settings, &chan->regs->settings);
+	writel(chan->mdev->of_data->ch_settings, &chan->regs->settings);
 
 	writel(desc->config.src_maxburst, &chan->regs->axlen);
 }
@@ -574,7 +577,7 @@ static size_t mdma_get_residue(struct mdma_chan *chan,
 	do {
 		pos = (sw_desc->pos + i) % pool->size;
 		desc = mdma_desc_pool_get_desc(pool, pos);
-		len += desc->flags_length & chan->len_mask;
+		len += desc->flags_length & chan->mdev->of_data->len_mask;
 		++i;
 	} while (((desc->flags_length & MDMA_BD_STOP) == 0) &&
 	         (i < sw_desc->cnt));
@@ -782,27 +785,29 @@ int mdma_alloc_chan_resources(struct dma_chan *dchan)
 		}
 	}
 
-	chan->sw_desc_pool = kcalloc(MDMA_NUM_DESCS, sizeof(*desc), GFP_KERNEL);
+	chan->sw_desc_pool = kcalloc(mdev->of_data->sw_desc_pool_size,
+	                             sizeof(*desc), GFP_KERNEL);
 	if (!chan->sw_desc_pool)
 		return -ENOMEM;
 
 	chan->active_desc = NULL;
 	chan->prepared_desc = NULL;
-	chan->desc_free_cnt = MDMA_NUM_DESCS;
+	chan->desc_free_cnt = mdev->of_data->sw_desc_pool_size;
 
-	for (i = 0; i < MDMA_NUM_DESCS; i++) {
+	for (i = 0; i < mdev->of_data->sw_desc_pool_size; i++) {
 		desc = chan->sw_desc_pool + i;
 		dma_async_tx_descriptor_init(&desc->async_tx, &chan->slave);
 		desc->async_tx.tx_submit = chan->mdev->of_data->tx_submit;
 		list_add_tail(&desc->node, &chan->free_list);
 	}
 
-	ret = mdma_desc_pool_alloc(&chan->desc_pool, MDMA_POOL_SIZE);
+	ret = mdma_desc_pool_alloc(&chan->desc_pool,
+	                           mdev->of_data->hw_desc_pool_size);
 
 	if (ret)
 		return ret;
 
-	return MDMA_POOL_SIZE;
+	return mdev->of_data->sw_desc_pool_size;
 }
 
 /**
@@ -1063,10 +1068,6 @@ static int mdma_chan_probe(struct platform_device *pdev, struct mdma_chan *chan)
 {
 	struct device_node *node = chan->dev->of_node;
 	int err;
-
-	chan->max_transaction = chan->mdev->of_data->max_transaction;
-	chan->len_mask        = chan->mdev->of_data->len_mask;
-	chan->ch_settings     = chan->mdev->of_data->ch_settings;
 
 	chan->config.src_addr = 0;
 	chan->config.dst_addr = 0;
@@ -1337,6 +1338,9 @@ extern const struct mdma_of_data mdma_gp_of_data;
 const struct mdma_of_data mdma_mgeth_of_data = {
 	.max_transaction             = 0x3FFC,
 	.len_mask                    = 0x3FFF,
+	.sw_desc_pool_size           = 64,
+	.hw_desc_pool_size           = MDMA_POOL_CHUNK_SIZE / 
+	                               sizeof(struct mdma_desc_long_ll),
 	.ch_settings                 = 
 		MDMA_CHAN_DESC_LONG | MDMA_CHAN_ADD_INFO | 
 		(sizeof(struct mdma_desc_long_ll) << MDMA_CHAN_DESC_GAP_SHIFT),

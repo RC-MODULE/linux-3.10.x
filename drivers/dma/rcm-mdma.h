@@ -12,9 +12,6 @@
 // Max number of channels (in specific direction)
 #define MDMA_MAX_CHANNELS 4
 
-/* Max number of descriptors per channel */
-#define MDMA_NUM_DESCS          32
-#define MDMA_POOL_SIZE          262144
 #define MDMA_POOL_CHUNK_SIZE    16384
 #define MDMA_PM_TIMEOUT         100
 #define MDMA_BUS_WIDTH_128      128
@@ -25,8 +22,6 @@
 #define MDMA_BD_INT  0x20000000
 #define MDMA_BD_STOP 0x10000000
 #define MDMA_BD_INC  0x8000000
-
-#define MDMA_BD_LEN_MASK 0x03FFFFFF
 
 // channel settings
 #define MDMA_CHAN_DESC_NORMAL 0x00000000
@@ -191,9 +186,6 @@ struct mdma_chan {
 	enum dma_transfer_direction dir;
 	u32 bus_width;
 	struct dma_slave_config config;
-	size_t max_transaction;
-	size_t len_mask;
-	u32 ch_settings;
 	char name[8];
 	int irq;
 	struct tasklet_struct tasklet;
@@ -203,6 +195,8 @@ struct mdma_chan {
 struct mdma_of_data {
 	size_t max_transaction;
 	size_t len_mask;
+	unsigned sw_desc_pool_size;
+	unsigned hw_desc_pool_size;
 	u32 ch_settings;
 
 	int (*device_alloc_chan_resources)(struct dma_chan *chan);

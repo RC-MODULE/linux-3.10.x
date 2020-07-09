@@ -90,7 +90,7 @@ mdma_gp_prep_memcpy(struct dma_chan *dchan, dma_addr_t dma_dst,
 
 	do {
 		++cnt_descs;
-		copy -= min_t(size_t, copy, mdev->rx[0].max_transaction);
+		copy -= min_t(size_t, copy, mdev->of_data->max_transaction);
 	} while (copy);
 
 	spin_lock_irqsave(&mdev->rx[0].lock, irqflags);
@@ -525,6 +525,8 @@ static void mdma_gp_do_tasklet(unsigned long data)
 const struct mdma_of_data mdma_gp_of_data = {
 	.max_transaction             = MDMA_GP_MAX_TRANS_LEN,
 	.len_mask                    = MDMA_GP_LEN_MASK,
+	.sw_desc_pool_size           = 32,
+	.hw_desc_pool_size           = 262144,
 	.ch_settings                 = 
 		MDMA_CHAN_DESC_LONG | 
 		(sizeof(struct mdma_desc_long_ll) << MDMA_CHAN_DESC_GAP_SHIFT),
