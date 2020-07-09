@@ -792,8 +792,6 @@ static int rcm_mgeth_close(struct net_device *netdev)
 		data->phydev = NULL;
 	}
 
-	free_irq(data->irq, netdev);
-
 	return 0;
 }
 
@@ -1246,6 +1244,9 @@ static int rcm_mgeth_remove(struct platform_device *pdev)
 	unregister_netdev(netdev);
 
 	rcm_mgeth_free_dma(data);
+
+	if (data->domain)
+		irq_domain_remove(data->domain);
 
 	return 0;
 }
