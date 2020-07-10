@@ -156,8 +156,11 @@ struct ktermios {
 #define  B2500000 0010014
 #define  B3000000 0010015
 #define  B3500000 0010016
-#define  B4000000 0010017
-#define  B6250000 0010020
+#ifndef CONFIG_TARGET_1888BC048
+#	define  B4000000 0010017
+#else
+#	define  B6250000 0010017
+#endif
 #define CIBAUD	  002003600000	/* input baud rate */
 #define CMSPAR	  010000000000	/* mark or space (stick) parity */
 #define CRTSCTS	  020000000000	/* flow control */
