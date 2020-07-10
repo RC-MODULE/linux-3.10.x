@@ -1,14 +1,15 @@
 /*
  *
  */
+#include <dt-bindings/net/ti-dp83867.h>
 
 /dts-v1/;
 / {
     model = "RC-Module 1888BC048 (Basis) SoC";
     compatible = "rcm,1888BC048";
 
-	#address-cells = <1>;
-	#size-cells = <1>;
+    #address-cells = <1>;
+    #size-cells = <1>;
 
     aliases {
         uart0 = &uart0;
@@ -33,7 +34,7 @@
         device_type = "memory";
         reg = <0xC0000000 0x40000000>;
     };
-    
+
     cpus {
         #address-cells = <1>;
         #size-cells = <0>;
@@ -43,7 +44,7 @@
             device_type = "cpu";
             compatible = "arm,cortex-a5";
             next-level-cache = <&L2>;
-			clocks = <&clock_arm>;
+            clocks = <&clock_arm>;
         };
     };
 
@@ -84,8 +85,11 @@
         ranges;
 
         mdma_gp0: dma@01010000 {
-            compatible = "rcm,mdma";
-            reg = <0x01010000 0x1000>;
+            compatible = "rcm,mdma-gp";
+            reg = <0x01010000 0x100>,
+                  <0x01010100 0x100>,
+                  <0x01010200 0x100>;
+            reg-names = "cfg", "rx0", "tx0";
             #dma-cells = <1>;
             interrupt-parent = <&gic0>;
             interrupts = <0 32 4>;
@@ -93,8 +97,11 @@
             rcm,bus-width = <128>;
         };
         mdma_gp1: dma@01011000 {
-            compatible = "rcm,mdma";
-            reg = <0x01011000 0x1000>;
+            compatible = "rcm,mdma-gp";
+            reg = <0x01011000 0x100>,
+                  <0x01011100 0x100>,
+                  <0x01011200 0x100>;
+            reg-names = "cfg", "rx0", "tx0";
             #dma-cells = <1>;
             interrupt-parent = <&gic0>;
             interrupts = <0 33 4>;
@@ -102,8 +109,11 @@
             rcm,bus-width = <128>;
         };
         mdma_gp2: dma@01012000 {
-            compatible = "rcm,mdma";
-            reg = <0x01012000 0x1000>;
+            compatible = "rcm,mdma-gp";
+            reg = <0x01012000 0x100>,
+                  <0x01012100 0x100>,
+                  <0x01012200 0x100>;
+            reg-names = "cfg", "rx0", "tx0";
             #dma-cells = <1>;
             interrupt-parent = <&gic0>;
             interrupts = <0 34 4>;
@@ -111,11 +121,205 @@
             rcm,bus-width = <128>;
         };
         mdma_gp3: dma@01013000 {
-            compatible = "rcm,mdma";
-            reg = <0x01013000 0x1000>;
+            compatible = "rcm,mdma-gp";
+            reg = <0x01013000 0x100>,
+                  <0x01013100 0x100>,
+                  <0x01013200 0x100>;
+            reg-names = "cfg", "rx0", "tx0";
             #dma-cells = <1>;
             interrupt-parent = <&gic0>;
             interrupts = <0 35 4>;
+            clocks = <&clock_axi_fast>;
+            rcm,bus-width = <128>;
+        };
+
+        mgeth0: mgeth0@0x01014000 {
+            compatible = "rcm,mgeth";
+            reg = <0x01014000 0x200>,
+                  <0x01014200 0x100>,
+                  <0x01014400 0x100>,
+                  <0x01014600 0x100>,
+                  <0x01014800 0x100>;
+            reg-names = "reg", "rx-mask0", "rx-mask1", "rx-mask2", "rx-mask3";
+            clocks = <&clock_axi_fast>;
+/*
+            mac-address = [ec 17 66 64 08 10];
+*/
+            phys = <&sgmiiphy>;
+            phy-handle = <&phy0>;
+            phy-mode = "sgmii";
+            interrupt-parent = <&gic0>;
+            interrupts = <0 19 4>;
+            interrupt-controller;
+            #interrupt-cells = <2>;
+            dmas = <&mdma_mgeth0 0
+                    &mdma_mgeth0 1
+                    &mdma_mgeth0 2
+                    &mdma_mgeth0 3
+                    &mdma_mgeth0 4
+                    &mdma_mgeth0 5
+                    &mdma_mgeth0 6
+                    &mdma_mgeth0 7>;
+            dma-names = "tx0", "rx0", "tx1", "rx1", "tx2", "rx2", "tx3", "rx3";
+            status = "okay";
+        };
+
+        mdma_mgeth0: dma@01014000 {
+            compatible = "rcm,mdma-mgeth";
+            reg = <0x01014300 0x100>,
+                  <0x01014500 0x100>,
+                  <0x01014700 0x100>,
+                  <0x01014900 0x100>,
+                  <0x01014A00 0x100>,
+                  <0x01014B00 0x100>,
+                  <0x01014C00 0x100>,
+                  <0x01014D00 0x100>;
+            reg-names = "tx0", "tx1", "tx2", "tx3", "rx0", "rx1", "rx2", "rx3";
+            #dma-cells = <1>;
+            interrupt-parent = <&mgeth0>;
+            interrupts = <0 4>, <1 4>, <2 4>, <3 4>, <4 4>, <5 4>, <6 4>, <7 4>;
+            interrupt-names = "rx0", "rx1", "rx2", "rx3", "tx0", "tx1", "tx2", "tx3";
+            clocks = <&clock_axi_fast>;
+            rcm,bus-width = <128>;
+        };
+
+        mgeth1: mgeth1@0x01015000 {
+            compatible = "rcm,mgeth";
+            reg = <0x01015000 0x200>,
+                  <0x01015200 0x100>,
+                  <0x01015400 0x100>,
+                  <0x01015600 0x100>,
+                  <0x01015800 0x100>;
+            reg-names = "reg", "rx-mask0", "rx-mask1", "rx-mask2", "rx-mask3";
+            clocks = <&clock_axi_fast>;
+            phys = <&sgmiiphy>;
+            phy-handle = <&phy1>;
+            phy-mode = "sgmii";
+            interrupt-parent = <&gic0>;
+            interrupts = <0 20 4>;
+            interrupt-controller;
+            #interrupt-cells = <2>;
+            dmas = <&mdma_mgeth1 0
+                    &mdma_mgeth1 1
+                    &mdma_mgeth1 2
+                    &mdma_mgeth1 3
+                    &mdma_mgeth1 4
+                    &mdma_mgeth1 5
+                    &mdma_mgeth1 6
+                    &mdma_mgeth1 7>;
+            dma-names = "tx0", "rx0", "tx1", "rx1", "tx2", "rx2", "tx3", "rx3";
+            status = "okay";
+        };
+
+        mdma_mgeth1: dma@01015000 {
+            compatible = "rcm,mdma-mgeth";
+            reg = <0x01015300 0x100>,
+                  <0x01015500 0x100>,
+                  <0x01015700 0x100>,
+                  <0x01015900 0x100>,
+                  <0x01015A00 0x100>,
+                  <0x01015B00 0x100>,
+                  <0x01015C00 0x100>,
+                  <0x01015D00 0x100>;
+            reg-names = "tx0", "tx1", "tx2", "tx3", "rx0", "rx1", "rx2", "rx3";
+            #dma-cells = <1>;
+            interrupt-parent = <&mgeth1>;
+            interrupts = <0 4>, <1 4>, <2 4>, <3 4>, <4 4>, <5 4>, <6 4>, <7 4>;
+            interrupt-names = "rx0", "rx1", "rx2", "rx3", "tx0", "tx1", "tx2", "tx3";
+            clocks = <&clock_axi_fast>;
+            rcm,bus-width = <128>;
+        };
+
+        mgeth2: mgeth2@0x01016000 {
+            compatible = "rcm,mgeth";
+            reg = <0x01016000 0x200>,
+                  <0x01016200 0x100>,
+                  <0x01016400 0x100>,
+                  <0x01016600 0x100>,
+                  <0x01016800 0x100>;
+            reg-names = "reg", "rx-mask0", "rx-mask1", "rx-mask2", "rx-mask3";
+            clocks = <&clock_axi_fast>;
+            phys = <&sgmiiphy>;
+            phy-handle = <&phy2>;
+            phy-mode = "sgmii";
+            interrupt-parent = <&gic0>;
+            interrupts = <0 21 4>;
+            interrupt-controller;
+            #interrupt-cells = <2>;
+            dmas = <&mdma_mgeth2 0
+                    &mdma_mgeth2 1
+                    &mdma_mgeth2 2
+                    &mdma_mgeth2 3
+                    &mdma_mgeth2 4
+                    &mdma_mgeth2 5
+                    &mdma_mgeth2 6
+                    &mdma_mgeth2 7>;
+            dma-names = "tx0", "rx0", "tx1", "rx1", "tx2", "rx2", "tx3", "rx3";
+            status = "okay";
+        };
+
+        mdma_mgeth2: dma@01016000 {
+            compatible = "rcm,mdma-mgeth";
+            reg = <0x01016300 0x100>,
+                  <0x01016500 0x100>,
+                  <0x01016700 0x100>,
+                  <0x01016900 0x100>,
+                  <0x01016A00 0x100>,
+                  <0x01016B00 0x100>,
+                  <0x01016C00 0x100>,
+                  <0x01016D00 0x100>;
+            reg-names = "tx0", "tx1", "tx2", "tx3", "rx0", "rx1", "rx2", "rx3";
+            #dma-cells = <1>;
+            interrupt-parent = <&mgeth2>;
+            interrupts = <0 4>, <1 4>, <2 4>, <3 4>, <4 4>, <5 4>, <6 4>, <7 4>;
+            interrupt-names = "rx0", "rx1", "rx2", "rx3", "tx0", "tx1", "tx2", "tx3";
+            clocks = <&clock_axi_fast>;
+            rcm,bus-width = <128>;
+        };
+
+        mgeth3: mgeth3@0x01017000 {
+            compatible = "rcm,mgeth";
+            reg = <0x01017000 0x200>,
+                  <0x01017200 0x100>,
+                  <0x01017400 0x100>,
+                  <0x01017600 0x100>,
+                  <0x01017800 0x100>;
+            reg-names = "reg", "rx-mask0", "rx-mask1", "rx-mask2", "rx-mask3";
+            clocks = <&clock_axi_fast>;
+            phys = <&sgmiiphy>;
+            phy-handle = <&phy3>;
+            phy-mode = "sgmii";
+            interrupt-parent = <&gic0>;
+            interrupts = <0 22 4>;
+            interrupt-controller;
+            #interrupt-cells = <2>;
+            dmas = <&mdma_mgeth3 0
+                    &mdma_mgeth3 1
+                    &mdma_mgeth3 2
+                    &mdma_mgeth3 3
+                    &mdma_mgeth3 4
+                    &mdma_mgeth3 5
+                    &mdma_mgeth3 6
+                    &mdma_mgeth3 7>;
+            dma-names = "tx0", "rx0", "tx1", "rx1", "tx2", "rx2", "tx3", "rx3";
+            status = "okay";
+        };
+
+        mdma_mgeth3: dma@01017000 {
+            compatible = "rcm,mdma-mgeth";
+            reg = <0x01017300 0x100>,
+                  <0x01017500 0x100>,
+                  <0x01017700 0x100>,
+                  <0x01017900 0x100>,
+                  <0x01017A00 0x100>,
+                  <0x01017B00 0x100>,
+                  <0x01017C00 0x100>,
+                  <0x01017D00 0x100>;
+            reg-names = "tx0", "tx1", "tx2", "tx3", "rx0", "rx1", "rx2", "rx3";
+            #dma-cells = <1>;
+            interrupt-parent = <&mgeth3>;
+            interrupts = <0 4>, <1 4>, <2 4>, <3 4>, <4 4>, <5 4>, <6 4>, <7 4>;
+            interrupt-names = "rx0", "rx1", "rx2", "rx3", "tx0", "tx1", "tx2", "tx3";
             clocks = <&clock_axi_fast>;
             rcm,bus-width = <128>;
         };
@@ -145,15 +349,15 @@
             interrupts = <0 40 4>;
             clocks = <&clock_axi_slow>;
             clock-names = "apb_pclk";
-			cs-gpios = <&gpio0 5 0>;	
+            cs-gpios = <&gpio0 5 0>;
             num-cs = <1>;
 
             spi_flash0@0 {
-			    compatible = "st,w25q32", "spi-flash";
-			    reg = <0>;
-				spi-max-frequency = <1000000>;
-				spi-cpol;
-				spi-cpha;
+                compatible = "st,w25q32", "spi-flash";
+                reg = <0>;
+                spi-max-frequency = <1000000>;
+                spi-cpol;
+                spi-cpha;
             };
         };
 
@@ -186,7 +390,7 @@
             clock-names = "mmc";
         };
 
-        mmc1: mmc0@01043000 {
+        mmc1: mmc1@01043000 {
             // status = "disabled";
             compatible = "rcm,mmc-0.2";
             reg = <0x01043000 0x1000>;
@@ -203,21 +407,21 @@
             clock-names = "mmc";
         };
 
-	    uart0: uart0@01044000 {
-		    compatible = "rcm,muart";			
-			clocks = <&clock_axi_fast>, <&clock_axi_slow>;
-		    reg = <0x01044000 0x1000>;
+        uart0: uart0@01044000 {
+            compatible = "rcm,muart";
+            clocks = <&clock_axi_fast>, <&clock_axi_slow>;
+            reg = <0x01044000 0x1000>;
             interrupt-parent = <&gic0>;
             interrupts = <0 44 4>;
-		};
+        };
 
-	    uart1: uart1@01045000 {
-		    compatible = "rcm,muart";			
-			clocks = <&clock_axi_fast>, <&clock_axi_slow>;
-		    reg = <0x01045000 0x1000>;
+        uart1: uart1@01045000 {
+            compatible = "rcm,muart";
+            clocks = <&clock_axi_fast>, <&clock_axi_slow>;
+            reg = <0x01045000 0x1000>;
             interrupt-parent = <&gic0>;
             interrupts = <0 45 4>;
-		};
+        };
 
         timer01@01048000 {
             compatible = "arm,sp804", "arm,primecell";
@@ -274,75 +478,195 @@
             clock-names = "wdogclk", "apb_pclk";
         };
 
-		gpio0: gpio0@01088000 {
-		    compatible = "rcm,gpio";
-			#address-cells = <1>;
-		    #size-cells = <0>;
-			clocks = <&clock_axi_slow>;
-		    reg = <0x01088000 0x1000>;
+        gpio0: gpio0@01088000 {
+            compatible = "rcm,gpio";
+            #address-cells = <1>;
+            #size-cells = <0>;
+            clocks = <&clock_axi_slow>;
+            reg = <0x01088000 0x1000>;
             interrupt-parent = <&gic0>;
             interrupts = <0 46 1>;  // rising
-			gpio-controller;
-			#gpio-cells = <2>;
+            gpio-controller;
+            #gpio-cells = <2>;
             interrupt-controller;
             #interrupt-cells = <2>;
-		};
+        };
 
-		gpio1: gpio1@01089000 {
-		    compatible = "rcm,gpio";
-			#address-cells = <1>;
-		    #size-cells = <0>;
-			clocks = <&clock_axi_slow>;
-		    reg = <0x01089000 0x1000>;
+        gpio1: gpio1@01089000 {
+            compatible = "rcm,gpio";
+            #address-cells = <1>;
+            #size-cells = <0>;
+            clocks = <&clock_axi_slow>;
+            reg = <0x01089000 0x1000>;
             interrupt-parent = <&gic0>;
             interrupts = <0 47 1>;  // rising
-			gpio-controller;
-			#gpio-cells = <2>;
+            gpio-controller;
+            #gpio-cells = <2>;
             interrupt-controller;
             #interrupt-cells = <2>;
-		};
+        };
 
-		gpio2: gpio0@0108a000 {
-		    compatible = "rcm,gpio";
-			#address-cells = <1>;
-		    #size-cells = <0>;
-			clocks = <&clock_axi_slow>;
-		    reg = <0x0108a000 0x1000>;
+        gpio2: gpio0@0108a000 {
+            compatible = "rcm,gpio";
+            #address-cells = <1>;
+            #size-cells = <0>;
+            clocks = <&clock_axi_slow>;
+            reg = <0x0108a000 0x1000>;
             interrupt-parent = <&gic0>;
             interrupts = <0 48 1>;  // rising
-			gpio-controller;
-			#gpio-cells = <2>;
+            gpio-controller;
+            #gpio-cells = <2>;
             interrupt-controller;
             #interrupt-cells = <2>;
-		};
+        };
 
-		gpio3: gpio0@0108b000 {
-		    compatible = "rcm,gpio";
-			#address-cells = <1>;
-		    #size-cells = <0>;
-			clocks = <&clock_axi_slow>;
-		    reg = <0x0108b000 0x1000>;
+        gpio3: gpio0@0108b000 {
+            compatible = "rcm,gpio";
+            #address-cells = <1>;
+            #size-cells = <0>;
+            clocks = <&clock_axi_slow>;
+            reg = <0x0108b000 0x1000>;
             interrupt-parent = <&gic0>;
             interrupts = <0 49 1>;  // rising
-			gpio-controller;
-			#gpio-cells = <2>;
+            gpio-controller;
+            #gpio-cells = <2>;
             interrupt-controller;
             #interrupt-cells = <2>;
-		};
+        };
 
-		gpio4: gpio0@0108c000 {
-		    compatible = "rcm,gpio";
-			#address-cells = <1>;
-		    #size-cells = <0>;
-			clocks = <&clock_axi_slow>;
-		    reg = <0x0108c000 0x1000>;
+        gpio4: gpio0@0108c000 {
+            compatible = "rcm,gpio";
+            #address-cells = <1>;
+            #size-cells = <0>;
+            clocks = <&clock_axi_slow>;
+            reg = <0x0108c000 0x1000>;
             interrupt-parent = <&gic0>;
             interrupts = <0 50 1>;  // rising
-			gpio-controller;
-			#gpio-cells = <2>;
+            gpio-controller;
+            #gpio-cells = <2>;
             interrupt-controller;
             #interrupt-cells = <2>;
-		};
+        };
+
+        sctl: sctl@0x0108d000 {
+            compatible = "syscon";
+            reg = <0x0108d000 0x1000>;
+        };
+
+        mdiomux0: mdiomux0@0x01084000 {
+            compatible = "pinctrl-single";
+            reg = <0x01084000 0x1000>;
+            pinctrl-single,register-width = <32>;
+            pinctrl-single,function-mask = <0x3>;
+            #address-cells = <1>;
+            #size-cells = <0>;
+            #pinctrl-cells = <2>;
+            pinctrl-single,bit-per-mux;
+            mdio0mux0: mdio0mux0 {
+                    pinctrl-single,bits = <0x24 0x00 0x03>;
+            };
+            mdio1mux0: mdio1mux0 {
+                    pinctrl-single,bits = <0x24 0x00 0x0C>;
+            };
+            mdio2mux0: mdio2mux0 {
+                    pinctrl-single,bits = <0x24 0x00 0x30>;
+            };
+            mdio3mux0: mdio3mux0 {
+                    pinctrl-single,bits = <0x24 0x00 0xC0>;
+            };
+        };
+
+        mdiomux1: mdiomux1@0x01085000 {
+            compatible = "pinctrl-single";
+            reg = <0x01085000 0x1000>;
+            pinctrl-single,register-width = <32>;
+            pinctrl-single,function-mask = <0x1>;
+            #address-cells = <1>;
+            #size-cells = <0>;
+            #pinctrl-cells = <2>;
+            pinctrl-single,bit-per-mux;
+            mdio0mux1: mdio0mux1 {
+                    pinctrl-single,bits = <0x24 0x00 0x11>;
+            };
+            mdio1mux1: mdio1mux1 {
+                    pinctrl-single,bits = <0x24 0x00 0x22>;
+            };
+            mdio2mux1: mdio2mux1 {
+                    pinctrl-single,bits = <0x24 0x00 0x44>;
+            };
+            mdio3mux1: mdio3mux1 {
+                    pinctrl-single,bits = <0x24 0x00 0x88>;
+            };
+        };
+
+        mdio0: mdio0@0x01080000 {
+            compatible = "rcm,mdio";
+            reg = <0x01080000 0x1000>;
+            #address-cells = <1>;
+            #size-cells = <0>;
+            clocks = <&clock_axi_slow>;
+            pinctrl-names = "default";
+            pinctrl-0 = <&mdio0mux0>, <&mdio0mux1>;
+            status = "okay";
+
+            phy0: ethernet-phy@0 {
+                ti,fifo-depth = <DP83867_PHYCR_FIFO_DEPTH_4_B_NIB>;
+            };
+        };
+
+        mdio1: mdio0@0x01081000 {
+            compatible = "rcm,mdio";
+            reg = <0x01081000 0x1000>;
+            #address-cells = <1>;
+            #size-cells = <0>;
+            clocks = <&clock_axi_slow>;
+            pinctrl-names = "default";
+            pinctrl-0 = <&mdio1mux0>, <&mdio1mux1>;
+            status = "okay";
+
+            phy1: ethernet-phy@0 {
+                ti,fifo-depth = <DP83867_PHYCR_FIFO_DEPTH_4_B_NIB>;
+            };
+        };
+
+        mdio2: mdio0@0x01082000 {
+            compatible = "rcm,mdio";
+            reg = <0x01082000 0x1000>;
+            #address-cells = <1>;
+            #size-cells = <0>;
+            clocks = <&clock_axi_slow>;
+            pinctrl-names = "default";
+            pinctrl-0 = <&mdio2mux0>, <&mdio2mux1>;
+            status = "okay";
+
+            phy2: ethernet-phy@0 {
+                ti,fifo-depth = <DP83867_PHYCR_FIFO_DEPTH_4_B_NIB>;
+            };
+        };
+
+        mdio3: mdio0@0x01083000 {
+            compatible = "rcm,mdio";
+            reg = <0x01083000 0x1000>;
+            #address-cells = <1>;
+            #size-cells = <0>;
+            clocks = <&clock_axi_slow>;
+            pinctrl-names = "default";
+            pinctrl-0 = <&mdio3mux0>, <&mdio3mux1>;
+            status = "okay";
+
+            phy3: ethernet-phy@0 {
+                ti,fifo-depth = <DP83867_PHYCR_FIFO_DEPTH_4_B_NIB>;
+            };
+        };
+
+        sgmiiphy: sgmiphy@0x01086000 {
+            compatible = "rcm,sgmii-phy";
+            reg = <0x01086000 0x2000>;
+            #phy-cells = <0>;
+            sctl = <&sctl 0x14>;
+            auto-negotiation;
+            status = "okay";
+        };
     };
 
     axi32 {
