@@ -1,0 +1,210 @@
+/*
+ * Device Tree Source for RCM 1888BM18 platform
+ *
+ * Copyright (C) 2020 MIR
+ *	Mikhail.Petrov@mir.dev
+ *
+ * SPDX-License-Identifier: GPL-2.0+
+ */
+
+/include/ "1888bm18.dtsi"
+
+/ {
+	model = "rcm,1888bm18";
+	compatible = "rcm,1888bm18";
+
+	aliases {
+		/* ??? serial0 = &uart0;
+		serial1 = &uart1;
+		serial2 = &uart2;
+		mmc0 = &mmc0;*/
+	};
+
+	// plb {
+
+	// 	sram_nor_arbiter {
+	// 		status = "ok";
+	// 		sram-nor-mux = <1>; // 0 to route extmem wires to LSIF0, 1 - to MCIF
+	// 		// in case of LSIF0 following lines will be needed
+	// 		ext-mem-mux-mode = <0>; // 0 - SRAN_NOR, 1 - NAND GBIT_GRETH0 GBIT_GRETH1, 2 - GRETH0 GRETH1 NAND
+	// 		mii-mux-mode = <0>; // 0- GBIT_GRETH1, 1 - GRETH2
+	// 		ce-manage = <2>; // 0
+	// 		pinctrl-names = "default";
+	// 		pinctrl-0 =
+	// 			/* GRETH_GBIT1 -> GMII */
+	// 			<&lsif0_mgpio9_greth_gbit1_gmii>,
+	// 			<&lsif0_mgpio10_greth_gbit1_gmii>;
+	// 			/* GRETH2 -> RMII
+	// 			<&lsif0_mgpio9_greth2_rmii>,
+	// 			<&lsif0_mgpio10_greth2_rmii>,*/
+	// 	};
+
+	// 	lsif0 {
+	// 		greth_gbit1: greth_gbit1@0x3C034000 {
+	// 			status = "ok";
+	// 			mac-address = [ EC 17 66 77 05 02 ];
+	// 		};
+	// 	};
+
+	// 	lsif1 {
+	// 		i2c0: i2c@0x3C05A000 {
+	// 			status = "ok";
+
+	// 			cs4384: cs4384@18 {
+	// 				compatible = "cirrus,cs4384";
+	// 				#sound-dai-cells = <1>;
+	// 				reg = <0x18>;
+	// 			};
+
+	// 			rtc@68 {
+	// 				compatible = "dallas,ds1338";
+	// 				reg = <0x68>;
+	// 			};
+	// 		};
+
+	// 		uart0: uart0@3C05D000 {
+	// 			status = "ok";
+	// 		};
+
+	// 		uart1: uart2@3C05E000 {
+	// 			status = "ok";
+	// 		};
+
+	// 		uart2: uart3@3C05F000 {
+	// 			status = "ok";
+	// 		};
+
+	// 		spi0: spi@0x3C061000 {
+	// 			status = "ok";
+
+	// 			spi_flash@0 {
+	// 				compatible = "st,m25p32", "spi-flash";
+	// 				reg = <0>;
+	// 				spi-max-frequency = <20000000>;
+	// 			};
+
+	// 		};
+
+	// 		mmc0: mmc0@0x3C064000 {
+	// 			status = "ok";
+	// 			max-frequency = <25000000>;
+	// 			cd-gpios = <&gpio1 1 0>; // card detect
+	// 		};
+
+	// 		gpio0: gpio0@0x3C065000 {
+	// 			status = "ok";
+	// 		};
+
+	// 		gpio1: gpio1@0x3C066000 {
+	// 			status = "ok";
+	// 		};
+
+	// 		usb_otg_hs: usb_otg_hs@0x3C06D000 {
+	// 			status = "ok";
+	// 			mode = <1>; // 1 - host, 2 - device
+	// 		};
+	// 	};
+
+	// 	hsif {
+	// 		rmace@0x3C024000 {
+	// 			status = "ok";
+	// 		};
+	// 	};
+
+	// 	mms {
+	// 		vpu: vpu@0x38020000 {
+	// 			status = "ok";
+	// 		};
+
+	// 		jpg: jpg@0x3801a000 {
+	// 			status = "ok";
+	// 		};
+	// 	};
+
+	// 	apb0 {
+
+	// 		watchdog: watchdog@0x38002000 {
+	// 			status = "ok";
+	// 		};
+
+	// 		thermal: thermal@0x38003000 {
+	// 			status = "ok";
+	// 		};
+
+	// 		cpufreq: cpufreq@0x38006000 {
+	// 			status = "ok";
+	// 			      // freq      fb pre post div
+	// 			freqs = <200000     32  1   2    0>,
+	// 			        <400000     32  1   1    0>,
+	// 			        <800000     64  1   1    0>;
+
+	// 		};
+	// 	};
+
+	// 	xhsif0 {
+	// 		pcie0: pcie@1010000000 {
+	// 			status = "ok";
+	// 		};
+	// 	};
+
+	// 	xhsif1 {
+	// 		pcie1: pcie@1018000000 {
+	// 			status = "ok";
+	// 		};
+	// 	};
+
+	// 	dspcores {
+	// 		nmc3_0_core0: nmc3_0_core0@0x39000000 {
+	// 			status = "ok";
+	// 			core-name = "K1879-nmc";
+	// 		};
+	// 		nmc3_0_core1: nmc3_0_core1@0x39020000 {
+	// 			status = "ok";
+	// 			core-name = "K1879-nmc";
+	// 		};
+	// 		nmc3_1_core0: nmc3_1_core0@0x39040000 {
+	// 			status = "ok";
+	// 			core-name = "K1879-nmc";
+	// 		};
+	// 		nmc3_1_core1: nmc3_1_core1@0x39060000 {
+	// 			status = "ok";
+	// 			core-name = "K1879-nmc";
+	// 		};
+	// 	};
+	// };
+
+	// thermal-zones {
+	// 	cpu-thermal {
+	// 		polling-delay-passive = <0>;
+	// 		polling-delay =  <1000>;
+	// 		thermal-sensors = <&thermal>;
+
+	// 		trips {
+	// 			cpu-crit {
+	// 				temperature = <100000>;
+	// 				hysteresis = <0>;
+	// 				type = "critical";
+	// 			};
+	// 		};
+
+	// 		cooling-maps {
+	// 		};
+	// 	};
+	// };
+
+	chosen {
+		// ??? stdout-path = &uart0;
+	};
+};
+
+/* SRAM-NOR */
+// /include/ "mb115-02.dtsi"
+
+/* Ethernet,NAND */
+// /include/ "mb115-03.dtsi"
+
+/* AV ouput */
+// ??? /include/ "mb115-04.dtsi"
+
+/* VIDEO capture */
+// ??? /include/ "mb115-05.dtsi"

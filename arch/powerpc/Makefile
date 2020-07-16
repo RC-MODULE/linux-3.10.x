@@ -250,6 +250,8 @@ KBUILD_CFLAGS		+= $(call cc-option,-mno-string)
 
 ifeq ($(CONFIG_1888TX018),y)
 CFLAGS-y += $(call cc-option,-mcpu=476fp)
+else ifeq ($(CONFIG_1888BM18),y)
+CFLAGS-y += $(call cc-option,-mcpu=476fp)
 else
 cpu-as-$(CONFIG_4xx)		+= -Wa,-m405
 endif
