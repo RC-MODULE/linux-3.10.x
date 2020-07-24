@@ -756,7 +756,11 @@ finish_tlb_load_47x:
 	andi.	r10,r12,_PAGE_USER		/* User page ? */
 	beq	1f				/* nope, leave U bits empty */
 	rlwimi	r11,r11,3,26,28			/* yes, copy S bits to U */
-1:	oris	r11,r11, (PPC47x_TLB2_IL1I | PPC47x_TLB2_IL1D) >> 16 // ???
+1:
+#ifdef CONFIG_1888BM18
+	// L1 cache issue workaround
+	oris r11, r11, (PPC47x_TLB2_IL1I | PPC47x_TLB2_IL1D) >> 16
+#endif
 	tlbwe	r11,r13,2
 
 	/* Done...restore registers and get out of here.
@@ -1135,8 +1139,10 @@ clear_utlb_entry:
 	/* Word 2 */
 	li	r5,0
 	ori	r5,r5,PPC47x_TLB2_S_RWX
-	// ???  | PPC47x_TLB2_I // ????
-	oris	r5,r5, (PPC47x_TLB2_IL1I | PPC47x_TLB2_IL1D) >> 16
+#ifdef CONFIG_1888BM18
+	// L1 cache issue workaround
+	oris r5, r5, (PPC47x_TLB2_IL1I | PPC47x_TLB2_IL1D) >> 16
+#endif
 #ifdef CONFIG_SMP
 	ori	r5,r5,PPC47x_TLB2_M
 #endif

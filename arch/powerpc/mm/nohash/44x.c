@@ -200,7 +200,7 @@ unsigned long __init mmu_mapin_ram(unsigned long base, unsigned long top)
 #else
 	// the physical memory may not start at 0x0
 	// and the all lowmem may not be pinned,
-	// so the previouse line seems like a mistake
+	// so the previouse line of code seems like a mistake
 	return addr;
 #endif
 }
