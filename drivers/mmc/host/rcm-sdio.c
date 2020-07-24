@@ -1282,7 +1282,6 @@ module_exit(rmsdio_exit);
 
 static const struct of_device_id rcm_mmc_of_match[] = {
 	{ .compatible = "rcm,mmc-0.2", },
-	{ .compatible = "rcm,1888tx018", },	
 	{}
 };
 MODULE_DEVICE_TABLE(of, rcm_mmc_of_match);

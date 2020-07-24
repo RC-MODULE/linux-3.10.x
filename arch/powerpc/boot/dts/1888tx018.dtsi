@@ -829,7 +829,7 @@
 
 			mmc0: mmc0@0x3C064000 {
 				status = "disabled";
-				compatible = "rcm,1888tx018", "rcm,mmc-0.2";
+				compatible = "rcm,mmc-0.2";
 				reg = <0x3C064000 0x1000>;
 				interrupt-parent = <&MPIC>;
 				interrupts = <67 2>; // active high level-sensitive
