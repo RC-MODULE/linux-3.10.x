@@ -205,15 +205,12 @@ config 1888BM18
 	bool "RCM 1888BM18 (PPC476FS) Support"
 	depends on PPC_47x
 	default n
-	# // ??? select SWIOTLB
 	select 476FPE
 	select ARM_AMBA
 	select COMMON_CLK
 	select NOT_COHERENT_CACHE
 	select DEFAULT_UIMAGE
 	select PPC_UDBG_PL011
-	# // ??? select HAVE_DMA_CONTIGUOUS
-	# // ??? select ZONE_DMA
 	help
 	  This option enables support for the RCM 1888BM18 SoC
 

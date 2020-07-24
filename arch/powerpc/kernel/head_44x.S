@@ -62,6 +62,17 @@ _ENTRY(_start);
 	mr	r31,r3		/* save device tree ptr */
 	li	r24,0		/* CPU number */
 
+#ifdef CONFIG_1888BM18
+	// L2 cache issue workaround
+	lis r21, 0x8000
+	ori r21, r21, 0x0600
+	li r20, 0xC10
+	mtdcrx r21, r20 // 0x80000600 <- 0xC10
+	addi r21, r21, 4
+	li r20, 0x1
+	mtdcrx r21, r20 // 0x80000604 <- 0x1
+#endif
+
 #ifdef CONFIG_RELOCATABLE
 /*
  * Relocate ourselves to the current runtime address.
@@ -745,7 +756,8 @@ finish_tlb_load_47x:
 	andi.	r10,r12,_PAGE_USER		/* User page ? */
 	beq	1f				/* nope, leave U bits empty */
 	rlwimi	r11,r11,3,26,28			/* yes, copy S bits to U */
-1:	tlbwe	r11,r13,2
+1:	oris	r11,r11, (PPC47x_TLB2_IL1I | PPC47x_TLB2_IL1D) >> 16 // ???
+	tlbwe	r11,r13,2
 
 	/* Done...restore registers and get out of here.
 	*/
@@ -1123,6 +1135,8 @@ clear_utlb_entry:
 	/* Word 2 */
 	li	r5,0
 	ori	r5,r5,PPC47x_TLB2_S_RWX
+	// ???  | PPC47x_TLB2_I // ????
+	oris	r5,r5, (PPC47x_TLB2_IL1I | PPC47x_TLB2_IL1D) >> 16
 #ifdef CONFIG_SMP
 	ori	r5,r5,PPC47x_TLB2_M
 #endif

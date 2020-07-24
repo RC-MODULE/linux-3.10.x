@@ -85,7 +85,6 @@ notrace void __init machine_init(u64 dt_ptr)
 
 	/* Enable early debugging if any specified (see udbg.h) */
 	udbg_early_init();
-	udbg_putc('V'); // ???
 
 	patch_instruction_site(&patch__memcpy_nocache, PPC_INST_NOP);
 

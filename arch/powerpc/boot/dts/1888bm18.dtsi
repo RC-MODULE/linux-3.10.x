@@ -24,7 +24,7 @@
 			model = "PowerPC,470S";
 			reg = <0>;
 			clock-frequency = <200000000>; // 200 Mhz
-			timebase-frequency = <200000000>; // 200Mhz
+			timebase-frequency = <200000000>; // 200 Mhz
 			i-cache-line-size = <32>;
 			d-cache-line-size = <32>;
 			i-cache-size = <32768>;
@@ -32,23 +32,6 @@
 			dcr-controller;
 			dcr-access-method = "native";
 		};
-		/* ???? cpu@1 {
-			status = "ok";
-			device_type = "cpu";
-			model = "PowerPC,470S";
-			reg = <1>;
-			clock-frequency = <80000000>; // 800 Mhz
-			timebase-frequency = <800000000>; // 800Mhz
-			i-cache-line-size = <32>;
-			d-cache-line-size = <32>;
-			i-cache-size = <32768>;
-			d-cache-size = <32768>;
-			dcr-controller;
-			dcr-access-method = "native";
-			enable-method = "spin-table";
-			cpu-release-addr = <0x010 0x0007FFE0>;
-
-		};*/
 	};
 
 	reserved-memory {
@@ -128,9 +111,9 @@
 		#clock-cells = <0>;
 		compatible = "fixed-clock";
 		clock-frequency = <100000000>;
-	};
+	};*/
 
-	lsif1clock: lsif1clock@100M {
+	lsif_clock: lsif_clock@100M {
 		#clock-cells = <0>;
 		compatible = "fixed-clock";
 		clock-frequency = <100000000>;
@@ -139,10 +122,11 @@
 	pclk: pclk {
 		#clock-cells = <0>;
 		compatible = "fixed-clock";
-		clock-frequency = <250000000>;
+		// ???? clock-frequency = <250000000>;
+		clock-frequency = <100000000>;
 	};
 
-	apb_sys_pclk: apb_sys_pclk {
+	/* ??? apb_sys_pclk: apb_sys_pclk {
 		#clock-cells = <0>;
 		compatible = "fixed-clock";
 		clock-frequency = <100000000>;
@@ -152,7 +136,7 @@
 		#clock-cells = <0>;
 		compatible = "fixed-clock";
 		clock-frequency = <24576000>;
-	};
+	};*/
 
 	MPIC: interrupt-controller {
 		compatible = "chrp,open-pic";
@@ -164,6 +148,110 @@
 	};
 
 	plb {
+		compatible = "ibm,plb6";
+		#address-cells = <2>;
+		#size-cells = <2>;
+		ranges;
+		dma-ranges;
+		clock-frequency = <100000000>; // 100 Mhz
+
+		lsif {
+			compatible = "arm,amba-bus", "ibm,plb6";
+			#address-cells = <1>;
+			#size-cells = <1>;
+			ranges = <0xC0000000 0x20 0xC0000000 0x00400000>;
+			dma-ranges;
+
+			// console
+			uart0: uart0@C0029000 {
+				status = "disabled";
+				compatible = "arm,pl011", "arm,primecell";
+				reg = <0xC0029000 0x1000>;
+				clocks = <&lsif_clock>, <&pclk>;
+				clock-names = "uartclk", "apb_pclk";
+				interrupt-parent = <&MPIC>;
+				interrupts = <36 0>; // IRQ_TYPE_EDGE_RISING
+			};
+
+			uart1: uart1@C0039000 {
+				status = "disabled";
+				compatible = "arm,pl011", "arm,primecell";
+				reg = <0xC0039000 0x1000>;
+				clocks = <&lsif_clock>, <&pclk>;
+				clock-names = "uartclk", "apb_pclk";
+				interrupt-parent = <&MPIC>;
+				interrupts = <37 0>; // IRQ_TYPE_EDGE_RISING
+			};
+
+			gpio0: gpio0@C0028000 {
+				status = "disabled";
+				#gpio-cells = <2>;
+				compatible = "arm,pl061", "arm,primecell";
+				gpio-controller;
+				reg = <0xC0028000 0x1000>;
+				interrupt-controller;
+				#interrupt-cells = <2>;
+				interrupt-parent = <&MPIC>;
+				interrupts = <32 0>; // IRQ_TYPE_EDGE_RISING
+				clocks = <&pclk>;
+				clock-names = "apb_pclk";
+			};
+
+			gpio1: gpio1@C0038000 {
+				status = "disabled";
+				#gpio-cells = <2>;
+				compatible = "arm,pl061", "arm,primecell";
+				gpio-controller;
+				reg = <0xC0038000 0x1000>;
+				interrupt-controller;
+				#interrupt-cells = <2>;
+				interrupt-parent = <&MPIC>;
+				interrupts = <33 0>; // IRQ_TYPE_EDGE_RISING
+				clocks = <&pclk>;
+				clock-names = "apb_pclk";
+			};
+
+			/* ??? greth0: greth0@D002A000 {
+				compatible = "rcm,greth";
+				reg = <0xD002A000 0x1000>;
+				mac-address = [ EC 17 66 77 06 80 ];
+			};
+
+			greth1: greth1@D003A000 {
+				compatible = "rcm,greth";
+				reg = <0xD003A000 0x1000>;
+				mac-address = [ EC 17 66 77 06 81 ];
+				status = "disabled";
+			};*/
+
+			mmc0: mmc0@C002C000 {
+				status = "disabled";
+				compatible = "rcm,1888bm18", "rcm,mmc-0.2"; // ??? WTF
+				reg = <0xC002C000 0x1000>;
+				interrupt-parent = <&MPIC>;
+				interrupts = <34 2>; // active high level-sensitive
+				clocks = <&lsif_clock>;
+				min-frequency = <1000000>;
+				max-frequency = <25000000>;
+				axi-awlen = <15>; // 16 data frames
+				axi-arlen = <15>; // 16 data frames
+				axi-awsize = <2>; // 4 bytes 
+				axi-arsize = <2>; // 4 bytes 
+				sdio-timeout = <200>; // 200 ms
+				clock-names = "mmc";
+			};
+
+			/* ??? mmc1: mmc1@D003C000 {
+				compatible = "rcm,mmc-0.2";
+				reg = <0xD003C000 0x1000>;
+				carddetect-gpio = <&gpio1 0 0>;
+				status = "disabled";
+			};*/
+		};
+	};
+
+
+	/* ??? plb {
 		compatible = "ibm,plb6";
 		#address-cells = <2>;
 		#size-cells = <2>;

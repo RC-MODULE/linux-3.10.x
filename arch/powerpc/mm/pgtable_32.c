@@ -112,7 +112,12 @@ void __init mapin_ram(void)
 
 	for_each_memblock(memory, reg) {
 		phys_addr_t base = reg->base;
+#ifndef CONFIG_1888BM18
 		phys_addr_t top = min(base + reg->size, total_lowmem);
+#else
+		// the physical memory may not start at 0x0
+		phys_addr_t top = min(base + reg->size, lowmem_end_addr);
+#endif
 
 		if (base >= top)
 			continue;

@@ -236,7 +236,7 @@ static int __init ppc47x_get_board_rev(void)
 	u8 *fpga;
 	struct device_node *np = NULL;
 
-	if(of_machine_is_compatible("rcm,1888tx018"))
+	if ((of_machine_is_compatible("rcm,1888tx018")) || (of_machine_is_compatible("rcm,1888bm18")))
 	{
 		/* AstroSoft ToDo: get revision of board*/
 		pr_info("%s: Found board revision %d\n", __func__, 0);
@@ -299,7 +299,7 @@ static int __init ppc47x_probe(void)
 		return 1;
 	}
 
-	if (of_machine_is_compatible("rcm,1888tx018"))
+	if ((of_machine_is_compatible("rcm,1888tx018")) || (of_machine_is_compatible("rcm,1888bm18")))
 		return 1;
 
 	return 0;

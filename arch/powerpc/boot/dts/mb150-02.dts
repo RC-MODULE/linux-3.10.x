@@ -14,13 +14,12 @@
 	compatible = "rcm,1888bm18";
 
 	aliases {
-		/* ??? serial0 = &uart0;
+		serial0 = &uart0;
 		serial1 = &uart1;
-		serial2 = &uart2;
-		mmc0 = &mmc0;*/
+		mmc0 = &mmc0;
 	};
 
-	// plb {
+	plb {
 
 	// 	sram_nor_arbiter {
 	// 		status = "ok";
@@ -46,7 +45,7 @@
 	// 		};
 	// 	};
 
-	// 	lsif1 {
+		lsif {
 	// 		i2c0: i2c@0x3C05A000 {
 	// 			status = "ok";
 
@@ -62,17 +61,13 @@
 	// 			};
 	// 		};
 
-	// 		uart0: uart0@3C05D000 {
-	// 			status = "ok";
-	// 		};
+	 		uart0: uart0@C0029000 {
+	 			status = "ok";
+	 		};
 
-	// 		uart1: uart2@3C05E000 {
-	// 			status = "ok";
-	// 		};
-
-	// 		uart2: uart3@3C05F000 {
-	// 			status = "ok";
-	// 		};
+	 		uart1: uart1@C0039000 {
+	 			status = "ok";
+	 		};
 
 	// 		spi0: spi@0x3C061000 {
 	// 			status = "ok";
@@ -85,25 +80,24 @@
 
 	// 		};
 
-	// 		mmc0: mmc0@0x3C064000 {
-	// 			status = "ok";
-	// 			max-frequency = <25000000>;
-	// 			cd-gpios = <&gpio1 1 0>; // card detect
-	// 		};
+			gpio0: gpio0@C0028000 {
+				status = "ok";
+			};
 
-	// 		gpio0: gpio0@0x3C065000 {
-	// 			status = "ok";
-	// 		};
+			gpio1: gpio1@C0038000 {
+				status = "ok";
+			};
 
-	// 		gpio1: gpio1@0x3C066000 {
-	// 			status = "ok";
-	// 		};
+	 		mmc0: mmc0@C002C000 {
+	 			status = "ok";
+	 			cd-gpios = <&gpio0 3 0>; // card detect
+	 		};
 
 	// 		usb_otg_hs: usb_otg_hs@0x3C06D000 {
 	// 			status = "ok";
 	// 			mode = <1>; // 1 - host, 2 - device
 	// 		};
-	// 	};
+		};
 
 	// 	hsif {
 	// 		rmace@0x3C024000 {
@@ -171,7 +165,7 @@
 	// 			core-name = "K1879-nmc";
 	// 		};
 	// 	};
-	// };
+	};
 
 	// thermal-zones {
 	// 	cpu-thermal {
@@ -193,7 +187,7 @@
 	// };
 
 	chosen {
-		// ??? stdout-path = &uart0;
+		stdout-path = &uart0;
 	};
 };
 
