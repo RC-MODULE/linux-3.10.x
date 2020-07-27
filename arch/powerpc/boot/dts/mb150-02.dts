@@ -49,3 +49,6 @@
 		stdout-path = &uart0;
 	};
 };
+
+// Ethernet
+// #include "mb150-03.dtsi"

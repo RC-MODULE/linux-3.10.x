@@ -130,18 +130,21 @@
 				clock-names = "apb_pclk";
 			};
 
-			/* greth0: greth0@D002A000 {
+			greth0: greth0@C002A000 {
+				status = "disabled";
 				compatible = "rcm,greth";
-				reg = <0xD002A000 0x1000>;
-				mac-address = [ EC 17 66 77 06 80 ];
+				reg = <0xC002A000 0x1000>;
+				interrupt-parent = <&MPIC>;
+				interrupts = <52 0>; // IRQ_TYPE_EDGE_RISING
 			};
 
-			greth1: greth1@D003A000 {
-				compatible = "rcm,greth";
-				reg = <0xD003A000 0x1000>;
-				mac-address = [ EC 17 66 77 06 81 ];
+			greth1: greth1@C003A000 {
 				status = "disabled";
-			};*/
+				compatible = "rcm,greth";
+				reg = <0xC003A000 0x1000>;
+				interrupt-parent = <&MPIC>;
+				interrupts = <53 0>; // IRQ_TYPE_EDGE_RISING
+			};
 
 			mmc0: mmc0@C002C000 {
 				status = "disabled";
@@ -178,25 +181,4 @@
 			};
 		};
 	};
-
-
-	/*
-			// GRETH_GBIT0
-			greth_gbit0: greth_gbit0@0x3C033000 {
-				status = "disabled";
-				compatible = "rcm,greth";
-				reg = <0x3C033000 0x1000>;
-				interrupt-parent = <&MPIC>;
-				interrupts = <103 0>; // IRQ_TYPE_EDGE_RISING
-			};
-
-			// GRETH_GBIT1
-			greth_gbit1: greth_gbit1@0x3C034000 {
-				status = "disabled";
-				compatible = "rcm,greth";
-				reg = <0x3C034000 0x1000>;
-				interrupt-parent = <&MPIC>;
-				interrupts = <108 0>; // IRQ_TYPE_EDGE_RISING
-			};
-	*/
 };
