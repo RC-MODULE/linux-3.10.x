@@ -121,7 +121,7 @@ void __init MMU_init(void)
 	 * Reserve gigantic pages for hugetlb.  This MUST occur before
 	 * lowmem_end_addr is initialized below.
 	 */
-#ifndef CONFIG_1888TX018
+#if !defined(CONFIG_1888TX018) && !defined(CONFIG_1888BM18)
 	if (memblock.memory.cnt > 1) {
 #ifndef CONFIG_WII
 		memblock_enforce_memory_limit(memblock.memory.regions[0].size);

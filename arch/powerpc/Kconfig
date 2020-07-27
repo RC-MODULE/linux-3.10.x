@@ -1196,7 +1196,7 @@ config KERNEL_START
 
 config PHYSICAL_START_BOOL
 	bool "Set physical address where the kernel is loaded"
-	depends on ADVANCED_OPTIONS && FLATMEM && FSL_BOOKE
+	depends on ADVANCED_OPTIONS && ((FLATMEM && FSL_BOOKE) || 1888BM18)
 	help
 	  This gives the physical address where the kernel is loaded.
 

@@ -195,7 +195,14 @@ unsigned long __init mmu_mapin_ram(unsigned long base, unsigned long top)
 		}
 #endif /* DEBUG */
 	}
+#ifndef CONFIG_1888BM18
 	return total_lowmem;
+#else
+	// the physical memory may not start at 0x0
+	// and the all lowmem may not be pinned,
+	// so the previouse line of code seems like a mistake
+	return addr;
+#endif
 }
 
 void setup_initial_memory_limit(phys_addr_t first_memblock_base,
@@ -203,7 +210,7 @@ void setup_initial_memory_limit(phys_addr_t first_memblock_base,
 {
 	u64 size;
 
-#ifndef CONFIG_NONSTATIC_KERNEL
+#if !defined(CONFIG_NONSTATIC_KERNEL) && !defined(CONFIG_1888BM18)
 	/* We don't currently support the first MEMBLOCK not mapping 0
 	 * physical on those processors
 	 */

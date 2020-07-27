@@ -66,6 +66,7 @@ DECLARE_PCI_FIXUP_HEADER(0x1033, 0x0035, quirk_ppc_currituck_usb_fixup);
 #define AVR_PWRCTL_PWROFF (0x01)
 #define AVR_PWRCTL_RESET (0x02)
 
+#if IS_ENABLED(CONFIG_I2C)
 static struct i2c_client *avr_i2c_client;
 static void __noreturn avr_halt_system(int pwrctl_flags)
 {
@@ -109,10 +110,13 @@ static struct i2c_driver avr_driver = {
 	.probe = avr_probe,
 	.id_table = avr_id,
 };
+#endif // IS_ENABLED(CONFIG_I2C)
 
 static int __init ppc47x_device_probe(void)
 {
+#if IS_ENABLED(CONFIG_I2C)
 	i2c_add_driver(&avr_driver);
+#endif
 	of_platform_bus_probe(NULL, ppc47x_of_bus, NULL);
 
 	return 0;
@@ -173,7 +177,7 @@ static int smp_ppc47x_kick_cpu(int cpu)
 		return 1;
 	}
 
-#ifndef CONFIG_1888TX018
+#if !defined(CONFIG_1888TX018) && !defined(CONFIG_1888BM18)
 	/* Assume it's mapped as part of the linear mapping. This is a bit
 	 * fishy but will work fine for now
 	 *
@@ -190,7 +194,7 @@ static int smp_ppc47x_kick_cpu(int cpu)
 	spin_table[1] = __pa(start_secondary_47x);
 	mb();
 
-#ifdef CONFIG_1888TX018
+#if defined(CONFIG_1888TX018) || defined(CONFIG_1888BM18)
 	iounmap(spin_table);
 #endif
 	return 0;
@@ -232,7 +236,7 @@ static int __init ppc47x_get_board_rev(void)
 	u8 *fpga;
 	struct device_node *np = NULL;
 
-	if(of_machine_is_compatible("rcm,1888tx018"))
+	if ((of_machine_is_compatible("rcm,1888tx018")) || (of_machine_is_compatible("rcm,1888bm18")))
 	{
 		/* AstroSoft ToDo: get revision of board*/
 		pr_info("%s: Found board revision %d\n", __func__, 0);
@@ -295,7 +299,7 @@ static int __init ppc47x_probe(void)
 		return 1;
 	}
 
-	if (of_machine_is_compatible("rcm,1888tx018"))
+	if ((of_machine_is_compatible("rcm,1888tx018")) || (of_machine_is_compatible("rcm,1888bm18")))
 		return 1;
 
 	return 0;
