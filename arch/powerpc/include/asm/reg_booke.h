@@ -45,12 +45,6 @@
 #elif defined (CONFIG_40x)
 #define MSR_KERNEL	(MSR_ME|MSR_RI|MSR_IR|MSR_DR|MSR_CE)
 #define MSR_USER	(MSR_KERNEL|MSR_PR|MSR_EE)
-elif defined(CONFIG_1888BM18)
-// Machine check exception is disabled,
-// overwise BUG/BUG_ON system does not work
-// for this target
-#define MSR_KERNEL	(MSR_RI|MSR_CE)
-#define MSR_USER	(MSR_KERNEL|MSR_PR|MSR_EE)
 #else
 #define MSR_KERNEL	(MSR_ME|MSR_RI|MSR_CE)
 #define MSR_USER	(MSR_KERNEL|MSR_PR|MSR_EE)
