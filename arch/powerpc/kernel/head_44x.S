@@ -63,6 +63,9 @@ _ENTRY(_start);
 	li	r24,0		/* CPU number */
 
 #ifdef CONFIG_1888BM18
+	// clear Machine Check status
+	li	r21,0
+	mtspr	SPRN_MCSR,r21
 	// L2 cache issue workaround
 	lis r21, 0x8000
 	ori r21, r21, 0x0600
