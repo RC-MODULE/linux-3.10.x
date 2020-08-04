@@ -31,6 +31,12 @@ config CPU_FREQ_RCM_1888TX018
 	  This adds support for frequency switching on 1888TX018
 	  Evaluation Board and compatible boards.
 
+config CPU_FREQ_RCM_1888BM18
+	bool "Support for RCM 1888BM18 SoC"
+	depends on 1888BM18
+	help
+	  This adds support for frequency switching on 1888BM18 SoC.
+
 config CPU_FREQ_PMAC
 	bool "Support for Apple PowerBooks"
 	depends on ADB_PMU && PPC32

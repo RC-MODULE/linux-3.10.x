@@ -66,6 +66,17 @@
 		#interrupt-cells = <2>;
 	};
 
+
+	dcr {
+		compatible = "simple-bus";
+
+		cpufreq: cpufreq@0x38006000 {
+			status = "disabled";
+			compatible = "rcm,1888bm18-cpufreq";
+			dcr-reg = <0x80080000 0x10000>;
+		};
+	};
+
 	plb {
 		compatible = "ibm,plb6";
 		#address-cells = <2>;

@@ -19,6 +19,16 @@
 		mmc0 = &mmc0;
 	};
 
+	dcr {
+		cpufreq: cpufreq@0x38006000 {
+			status = "ok";
+			//        freq  div
+			freqs = < 50000  4>,
+			        <100000  2>,
+			        <200000  1>;
+		};
+	};
+
 	plb {
 
 		lsif {
