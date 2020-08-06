@@ -190,6 +190,32 @@
 				axi-arsize = <2>; // 4 bytes 
 				sdio-timeout = <200>; // 200 ms
 			};
+
+			spi0: spi@C002B000 {
+				status = "disabled";
+				compatible = "arm,pl022", "arm,primecell";
+				reg = <0xC002B000 0x1000>;
+				interrupts = <34 0>; // IRQ_TYPE_EDGE_RISING
+				#address-cells = <1>;
+				#size-cells = <0>;
+				interrupt-parent = <&MPIC>;
+				clocks = <&pclk>;
+				clock-names = "apb_pclk";
+				num-cs = <1>;
+			};
+
+			spi1: spi@C003B000 {
+				status = "disabled";
+				compatible = "arm,pl022", "arm,primecell";
+				reg = <0xC003B000 0x1000>;
+				interrupts = <35 0>; // IRQ_TYPE_EDGE_RISING
+				#address-cells = <1>;
+				#size-cells = <0>;
+				interrupt-parent = <&MPIC>;
+				clocks = <&pclk>;
+				clock-names = "apb_pclk";
+				num-cs = <1>;
+			};
 		};
 	};
 };
