@@ -807,8 +807,6 @@
 				clock-names = "apb_pclk";
 				pinctrl-names = "default";
 				pinctrl-0 = <&spi0_mux>;
-				num-cs = <1>;
-				cs-gpios = <&gpio1 2 0>;
 			};
 
 			spi1: spi@0x3C062000 {
