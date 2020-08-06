@@ -77,13 +77,14 @@
 
 			spi0: spi@0x3C061000 {
 				status = "ok";
+				num-cs = <1>;
+				cs-gpios = <&gpio1 2 0>;
 
 				spi_flash@0 {
-					compatible = "st,m25p32", "spi-flash";
+					compatible = "st,m25p32", "spi-nor";
 					reg = <0>;
 					spi-max-frequency = <20000000>;
 				};
-
 			};
 
 			mmc0: mmc0@0x3C064000 {
