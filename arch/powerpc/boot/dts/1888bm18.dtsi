@@ -214,7 +214,6 @@
 				interrupt-parent = <&MPIC>;
 				clocks = <&pclk>;
 				clock-names = "apb_pclk";
-				num-cs = <1>;
 			};
 		};
 	};
