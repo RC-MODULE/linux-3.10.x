@@ -163,6 +163,13 @@ config PL353_SMC
 	  This driver is for the ARM PL351/PL353 Static Memory
 	  Controller(SMC) module.
 
+config MEMORY_RCM_EMI
+	bool "RCM EMI memory controller"
+	depends on 1888BM18
+	help
+	  Support for RCM EMI memory controller for the 1888BM18 SoC's
+
+
 source "drivers/memory/samsung/Kconfig"
 source "drivers/memory/tegra/Kconfig"
 

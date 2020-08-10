@@ -7,7 +7,7 @@
  * SPDX-License-Identifier: GPL-2.0+
  */
 
-/include/ "1888bm18.dtsi"
+#include "1888bm18.dtsi"
 
 / {
 	model = "rcm,1888bm18";
@@ -57,11 +57,11 @@
 	 			status = "ok";
 				num-cs = <1>;
 
-				spi_flash@0 {
+				/* ??? spi_flash@0 {
 					compatible = "st,m25p32", "spi-nor";
 					reg = <0>;
 					spi-max-frequency = <20000000>;
-				};
+				};*/
 			};
 		};
 	};
