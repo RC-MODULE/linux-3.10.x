@@ -6,8 +6,7 @@
  * SPDX-License-Identifier: GPL-2.0+
  */
 
-// ??? #undef DEBUG
-#define DEBUG
+#undef DEBUG
 
 #include <linux/module.h>
 #include <linux/cpufreq.h>
@@ -16,7 +15,6 @@
 
 #define BANK_COUNT 6
 
-// ??? detele unused
 #define RCM_EMI_SS0 0x00
 #define RCM_EMI_SD0 0x04
 #define RCM_EMI_SS1 0x08
@@ -179,10 +177,6 @@ static int probe_internal(struct platform_device *pdev)
 		return ret;
 	}
 
-	//
-	// ???
-	///
-
 	return 0;
 }
 
@@ -199,7 +193,6 @@ static void cleanup(struct platform_device *pdev)
 
 static int rcm_emi_probe(struct platform_device *pdev)
 {
-	// ??? struct device_node *nc;
 	int ret;
 
 	dev_dbg(&pdev->dev, "probing...\n");
@@ -216,19 +209,6 @@ static int rcm_emi_probe(struct platform_device *pdev)
 	// populate child devices
 	if (pdev->dev.of_node)
 		of_platform_populate(pdev->dev.of_node, NULL, NULL, &pdev->dev);
-
-// ??? 	for_each_available_child_of_node(pdev->dev.of_node, nc) {
-// ??? 		if (of_node_test_and_set_flag(nc, OF_POPULATED))
-// ??? 			continue;
-// ??? 		of_device_register()
-// ??? 		/* ??? spi = of_register_spi_device(ctlr, nc);
-// ??? 		if (IS_ERR(spi)) {
-// ??? 			dev_warn(&ctlr->dev,
-// ??? 				 "Failed to create SPI device for %pOF\n", nc);
-// ??? 			of_node_clear_flag(nc, OF_POPULATED);
-// ??? 		}*/
-// ??? 	}
-
 
 	return 0;
 }

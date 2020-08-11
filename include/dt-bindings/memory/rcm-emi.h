@@ -111,12 +111,4 @@
 
 #define RCM_EMI_RFC_RP(x) (x << 4)
 
-
-/* ??? #define RCM_EMI_HSTSR_HEN_0 (1 << 0)
-#define RCM_EMI_HSTSR_HEN_1 (1 << 1)
-#define RCM_EMI_HSTSR_HEN_2 (1 << 2)
-#define RCM_EMI_HSTSR_HEN_3 (1 << 3)
-#define RCM_EMI_HSTSR_HEN_4 (1 << 4)
-#define RCM_EMI_HSTSR_HEN_5 (1 << 5)*/
-
 #endif // !DT_BINDINGS_RCM_EMI_H_INCLUDED

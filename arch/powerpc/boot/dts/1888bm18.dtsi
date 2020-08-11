@@ -88,76 +88,12 @@
 		clock-frequency = <100000000>; // 100 Mhz
 
 		emi: emi {
-			compatible = "rcm,emi"; // ???, "simple-bus";
+			status = "disabled";
+			compatible = "rcm,emi";
 			#address-cells = <1>;
 			#size-cells = <1>;
 			dcr-reg = <0x80060000 0x1000>;
 			ranges = <0x00000000 0x00 0x00000000 0x80000000>;
-
-			bank-5-ss = <( /* ??? not here ???? small x */
-				RCM_EMI_SSx_BTYP_NOR
-				| RCM_EMI_SSx_PTYP_NO_PAGES
-				| RCM_EMI_SSx_SRDY_EXT_RDY_NOT_USE
-				| RCM_EMI_SSx_TWR_0
-				| RCM_EMI_SSx_SST_FLOW_THROUGH
-				| RCM_EMI_SSx_TSSOE_1
-				| RCM_EMI_SSx_TSOE_1
-				| RCM_EMI_SSx_TCYC_12
-				/* ??? | RCM_EMI_SSx_TCYC_8*/
-				| RCM_EMI_SSx_RDY(0)
-				| RCM_EMI_SSx_TDEL_0)>;
-			bank-5-sd = <(
-				RCM_EMI_SDx_CSP_256
-				| RCM_EMI_SDx_SDS_2M
-				| RCM_EMI_SDx_CL_3
-				| RCM_EMI_SDx_TRDL_1
-				| RCM_EMI_SDx_SI_EXT_INIT
-				| RCM_EMI_SDx_T_RCD_5
-				| RCM_EMI_SDx_T_RAS_9)>;
-			// ??? bank-5-size = <0x08000000>; // 128MB
-			// bank-5-ecc;
-
-			nor@70000000 {
-				compatible = "cfi-flash";
-				reg = <0x70000000 0x10000000>;
-				bank-width = <2>;
-				#size-cells = <1>;
-				#address-cells = <1>;
-				little-endian;
-
-				/* ??? partition@0 {
-					label = "uboot_spl";
-					reg = <0x00000 0x40000>;
-				};
-
-				partition@40000 {
-					label = "uboot";
-					reg = <0x40000 0x1000000>;
-				};
-
-				partition@1040000 {
-					label = "uboot_env";
-					reg = <0x1040000 0x40000>;
-				};
-
-				partition@1080000 {
-					label = "kern_dtb";
-					reg = <0x1080000 0x100000>;
-				};
-
-				partition@1180000 {
-					label = "kern";
-					reg = <0x1180000 0x1000000>;
-				};
-
-				partition@2180000 {
-					label = "rootfs";
-					reg = <0x2180000 0xDE80000>;
-				};*/
-			};
-
-
-			// ????
 		};
 
 		lsif {
