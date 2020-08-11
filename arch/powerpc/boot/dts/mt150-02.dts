@@ -1,5 +1,5 @@
 /*
- * Device Tree Source for RCM 1888BM18 platform
+ * Device Tree Source for RCM MT115.02 board
  *
  * Copyright (C) 2020 MIR
  *	Mikhail.Petrov@mir.dev
@@ -32,13 +32,13 @@
 	plb {
 
 		lsif {
-	 		uart0: uart0@C0029000 {
-	 			status = "ok";
-	 		};
+			uart0: uart0@C0029000 {
+				status = "ok";
+			};
 
-	 		uart1: uart1@C0039000 {
-	 			status = "ok";
-	 		};
+			uart1: uart1@C0039000 {
+				status = "ok";
+			};
 
 			gpio0: gpio0@C0028000 {
 				status = "ok";
@@ -48,18 +48,18 @@
 				status = "ok";
 			};
 
-	 		mmc0: mmc0@C002C000 {
-	 			status = "ok";
-	 			cd-gpios = <&gpio0 3 0>; // card detect
-	 		};
+			mmc0: mmc0@C002C000 {
+				status = "ok";
+				cd-gpios = <&gpio0 3 0>; // card detect
+			};
 
-	 		mmc1: mmc1@C003C000 {
-	 			// status = "ok";
-	 			cd-gpios = <&gpio1 0 0>; // card detect
-	 		};
+			mmc1: mmc1@C003C000 {
+				// status = "ok";
+				cd-gpios = <&gpio1 0 0>; // card detect
+			};
 
 			spi0: spi@C002B000 {
-	 			// status = "ok";
+				// status = "ok";
 				num-cs = <1>;
 
 				spi_flash@0 {
@@ -88,10 +88,10 @@
 };
 
 // Ethernet
-// #include "mb150-03.dtsi"
+// #include "mt150-03.dtsi"
 
 // NOR
-// #include "mb150-04.dtsi"
+// #include "mt150-04.dtsi"
 
 // SRAM
-// #include "mb150-07.dtsi"
+// #include "mt150-07.dtsi"
