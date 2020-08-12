@@ -99,6 +99,7 @@ obj-$(CONFIG_CPU_FREQ_PMAC64)		+= pmac64-cpufreq.o
 obj-$(CONFIG_PPC_PASEMI_CPUFREQ)	+= pasemi-cpufreq.o
 obj-$(CONFIG_POWERNV_CPUFREQ)		+= powernv-cpufreq.o
 obj-$(CONFIG_CPU_FREQ_RCM_1888TX018)	+= rcm-cpufreq.o
+obj-$(CONFIG_CPU_FREQ_RCM_1888BM18)	+= rcm-1888bm18-cpufreq.o
 
 ##################################################################################
 # Other platform drivers
