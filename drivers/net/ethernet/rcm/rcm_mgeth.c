@@ -11,18 +11,14 @@
 #include <linux/netdevice.h>
 #include <linux/etherdevice.h>
 #include <linux/ethtool.h>
-#include <linux/dmaengine.h>
-#include <linux/dma-mapping.h>
-#include <linux/scatterlist.h>
 #include <linux/regmap.h>
 #include <linux/of_device.h>
 #include <linux/of_net.h>
 #include <linux/phy/phy.h>
 #include <linux/of_mdio.h>
 #include <linux/irq.h>
-#include <linux/irqdesc.h>
-#include <linux/irqdomain.h>
-#include <linux/irqchip/chained_irq.h>
+
+#include "rcm_mgeth.h"
 
 #define RCM_MGETH_ID            0x0000
 #define RCM_MGETH_VERSION       0x0004
@@ -40,61 +36,6 @@
 #define RCM_MGETH_RX_ETH_MASK_VALUE(val) ((val) * 4)
 
 #define RCM_MGETH_RX_ETH_MASK_ACTIVE(val) (0x80 + (val) * 4)
-
-#define RCM_MGETH_CNT_BUFFS_PER_CHAN 32
-#define RCM_MGETH_MAX_DMA_CHANNELS 4
-
-#define RCM_MGETH_MIN_FRAME_SIZE 60
-#define RCM_MGETH_MAX_FRAME_SIZE 10240
-#define RCM_MGETH_DMA_BUFF_SIZE (((RCM_MGETH_MAX_FRAME_SIZE + PAGE_SIZE - 1) / PAGE_SIZE) * PAGE_SIZE)
-
-#define RCM_MGETH_RX_TIMEOUT 200
-
-struct rcm_mgeth_dma_buff {
-	struct rcm_mgeth_dma*           dma;
-	dma_cookie_t                    cookie;
-	struct sk_buff                 *skb;
-	struct scatterlist              sg;
-	struct completion               dma_completion;
-	size_t                          residue;
-	bool                            error;
-};
-
-struct rcm_mgeth_dma {
-	struct dma_chan          *chan;
-	struct rcm_mgeth_dma_buff buffs[RCM_MGETH_CNT_BUFFS_PER_CHAN];
-	int                       next_buff;
-	int                       first_buff;
-	int                       cnt_buffs;
-	spinlock_t                lock;
-	dma_addr_t                dma_addr;
-	void*                     buff;
-
-	struct task_struct*       thread;
-
-	int                       ch_num;
-};
-
-struct rcm_mgeth_data {
-	struct device      *dev;
-	struct net_device  *netdev;
-	struct regmap      *reg;
-	struct regmap      *mask[RCM_MGETH_MAX_DMA_CHANNELS];
-
-	int                 irq;
-	struct irq_domain  *domain;
-
-	struct phy_device  *phydev;
-	struct device_node *phynode;
-	phy_interface_t     phy_if;
-
-	int speed;
-	int duplex;
-	int link;
-
-	struct rcm_mgeth_dma tx[RCM_MGETH_MAX_DMA_CHANNELS];
-	struct rcm_mgeth_dma rx[RCM_MGETH_MAX_DMA_CHANNELS];
-};
 
 static ssize_t rcm_mgeth_show_stats(struct device *dev,
                                     struct device_attribute *attr, char *buf)
@@ -212,30 +153,22 @@ static ssize_t rcm_mgeth_show_stats(struct device *dev,
 
 static DEVICE_ATTR(stats, 0400, rcm_mgeth_show_stats, NULL);
 
-static struct rcm_mgeth_dma* rcm_mgeth_get_dma(struct rcm_mgeth_data *data,
-                                               bool is_tx)
+static struct rcm_mgeth_dma_chan* rcm_mgeth_get_chan(struct rcm_mgeth_data *data,
+                                                     bool is_tx)
 {
 	int i;
-	struct rcm_mgeth_dma* dmas = (is_tx) ? data->tx : data->rx;
-	unsigned long flags;
-	struct rcm_mgeth_dma* dma = NULL;
+	struct rcm_mgeth_dma_chan **channels = (is_tx) ? data->tx : data->rx;
+	struct rcm_mgeth_dma_chan *chan = NULL;
 
 	for (i = 0; i < RCM_MGETH_MAX_DMA_CHANNELS; ++i) {
-		if (!dmas[i].chan)
-			continue;
+		if (!rcm_mgeth_dma_busy(channels[i]))
+			chan = channels[i];
 
-		spin_lock_irqsave(&dmas[i].lock, flags);
-
-		if (dmas[i].cnt_buffs < RCM_MGETH_CNT_BUFFS_PER_CHAN)
-			dma = &dmas[i];
-
-		spin_unlock_irqrestore(&dmas[i].lock, flags);
-
-		if (dma)
+		if (chan)
 			break;
 	}
 
-	return dma;
+	return chan;
 }
 
 static bool rcm_mgeth_read_mac_addr(struct rcm_mgeth_data *data, u8 *dest)
@@ -271,44 +204,56 @@ static bool rcm_mgeth_read_mac_addr(struct rcm_mgeth_data *data, u8 *dest)
 	return true;
 }
 
-static int rcm_mgeth_irq_set_type(struct irq_data *d, unsigned int type)
+static irqreturn_t rcm_mgeth_irq(int irq, void *dev_id)
 {
-	if ((type & IRQ_TYPE_EDGE_BOTH) == 0)
-		irq_set_handler_locked(d, handle_level_irq);
-	else
-		irq_set_handler_locked(d, handle_edge_irq);
-
-	return 0;
-}
-
-static void rcm_mgeth_irq(struct irq_desc *desc)
-{
-	struct rcm_mgeth_data *data = irq_desc_get_handler_data(desc);
-	struct irq_chip *chip = irq_desc_get_chip(desc);
+	struct rcm_mgeth_data *data = dev_id;
 	u32 status;
 	int i;
-	unsigned irq = 0;
-
-	chained_irq_enter(chip, desc);
+	bool start_pooling = false;
 
 	regmap_read(data->reg, RCM_MGETH_GLOBAL_STATUS, &status);
 
-	netdev_dbg(data->netdev, "Interrupt (status = 0x%08X)\n", status);
+	if (status == 0)
+		return IRQ_NONE;
 
 	for (i = 0; i < RCM_MGETH_MAX_DMA_CHANNELS; i++) {
 		if (status & BIT(i)) {
-			irq = irq_find_mapping(data->domain, i);
-			if (irq != 0)
-				generic_handle_irq(irq);
+			rcm_mgeth_dma_irq(data->tx[i]);
 		}
 		if (status & BIT(i + 16)) {
-			irq = irq_find_mapping(data->domain, i + 4);
-			if (irq != 0)
-				generic_handle_irq(irq);
+			rcm_mgeth_dma_irq(data->rx[i]);
+			start_pooling = true;
 		}
 	}
 
-	chained_irq_exit(chip, desc);
+	if (start_pooling) {
+		for (i = 0; i < RCM_MGETH_MAX_DMA_CHANNELS; i++)
+			rcm_mgeth_dma_disable_irq(data->rx[i]);
+
+		napi_schedule(&data->napi);
+	}
+
+	return IRQ_HANDLED;
+}
+
+static int rcm_mgeth_poll(struct napi_struct *napi, int budget)
+{
+	struct rcm_mgeth_data *data = 
+		container_of(napi, struct rcm_mgeth_data, napi);
+	int work_done = 0;
+	int i;
+
+	for (i = 0; (i < RCM_MGETH_MAX_DMA_CHANNELS) && (work_done < budget);
+	     i++)
+		work_done += rcm_mgeth_dma_rx_poll(data->rx[i], budget - work_done);
+
+	if (work_done < budget) {
+		napi_complete_done(napi, work_done);
+		for (i = 0; i < RCM_MGETH_MAX_DMA_CHANNELS; i++)
+			rcm_mgeth_dma_enable_irq(data->rx[i]);
+	}
+
+	return work_done;
 }
 
 static int rcm_mgeth_reset(struct rcm_mgeth_data *data)
@@ -387,336 +332,87 @@ static void rcm_mgeth_adjust_link(struct net_device *netdev)
 		phy_print_status(phydev);
 }
 
-static void rcm_mgeth_tx_dma_callback(void *param)
+static void rcm_mgeth_tx_completed(struct rcm_mgeth_dma_chan* chan,
+                                   int status, u32 size)
 {
-	struct rcm_mgeth_dma_buff *buff = param;
-	struct rcm_mgeth_dma* dma = buff->dma;
-	struct rcm_mgeth_data *data = dma->chan->private;
-	unsigned long flags;
+	struct net_device *netdev = rcm_mgeth_dma_get_net_device(chan);
+	int ch_num = rcm_mgeth_dma_get_number(chan);
 
-	spin_lock_irqsave(&dma->lock, flags);
-	
-	do {
-		if (dma->cnt_buffs == 0) {
-			netdev_warn(data->netdev, 
-			            "Unexpected DMA callback (TX%u): "
-			            "no submitted transfers.\n",
-			            dma->ch_num);
-			break;
-		}
+	if (status != 0) {
+		netdev->stats.tx_dropped++;
+		netdev_warn(netdev, "DMA error (TX%u).\n", ch_num);
+	} else {
+		netdev->stats.tx_packets++;
+		netdev->stats.tx_bytes += size;
+		netdev_dbg(netdev, 
+		           "DMA operation finished successfully "
+		           "(TX%u, %u bytes).\n", 
+		           ch_num, size);
+	}
 
-		if (buff != &dma->buffs[dma->first_buff])
-		{
-			netdev_warn(data->netdev,
-			            "Unexpected DMA callback (TX%u): "
-			            "unexpected buffer completed.\n",
-			            dma->ch_num);
-			break;
-		}
-
-		if (dma_async_is_tx_complete(dma->chan, buff->cookie,
-		                             NULL, NULL) != DMA_COMPLETE) {
-			netdev_warn(data->netdev, 
-			            "DMA error (TX%u, cookie = 0x%08X).\n",
-			            dma->ch_num, buff->cookie);
-		} else {
-			netdev_dbg(data->netdev, 
-			           "DMA operation finished successfully "
-			           "(TX%u, %u bytes, cookie = 0x%08X).\n", 
-			           dma->ch_num, sg_dma_len(&buff->sg),
-			           buff->cookie);
-		}
-
-		if (buff->skb) {
-			dma_unmap_single(data->dev, sg_dma_address(&buff->sg),
-			                 buff->skb->len, DMA_TO_DEVICE);
-			dev_kfree_skb(buff->skb);
-			buff->skb = NULL;
-		}
-
-		dma->first_buff = (dma->first_buff + 1) % 
-		                  RCM_MGETH_CNT_BUFFS_PER_CHAN;
-		--dma->cnt_buffs;
-
-		if (netif_queue_stopped(data->netdev))
-			netif_wake_queue(data->netdev);
-	} while (0);
-
-	spin_unlock_irqrestore(&dma->lock, flags);
+	if (netif_queue_stopped(netdev))
+		netif_wake_queue(netdev);
 }
 
 static netdev_tx_t rcm_mgeth_start_xmit(struct sk_buff *skb,
                                         struct net_device *netdev)
 {
 	struct rcm_mgeth_data *data = netdev_priv(netdev);
-	struct rcm_mgeth_dma* dma;
-	struct rcm_mgeth_dma_buff *buff;
-	struct dma_async_tx_descriptor *desc;
-	unsigned long flags;
-	bool copy_skb = (skb_shinfo(skb)->nr_frags != 0) ||
-	                ((offset_in_page(skb->data) & 0xF) != 0) ||
-	                (skb->len + offset_in_page(skb->data) > PAGE_SIZE) ||
-	                (skb->len < RCM_MGETH_MIN_FRAME_SIZE);
+	struct rcm_mgeth_dma_chan *chan;
+	int ch_num;
 
 	if (skb->len > RCM_MGETH_MAX_FRAME_SIZE) {
+		netdev->stats.tx_dropped++;
 		netdev_err(netdev, "Frame length is too much: %u bytes.\n",
 		           skb->len);
 		return NET_XMIT_DROP;
 	}
 
-	dma = rcm_mgeth_get_dma(data, true);
+	chan = rcm_mgeth_get_chan(data, true);
 
-	if (!dma) {
+	if (!chan) {
 		netif_stop_queue(netdev);
 		return NETDEV_TX_BUSY;
 	}
 
-	spin_lock_irqsave(&dma->lock, flags);
+	ch_num = rcm_mgeth_dma_get_number(chan);
 
-	buff = &dma->buffs[dma->next_buff];
-
-	if (copy_skb) {
-		buff->skb = NULL;
-		sg_dma_address(&buff->sg) = 
-			dma->dma_addr + dma->next_buff * RCM_MGETH_DMA_BUFF_SIZE;
-		skb_copy_bits(skb, 0,
-		              dma->buff + dma->next_buff * RCM_MGETH_DMA_BUFF_SIZE,
-		              skb->len);
-		if (skb->len < RCM_MGETH_MIN_FRAME_SIZE)
-			memset(dma->buff + skb->len, 0,
-			       RCM_MGETH_MIN_FRAME_SIZE - skb->len);
-	} else {
-		sg_dma_address(&buff->sg) = 
-			dma_map_single(data->dev, skb->data, skb_headlen(skb),
-			               DMA_TO_DEVICE);
-		buff->skb = skb;
-	}
-
-	sg_dma_len(&buff->sg) = (skb->len >= RCM_MGETH_MIN_FRAME_SIZE) ? 
-	                        skb->len : RCM_MGETH_MIN_FRAME_SIZE;
-
-	netdev_dbg(netdev, "TX%u: DMA operation ready (%u bytes).\n", 
-	           dma->ch_num, sg_dma_len(&buff->sg));
-
-	desc = dmaengine_prep_slave_sg(dma->chan, &buff->sg, 1, DMA_MEM_TO_DEV, 
-	                               DMA_PREP_INTERRUPT);
-
-	if (!desc) {
-		netdev_err(netdev, "Failed prepare DMA TX-operation.\n");
-		if (!copy_skb)
-			dma_unmap_single(data->dev, sg_dma_address(&buff->sg),
-			                 skb->len, DMA_TO_DEVICE);
-		spin_unlock_irqrestore(&dma->lock, flags);
+	if (!rcm_mgeth_dma_submit_tx(chan, skb, rcm_mgeth_tx_completed)) {
+		netif_stop_queue(netdev);
 		return NETDEV_TX_BUSY;
 	}
 
-	desc->callback = rcm_mgeth_tx_dma_callback;
-	desc->callback_param = buff;
-
-	netdev_dbg(netdev, "TX%u: DMA operation prepared (%u bytes).\n", 
-	           dma->ch_num, sg_dma_len(&buff->sg));
-
-	buff->cookie = dmaengine_submit(desc);
-	dma_async_issue_pending(dma->chan); 
-
-	netdev_dbg(netdev, "TX%u: DMA operation submitted "
-	                   "(%u bytes, cookie = 0x%08X).\n", 
-	           dma->ch_num, sg_dma_len(&buff->sg), buff->cookie);
-
-	if (copy_skb)
-		dev_kfree_skb(skb);
-
-	dma->next_buff = (dma->next_buff + 1) % RCM_MGETH_CNT_BUFFS_PER_CHAN;
-	++dma->cnt_buffs;
-
-	spin_unlock_irqrestore(&dma->lock, flags);
+	netdev_dbg(netdev, "TX%u: DMA operation submitted (%u bytes).\n", 
+	           ch_num, skb->len);
 
 	return NETDEV_TX_OK;
 }
 
-static void rcm_mgeth_rx_dma_callback(void *param)
+static void rcm_mgeth_rx_completed(struct rcm_mgeth_dma_chan* chan,
+                                   void *packet, u32 size)
 {
-	struct rcm_mgeth_dma_buff *buff = param;
-	struct rcm_mgeth_dma* dma = buff->dma;
-	struct rcm_mgeth_data *data = dma->chan->private;
-	unsigned long flags;
-	enum dma_status status;
-	struct dma_tx_state state;
-
-	spin_lock_irqsave(&dma->lock, flags);
-
-	status = dmaengine_tx_status(dma->chan, buff->cookie, &state);
-
-	if (status != DMA_COMPLETE) {
-		netdev_warn(data->netdev,
-		            "DMA error (RX%u, cookie = 0x%08X).\n",
-		            dma->ch_num, buff->cookie);
-	} else {
-		netdev_dbg(data->netdev, "DMA operation finished successfully "
-		                         "(RX%u, cookie = 0x%08X).\n", 
-		                         dma->ch_num, buff->cookie);
-	}
-
-	buff->error = (status != DMA_COMPLETE);
-	buff->residue = state.residue;
-	complete_all(&buff->dma_completion);
-
-	spin_unlock_irqrestore(&dma->lock, flags);
-}
-
-static int rcm_mgeth_rx_start(struct rcm_mgeth_dma* dma)
-{
-	struct rcm_mgeth_data *data = dma->chan->private;
-	unsigned long flags;
-	struct rcm_mgeth_dma_buff *buff;
-	struct dma_async_tx_descriptor *desc;
-	int cnt = 0;
-
-	spin_lock_irqsave(&dma->lock, flags);
-
-	while (true) {
-		if (dma->cnt_buffs == RCM_MGETH_CNT_BUFFS_PER_CHAN)
-			break;
-
-		buff = &dma->buffs[dma->next_buff];
-
-		buff->skb = NULL;
-		sg_dma_address(&buff->sg) = 
-			dma->dma_addr + dma->next_buff * RCM_MGETH_DMA_BUFF_SIZE;
-		sg_dma_len(&buff->sg) = RCM_MGETH_MAX_FRAME_SIZE;
-
-//		memset(dma->buff + dma->next_buff * RCM_MGETH_DMA_BUFF_SIZE,
-//		       0xCC, RCM_MGETH_DMA_BUFF_SIZE);
-
-		netdev_dbg(data->netdev,
-		           "RX%u: DMA operation ready (%u bytes).\n", 
-		           dma->ch_num, sg_dma_len(&buff->sg));
-
-		desc = dmaengine_prep_slave_sg(dma->chan, &buff->sg, 1,
-		                               DMA_DEV_TO_MEM,
-		                               DMA_PREP_INTERRUPT);
-
-		if (!desc) {
-			netdev_warn(data->netdev,
-			            "Failed prepare DMA RX-operation.\n");
-			break;
-		}
-
-		reinit_completion(&buff->dma_completion);
-
-		desc->callback = rcm_mgeth_rx_dma_callback;
-		desc->callback_param = buff;
-
-		netdev_dbg(data->netdev,
-		           "RX%u: DMA operation prepared (%u bytes).\n", 
-		           dma->ch_num, sg_dma_len(&buff->sg));
-
-		buff->cookie = dmaengine_submit(desc);
-		dma_async_issue_pending(dma->chan); 
-
-		netdev_dbg(data->netdev,
-		           "RX%u: DMA operation submitted "
-		           "(%u bytes, cookie = 0x%08X).\n", 
-		           dma->ch_num, sg_dma_len(&buff->sg), buff->cookie);
-
-		dma->next_buff = (dma->next_buff + 1) % RCM_MGETH_CNT_BUFFS_PER_CHAN;
-		++dma->cnt_buffs;
-
-		++cnt;
-	}
-
-	spin_unlock_irqrestore(&dma->lock, flags);
-
-	return cnt;
-}
-
-static bool rcm_mgeth_rx_wait(struct rcm_mgeth_dma* dma)
-{
-	unsigned long flags;
-	struct rcm_mgeth_dma_buff *buff = NULL;
-
-	spin_lock_irqsave(&dma->lock, flags);
-
-	if (dma->cnt_buffs > 0) 
-		buff = &dma->buffs[dma->first_buff];
-
-	spin_unlock_irqrestore(&dma->lock, flags);
-
-	if (!buff)
-		return false;
-
-	if (!wait_for_completion_timeout(&buff->dma_completion,
-	                                 msecs_to_jiffies(RCM_MGETH_RX_TIMEOUT)))
-		return false;
-
-	return true;
-}
-
-static int rcm_mgeth_rx_process(struct rcm_mgeth_dma* dma)
-{
-	struct rcm_mgeth_data *data = dma->chan->private;
-	unsigned long flags;
-	struct rcm_mgeth_dma_buff *buff;
+	struct net_device *netdev = rcm_mgeth_dma_get_net_device(chan);
+	int ch_num = rcm_mgeth_dma_get_number(chan);
 	struct sk_buff *skb;
-	int processed = 0;
 
-	spin_lock_irqsave(&dma->lock, flags);
+	netdev_dbg(netdev, "DMA operation finished successfully "
+	                   "(RX%u, size = %u).\n", 
+	                   ch_num, size);
 
-	while (true) {
-		if (dma->cnt_buffs == 0)
-			break;
+	skb = netdev_alloc_skb(netdev, size);
 
-		buff = &dma->buffs[dma->first_buff];
+	if (!skb) {
+		netdev->stats.rx_dropped++;
+		netdev_warn(netdev, "Failed to allocate packet (RX%u).\n",
+		            ch_num);
+	} else {
+		skb_put_data(skb, packet, size);
+		skb->protocol = eth_type_trans(skb, netdev);
 
-		if (!try_wait_for_completion(&buff->dma_completion))
-			break;
-
-		if (buff->error) {
-			netdev_warn(data->netdev,
-			            "DMA error (RX%u, cookie = 0x%08X).\n",
-			            dma->ch_num, buff->cookie);
-		} else {
-			skb = netdev_alloc_skb(data->netdev,
-			                       sg_dma_len(&buff->sg) -
-			                       buff->residue);
-
-			if (!skb) {
-				netdev_warn(data->netdev,
-				            "Failed to allocate packet (RX%u).\n",
-				            dma->ch_num);
-			} else {
-				skb_put_data(skb, 
-				             dma->buff + dma->first_buff * RCM_MGETH_DMA_BUFF_SIZE, 
-				             sg_dma_len(&buff->sg) - buff->residue);
-				skb->protocol = eth_type_trans(skb, data->netdev);
-
-				netif_rx(skb);
-			}
-		}
-
-		dma->first_buff = (dma->first_buff + 1) % 
-		                  RCM_MGETH_CNT_BUFFS_PER_CHAN;
-		--dma->cnt_buffs;
-		++processed;
+		netdev->stats.rx_bytes += size;
+		netdev->stats.rx_packets++;
+		netif_receive_skb(skb);
 	}
-
-	spin_unlock_irqrestore(&dma->lock, flags);
-
-	return processed;
-}
-
-static int rcm_mgeth_rx(void* context)
-{
-	struct rcm_mgeth_dma* dma = context;
-
-	while (!kthread_should_stop()) {
-		rcm_mgeth_rx_start(dma);
-
-		if (rcm_mgeth_rx_wait(dma))
-			rcm_mgeth_rx_process(dma);
-	}
-
-	return 0;
 }
 
 /* Netdevice operations */
@@ -726,6 +422,14 @@ static int rcm_mgeth_open(struct net_device *netdev)
 	struct rcm_mgeth_data *data = netdev_priv(netdev);
 	int err;
 	int i;
+
+	err = request_irq(data->irq, rcm_mgeth_irq, IRQF_SHARED, "rcm_mgeth",
+	                  (void *)data);
+	if (err) {
+		netdev_err(netdev, "Could not allocate interrupt %d\n",
+		           data->irq);
+		return err;
+	}
 
 	err = rcm_mgeth_reset(data);
 
@@ -747,20 +451,15 @@ static int rcm_mgeth_open(struct net_device *netdev)
 	phy_start(data->phydev);
 
 	for (i = 0; i < RCM_MGETH_MAX_DMA_CHANNELS; ++i) {
-		struct rcm_mgeth_dma* dma =  &data->rx[i];
+		struct rcm_mgeth_dma_chan* chan =  data->rx[i];
 
-		if (!dma->chan)
-			continue;
+		err = rcm_mgeth_dma_start_rx(chan, rcm_mgeth_rx_completed);
 
-		dma->thread = kthread_run(rcm_mgeth_rx, dma, "rcm_mgeth_rx");
-
-		if (IS_ERR(dma->thread))
-		{
-			netdev_err(netdev, "Failed to start RX-thread.\n");
-			err = PTR_ERR(dma->thread);
+		if (err)
 			return err;
-		};
 	}
+
+	napi_enable(&data->napi);
 
 	netdev_dbg(netdev, "Attached to PHY %d UID 0x%08x Link = %d\n", 
 	           data->phydev->mdio.addr, data->phydev->phy_id,
@@ -774,16 +473,12 @@ static int rcm_mgeth_close(struct net_device *netdev)
 	struct rcm_mgeth_data *data = netdev_priv(netdev);
 	int i;
 
+	napi_disable(&data->napi);
+
 	for (i = 0; i < RCM_MGETH_MAX_DMA_CHANNELS; ++i) {
-		struct rcm_mgeth_dma* dma =  &data->rx[i];
+		struct rcm_mgeth_dma_chan* chan =  data->rx[i];
 
-		if (!dma->chan)
-			continue;
-
-		if (dma->thread) {
-			kthread_stop(dma->thread);
-			dma->thread = NULL;
-		}
+		rcm_mgeth_dma_stop_rx(chan);
 	}
 
 	if (data->phydev) {
@@ -791,6 +486,8 @@ static int rcm_mgeth_close(struct net_device *netdev)
 		phy_disconnect(data->phydev);
 		data->phydev = NULL;
 	}
+
+	free_irq(data->irq, (void *)data);
 
 	return 0;
 }
@@ -835,6 +532,9 @@ static void rcm_mgeth_set_rx_mode(struct net_device *netdev)
 		             netdev->dev_addr[4] | (netdev->dev_addr[5] << 8));
 		regmap_write(data->reg, RCM_MGETH_LEN_MASK_CH(i), 6);
 	}
+
+//	regmap_write(data->reg, RCM_MGETH_LEN_MASK_CH(1), 10244);
+//	regmap_write(data->reg, RCM_MGETH_LEN_MASK_CH(2), 10244);
 
 	// Broadcast and multicast
 	regmap_write(data->reg, RCM_MGETH_LEN_MASK_CH(3), 1);
@@ -949,38 +649,39 @@ static void rcm_mgeth_free_dma(struct rcm_mgeth_data *data)
 	int i;
 
 	for (i = 0; i < RCM_MGETH_MAX_DMA_CHANNELS * 2; ++i) {
-		struct rcm_mgeth_dma* dma =  (i < RCM_MGETH_MAX_DMA_CHANNELS) ? 
-		                             &data->tx[i] : 
-		                             &data->rx[i - RCM_MGETH_MAX_DMA_CHANNELS];
+		struct rcm_mgeth_dma_chan* chan = 
+			(i < RCM_MGETH_MAX_DMA_CHANNELS) ? 
+			data->tx[i] : 
+			data->rx[i - RCM_MGETH_MAX_DMA_CHANNELS];
 
-		if (!dma->chan)
+		if (!chan)
 			continue;
 
-		if (dma->buff) {
-			dma_free_coherent(data->dev, 
-			                  RCM_MGETH_CNT_BUFFS_PER_CHAN * RCM_MGETH_DMA_BUFF_SIZE, 
-			                  dma->buff, dma->dma_addr);
-			dma->buff = NULL;
-		}
+		rcm_mgeth_dma_chan_remove(chan);
 
-		dma_release_channel(dma->chan);
-		dma->chan = NULL;
+		if (i < RCM_MGETH_MAX_DMA_CHANNELS)
+			data->tx[i] = NULL;
+		else
+			data->rx[i - RCM_MGETH_MAX_DMA_CHANNELS] = NULL;
 	}
 }
 
-static int rcm_mgeth_prep_dma(struct rcm_mgeth_data *data)
+static int rcm_mgeth_prep_dma(struct rcm_mgeth_data *data,
+                              struct platform_device *pdev)
 {
 	int ret = 0;
 	int i;
-	int j;
-	bool have_tx = false;
-	bool have_rx = false;
+	struct resource *res;
+	void __iomem *base;
 
 	for (i = 0; i < RCM_MGETH_MAX_DMA_CHANNELS * 2; ++i) {
 		char ch_name[8];
-		struct rcm_mgeth_dma* dma =  (i < RCM_MGETH_MAX_DMA_CHANNELS) ? 
-		                             &data->tx[i] : 
-		                             &data->rx[i - RCM_MGETH_MAX_DMA_CHANNELS];
+
+		struct rcm_mgeth_dma_chan* chan = NULL;
+
+		enum dma_data_direction dir = (i < RCM_MGETH_MAX_DMA_CHANNELS) ?
+		                              DMA_TO_DEVICE :
+		                              DMA_FROM_DEVICE;
 
 		if (i < RCM_MGETH_MAX_DMA_CHANNELS)
 			snprintf(ch_name, sizeof(ch_name), "tx%d", i);
@@ -988,54 +689,28 @@ static int rcm_mgeth_prep_dma(struct rcm_mgeth_data *data)
 			snprintf(ch_name, sizeof(ch_name), "rx%d",
 			         i - RCM_MGETH_MAX_DMA_CHANNELS);
 
-		dma->chan = dma_request_chan(data->dev, ch_name);
-
-		if (IS_ERR(dma->chan)) {
-			dma->chan = NULL;
-			continue;
-		}
-
-		dma->chan->private = data;
-
-		dma->ch_num = i % RCM_MGETH_MAX_DMA_CHANNELS;
-		spin_lock_init(&dma->lock);
-
-		if (i < RCM_MGETH_MAX_DMA_CHANNELS)
-			have_tx = true;
-		else
-			have_rx = true;
-
-		dma->buff = 
-			dma_alloc_coherent(data->dev,
-			                   RCM_MGETH_CNT_BUFFS_PER_CHAN * RCM_MGETH_DMA_BUFF_SIZE,
-			                   &dma->dma_addr, GFP_KERNEL);
-
-		if (!dma->buff) {
-			netdev_err(data->netdev,
-			           "Failed to allocate DMA-buffer.\n");
-			ret = -ENOMEM;
+		res = platform_get_resource_byname(pdev, IORESOURCE_MEM,
+		                                   ch_name);
+		base = devm_ioremap_resource(data->dev, res);
+		if (IS_ERR(base)) {
+			netdev_err(data->netdev, "missing \"%s\"\n", ch_name);
+			ret = PTR_ERR(base);
 			break;
 		}
 
-		for (j = 0; j < RCM_MGETH_CNT_BUFFS_PER_CHAN; ++j) {
-			dma->buffs[j].dma = dma;
-			sg_init_table(&dma->buffs[j].sg, 1);
-			init_completion(&dma->buffs[j].dma_completion);
-		}
-	}
+		chan = rcm_mgeth_dma_chan_create(data->netdev, ch_name, base,
+		                                 (i % RCM_MGETH_MAX_DMA_CHANNELS),
+		                                 dir);
 
-	if (ret == 0) {
-		if (!have_tx) {
-			netdev_err(data->netdev,
-			           "No DMA TX channel specified.\n");
-			ret = -ENODEV;
+		if (!chan) {
+			ret = -EFAULT;
+			break;
 		}
 
-		if (!have_rx) {
-			netdev_err(data->netdev,
-			           "No DMA RX channel specified.\n");
-			ret = -ENODEV;
-		}
+		if (i < RCM_MGETH_MAX_DMA_CHANNELS)
+			data->tx[i] = chan;
+		else
+			data->rx[i - RCM_MGETH_MAX_DMA_CHANNELS] = chan;
 	}
 
 	if (ret != 0)
@@ -1089,7 +764,6 @@ static int rcm_mgeth_probe(struct platform_device *pdev)
 	int i;
 	u32 id;
 	u32 ver;
-	struct irq_chip_generic *gc;
 
 	match = of_match_device(rcm_mgeth_of_match, dev);
 	if (!match)
@@ -1151,38 +825,7 @@ static int rcm_mgeth_probe(struct platform_device *pdev)
 
 	data->irq = platform_get_irq(pdev, 0);
 
-	data->domain = irq_domain_add_linear(np, RCM_MGETH_MAX_DMA_CHANNELS * 2,
-	                                     &irq_generic_chip_ops, data);
-	if (!data->domain) {
-		dev_err(dev, "couldn't allocate irq domain.\n");
-		return -ENODEV;
-	}
-
-	err = irq_alloc_domain_generic_chips(data->domain,
-	                                     RCM_MGETH_MAX_DMA_CHANNELS * 2,
-	                                     1, np->name, handle_level_irq,
-	                                     IRQ_NOREQUEST | IRQ_NOPROBE | IRQ_LEVEL,
-	                                     0, 0);
-	if (err) {
-		dev_err(dev, "couldn't allocate irq chip.\n");
-		return err;
-	}
-
-	gc = irq_get_domain_generic_chip(data->domain, 0);
-	gc->private = data;
-	gc->chip_types[0].type = IRQ_TYPE_LEVEL_MASK;
-/*
-	gc->chip_types[0].chip.irq_ack      = rcm_mgeth_irq_ack;
-	gc->chip_types[0].chip.irq_mask     = rcm_mgeth_irq_mask;
-	gc->chip_types[0].chip.irq_unmask   = rcm_mgeth_irq_unmask;
-*/
-	gc->chip_types[0].chip.irq_set_type = rcm_mgeth_irq_set_type;
-
-	gc->chip_types[0].chip.name         = np->name;
-
-	irq_set_chained_handler_and_data(data->irq, rcm_mgeth_irq, data);
-
-	err = rcm_mgeth_prep_dma(data);
+	err = rcm_mgeth_prep_dma(data, pdev);
 
 	if (err != 0) 
 		return err;
@@ -1224,6 +867,8 @@ static int rcm_mgeth_probe(struct platform_device *pdev)
 
 	platform_set_drvdata(pdev, netdev);
 
+	netif_napi_add(netdev, &data->napi, rcm_mgeth_poll, 64);
+
 	dev_info(dev, "initialized\n");
 
 	return 0;
@@ -1244,9 +889,6 @@ static int rcm_mgeth_remove(struct platform_device *pdev)
 	unregister_netdev(netdev);
 
 	rcm_mgeth_free_dma(data);
-
-	if (data->domain)
-		irq_domain_remove(data->domain);
 
 	return 0;
 }
