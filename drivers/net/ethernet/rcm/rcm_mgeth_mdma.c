@@ -357,6 +357,7 @@ int rcm_mgeth_dma_rx_poll(struct rcm_mgeth_dma_chan *chan, int budget)
 	u32 size;
 	u32 status;
 	void *buff;
+	u32 enabled;
 
 	if (chan->dir == DMA_TO_DEVICE) {
 		netdev_err(chan->netdev,
@@ -365,6 +366,8 @@ int rcm_mgeth_dma_rx_poll(struct rcm_mgeth_dma_chan *chan, int budget)
 	}
 
 	spin_lock_irqsave(&chan->lock, irqflags);
+
+	enabled = readl(&chan->regs->enable);
 
 	if (budget > work_done)
 		readl(&chan->regs->status);
@@ -405,9 +408,7 @@ int rcm_mgeth_dma_rx_poll(struct rcm_mgeth_dma_chan *chan, int budget)
 	}
 
 	if (budget > work_done) {
-		u32 enable = readl(&chan->regs->enable);
-
-		if (enable == 0) {
+		if (enabled == 0) {
 			dma_addr_t dma_addr = 
 				mdma_desc_pool_get_addr(&chan->desc_pool,
 				                        chan->rx.pos);
