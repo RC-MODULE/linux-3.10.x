@@ -9,7 +9,7 @@
 
 / {
 	plb {
-		emi: emi {
+		emi0: emi@80060000 {
 			status = "ok";
 			bank-0-ss = <(
 				RCM_EMI_SSx_BTYP_SRAM
@@ -19,7 +19,7 @@
 				| RCM_EMI_SSx_SST_FLOW_THROUGH
 				| RCM_EMI_SSx_TSSOE_1
 				| RCM_EMI_SSx_TSOE_1
-				| RCM_EMI_SSx_TCYC_2
+				| RCM_EMI_SSx_TCYC_3
 				| RCM_EMI_SSx_RDY(0)
 				| RCM_EMI_SSx_TDEL_0)>;
 			bank-0-sd = <(
@@ -30,6 +30,8 @@
 				| RCM_EMI_SDx_SI_EXT_INIT
 				| RCM_EMI_SDx_T_RCD_5
 				| RCM_EMI_SDx_T_RAS_9)>;
+			bank-0-ecc;
+			bank-0-size = <0x400000>;
 
 			sram: sram@00000000 {
 				compatible = "mmio-sram";

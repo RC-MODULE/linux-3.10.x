@@ -87,13 +87,15 @@
 		dma-ranges;
 		clock-frequency = <100000000>; // 100 Mhz
 
-		emi: emi {
+		emi0: emi@80060000 {
 			status = "disabled";
 			compatible = "rcm,emi";
 			#address-cells = <1>;
 			#size-cells = <1>;
 			dcr-reg = <0x80060000 0x1000>;
 			ranges = <0x00000000 0x00 0x00000000 0x80000000>;
+			interrupt-parent = <&MPIC>;
+			interrupts = <56 2 57 2>; // active high level-sensitive
 		};
 
 		lsif {

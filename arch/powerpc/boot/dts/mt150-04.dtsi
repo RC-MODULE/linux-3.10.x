@@ -9,7 +9,7 @@
 
 / {
 	plb {
-		emi: emi {
+		emi0: emi@80060000 {
 			status = "ok";
 			bank-5-ss = <(
 				RCM_EMI_SSx_BTYP_NOR
@@ -30,7 +30,8 @@
 				| RCM_EMI_SDx_SI_EXT_INIT
 				| RCM_EMI_SDx_T_RCD_5
 				| RCM_EMI_SDx_T_RAS_9)>;
-			// bank-5-ecc;
+			// bank-5-ecc; // cannot be used with NOR
+			bank-5-size = <0x10000000>; // whole slot
 
 			nor@70000000 {
 				compatible = "cfi-flash";
@@ -40,7 +41,7 @@
 				#address-cells = <1>;
 				little-endian;
 
-				/* ??? partition@0 {
+				partition@0 {
 					label = "uboot_spl";
 					reg = <0x00000 0x40000>;
 				};
@@ -67,8 +68,8 @@
 
 				partition@2180000 {
 					label = "rootfs";
-					reg = <0x2180000 0xDE80000>;
-				};*/
+					reg = <0x2180000 0x5E80000>;
+				};
 			};
 		};
 	};
