@@ -1,0 +1,97 @@
+/*
+ * Device Tree Source for RCM MT115.02 board
+ *
+ * Copyright (C) 2020 MIR
+ *	Mikhail.Petrov@mir.dev
+ *
+ * SPDX-License-Identifier: GPL-2.0+
+ */
+
+#include "1888bm18.dtsi"
+
+/ {
+	model = "rcm,1888bm18";
+	compatible = "rcm,1888bm18";
+
+	aliases {
+		serial0 = &uart0;
+		serial1 = &uart1;
+		mmc0 = &mmc0;
+	};
+
+	dcr {
+		cpufreq: cpufreq@0x38006000 {
+			status = "ok";
+			//        freq  div
+			freqs = < 50000  4>,
+			        <100000  2>,
+			        <200000  1>;
+		};
+	};
+
+	plb {
+
+		lsif {
+			uart0: uart0@C0029000 {
+				status = "ok";
+			};
+
+			uart1: uart1@C0039000 {
+				status = "ok";
+			};
+
+			gpio0: gpio0@C0028000 {
+				status = "ok";
+			};
+
+			gpio1: gpio1@C0038000 {
+				status = "ok";
+			};
+
+			mmc0: mmc0@C002C000 {
+				status = "ok";
+				cd-gpios = <&gpio0 3 0>; // card detect
+			};
+
+			mmc1: mmc1@C003C000 {
+				// status = "ok";
+				cd-gpios = <&gpio1 0 0>; // card detect
+			};
+
+			spi0: spi@C002B000 {
+				// status = "ok";
+				num-cs = <1>;
+
+				spi_flash@0 {
+					compatible = "st,m25p32", "spi-nor";
+					reg = <0>;
+					spi-max-frequency = <20000000>;
+				};
+			};
+
+			spi1: spi@C003B000 {
+	 			// status = "ok";
+				num-cs = <1>;
+
+				spi_flash@0 {
+					compatible = "st,m25p32", "spi-nor";
+					reg = <0>;
+					spi-max-frequency = <20000000>;
+				};
+			};
+		};
+	};
+
+	chosen {
+		stdout-path = &uart0;
+	};
+};
+
+// Ethernet
+// #include "mt150-03.dtsi"
+
+// NOR
+// #include "mt150-04.dtsi"
+
+// SRAM
+// #include "mt150-07.dtsi"

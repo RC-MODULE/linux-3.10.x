@@ -9,6 +9,8 @@
 
 /dts-v1/;
 
+#include <dt-bindings/memory/rcm-emi.h>
+
 / {
 	#address-cells = <2>;
 	#size-cells = <2>;
@@ -84,6 +86,17 @@
 		ranges;
 		dma-ranges;
 		clock-frequency = <100000000>; // 100 Mhz
+
+		emi0: emi@80060000 {
+			status = "disabled";
+			compatible = "rcm,emi";
+			#address-cells = <1>;
+			#size-cells = <1>;
+			dcr-reg = <0x80060000 0x1000>;
+			ranges = <0x00000000 0x00 0x00000000 0x80000000>;
+			interrupt-parent = <&MPIC>;
+			interrupts = <56 2 57 2>; // active high level-sensitive
+		};
 
 		lsif {
 			compatible = "arm,amba-bus", "ibm,plb6";
@@ -189,6 +202,31 @@
 				axi-awsize = <2>; // 4 bytes 
 				axi-arsize = <2>; // 4 bytes 
 				sdio-timeout = <200>; // 200 ms
+			};
+
+			spi0: spi@C002B000 {
+				status = "disabled";
+				compatible = "arm,pl022", "arm,primecell";
+				reg = <0xC002B000 0x1000>;
+				interrupts = <34 0>; // IRQ_TYPE_EDGE_RISING
+				#address-cells = <1>;
+				#size-cells = <0>;
+				interrupt-parent = <&MPIC>;
+				clocks = <&pclk>;
+				clock-names = "apb_pclk";
+				num-cs = <1>;
+			};
+
+			spi1: spi@C003B000 {
+				status = "disabled";
+				compatible = "arm,pl022", "arm,primecell";
+				reg = <0xC003B000 0x1000>;
+				interrupts = <35 0>; // IRQ_TYPE_EDGE_RISING
+				#address-cells = <1>;
+				#size-cells = <0>;
+				interrupt-parent = <&MPIC>;
+				clocks = <&pclk>;
+				clock-names = "apb_pclk";
 			};
 		};
 	};

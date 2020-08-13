@@ -16,7 +16,6 @@
 #include <linux/module.h>
 #include <linux/cpufreq.h>
 #include <linux/of_device.h>
-
 #include <asm/dcr.h>
 
 #define CPUFREQ_WRLOCK 0x03C
