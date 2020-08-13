@@ -19,8 +19,8 @@
 
 #include "rcm_mgeth.h"
 
-#define RCM_MGETH_MDMA_RX_POOL_SIZE 16
-#define RCM_MGETH_MDMA_TX_POOL_SIZE 16
+#define RCM_MGETH_MDMA_RX_POOL_SIZE 256
+#define RCM_MGETH_MDMA_TX_POOL_SIZE 128
 
 #define RCM_MGETH_MDMA_MAX_TRANSACTION 0x3FFC
 #define RCM_MGETH_MDMA_LEN_MASK        0x3FFF
@@ -58,10 +58,10 @@ struct rcm_mgeth_dma_chan {
 	struct mdma_desc_pool        desc_pool;
 
 	struct rcm_mgeth_dma_buff   *buffs;
-	int                          next_buff;
-	int                          first_buff;
-	int                          cnt_buffs;
-	int                          rest_buffs;
+	unsigned                     next_buff;
+	unsigned                     first_buff;
+	unsigned                     cnt_buffs;
+	unsigned                     rest_buffs;
 
 	struct
 	{
@@ -460,7 +460,7 @@ struct rcm_mgeth_dma_chan *rcm_mgeth_dma_chan_create(struct net_device *netdev,
 	                           size_pool,
 	                           netdev->dev.parent, chan->name,
 	                           RCM_MGETH_MDMA_MAX_TRANSACTION,
-	                           RCM_MGETH_MDMA_LEN_MASK);
+	                           RCM_MGETH_MDMA_LEN_MASK, true);
 
 	if (ret) {
 		netdev_err(netdev,
