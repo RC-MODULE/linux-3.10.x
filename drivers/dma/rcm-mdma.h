@@ -9,10 +9,12 @@
 #include <linux/interrupt.h>
 #include <linux/dmaengine.h>
 
+#include "dmaengine.h"
+#include "rcm-mdma-desc-pool.h"
+
 // Max number of channels (in specific direction)
 #define MDMA_MAX_CHANNELS 4
 
-#define MDMA_POOL_CHUNK_SIZE    16384
 #define MDMA_PM_TIMEOUT         100
 #define MDMA_BUS_WIDTH_128      128
 
@@ -49,16 +51,12 @@
 #define MDMA_IRQ_START_BY_EVENT BIT(8)
 #define MDMA_IRQ_IGNORE_EVENT   BIT(9)
 
-#define MDMA_IRQ_SENS_MASK (MDMA_IRQ_INT_DESC | MDMA_IRQ_BAD_DESC | \
-                            MDMA_IRQ_DISCARD_DESC | MDMA_IRQ_WAXI_ERR | \
-                            MDMA_IRQ_AXI_ERR)
-
-#define MDMA_DESC_ALIGNMENT 16
+#define MDMA_IRQ_SENS_MASK (MDMA_IRQ_CANCEL_DONE | MDMA_IRQ_INT_DESC | \
+                            MDMA_IRQ_BAD_DESC | MDMA_IRQ_DISCARD_DESC | \
+                            MDMA_IRQ_WAXI_ERR | MDMA_IRQ_AXI_ERR)
 
 #define to_chan(chan)      container_of(chan, struct mdma_chan, slave)
 #define tx_to_desc(tx)     container_of(tx, struct mdma_desc_sw, async_tx)
-#define pool_to_chan(pool) container_of(pool, struct mdma_chan, desc_pool)
-
 
 typedef const volatile unsigned int roreg32;
 typedef volatile unsigned int rwreg32;
@@ -116,20 +114,6 @@ struct channel_regs
 } __attribute__ ((packed));
 
 /**
- * struct mdma_desc_long_ll - Long HW descriptor
- * @usrdata_l: user data depends on descriptor kind
- * @usrdata_h: user data depends on descriptor kind
- * @memptr: Buffer address/Next descriptor address
- * @flags_length: Control word
- */
-struct mdma_desc_long_ll {
-	unsigned int usrdata_l;
-	unsigned int usrdata_h;
-	unsigned int memptr;
-	unsigned int flags_length;
-} __attribute__((packed, aligned(MDMA_DESC_ALIGNMENT)));
-
-/**
  * struct mdma_desc_sw - Per Transaction structure
  * @src: Source address for simple mode dma
  * @dst: Destination address for simple mode dma
@@ -151,21 +135,6 @@ struct mdma_desc_sw {
 	bool completed;
 	bool err;
 	dma_cookie_t cookie;
-};
-
-struct mdma_pool_chunk {
-	struct mdma_desc_long_ll *descs;
-	dma_addr_t                dma_addr;
-};
-
-struct mdma_desc_pool {
-	struct mdma_pool_chunk*   chunks;
-	unsigned                  cnt_chunks;
-
-	unsigned                  size;
-	unsigned                  cnt;
-	unsigned                  head;
-	unsigned                  next;
 };
 
 struct mdma_chan {
@@ -235,24 +204,6 @@ struct mdma_device {
 	struct clk *clk;
 	const struct mdma_of_data* of_data;
 };
-
-int mdma_desc_pool_alloc(struct mdma_desc_pool* pool, unsigned cnt);
-void mdma_desc_pool_free(struct mdma_desc_pool* pool);
-dma_addr_t mdma_desc_pool_get_addr(struct mdma_desc_pool* pool, unsigned pos);
-unsigned mdma_desc_pool_get(struct mdma_desc_pool* pool, 
-                            unsigned cnt, unsigned *pos);
-unsigned mdma_desc_pool_fill(struct mdma_desc_pool* pool, unsigned pos, 
-                             dma_addr_t dma_addr, size_t len, bool stop_int);
-unsigned mdma_desc_pool_fill_like(struct mdma_desc_pool* pool, unsigned pos, 
-                                  dma_addr_t dma_addr, size_t len,
-                                  bool stop_int,
-                                  struct mdma_desc_pool* pool_base, 
-                                  unsigned pos_base);
-unsigned mdma_desc_pool_fill_sg(struct mdma_desc_pool* pool, unsigned pos, 
-                                struct scatterlist *sg, unsigned int sg_len,
-                                bool stop_int);
-void mdma_desc_pool_put(struct mdma_desc_pool* pool,
-                        unsigned pos, unsigned cnt);
 
 unsigned mdma_cnt_desc_needed(struct mdma_chan *chan, struct scatterlist *sgl,
                               unsigned int sg_len, size_t *len);

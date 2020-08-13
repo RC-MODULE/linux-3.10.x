@@ -63,6 +63,7 @@ obj-$(CONFIG_PPC_BESTCOMM) += bestcomm/
 obj-$(CONFIG_PXA_DMA) += pxa_dma.o
 obj-$(CONFIG_RCM_AUDIO_DMA) += rcm-audio-dma.o
 obj-$(CONFIG_RCM_MDMA) += rcm-mdma.o rcm-mdma-gp.o
+obj-$(CONFIG_RCM_MDMA_DESC_POOL) += rcm-mdma-desc-pool.o
 obj-$(CONFIG_RCM_CDNS_DMA) += rcm-cdns-dma.o
 obj-$(CONFIG_RENESAS_DMA) += sh/
 obj-$(CONFIG_SF_PDMA) += sf-pdma/

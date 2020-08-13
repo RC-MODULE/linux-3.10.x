@@ -133,7 +133,7 @@ mdma_gp_prep_memcpy(struct dma_chan *dchan, dma_addr_t dma_dst,
 	mdev->tx[0].prepared_desc = sw_desc_tx;
 
 	cnt = mdma_desc_pool_fill(&mdev->rx[0].desc_pool, sw_desc_rx->pos,
-	                          dma_src, len, false);
+	                          dma_src, len, true, false);
 	if (cnt > sw_desc_rx->cnt) {
 		dev_err(mdev->dev,
 		        "%s: Descpitors number does not match (%u != %u)\n",
@@ -142,7 +142,7 @@ mdma_gp_prep_memcpy(struct dma_chan *dchan, dma_addr_t dma_dst,
 	}
 
 	cnt = mdma_desc_pool_fill_like(&mdev->tx[0].desc_pool, sw_desc_tx->pos,
-	                               dma_dst, len, true,
+	                               dma_dst, len, true, true,
 	                               &mdev->rx[0].desc_pool, sw_desc_rx->pos);
 	if (cnt > sw_desc_tx->cnt) {
 		dev_err(mdev->dev,
@@ -199,7 +199,7 @@ mdma_gp_prep_slave_sg(struct dma_chan *dchan, struct scatterlist *sgl,
 	struct mdma_desc_pool pool_save_rx;
 	struct mdma_desc_pool pool_save_tx;
 	unsigned cnt;
-	bool stop_int;
+	bool interrupt;
 
 	if (dir != DMA_MEM_TO_MEM) {
 		dev_err(mdev->dev,
@@ -267,10 +267,10 @@ mdma_gp_prep_slave_sg(struct dma_chan *dchan, struct scatterlist *sgl,
 	sw_desc        = (chan == &mdev->rx[0]) ? sw_desc_rx : sw_desc_tx;
 	sw_desc_linked = (chan == &mdev->rx[0]) ? sw_desc_tx : sw_desc_rx;
 
-	stop_int       = (chan == &mdev->rx[0]) ? false : true;
+	interrupt      = (chan == &mdev->rx[0]) ? false : true;
 
 	cnt = mdma_desc_pool_fill_sg(&chan->desc_pool, sw_desc->pos,
-	                             sgl, sg_len, stop_int);
+	                             sgl, sg_len, true, interrupt);
 	if (cnt > sw_desc->cnt) {
 		dev_err(mdev->dev,
 		        "%s: Descpitors number does not match (%u != %u)\n",
@@ -280,7 +280,7 @@ mdma_gp_prep_slave_sg(struct dma_chan *dchan, struct scatterlist *sgl,
 
 	cnt = mdma_desc_pool_fill_like(&chan_linked->desc_pool,
 	                               sw_desc_linked->pos,
-	                               dma_addr, len, !stop_int,
+	                               dma_addr, len, true, !interrupt,
 	                               &chan->desc_pool, sw_desc->pos);
 	if (cnt > sw_desc_linked->cnt) {
 		dev_err(mdev->dev,
