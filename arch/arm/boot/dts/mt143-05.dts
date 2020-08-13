@@ -139,8 +139,16 @@
                   <0x01014200 0x100>,
                   <0x01014400 0x100>,
                   <0x01014600 0x100>,
-                  <0x01014800 0x100>;
-            reg-names = "reg", "rx-mask0", "rx-mask1", "rx-mask2", "rx-mask3";
+                  <0x01014800 0x100>,
+                  <0x01014300 0x100>,
+                  <0x01014500 0x100>,
+                  <0x01014700 0x100>,
+                  <0x01014900 0x100>,
+                  <0x01014A00 0x100>,
+                  <0x01014B00 0x100>,
+                  <0x01014C00 0x100>,
+                  <0x01014D00 0x100>;
+            reg-names = "reg", "rx-mask0", "rx-mask1", "rx-mask2", "rx-mask3", "rx0", "rx1", "rx2", "rx3", "tx0", "tx1", "tx2", "tx3";
             clocks = <&clock_axi_fast>;
 /*
             mac-address = [ec 17 66 64 08 10];
@@ -150,37 +158,7 @@
             phy-mode = "sgmii";
             interrupt-parent = <&gic0>;
             interrupts = <0 19 4>;
-            interrupt-controller;
-            #interrupt-cells = <2>;
-            dmas = <&mdma_mgeth0 0
-                    &mdma_mgeth0 1
-                    &mdma_mgeth0 2
-                    &mdma_mgeth0 3
-                    &mdma_mgeth0 4
-                    &mdma_mgeth0 5
-                    &mdma_mgeth0 6
-                    &mdma_mgeth0 7>;
-            dma-names = "tx0", "rx0", "tx1", "rx1", "tx2", "rx2", "tx3", "rx3";
             status = "okay";
-        };
-
-        mdma_mgeth0: dma@01014000 {
-            compatible = "rcm,mdma-mgeth";
-            reg = <0x01014300 0x100>,
-                  <0x01014500 0x100>,
-                  <0x01014700 0x100>,
-                  <0x01014900 0x100>,
-                  <0x01014A00 0x100>,
-                  <0x01014B00 0x100>,
-                  <0x01014C00 0x100>,
-                  <0x01014D00 0x100>;
-            reg-names = "tx0", "tx1", "tx2", "tx3", "rx0", "rx1", "rx2", "rx3";
-            #dma-cells = <1>;
-            interrupt-parent = <&mgeth0>;
-            interrupts = <0 4>, <1 4>, <2 4>, <3 4>, <4 4>, <5 4>, <6 4>, <7 4>;
-            interrupt-names = "rx0", "rx1", "rx2", "rx3", "tx0", "tx1", "tx2", "tx3";
-            clocks = <&clock_axi_fast>;
-            rcm,bus-width = <128>;
         };
 
         mgeth1: mgeth1@0x01015000 {
@@ -189,31 +167,8 @@
                   <0x01015200 0x100>,
                   <0x01015400 0x100>,
                   <0x01015600 0x100>,
-                  <0x01015800 0x100>;
-            reg-names = "reg", "rx-mask0", "rx-mask1", "rx-mask2", "rx-mask3";
-            clocks = <&clock_axi_fast>;
-            phys = <&sgmiiphy>;
-            phy-handle = <&phy1>;
-            phy-mode = "sgmii";
-            interrupt-parent = <&gic0>;
-            interrupts = <0 20 4>;
-            interrupt-controller;
-            #interrupt-cells = <2>;
-            dmas = <&mdma_mgeth1 0
-                    &mdma_mgeth1 1
-                    &mdma_mgeth1 2
-                    &mdma_mgeth1 3
-                    &mdma_mgeth1 4
-                    &mdma_mgeth1 5
-                    &mdma_mgeth1 6
-                    &mdma_mgeth1 7>;
-            dma-names = "tx0", "rx0", "tx1", "rx1", "tx2", "rx2", "tx3", "rx3";
-            status = "okay";
-        };
-
-        mdma_mgeth1: dma@01015000 {
-            compatible = "rcm,mdma-mgeth";
-            reg = <0x01015300 0x100>,
+                  <0x01015800 0x100>,
+                  <0x01015300 0x100>,
                   <0x01015500 0x100>,
                   <0x01015700 0x100>,
                   <0x01015900 0x100>,
@@ -221,13 +176,14 @@
                   <0x01015B00 0x100>,
                   <0x01015C00 0x100>,
                   <0x01015D00 0x100>;
-            reg-names = "tx0", "tx1", "tx2", "tx3", "rx0", "rx1", "rx2", "rx3";
-            #dma-cells = <1>;
-            interrupt-parent = <&mgeth1>;
-            interrupts = <0 4>, <1 4>, <2 4>, <3 4>, <4 4>, <5 4>, <6 4>, <7 4>;
-            interrupt-names = "rx0", "rx1", "rx2", "rx3", "tx0", "tx1", "tx2", "tx3";
+            reg-names = "reg", "rx-mask0", "rx-mask1", "rx-mask2", "rx-mask3", "rx0", "rx1", "rx2", "rx3", "tx0", "tx1", "tx2", "tx3";
             clocks = <&clock_axi_fast>;
-            rcm,bus-width = <128>;
+            phys = <&sgmiiphy>;
+            phy-handle = <&phy1>;
+            phy-mode = "sgmii";
+            interrupt-parent = <&gic0>;
+            interrupts = <0 20 4>;
+            status = "okay";
         };
 
         mgeth2: mgeth2@0x01016000 {
@@ -236,31 +192,8 @@
                   <0x01016200 0x100>,
                   <0x01016400 0x100>,
                   <0x01016600 0x100>,
-                  <0x01016800 0x100>;
-            reg-names = "reg", "rx-mask0", "rx-mask1", "rx-mask2", "rx-mask3";
-            clocks = <&clock_axi_fast>;
-            phys = <&sgmiiphy>;
-            phy-handle = <&phy2>;
-            phy-mode = "sgmii";
-            interrupt-parent = <&gic0>;
-            interrupts = <0 21 4>;
-            interrupt-controller;
-            #interrupt-cells = <2>;
-            dmas = <&mdma_mgeth2 0
-                    &mdma_mgeth2 1
-                    &mdma_mgeth2 2
-                    &mdma_mgeth2 3
-                    &mdma_mgeth2 4
-                    &mdma_mgeth2 5
-                    &mdma_mgeth2 6
-                    &mdma_mgeth2 7>;
-            dma-names = "tx0", "rx0", "tx1", "rx1", "tx2", "rx2", "tx3", "rx3";
-            status = "okay";
-        };
-
-        mdma_mgeth2: dma@01016000 {
-            compatible = "rcm,mdma-mgeth";
-            reg = <0x01016300 0x100>,
+                  <0x01016800 0x100>,
+                  <0x01016300 0x100>,
                   <0x01016500 0x100>,
                   <0x01016700 0x100>,
                   <0x01016900 0x100>,
@@ -268,13 +201,14 @@
                   <0x01016B00 0x100>,
                   <0x01016C00 0x100>,
                   <0x01016D00 0x100>;
-            reg-names = "tx0", "tx1", "tx2", "tx3", "rx0", "rx1", "rx2", "rx3";
-            #dma-cells = <1>;
-            interrupt-parent = <&mgeth2>;
-            interrupts = <0 4>, <1 4>, <2 4>, <3 4>, <4 4>, <5 4>, <6 4>, <7 4>;
-            interrupt-names = "rx0", "rx1", "rx2", "rx3", "tx0", "tx1", "tx2", "tx3";
+            reg-names = "reg", "rx-mask0", "rx-mask1", "rx-mask2", "rx-mask3", "rx0", "rx1", "rx2", "rx3", "tx0", "tx1", "tx2", "tx3";
             clocks = <&clock_axi_fast>;
-            rcm,bus-width = <128>;
+            phys = <&sgmiiphy>;
+            phy-handle = <&phy2>;
+            phy-mode = "sgmii";
+            interrupt-parent = <&gic0>;
+            interrupts = <0 21 4>;
+            status = "okay";
         };
 
         mgeth3: mgeth3@0x01017000 {
@@ -283,31 +217,8 @@
                   <0x01017200 0x100>,
                   <0x01017400 0x100>,
                   <0x01017600 0x100>,
-                  <0x01017800 0x100>;
-            reg-names = "reg", "rx-mask0", "rx-mask1", "rx-mask2", "rx-mask3";
-            clocks = <&clock_axi_fast>;
-            phys = <&sgmiiphy>;
-            phy-handle = <&phy3>;
-            phy-mode = "sgmii";
-            interrupt-parent = <&gic0>;
-            interrupts = <0 22 4>;
-            interrupt-controller;
-            #interrupt-cells = <2>;
-            dmas = <&mdma_mgeth3 0
-                    &mdma_mgeth3 1
-                    &mdma_mgeth3 2
-                    &mdma_mgeth3 3
-                    &mdma_mgeth3 4
-                    &mdma_mgeth3 5
-                    &mdma_mgeth3 6
-                    &mdma_mgeth3 7>;
-            dma-names = "tx0", "rx0", "tx1", "rx1", "tx2", "rx2", "tx3", "rx3";
-            status = "okay";
-        };
-
-        mdma_mgeth3: dma@01017000 {
-            compatible = "rcm,mdma-mgeth";
-            reg = <0x01017300 0x100>,
+                  <0x01017800 0x100>,
+                  <0x01017300 0x100>,
                   <0x01017500 0x100>,
                   <0x01017700 0x100>,
                   <0x01017900 0x100>,
@@ -315,13 +226,14 @@
                   <0x01017B00 0x100>,
                   <0x01017C00 0x100>,
                   <0x01017D00 0x100>;
-            reg-names = "tx0", "tx1", "tx2", "tx3", "rx0", "rx1", "rx2", "rx3";
-            #dma-cells = <1>;
-            interrupt-parent = <&mgeth3>;
-            interrupts = <0 4>, <1 4>, <2 4>, <3 4>, <4 4>, <5 4>, <6 4>, <7 4>;
-            interrupt-names = "rx0", "rx1", "rx2", "rx3", "tx0", "tx1", "tx2", "tx3";
+            reg-names = "reg", "rx-mask0", "rx-mask1", "rx-mask2", "rx-mask3", "rx0", "rx1", "rx2", "rx3", "tx0", "tx1", "tx2", "tx3";
             clocks = <&clock_axi_fast>;
-            rcm,bus-width = <128>;
+            phys = <&sgmiiphy>;
+            phy-handle = <&phy3>;
+            phy-mode = "sgmii";
+            interrupt-parent = <&gic0>;
+            interrupts = <0 22 4>;
+            status = "okay";
         };
     };
 
