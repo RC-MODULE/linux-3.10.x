@@ -6,6 +6,8 @@ config RCM_MGETH
 	select RCM_SGMII_PHY
 	select RCM_MDIO
 	select GENERIC_IRQ_CHIP
+	select DMADEVICES
+	select RCM_MDMA_DESC_POOL
 	help
 	  This driver supports the RC-Module based MGETH Ethernet controller.
 
