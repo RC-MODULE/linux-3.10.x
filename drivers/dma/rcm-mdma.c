@@ -480,7 +480,7 @@ int mdma_alloc_chan_resources(struct dma_chan *dchan)
 	                           mdev->of_data->hw_desc_pool_size,
 	                           chan->dev, chan->name,
 	                           mdev->of_data->max_transaction,
-	                           mdev->of_data->len_mask);
+	                           mdev->of_data->len_mask, false);
 
 	if (ret)
 		return ret;

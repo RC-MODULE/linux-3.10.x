@@ -43,7 +43,8 @@ struct mdma_desc_pool {
 
 int mdma_desc_pool_alloc(struct mdma_desc_pool* pool, unsigned cnt,
                          struct device *dev, char* name,
-                         size_t max_transaction, size_t len_mask);
+                         size_t max_transaction, size_t len_mask,
+                         bool do_size_clip);
 void mdma_desc_pool_free(struct mdma_desc_pool* pool);
 dma_addr_t mdma_desc_pool_get_addr(struct mdma_desc_pool* pool, unsigned pos);
 struct mdma_desc_long_ll* mdma_desc_pool_get_desc(struct mdma_desc_pool* pool,

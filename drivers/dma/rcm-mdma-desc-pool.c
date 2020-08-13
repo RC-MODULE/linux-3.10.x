@@ -28,7 +28,8 @@ void mdma_desc_pool_free(struct mdma_desc_pool* pool)
 
 int mdma_desc_pool_alloc(struct mdma_desc_pool* pool, unsigned cnt,
                          struct device *dev, char* name,
-                         size_t max_transaction, size_t len_mask)
+                         size_t max_transaction, size_t len_mask,
+                         bool do_size_clip)
 {
 	int ret = 0;
 	unsigned i = 0;
@@ -79,6 +80,9 @@ int mdma_desc_pool_alloc(struct mdma_desc_pool* pool, unsigned cnt,
 		++i;
 	}
 
+	if (do_size_clip)
+		pool->size = cnt;
+
 	pool->cnt = pool->size;
 	pool->next = 0;
 	pool->head = 0;
@@ -91,12 +95,16 @@ int mdma_desc_pool_alloc(struct mdma_desc_pool* pool, unsigned cnt,
 	link.flags_length = MDMA_BD_LINK;
 
 	for (i = 0; i < pool->cnt_chunks; ++i) {
+		unsigned num_in_chunk = (i + 1 < pool->cnt_chunks) ?
+		                        cnt_in_chunk - 1 :
+		                        (pool->size - 1) % cnt_in_chunk;
+
 		if (i + 1 < pool->cnt_chunks)
 			link.memptr = pool->chunks[i + 1].dma_addr;
 		else
 			link.memptr = pool->chunks[0].dma_addr;
 
-		pool->chunks[i].descs[cnt_in_chunk - 1] = link;
+		pool->chunks[i].descs[num_in_chunk] = link;
 	}
 
 	dev_dbg(dev, "[%s] descriptor's pool allocated "
