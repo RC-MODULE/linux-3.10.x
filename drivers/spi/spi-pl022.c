@@ -471,6 +471,19 @@ static void internal_cs_control(struct pl022 *pl022, u32 command)
 }
 #endif
 
+#ifdef CONFIG_1888BM18
+static void tx1888bm18_cs_control(struct pl022 *pl022, u32 command)
+{
+	u32 val = readl(pl022->virtbase + 0xCC);
+	val |= 0x2;
+	if (command == SSP_CHIP_SELECT)
+		val &= ~0x1;
+	else
+		val |= 0x1;
+	writel(val, pl022->virtbase + 0xCC);
+}
+#endif
+
 static void pl022_cs_control(struct pl022 *pl022, u32 command)
 {
 	if (pl022->vendor->internal_cs_ctrl)
@@ -478,7 +491,11 @@ static void pl022_cs_control(struct pl022 *pl022, u32 command)
 	else if (gpio_is_valid(pl022->cur_cs))
 		gpio_set_value(pl022->cur_cs, command);
 	else
+#ifndef CONFIG_1888BM18
 		pl022->cur_chip->cs_control(command);
+#else
+		tx1888bm18_cs_control(pl022, command);
+#endif
 }
 
 /**
