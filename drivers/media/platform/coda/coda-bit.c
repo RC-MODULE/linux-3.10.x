@@ -975,13 +975,13 @@ int coda_check_firmware(struct coda_dev *dev)
 	clk_disable_unprepare(dev->clk_per);
 	clk_disable_unprepare(dev->clk_ahb);
 
-	if (product != dev->devtype->product) {
-		v4l2_err(&dev->v4l2_dev,
-			 "Wrong firmware. Hw: %s, Fw: %s, Version: %u.%u.%u\n",
-			 coda_product_name(dev->devtype->product),
-			 coda_product_name(product), major, minor, release);
-		return -EINVAL;
-	}
+	// ??? if (product != dev->devtype->product) {
+	// ??? 	v4l2_err(&dev->v4l2_dev,
+	// ??? 		 "Wrong firmware. Hw: %s, Fw: %s, Version: %u.%u.%u\n",
+	// ??? 		 coda_product_name(dev->devtype->product),
+	// ??? 		 coda_product_name(product), major, minor, release);
+	// ??? 	return -EINVAL;
+	// ??? }
 
 	v4l2_info(&dev->v4l2_dev, "Initialized %s.\n",
 		  coda_product_name(product));

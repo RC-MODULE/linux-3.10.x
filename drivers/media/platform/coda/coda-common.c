@@ -7,6 +7,8 @@
  *    Xavier Duret
  */
 
+#define DEBUG // ???
+
 #include <linux/clk.h>
 #include <linux/debugfs.h>
 #include <linux/delay.h>
@@ -40,6 +42,8 @@
 #include "coda.h"
 #include "imx-vdoa.h"
 
+#include "coda980.h" // ???
+
 #define CODA_NAME		"coda"
 
 #define CODADX6_MAX_INSTANCES	4
@@ -56,7 +60,7 @@
 
 #define fh_to_ctx(__fh)	container_of(__fh, struct coda_ctx, fh)
 
-int coda_debug;
+int coda_debug = 3; // ???
 module_param(coda_debug, int, 0644);
 MODULE_PARM_DESC(coda_debug, "Debug level (0-2)");
 
@@ -74,18 +78,29 @@ MODULE_PARM_DESC(enable_bwb, "Enable BWB unit for decoding, may crash on certain
 
 void coda_write(struct coda_dev *dev, u32 data, u32 reg)
 {
-	v4l2_dbg(3, coda_debug, &dev->v4l2_dev,
-		 "%s: data=0x%x, reg=0x%x\n", __func__, data, reg);
+	if ((reg >= 0x188) && (reg <= 0x190))
+		v4l2_dbg(3, coda_debug, &dev->v4l2_dev,
+			"%s: data=0x%x, reg=0x%x\n", __func__, data, reg);
+	// ??? if (reg != 0x4) // ???
+	// ??? v4l2_dbg(3, coda_debug, &dev->v4l2_dev,
+	// ??? 	 "%s: data=0x%x, reg=0x%x\n", __func__, data, reg);
 	writel(data, dev->regs_base + reg);
 }
+
+static u32 _last_reg;
+static u32 _last_data;
 
 unsigned int coda_read(struct coda_dev *dev, u32 reg)
 {
 	u32 data;
 
 	data = readl(dev->regs_base + reg);
-	v4l2_dbg(3, coda_debug, &dev->v4l2_dev,
-		 "%s: data=0x%x, reg=0x%x\n", __func__, data, reg);
+	// ??? if ((_last_reg != reg) || (_last_data != data)) {
+	// ??? v4l2_dbg(3, coda_debug, &dev->v4l2_dev,
+	// ??? 	 "%s: data=0x%x, reg=0x%x\n", __func__, data, reg);
+	// ??? }
+	_last_reg = reg;
+	_last_data = data;
 	return data;
 }
 
@@ -857,16 +872,28 @@ static int coda_reqbufs(struct file *file, void *priv,
 	struct coda_ctx *ctx = fh_to_ctx(priv);
 	int ret;
 
+	pr_info("*** coda_reqbufs %x type=%u, memory=%u, count=%u\n", (unsigned)file, rb->type,
+		rb->memory, rb->count); // ???
+
 	ret = v4l2_m2m_reqbufs(file, ctx->fh.m2m_ctx, rb);
+	pr_info("*** coda_reqbufs ret=%i\n", ret);
 	if (ret)
 		return ret;
+
+	pr_info("*** coda_reqbufs capabilities=%x\n", rb->capabilities);
 
 	/*
 	 * Allow to allocate instance specific per-context buffers, such as
 	 * bitstream ringbuffer, slice buffer, work buffer, etc. if needed.
 	 */
-	if (rb->type == V4L2_BUF_TYPE_VIDEO_OUTPUT && ctx->ops->reqbufs)
-		return ctx->ops->reqbufs(ctx, rb);
+	if (rb->type == V4L2_BUF_TYPE_VIDEO_OUTPUT && ctx->ops->reqbufs) { // ???
+		ret = ctx->ops->reqbufs(ctx, rb);
+		// ??? return ctx->ops->reqbufs(ctx, rb);
+		pr_info("*** coda_reqbufs ret=%i\n", ret);
+		return ret;
+	}
+
+	pr_info("*** coda_reqbufs capabilities=%x\n", rb->capabilities);
 
 	return 0;
 }
@@ -2605,7 +2632,8 @@ static int coda_hw_init(struct coda_dev *dev)
 	 * order, re-sort them to CODA order for register download.
 	 * Data in this SRAM survives a reboot.
 	 */
-	p = (u16 *)dev->codebuf.vaddr;
+	// ??? p = (u16 *)dev->codebuf.vaddr;
+	p = (u16*)bit_code; // ???
 	if (dev->devtype->product == CODA_DX6) {
 		for (i = 0; i < (CODA_ISRAM_SIZE / 2); i++)  {
 			data = CODA_DOWN_ADDRESS_SET(i) |
@@ -2615,8 +2643,9 @@ static int coda_hw_init(struct coda_dev *dev)
 	} else {
 		for (i = 0; i < (CODA_ISRAM_SIZE / 2); i++) {
 			data = CODA_DOWN_ADDRESS_SET(i) |
-				CODA_DOWN_DATA_SET(p[round_down(i, 4) +
-							3 - (i % 4)]);
+				// ??? CODA_DOWN_DATA_SET(p[round_down(i, 4) +
+				// ???			3 - (i % 4)]);
+				CODA_DOWN_DATA_SET(p[i]); // ???
 			coda_write(dev, data, CODA_REG_BIT_CODE_DOWN);
 		}
 	}
@@ -2718,38 +2747,59 @@ static int coda_register_device(struct coda_dev *dev, int i)
 static void coda_copy_firmware(struct coda_dev *dev, const u8 * const buf,
 			       size_t size)
 {
-	u32 *src = (u32 *)buf;
+// ???	u32 *src = (u32 *)buf;
 
 	/* Check if the firmware has a 16-byte Freescale header, skip it */
-	if (buf[0] == 'M' && buf[1] == 'X')
-		src += 4;
+	// ??? if (buf[0] == 'M' && buf[1] == 'X')
+	// ???	src += 4;
 	/*
 	 * Check whether the firmware is in native order or pre-reordered for
 	 * memory access. The first instruction opcode always is 0xe40e.
 	 */
-	if (__le16_to_cpup((__le16 *)src) == 0xe40e) {
-		u32 *dst = dev->codebuf.vaddr;
-		int i;
 
-		/* Firmware in native order, reorder while copying */
-		if (dev->devtype->product == CODA_DX6) {
-			for (i = 0; i < (size - 16) / 4; i++)
-				dst[i] = (src[i] << 16) | (src[i] >> 16);
-		} else {
-			for (i = 0; i < (size - 16) / 4; i += 2) {
-				dst[i] = (src[i + 1] << 16) | (src[i + 1] >> 16);
-				dst[i + 1] = (src[i] << 16) | (src[i] >> 16);
-			}
-		}
-	} else {
-		/* Copy the already reordered firmware image */
-		memcpy(dev->codebuf.vaddr, src, size);
+	// ????
+	u16 *src = (u16*)buf;
+	int count = size / 2;
+	u8 *dst = dev->codebuf.vaddr;
+	int i;
+
+	pr_info("*** %x %x %x", (unsigned)src, (unsigned)dst, (unsigned)count); // ???
+
+	// ???
+	for (i = 0; i < count; i += 4) {
+		dst[i * 2 + 7] = (src[i + 0] >> 8);
+		dst[i * 2 + 6] = (src[i + 0] >> 0);
+		dst[i * 2 + 5] = (src[i + 1] >> 8);
+		dst[i * 2 + 4] = (src[i + 1] >> 0);
+		dst[i * 2 + 3] = (src[i + 2] >> 8);
+		dst[i * 2 + 2] = (src[i + 2] >> 0);
+		dst[i * 2 + 1] = (src[i + 3] >> 8);
+		dst[i * 2 + 0] = (src[i + 3] >> 0);
 	}
+
+// ???	if (__le16_to_cpup((__le16 *)src) == 0xe40e) {
+// ???		u32 *dst = dev->codebuf.vaddr;
+// ???		int i;
+// ???
+// ???		/* Firmware in native order, reorder while copying */
+// ???		if (dev->devtype->product == CODA_DX6) {
+// ???			for (i = 0; i < (size - 16) / 4; i++)
+// ???				dst[i] = (src[i] << 16) | (src[i] >> 16);
+// ???		} else {
+// ???			for (i = 0; i < (size - 16) / 4; i += 2) {
+// ???				dst[i] = (src[i + 1] << 16) | (src[i + 1] >> 16);
+// ???				dst[i + 1] = (src[i] << 16) | (src[i] >> 16);
+// ???			}
+// ???		}
+// ???	} else {
+// ???		/* Copy the already reordered firmware image */
+// ???		memcpy(dev->codebuf.vaddr, src, size);
+// ???	}
 }
 
-static void coda_fw_callback(const struct firmware *fw, void *context);
+// ??? static void coda_fw_callback(const struct firmware *fw, void *context);
 
-static int coda_firmware_request(struct coda_dev *dev)
+/* ??? static int coda_firmware_request(struct coda_dev *dev)
 {
 	char *fw;
 
@@ -2763,9 +2813,9 @@ static int coda_firmware_request(struct coda_dev *dev)
 
 	return request_firmware_nowait(THIS_MODULE, true, fw, dev->dev,
 				       GFP_KERNEL, dev, coda_fw_callback);
-}
+}*/
 
-static void coda_fw_callback(const struct firmware *fw, void *context)
+/* ??? static void coda_fw_callback(const struct firmware *fw, void *context)
 {
 	struct coda_dev *dev = context;
 	int i, ret;
@@ -2780,17 +2830,17 @@ static void coda_fw_callback(const struct firmware *fw, void *context)
 		return;
 	}
 	if (dev->firmware > 0) {
-		/*
+		/ ??? *
 		 * Since we can't suppress warnings for failed asynchronous
 		 * firmware requests, report that the fallback firmware was
 		 * found.
 		 */
-		dev_info(dev->dev, "Using fallback firmware %s\n",
+/* ???		dev_info(dev->dev, "Using fallback firmware %s\n",
 			 dev->devtype->firmware[dev->firmware]);
 	}
 
-	/* allocate auxiliary per-device code buffer for the BIT processor */
-	ret = coda_alloc_aux_buf(dev, &dev->codebuf, fw->size, "codebuf",
+	/ ??? * allocate auxiliary per-device code buffer for the BIT processor */
+/* ???	ret = coda_alloc_aux_buf(dev, &dev->codebuf, fw->size, "codebuf",
 				 dev->debugfs_root);
 	if (ret < 0)
 		goto put_pm;
@@ -2833,6 +2883,58 @@ rel_vfd:
 	v4l2_m2m_release(dev->m2m_dev);
 put_pm:
 	pm_runtime_put_sync(dev->dev);
+}*/
+static int load_firmware(struct coda_dev *dev)
+{
+	int i;
+	int ret;
+
+	/* allocate auxiliary per-device code buffer for the BIT processor */
+	ret = coda_alloc_aux_buf(dev, &dev->codebuf, sizeof(bit_code), "codebuf",
+				 dev->debugfs_root);
+	if (ret < 0)
+		goto put_pm;
+
+	coda_copy_firmware(dev, (u8*)bit_code, sizeof(bit_code));
+
+	ret = coda_hw_init(dev);
+	if (ret < 0) {
+		v4l2_err(&dev->v4l2_dev, "HW initialization failed\n");
+		goto put_pm;
+	}
+
+	ret = coda_check_firmware(dev);
+	if (ret < 0)
+		goto put_pm;
+
+	dev->m2m_dev = v4l2_m2m_init(&coda_m2m_ops);
+	if (IS_ERR(dev->m2m_dev)) {
+		v4l2_err(&dev->v4l2_dev, "Failed to init mem2mem device\n");
+		ret = -EFAULT;
+		goto put_pm;
+	}
+
+	for (i = 0; i < dev->devtype->num_vdevs; i++) {
+		ret = coda_register_device(dev, i);
+		if (ret) {
+			v4l2_err(&dev->v4l2_dev,
+				 "Failed to register %s video device: %d\n",
+				 dev->devtype->vdevs[i]->name, ret);
+			goto rel_vfd;
+		}
+	}
+
+	pm_runtime_put_sync(dev->dev);
+	return 0;
+
+rel_vfd:
+	while (--i >= 0)
+		video_unregister_device(&dev->vfd[i]);
+	v4l2_m2m_release(dev->m2m_dev);
+
+put_pm:
+	pm_runtime_put_sync(dev->dev);
+	return ret;
 }
 
 enum coda_platform {
@@ -2841,6 +2943,7 @@ enum coda_platform {
 	CODA_IMX53,
 	CODA_IMX6Q,
 	CODA_IMX6DL,
+	CODA_TEST // ???
 };
 
 static const struct coda_devtype coda_devdata[] = {
@@ -2918,6 +3021,21 @@ static const struct coda_devtype coda_devdata[] = {
 		.tempbuf_size = 204 * 1024,
 		.iram_size    = 0x1f000, /* leave 4k for suspend code */
 	},
+	[CODA_TEST] = { // ???
+		.firmware     = {
+			"coda980.bin", // ???
+			"vpu/coda980.bin", // ???
+			"v4l-coda980.bin" // ???
+		},
+		.product      = CODA_960, // ??? 980
+		.codecs       = coda9_codecs,
+		.num_codecs   = ARRAY_SIZE(coda9_codecs),
+		.vdevs        = coda9_video_devices,
+		.num_vdevs    = ARRAY_SIZE(coda9_video_devices),
+		.workbuf_size = 80 * 1024,
+		.tempbuf_size = 204 * 1024,
+		.iram_size    = 0x1f000, /* leave 4k for suspend code */
+	},
 };
 
 static const struct platform_device_id coda_platform_ids[] = {
@@ -2933,6 +3051,7 @@ static const struct of_device_id coda_dt_ids[] = {
 	{ .compatible = "fsl,imx53-vpu", .data = &coda_devdata[CODA_IMX53] },
 	{ .compatible = "fsl,imx6q-vpu", .data = &coda_devdata[CODA_IMX6Q] },
 	{ .compatible = "fsl,imx6dl-vpu", .data = &coda_devdata[CODA_IMX6DL] },
+	{ .compatible = "test,vpu", .data = &coda_devdata[CODA_TEST] }, // ???
 	{ /* sentinel */ }
 };
 MODULE_DEVICE_TABLE(of, coda_dt_ids);
@@ -2948,6 +3067,11 @@ static int coda_probe(struct platform_device *pdev)
 	struct gen_pool *pool;
 	struct coda_dev *dev;
 	int ret, irq;
+
+	dev_info(&pdev->dev, "*** prived\n"); // ???
+
+	// ???
+	pdev->dev.archdata.dma_offset = -(pdev->dev.dma_pfn_offset << PAGE_SHIFT);
 
 	dev = devm_kzalloc(&pdev->dev, sizeof(*dev), GFP_KERNEL);
 	if (!dev)
@@ -3049,8 +3173,18 @@ static int coda_probe(struct platform_device *pdev)
 	}
 
 	dev->iram.size = dev->devtype->iram_size;
-	dev->iram.vaddr = gen_pool_dma_alloc(dev->iram_pool, dev->iram.size,
+	// asm("0: b 0b;"); // ???
+	pr_info("*** next=%x, prev=%x\n",
+		(unsigned)dev->iram_pool->chunks.next,
+		(unsigned)dev->iram_pool->chunks.prev); // ???
+	pr_info("*** min_alloc_order=%i\n", dev->iram_pool->min_alloc_order);
+	pr_info("*** algo=%x\n", (unsigned)dev->iram_pool->algo);
+	pr_info("*** data=%x\n", (unsigned)dev->iram_pool->data);
+	pr_info("*** name=%s\n", dev->iram_pool->name);
+
+	/* ??? dev->iram.vaddr = gen_pool_dma_alloc(dev->iram_pool, dev->iram.size,
 					     &dev->iram.paddr);
+	pr_info("*** vaddr=%x, paddr=%llx\n", (unsigned)dev->iram.vaddr, dev->iram.paddr); // ???
 	if (!dev->iram.vaddr) {
 		dev_warn(&pdev->dev, "unable to alloc iram\n");
 	} else {
@@ -3060,7 +3194,7 @@ static int coda_probe(struct platform_device *pdev)
 		dev->iram.dentry = debugfs_create_blob("iram", 0644,
 						       dev->debugfs_root,
 						       &dev->iram.blob);
-	}
+	}*/
 
 	dev->workqueue = alloc_workqueue("coda", WQ_UNBOUND | WQ_MEM_RECLAIM, 1);
 	if (!dev->workqueue) {
@@ -3080,9 +3214,17 @@ static int coda_probe(struct platform_device *pdev)
 	pm_runtime_set_active(&pdev->dev);
 	pm_runtime_enable(&pdev->dev);
 
-	ret = coda_firmware_request(dev);
-	if (ret)
+	// ??? ret = coda_firmware_request(dev);
+	// ??? if (ret)
+	// ???	goto err_alloc_workqueue;
+	ret = load_firmware(dev);
+	if (ret != 0) {
+		pr_err("*** Error %i\n", ret); // ???
 		goto err_alloc_workqueue;
+	}
+
+	pr_info("*** WOW\n");
+
 	return 0;
 
 err_alloc_workqueue:

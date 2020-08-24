@@ -164,6 +164,32 @@
 		#interrupt-cells = <2>;
 	};
 
+	xbus@0 { // ???
+		compatible = "simple-bus";
+		#address-cells = <1>;
+		#size-cells = <1>;
+		ranges = <0x00040000 0x10 0x00040000 0x40000>;
+		dma-ranges = <0x00040000 0x10 0x00040000 0x40000>;
+
+		// ???
+		sram@40000 {
+			compatible = "mmio-sram";
+			#address-cells = <1>;
+			#size-cells = <1>;
+			reg = <0x00040000 0x40000>;
+			ranges = <0x00000000 0x00040000 0x40000>;
+			// ??? clocks = <&clks IMX6QDL_CLK_OCRAM>;
+
+			ocram: sram@0 {
+				reg = <0x00000000 0x40000>;
+				pool;
+			};
+		};
+	};
+
+
+
+
 	plb {
 		compatible = "ibm,plb6";
 		#address-cells = <2>;
@@ -1043,10 +1069,19 @@
 
 			vpu: vpu@0x38020000 {
 				status = "disabled";
-				compatible = "rcm,vpu-coda980";
-				reg = <0x38020000 0x4000>;
+				/* ??? compatible = "rcm,vpu-coda980";
+				reg = <0x38020000 0x4000>;*/
 				interrupt-parent = <&MPIC>;
+				/* ??? interrupts = <123 2>; // active high level-sensitive*/
+				compatible = "test,vpu"; // ???
+				reg = <0x38020000 0x4000>;
 				interrupts = <123 2>; // active high level-sensitive
+				interrupt-names = "bit";
+				// ??? clocks = <&clks 63>, <&clks 63>;
+				clocks = <&lsif1clock>, <&pclk>; // ???
+				// ??? clock-names = "uartclk", "apb_pclk";
+				clock-names = "ahb", "per";
+				iram = <&ocram>;
 			};
 
 			jpg: jpg@0x3801a000 {
