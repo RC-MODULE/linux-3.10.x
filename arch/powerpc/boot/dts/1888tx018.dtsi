@@ -105,6 +105,7 @@
 
 			frame_buffer_0: frame_buffer@0x37C00000 {
 				reg = <0x0 0x37C00000 0x0 0x02200000>;
+				no-map;
 			};
 			video_buffer_0: video_buffer@0x39E00000 {
 				no-map;
@@ -113,6 +114,7 @@
 
 			frame_buffer_1: frame_buffer@0x3BE00000 {
 				reg = <0x0 0x3BE00000 0x0 0x02200000>;
+				no-map;
 			};
 			video_buffer_1: video_buffer@0x3E000000 {
 				no-map;
