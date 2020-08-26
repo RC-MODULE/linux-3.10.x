@@ -381,6 +381,42 @@
             clock-names = "apb_pclk";
             status = "disabled";
         };
+
+        pcie@0x01058000 {
+            compatible = "rcm,cdns-pcie-host";
+            device_type = "pci";
+            #address-cells = <3>;
+            #size-cells = <2>;
+            bus-range = <0x0 0xff>;
+            linux,pci-domain = <0>;
+            cdns,max-outbound-regions = <16>;
+            vendor-id = /bits/ 16 <0x17cd>;
+            device-id = /bits/ 16 <0x0200>;
+
+            reg = <0x01058000 0x6000>,
+                  <0x70000000 0x00001000>,
+                  <0x40000000 0x40000000>;
+            reg-names = "reg", "cfg", "mem";
+
+            ranges = <0x02000000 0x0 0x00000000  0x40000000  0x0 0x01000000>/*,
+                     <0x01000000 0x0 0x60000000  0x60000000  0x0 0x00010000>*/;
+
+            #interrupt-cells = <0x1>;
+
+            interrupt-map = <0x0 0x0 0x0  0x1  &gic0  0x0 0x0 25 0x4
+                             0x0 0x0 0x0  0x2  &gic0  0x0 0x0 26 0x4
+                             0x0 0x0 0x0  0x3  &gic0  0x0 0x0 27 0x4
+                             0x0 0x0 0x0  0x4  &gic0  0x0 0x0 28 0x4>;
+
+            interrupt-map-mask = <0x0 0x0 0x0  0x7>;
+/*
+            msi-parent = <&its_pci>;
+
+            phys = <&pcie_phy0>;
+            phy-names = "pcie-phy";
+*/
+            status = "okay";
+        };
     };
 
     apbs2 {
