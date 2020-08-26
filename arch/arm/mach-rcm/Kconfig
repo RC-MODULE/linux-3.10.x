@@ -12,6 +12,7 @@ config TARGET_1879VM8YA
 config TARGET_1888BC048
 	bool "Support 1888BC048 based boards"
 	select CACHE_L2X0
+	select HAVE_PCI
 
 endchoice
 
