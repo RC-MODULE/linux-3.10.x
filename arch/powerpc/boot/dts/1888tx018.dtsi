@@ -1069,17 +1069,13 @@
 
 			vpu: vpu@0x38020000 {
 				status = "disabled";
-				/* ??? compatible = "rcm,vpu-coda980";
-				reg = <0x38020000 0x4000>;*/
-				interrupt-parent = <&MPIC>;
-				/* ??? interrupts = <123 2>; // active high level-sensitive*/
+				// ??? compatible = "rcm,vpu-coda980"; // ???
 				compatible = "test,vpu"; // ???
 				reg = <0x38020000 0x4000>;
+				interrupt-parent = <&MPIC>;
 				interrupts = <123 2>; // active high level-sensitive
 				interrupt-names = "bit";
-				// ??? clocks = <&clks 63>, <&clks 63>;
 				clocks = <&lsif1clock>, <&pclk>; // ???
-				// ??? clock-names = "uartclk", "apb_pclk";
 				clock-names = "ahb", "per";
 				iram = <&ocram>;
 			};

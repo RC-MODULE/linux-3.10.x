@@ -453,7 +453,8 @@ static void coda_parabuf_write(struct coda_ctx *ctx, int index, u32 value)
 	if (dev->devtype->product == CODA_DX6)
 		p[index] = value;
 	else
-		p[index ^ 1] = value;
+		// ??? p[index ^ 1] = value;
+		writel(value, &p[index ^ 1]);
 }
 
 static inline int coda_alloc_context_buf(struct coda_ctx *ctx,
@@ -872,7 +873,8 @@ static void coda_setup_iram(struct coda_ctx *ctx)
 
 		q_data_dst = get_q_data(ctx, V4L2_BUF_TYPE_VIDEO_CAPTURE);
 		mb_width = DIV_ROUND_UP(q_data_dst->width, 16);
-		w128 = mb_width * 128;
+		// ??? w128 = mb_width * 128;
+		w128 = mb_width * 144; // ???
 
 		iram_info->buf_dbk_y_use = coda_iram_alloc(iram_info, w128);
 		iram_info->buf_dbk_c_use = coda_iram_alloc(iram_info, w128);
@@ -1018,16 +1020,17 @@ static void coda9_set_frame_cache(struct coda_ctx *ctx, u32 fourcc)
 		cache_size = 0x02440243;
 		cache_config = 1 << CODA9_CACHE_PAGEMERGE_OFFSET;
 	}
-	coda_write(ctx->dev, cache_size, CODA9_CMD_SET_FRAME_CACHE_SIZE);
-	if (fourcc == V4L2_PIX_FMT_NV12 || fourcc == V4L2_PIX_FMT_YUYV) {
-		cache_config |= 32 << CODA9_CACHE_LUMA_BUFFER_SIZE_OFFSET |
-				16 << CODA9_CACHE_CR_BUFFER_SIZE_OFFSET |
-				0 << CODA9_CACHE_CB_BUFFER_SIZE_OFFSET;
-	} else {
-		cache_config |= 32 << CODA9_CACHE_LUMA_BUFFER_SIZE_OFFSET |
-				8 << CODA9_CACHE_CR_BUFFER_SIZE_OFFSET |
-				8 << CODA9_CACHE_CB_BUFFER_SIZE_OFFSET;
-	}
+	coda_write(ctx->dev, cache_size, CODA9_CMD_SET_FRAME_CACHE_SIZE); // ???
+	// ??? if (fourcc == V4L2_PIX_FMT_NV12 || fourcc == V4L2_PIX_FMT_YUYV) {
+	// ??? 	cache_config |= 32 << CODA9_CACHE_LUMA_BUFFER_SIZE_OFFSET |
+	// ??? 			16 << CODA9_CACHE_CR_BUFFER_SIZE_OFFSET |
+	// ??? 			0 << CODA9_CACHE_CB_BUFFER_SIZE_OFFSET;
+	// ??? } else {
+	// ??? 	cache_config |= 32 << CODA9_CACHE_LUMA_BUFFER_SIZE_OFFSET |
+	// ??? 			8 << CODA9_CACHE_CR_BUFFER_SIZE_OFFSET |
+	// ??? 			8 << CODA9_CACHE_CB_BUFFER_SIZE_OFFSET;
+	// ??? }
+	cache_config = 0x7E0; // ???
 	coda_write(ctx->dev, cache_config, CODA9_CMD_SET_FRAME_CACHE_CONFIG);
 }
 
@@ -1783,6 +1786,8 @@ static int coda_decoder_reqbufs(struct coda_ctx *ctx,
 	struct coda_q_data *q_data_src;
 	int ret;
 
+	// ??? ***
+
 	if (rb->type != V4L2_BUF_TYPE_VIDEO_OUTPUT)
 		return 0;
 
@@ -1855,13 +1860,13 @@ static int __coda_decoder_seq_init(struct coda_ctx *ctx)
 	/* Update coda bitstream read and write pointers from kfifo */
 	coda_kfifo_sync_to_device_full(ctx);
 
-	ctx->frame_mem_ctrl &= ~(CODA_FRAME_CHROMA_INTERLEAVE | (0x3 << 9) |
+	ctx->frame_mem_ctrl &= ~(CODA_FRAME_CHROMA_INTERLEAVE | /* ???(0x3 << 9) |*/
 				 CODA9_FRAME_TILED2LINEAR);
 	if (dst_fourcc == V4L2_PIX_FMT_NV12 || dst_fourcc == V4L2_PIX_FMT_YUYV)
 		ctx->frame_mem_ctrl |= CODA_FRAME_CHROMA_INTERLEAVE;
-	if (ctx->tiled_map_type == GDI_TILED_FRAME_MB_RASTER_MAP)
-		ctx->frame_mem_ctrl |= (0x3 << 9) |
-			((ctx->use_vdoa) ? 0 : CODA9_FRAME_TILED2LINEAR);
+	// ??? if (ctx->tiled_map_type == GDI_TILED_FRAME_MB_RASTER_MAP)
+	// ??? 	ctx->frame_mem_ctrl |= (0x3 << 9) |
+	// ??? 		((ctx->use_vdoa) ? 0 : CODA9_FRAME_TILED2LINEAR); // ???
 	coda_write(dev, ctx->frame_mem_ctrl, CODA_REG_BIT_FRAME_MEM_CTRL);
 
 	ctx->display_idx = -1;
@@ -1897,7 +1902,8 @@ static int __coda_decoder_seq_init(struct coda_ctx *ctx)
 		}
 		if (dev->devtype->product == CODA_960) {
 			coda_write(dev, 0, CODA_CMD_DEC_SEQ_X264_MV_EN);
-			coda_write(dev, 512, CODA_CMD_DEC_SEQ_SPP_CHUNK_SIZE);
+			// ??? coda_write(dev, 512, CODA_CMD_DEC_SEQ_SPP_CHUNK_SIZE);
+			coda_write(dev, 1024, CODA_CMD_DEC_SEQ_SPP_CHUNK_SIZE); // ??? ???really not
 		}
 	}
 	if (src_fourcc == V4L2_PIX_FMT_JPEG)
@@ -2153,6 +2159,7 @@ static int coda_prepare_decode(struct coda_ctx *ctx)
 		}
 	}
 
+	// ???
 	if (dev->devtype->product == CODA_960)
 		coda_set_gdi_regs(ctx);
 
@@ -2186,6 +2193,7 @@ static int coda_prepare_decode(struct coda_ctx *ctx)
 		coda_write_base(ctx, q_data_dst, dst_buf, reg_addr);
 		coda_write(dev, q_data_dst->bytesperline, reg_stride);
 
+		// ???
 		rot_mode = CODA_ROT_MIR_ENABLE | ctx->params.rot_mode;
 	}
 

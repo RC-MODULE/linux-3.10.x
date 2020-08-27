@@ -7,7 +7,7 @@
  *    Xavier Duret
  */
 
-#define DEBUG // ???
+// ??? #define DEBUG // ???
 
 #include <linux/clk.h>
 #include <linux/debugfs.h>
@@ -72,15 +72,67 @@ static int disable_vdoa;
 module_param(disable_vdoa, int, 0644);
 MODULE_PARM_DESC(disable_vdoa, "Disable Video Data Order Adapter tiled to raster-scan conversion");
 
-static int enable_bwb = 0;
+// ??? static int enable_bwb = 0;
+static int enable_bwb = 1; // ???
 module_param(enable_bwb, int, 0644);
 MODULE_PARM_DESC(enable_bwb, "Enable BWB unit for decoding, may crash on certain streams");
 
+static bool reg_written[8196];
+static u32 reg_values[8196];
+
 void coda_write(struct coda_dev *dev, u32 data, u32 reg)
 {
-	if ((reg >= 0x188) && (reg <= 0x190))
-		v4l2_dbg(3, coda_debug, &dev->v4l2_dev,
-			"%s: data=0x%x, reg=0x%x\n", __func__, data, reg);
+	// ???
+	if (reg > 8196)
+	{
+		pr_info("*** reg=0x%x\n", reg);
+		for (;;) ;
+	}
+
+	/* ??? if ((reg == CODA_REG_BIT_RUN_COMMAND) && (data == 0xF))
+	{
+		coda_write(dev, 0x0, 0x10f0);
+	}
+
+	if ((reg == CODA_REG_BIT_RUN_COMMAND) && (data == 0x1))
+	{
+		coda_write(dev, 0x0, 0x114);
+		coda_write(dev, 0xc00, 0x184);
+		coda_write(dev, 0x2, 0x188);
+		coda_write(dev, 0x1, 0x19c);
+	}
+
+	if ((reg == CODA_REG_BIT_RUN_COMMAND) && (data == 0x4))
+	{
+		coda_write(dev, 0x0, 0x1a8);
+		coda_write(dev, 0x0, 0x1b8);
+	}
+
+	if ((reg == CODA_REG_BIT_RUN_COMMAND) && (data == 0x3))
+	{
+		coda_write(dev, 0x780, 0x184);
+		coda_write(dev, 0x0, 0x194);
+		coda_write(dev, 0x0, 0x1ac);
+		coda_write(dev, 0x0, 0x1b8);
+	}*/
+
+	reg_written[reg] = true;
+	reg_values[reg] = data;
+
+	/* ??? if ((reg == CODA_REG_BIT_RUN_COMMAND) && (data != 0x0) && (data != 0xF) && (data != 0x1) && (data != 0x4)) { // ??? && (data != 0x3)) {
+		int i;
+		pr_info("*** before CODA_REG_BIT_RUN_COMMAND (0x164)=0x%x\n", data);
+		for (i = 0; i < 8196; ++i) {
+			if (!reg_written[i]) continue;
+			pr_info("*** reg[0x%x]=0x%x\n", i, reg_values[i]);
+		}
+		for (;;) ;
+	}*/
+	// ???
+
+	// ??? if ((reg >= 0x188) && (reg <= 0x190))
+	// ???	v4l2_dbg(3, coda_debug, &dev->v4l2_dev,
+	// ???		"%s: data=0x%x, reg=0x%x\n", __func__, data, reg);
 	// ??? if (reg != 0x4) // ???
 	// ??? v4l2_dbg(3, coda_debug, &dev->v4l2_dev,
 	// ??? 	 "%s: data=0x%x, reg=0x%x\n", __func__, data, reg);
@@ -872,15 +924,15 @@ static int coda_reqbufs(struct file *file, void *priv,
 	struct coda_ctx *ctx = fh_to_ctx(priv);
 	int ret;
 
-	pr_info("*** coda_reqbufs %x type=%u, memory=%u, count=%u\n", (unsigned)file, rb->type,
+	pr_info("* coda_reqbufs %x type=%u, memory=%u, count=%u\n", (unsigned)file, rb->type,
 		rb->memory, rb->count); // ???
 
 	ret = v4l2_m2m_reqbufs(file, ctx->fh.m2m_ctx, rb);
-	pr_info("*** coda_reqbufs ret=%i\n", ret);
+	pr_info("* coda_reqbufs ret=%i\n", ret);
 	if (ret)
 		return ret;
 
-	pr_info("*** coda_reqbufs capabilities=%x\n", rb->capabilities);
+	pr_info("* coda_reqbufs capabilities=%x\n", rb->capabilities);
 
 	/*
 	 * Allow to allocate instance specific per-context buffers, such as
@@ -889,11 +941,11 @@ static int coda_reqbufs(struct file *file, void *priv,
 	if (rb->type == V4L2_BUF_TYPE_VIDEO_OUTPUT && ctx->ops->reqbufs) { // ???
 		ret = ctx->ops->reqbufs(ctx, rb);
 		// ??? return ctx->ops->reqbufs(ctx, rb);
-		pr_info("*** coda_reqbufs ret=%i\n", ret);
+		pr_info("* coda_reqbufs ret=%i cpas=%x\n", ret, rb->capabilities);
 		return ret;
 	}
 
-	pr_info("*** coda_reqbufs capabilities=%x\n", rb->capabilities);
+	pr_info("* coda_reqbufs capabilities=%x\n", rb->capabilities);
 
 	return 0;
 }
@@ -1418,6 +1470,8 @@ static void coda_device_run(void *m2m_priv)
 	struct coda_ctx *ctx = m2m_priv;
 	struct coda_dev *dev = ctx->dev;
 
+	pr_info("*** coda_device_run\n"); // ???
+
 	queue_work(dev->workqueue, &ctx->pic_run_work);
 }
 
@@ -1430,7 +1484,15 @@ static void coda_pic_run_work(struct work_struct *work)
 	mutex_lock(&ctx->buffer_mutex);
 	mutex_lock(&dev->coda_mutex);
 
+	// ??? for (;;) {
+	// ???	volatile int i;
+	// ???	for (i = 0; i < 10000000; ++i) ;
+	// ???	pr_info("*** coda_pic_run_work - 1\n"); // ???
+	// ??? }
+
 	ret = ctx->ops->prepare_run(ctx);
+	// ??? for (;;)
+	// ???	pr_info("*** coda_pic_run_work - 2\n"); // ???
 	if (ret < 0 && ctx->inst_type == CODA_INST_DECODER) {
 		mutex_unlock(&dev->coda_mutex);
 		mutex_unlock(&ctx->buffer_mutex);
@@ -1438,6 +1500,8 @@ static void coda_pic_run_work(struct work_struct *work)
 		return;
 	}
 
+	// ??? for (;;)
+	// ???	pr_info("*** coda_pic_run_work - 3\n"); // ???
 	if (!wait_for_completion_timeout(&ctx->completion,
 					 msecs_to_jiffies(1000))) {
 		dev_err(dev->dev, "CODA PIC_RUN timeout\n");
@@ -1449,9 +1513,11 @@ static void coda_pic_run_work(struct work_struct *work)
 		if (ctx->ops->run_timeout)
 			ctx->ops->run_timeout(ctx);
 	} else if (!ctx->aborting) {
+		pr_info("*** coda_pic_run_work - 3-1\n"); // ???
 		ctx->ops->finish_run(ctx);
 	}
 
+	pr_info("*** coda_pic_run_work - 4\n"); // ???
 	if ((ctx->aborting || (!ctx->streamon_cap && !ctx->streamon_out)) &&
 	    ctx->ops->seq_end_work)
 		queue_work(dev->workqueue, &ctx->seq_end_work);
@@ -1459,6 +1525,7 @@ static void coda_pic_run_work(struct work_struct *work)
 	mutex_unlock(&dev->coda_mutex);
 	mutex_unlock(&ctx->buffer_mutex);
 
+	pr_info("*** coda_pic_run_work - 5\n"); // ???
 	v4l2_m2m_job_finish(ctx->dev->m2m_dev, ctx->fh.m2m_ctx);
 }
 
@@ -1834,6 +1901,9 @@ int coda_alloc_aux_buf(struct coda_dev *dev, struct coda_aux_buf *buf,
 	}
 
 	buf->size = size;
+
+	// ???
+	memset(buf->vaddr, 0, buf->size); // ???
 
 	if (name && parent) {
 		buf->blob.data = buf->vaddr;
@@ -2763,7 +2833,7 @@ static void coda_copy_firmware(struct coda_dev *dev, const u8 * const buf,
 	u8 *dst = dev->codebuf.vaddr;
 	int i;
 
-	pr_info("*** %x %x %x", (unsigned)src, (unsigned)dst, (unsigned)count); // ???
+	// ??? pr_info("*** %x %x %x", (unsigned)src, (unsigned)dst, (unsigned)count); // ???
 
 	// ???
 	for (i = 0; i < count; i += 4) {
@@ -3033,7 +3103,9 @@ static const struct coda_devtype coda_devdata[] = {
 		.vdevs        = coda9_video_devices,
 		.num_vdevs    = ARRAY_SIZE(coda9_video_devices),
 		.workbuf_size = 80 * 1024,
-		.tempbuf_size = 204 * 1024,
+		// ??? .tempbuf_size = 204 * 1024,
+		.tempbuf_size = 470 * 1024,
+		// ??? .tempbuf_size = 512 * 1024,
 		.iram_size    = 0x1f000, /* leave 4k for suspend code */
 	},
 };
@@ -3068,7 +3140,7 @@ static int coda_probe(struct platform_device *pdev)
 	struct coda_dev *dev;
 	int ret, irq;
 
-	dev_info(&pdev->dev, "*** prived\n"); // ???
+	// ??? dev_info(&pdev->dev, "*** prived\n"); // ???
 
 	// ???
 	pdev->dev.archdata.dma_offset = -(pdev->dev.dma_pfn_offset << PAGE_SHIFT);
@@ -3174,17 +3246,17 @@ static int coda_probe(struct platform_device *pdev)
 
 	dev->iram.size = dev->devtype->iram_size;
 	// asm("0: b 0b;"); // ???
-	pr_info("*** next=%x, prev=%x\n",
+	pr_info("* next=%x, prev=%x\n",
 		(unsigned)dev->iram_pool->chunks.next,
 		(unsigned)dev->iram_pool->chunks.prev); // ???
-	pr_info("*** min_alloc_order=%i\n", dev->iram_pool->min_alloc_order);
-	pr_info("*** algo=%x\n", (unsigned)dev->iram_pool->algo);
-	pr_info("*** data=%x\n", (unsigned)dev->iram_pool->data);
-	pr_info("*** name=%s\n", dev->iram_pool->name);
+	pr_info("* min_alloc_order=%i\n", dev->iram_pool->min_alloc_order);
+	pr_info("* algo=%x\n", (unsigned)dev->iram_pool->algo);
+	pr_info("* data=%x\n", (unsigned)dev->iram_pool->data);
+	pr_info("* name=%s\n", dev->iram_pool->name);
 
-	/* ??? dev->iram.vaddr = gen_pool_dma_alloc(dev->iram_pool, dev->iram.size,
+	dev->iram.vaddr = gen_pool_dma_alloc(dev->iram_pool, dev->iram.size,
 					     &dev->iram.paddr);
-	pr_info("*** vaddr=%x, paddr=%llx\n", (unsigned)dev->iram.vaddr, dev->iram.paddr); // ???
+	pr_info("* vaddr=%x, paddr=%llx\n", (unsigned)dev->iram.vaddr, dev->iram.paddr); // ???
 	if (!dev->iram.vaddr) {
 		dev_warn(&pdev->dev, "unable to alloc iram\n");
 	} else {
@@ -3194,7 +3266,7 @@ static int coda_probe(struct platform_device *pdev)
 		dev->iram.dentry = debugfs_create_blob("iram", 0644,
 						       dev->debugfs_root,
 						       &dev->iram.blob);
-	}*/
+	}
 
 	dev->workqueue = alloc_workqueue("coda", WQ_UNBOUND | WQ_MEM_RECLAIM, 1);
 	if (!dev->workqueue) {
@@ -3223,7 +3295,7 @@ static int coda_probe(struct platform_device *pdev)
 		goto err_alloc_workqueue;
 	}
 
-	pr_info("*** WOW\n");
+	pr_info("* WOW\n");
 
 	return 0;
 
