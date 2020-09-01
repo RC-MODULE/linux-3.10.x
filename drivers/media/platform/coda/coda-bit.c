@@ -455,6 +455,7 @@ static void coda_parabuf_write(struct coda_ctx *ctx, int index, u32 value)
 	else
 		// ??? p[index ^ 1] = value;
 		writel(value, &p[index ^ 1]);
+		// ??? writel(value, &p[index]);
 }
 
 static inline int coda_alloc_context_buf(struct coda_ctx *ctx,
@@ -504,7 +505,8 @@ static int coda_alloc_framebuffers(struct coda_ctx *ctx,
 		if (dev->devtype->product != CODA_DX6 &&
 		    (ctx->codec->src_fourcc == V4L2_PIX_FMT_H264 ||
 		     (ctx->codec->src_fourcc == V4L2_PIX_FMT_MPEG4 && i == 0)))
-			size += ysize / 4;
+			// ??? size += ysize / 4;
+			size += ysize / 2; // ???
 		name = kasprintf(GFP_KERNEL, "fb%d", i);
 		if (!name) {
 			coda_free_framebuffers(ctx);
@@ -512,6 +514,8 @@ static int coda_alloc_framebuffers(struct coda_ctx *ctx,
 		}
 		ret = coda_alloc_context_buf(ctx, &ctx->internal_frames[i].buf,
 					     size, name);
+		if (i == 0) memset(ctx->internal_frames[i].buf.vaddr, 0xFF, ctx->internal_frames[i].buf.size); // ???
+		// ??? if (i == 0) memset(ctx->internal_frames[i].buf.vaddr, 0xFF, ycbcr_size); // ???
 		kfree(name);
 		if (ret < 0) {
 			coda_free_framebuffers(ctx);
@@ -551,6 +555,21 @@ static int coda_alloc_framebuffers(struct coda_ctx *ctx,
 			coda_parabuf_write(ctx, 97, mvcol);
 	}
 
+	// ???
+	/* ??? for (i = ctx->num_internal_frames; i < ctx->num_internal_frames * 2; i++) {
+		u32 y, cb, cr;
+
+		// Start addresses of Y, Cb, Cr planes
+		y = ctx->internal_frames[i].buf.paddr;
+		cb = y + ysize;
+		cr = y + ysize + ysize/4;
+
+		coda_parabuf_write(ctx, 224 + i * 3 + 0, y);
+		coda_parabuf_write(ctx, 224 + i * 3 + 1, cb);
+		coda_parabuf_write(ctx, 224 + i * 3 + 2, cr);
+	}*/
+	// ???
+
 	return 0;
 }
 
@@ -584,10 +603,14 @@ static int coda_alloc_context_buffers(struct coda_ctx *ctx,
 
 	if (!ctx->slicebuf.vaddr && q_data->fourcc == V4L2_PIX_FMT_H264) {
 		/* worst case slice size */
-		size = (DIV_ROUND_UP(q_data->rect.width, 16) *
-			DIV_ROUND_UP(q_data->rect.height, 16)) * 3200 / 8 + 512;
+		// ??? size = (DIV_ROUND_UP(q_data->rect.width, 16) *
+		// ???	DIV_ROUND_UP(q_data->rect.height, 16)) * 3200 / 8 + 512;
+		// ??? size = (4096*2304*3/4); // ???
+		size = 0x1B00 * 1024; // ???
+		// ??? size = 0x2000 * 1024; // ???
 		ret = coda_alloc_context_buf(ctx, &ctx->slicebuf, size,
 					     "slicebuf");
+		// ??? ctx->slicebuf.size = (DIV_ROUND_UP(q_data->rect.width, 16) * DIV_ROUND_UP(q_data->rect.height, 16)) * 3200 / 8 + 512; // ???
 		if (ret < 0)
 			goto err;
 	}
@@ -1864,6 +1887,7 @@ static int __coda_decoder_seq_init(struct coda_ctx *ctx)
 				 CODA9_FRAME_TILED2LINEAR);
 	if (dst_fourcc == V4L2_PIX_FMT_NV12 || dst_fourcc == V4L2_PIX_FMT_YUYV)
 		ctx->frame_mem_ctrl |= CODA_FRAME_CHROMA_INTERLEAVE;
+	// ??? ctx->frame_mem_ctrl |= (1 << 16); // ???
 	// ??? if (ctx->tiled_map_type == GDI_TILED_FRAME_MB_RASTER_MAP)
 	// ??? 	ctx->frame_mem_ctrl |= (0x3 << 9) |
 	// ??? 		((ctx->use_vdoa) ? 0 : CODA9_FRAME_TILED2LINEAR); // ???
@@ -1953,6 +1977,7 @@ static int __coda_decoder_seq_init(struct coda_ctx *ctx)
 	coda_dbg(1, ctx, "start decoding: %dx%d\n", width, height);
 
 	ctx->num_internal_frames = coda_read(dev, CODA_RET_DEC_SEQ_FRAME_NEED);
+	ctx->num_internal_frames = 4; // ???
 	/*
 	 * If the VDOA is used, the decoder needs one additional frame,
 	 * because the frames are freed when the next frame is decoded.
@@ -1976,12 +2001,18 @@ static int __coda_decoder_seq_init(struct coda_ctx *ctx)
 		left_right = coda_read(dev, CODA_RET_DEC_SEQ_CROP_LEFT_RIGHT);
 		top_bottom = coda_read(dev, CODA_RET_DEC_SEQ_CROP_TOP_BOTTOM);
 
-		q_data_dst->rect.left = (left_right >> 10) & 0x3ff;
+		/* ??? q_data_dst->rect.left = (left_right >> 10) & 0x3ff;
 		q_data_dst->rect.top = (top_bottom >> 10) & 0x3ff;
 		q_data_dst->rect.width = width - q_data_dst->rect.left -
 					 (left_right & 0x3ff);
 		q_data_dst->rect.height = height - q_data_dst->rect.top -
-					  (top_bottom & 0x3ff);
+					  (top_bottom & 0x3ff);*/
+		q_data_dst->rect.left = (left_right >> 16) & 0xffff;
+		q_data_dst->rect.top = (top_bottom >> 16) & 0xffff;
+		q_data_dst->rect.width = width - q_data_dst->rect.left -
+					 (left_right & 0xffff);
+		q_data_dst->rect.height = height - q_data_dst->rect.top -
+					  (top_bottom & 0xffff);
 	}
 
 	if (dev->devtype->product != CODA_DX6) {
@@ -2160,8 +2191,8 @@ static int coda_prepare_decode(struct coda_ctx *ctx)
 	}
 
 	// ???
-	if (dev->devtype->product == CODA_960)
-		coda_set_gdi_regs(ctx);
+	// ??? if (dev->devtype->product == CODA_960)
+	// ???	coda_set_gdi_regs(ctx);
 
 	if (ctx->use_vdoa &&
 	    ctx->display_idx >= 0 &&
@@ -2499,6 +2530,11 @@ static void coda_finish_decode(struct coda_ctx *ctx)
 		vb2_set_plane_payload(&dst_buf->vb2_buf, 0,
 				      q_data_dst->sizeimage);
 
+		{ // ???
+			volatile int q;
+			for (q = 0; q < 10000000; ++q) ;
+		}
+
 		if (ready_frame->error || err_vdoa)
 			coda_m2m_buf_done(ctx, dst_buf, VB2_BUF_STATE_ERROR);
 		else
@@ -2587,6 +2623,11 @@ irqreturn_t coda_irq_handler(int irq, void *data)
 
 	/* read status register to attend the IRQ */
 	coda_read(dev, CODA_REG_BIT_INT_STATUS);
+
+	// ???
+	pr_info("*** interrupt *** %x\n", coda_read(dev, CODA_REG_BIT_INT_REASON)); // ???
+	// ???
+
 	coda_write(dev, 0, CODA_REG_BIT_INT_REASON);
 	coda_write(dev, CODA_REG_BIT_INT_CLEAR_SET,
 		      CODA_REG_BIT_INT_CLEAR);

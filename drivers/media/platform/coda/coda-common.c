@@ -73,7 +73,7 @@ module_param(disable_vdoa, int, 0644);
 MODULE_PARM_DESC(disable_vdoa, "Disable Video Data Order Adapter tiled to raster-scan conversion");
 
 // ??? static int enable_bwb = 0;
-static int enable_bwb = 1; // ???
+static int enable_bwb = 0; // ??? 1; // ???
 module_param(enable_bwb, int, 0644);
 MODULE_PARM_DESC(enable_bwb, "Enable BWB unit for decoding, may crash on certain streams");
 
@@ -89,45 +89,51 @@ void coda_write(struct coda_dev *dev, u32 data, u32 reg)
 		for (;;) ;
 	}
 
-	/* ??? if ((reg == CODA_REG_BIT_RUN_COMMAND) && (data == 0xF))
+	/* ???? if ((reg == CODA_REG_BIT_RUN_COMMAND) && (data == 0xF))
 	{
 		coda_write(dev, 0x0, 0x10f0);
 	}
 
-	if ((reg == CODA_REG_BIT_RUN_COMMAND) && (data == 0x1))
+	if ((reg == CODA_REG_BIT_RUN_COMMAND) && (data == 0x1)) // init
 	{
 		coda_write(dev, 0x0, 0x114);
-		coda_write(dev, 0xc00, 0x184);
-		coda_write(dev, 0x2, 0x188);
+		// ??? coda_write(dev, 0xc00, 0x184);
+		// ??? coda_write(dev, 0x2, 0x188);
 		coda_write(dev, 0x1, 0x19c);
 	}
 
-	if ((reg == CODA_REG_BIT_RUN_COMMAND) && (data == 0x4))
+	if ((reg == CODA_REG_BIT_RUN_COMMAND) && (data == 0x4)) // set frame
 	{
 		coda_write(dev, 0x0, 0x1a8);
 		coda_write(dev, 0x0, 0x1b8);
 	}
 
-	if ((reg == CODA_REG_BIT_RUN_COMMAND) && (data == 0x3))
+	if ((reg == CODA_REG_BIT_RUN_COMMAND) && (data == 0x3)) // dec pic
 	{
-		coda_write(dev, 0x780, 0x184);
+		// ??? coda_write(dev, 0x780, 0x184);
 		coda_write(dev, 0x0, 0x194);
 		coda_write(dev, 0x0, 0x1ac);
-		coda_write(dev, 0x0, 0x1b8);
+		// ??? coda_write(dev, 0x0, 0x1b8); !!! need
 	}*/
 
 	reg_written[reg] = true;
 	reg_values[reg] = data;
 
-	/* ??? if ((reg == CODA_REG_BIT_RUN_COMMAND) && (data != 0x0) && (data != 0xF) && (data != 0x1) && (data != 0x4)) { // ??? && (data != 0x3)) {
+	if ((reg == CODA_REG_BIT_RUN_COMMAND) && (data != 0x0)) { // ??? } && (data != 0xF) && (data != 0x1) && (data != 0x4)) { // ??? && (data != 0x3)) {
 		int i;
 		pr_info("*** before CODA_REG_BIT_RUN_COMMAND (0x164)=0x%x\n", data);
 		for (i = 0; i < 8196; ++i) {
 			if (!reg_written[i]) continue;
 			pr_info("*** reg[0x%x]=0x%x\n", i, reg_values[i]);
 		}
-		for (;;) ;
-	}*/
+
+		// for (i = 0x1400; i < 0x1900; i += 4)
+		// {
+		// 	pr_info("*** gdi[0x%x]=0x%x\n", i, readl(dev->regs_base + i)); // ???
+		// }
+
+		// for (;;) ;
+	}
 	// ???
 
 	// ??? if ((reg >= 0x188) && (reg <= 0x190))
@@ -276,7 +282,7 @@ static const struct coda_video_device coda_bit_decoder = {
 		V4L2_PIX_FMT_MPEG4,
 	},
 	.dst_formats = {
-		V4L2_PIX_FMT_NV12,
+		// ??? V4L2_PIX_FMT_NV12,
 		V4L2_PIX_FMT_YUV420,
 		V4L2_PIX_FMT_YVU420,
 		/*
@@ -1903,7 +1909,7 @@ int coda_alloc_aux_buf(struct coda_dev *dev, struct coda_aux_buf *buf,
 	buf->size = size;
 
 	// ???
-	memset(buf->vaddr, 0, buf->size); // ???
+	memset(buf->vaddr, 0x00, buf->size); // ???
 
 	if (name && parent) {
 		buf->blob.data = buf->vaddr;
@@ -3254,7 +3260,7 @@ static int coda_probe(struct platform_device *pdev)
 	pr_info("* data=%x\n", (unsigned)dev->iram_pool->data);
 	pr_info("* name=%s\n", dev->iram_pool->name);
 
-	dev->iram.vaddr = gen_pool_dma_alloc(dev->iram_pool, dev->iram.size,
+	dev->iram.vaddr = 0; /* ??? gen_pool_dma_alloc(dev->iram_pool, dev->iram.size,
 					     &dev->iram.paddr);
 	pr_info("* vaddr=%x, paddr=%llx\n", (unsigned)dev->iram.vaddr, dev->iram.paddr); // ???
 	if (!dev->iram.vaddr) {
@@ -3266,7 +3272,7 @@ static int coda_probe(struct platform_device *pdev)
 		dev->iram.dentry = debugfs_create_blob("iram", 0644,
 						       dev->debugfs_root,
 						       &dev->iram.blob);
-	}
+	}*/
 
 	dev->workqueue = alloc_workqueue("coda", WQ_UNBOUND | WQ_MEM_RECLAIM, 1);
 	if (!dev->workqueue) {
