@@ -100,7 +100,6 @@ static int sram_add_partition(struct sram_dev *sram, struct sram_reserve *block,
 	part->base = sram->virt_base + block->start;
 
 	if (block->pool) {
-		pr_info("*** !\n"); // ???
 		ret = sram_add_pool(sram, block, start, part);
 		if (ret)
 			return ret;
@@ -166,8 +165,6 @@ static int sram_reserve_regions(struct sram_dev *sram, struct resource *res)
 
 	INIT_LIST_HEAD(&reserve_list);
 
-	pr_info("*** start = %llx, end = %llx\n", res->start, res->end); // ???
-
 	size = resource_size(res);
 
 	/*
@@ -191,7 +188,6 @@ static int sram_reserve_regions(struct sram_dev *sram, struct resource *res)
 			goto err_chunks;
 		}
 
-	pr_info("*** child start = %llx, end = %llx\n", child_res.start, child_res.end); // ???
 		if (child_res.start < res->start || child_res.end > res->end) {
 			dev_err(sram->dev,
 				"reserved block %pOF outside the sram area\n",
@@ -212,8 +208,6 @@ static int sram_reserve_regions(struct sram_dev *sram, struct resource *res)
 
 		if (of_find_property(child, "protect-exec", NULL))
 			block->protect_exec = true;
-
-		pr_info("*** %i %i\n", (int)block->pool, (int)block->size); // ???
 
 		if ((block->export || block->pool || block->protect_exec) &&
 		    block->size) {
@@ -237,11 +231,11 @@ static int sram_reserve_regions(struct sram_dev *sram, struct resource *res)
 				goto err_chunks;
 			}
 
-			dev_info(sram->dev, "found %sblock '%s' 0x%x-0x%x\n", // ???
+			dev_dbg(sram->dev, "found %sblock '%s' 0x%x-0x%x\n",
 				block->export ? "exported " : "", block->label,
 				block->start, block->start + block->size);
 		} else {
-			dev_info(sram->dev, "found reserved block 0x%x-0x%x\n", // ???
+			dev_dbg(sram->dev, "found reserved block 0x%x-0x%x\n",
 				block->start, block->start + block->size);
 		}
 
@@ -301,7 +295,7 @@ static int sram_reserve_regions(struct sram_dev *sram, struct resource *res)
 		 */
 		cur_size = block->start - cur_start;
 
-		dev_info(sram->dev, "adding chunk 0x%lx-0x%lx\n", // ???
+		dev_dbg(sram->dev, "adding chunk 0x%lx-0x%lx\n",
 			cur_start, cur_start + cur_size);
 
 		ret = gen_pool_add_virt(sram->pool,
@@ -349,8 +343,6 @@ static int sram_probe(struct platform_device *pdev)
 	int ret;
 	int (*init_func)(void);
 
-	pr_info("*** SRAM\n"); // ???
-
 	sram = devm_kzalloc(&pdev->dev, sizeof(*sram), GFP_KERNEL);
 	if (!sram)
 		return -ENOMEM;
@@ -391,7 +383,7 @@ static int sram_probe(struct platform_device *pdev)
 			goto err_free_partitions;
 	}
 
-	dev_info(sram->dev, "SRAM pool: %zu KiB @ 0x%p\n", // ???
+	dev_dbg(sram->dev, "SRAM pool: %zu KiB @ 0x%p\n",
 		gen_pool_size(sram->pool) / 1024, sram->virt_base);
 
 	return 0;

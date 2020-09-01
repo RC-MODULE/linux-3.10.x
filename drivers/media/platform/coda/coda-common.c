@@ -119,7 +119,7 @@ void coda_write(struct coda_dev *dev, u32 data, u32 reg)
 	reg_written[reg] = true;
 	reg_values[reg] = data;
 
-	if ((reg == CODA_REG_BIT_RUN_COMMAND) && (data != 0x0)) { // ??? } && (data != 0xF) && (data != 0x1) && (data != 0x4)) { // ??? && (data != 0x3)) {
+	/* ??? if ((reg == CODA_REG_BIT_RUN_COMMAND) && (data != 0x0)) { // ??? } && (data != 0xF) && (data != 0x1) && (data != 0x4)) { // ??? && (data != 0x3)) {
 		int i;
 		pr_info("*** before CODA_REG_BIT_RUN_COMMAND (0x164)=0x%x\n", data);
 		for (i = 0; i < 8196; ++i) {
@@ -133,7 +133,7 @@ void coda_write(struct coda_dev *dev, u32 data, u32 reg)
 		// }
 
 		// for (;;) ;
-	}
+	}*/
 	// ???
 
 	// ??? if ((reg >= 0x188) && (reg <= 0x190))
@@ -3129,7 +3129,7 @@ static const struct of_device_id coda_dt_ids[] = {
 	{ .compatible = "fsl,imx53-vpu", .data = &coda_devdata[CODA_IMX53] },
 	{ .compatible = "fsl,imx6q-vpu", .data = &coda_devdata[CODA_IMX6Q] },
 	{ .compatible = "fsl,imx6dl-vpu", .data = &coda_devdata[CODA_IMX6DL] },
-	{ .compatible = "test,vpu", .data = &coda_devdata[CODA_TEST] }, // ???
+	{ .compatible = "rcm,vpu-coda980-v4l2", .data = &coda_devdata[CODA_TEST] }, // ??? CODA_TEST
 	{ /* sentinel */ }
 };
 MODULE_DEVICE_TABLE(of, coda_dt_ids);
