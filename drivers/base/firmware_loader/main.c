@@ -493,7 +493,6 @@ fw_get_filesystem_firmware(struct device *device, struct fw_priv *fw_priv,
 		}
 
 		fw_priv->size = 0;
-		pr_info("*** file_path = %s\n", path); // ???
 		rc = kernel_read_file_from_path(path, &buffer, &size,
 						msize, id);
 		if (rc) {
