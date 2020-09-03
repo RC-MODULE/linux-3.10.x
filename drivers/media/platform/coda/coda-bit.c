@@ -501,11 +501,20 @@ static int coda_alloc_framebuffers(struct coda_ctx *ctx,
 		char *name;
 
 		/* Add space for mvcol buffers */
-		if (dev->devtype->product != CODA_DX6 &&
+		if ((dev->devtype->product == CODA_980) &&
 		    (ctx->codec->src_fourcc == V4L2_PIX_FMT_H264 ||
+		    (ctx->codec->src_fourcc == V4L2_PIX_FMT_MPEG4 && i == 0)))
+		 {
+			int size_mvcolbuf =  ((q_data->rect.width+31)&~31)*((q_data->rect.height+31)&~31);
+			size_mvcolbuf = (size_mvcolbuf*3)/2;
+			size_mvcolbuf = (size_mvcolbuf+4)/5;
+			size_mvcolbuf = ((size_mvcolbuf+7)/8)*8;
+			size += size_mvcolbuf;
+		}
+		else if (dev->devtype->product != CODA_DX6 &&
+		     (ctx->codec->src_fourcc == V4L2_PIX_FMT_H264 ||
 		     (ctx->codec->src_fourcc == V4L2_PIX_FMT_MPEG4 && i == 0)))
-			// ??? size += ysize / 4;
-			size += ysize / 2; // ???
+			size += ysize / 4;
 		name = kasprintf(GFP_KERNEL, "fb%d", i);
 		if (!name) {
 			coda_free_framebuffers(ctx);
@@ -585,11 +594,10 @@ static int coda_alloc_context_buffers(struct coda_ctx *ctx,
 
 	if (!ctx->slicebuf.vaddr && q_data->fourcc == V4L2_PIX_FMT_H264) {
 		/* worst case slice size */
-		// ??? size = (DIV_ROUND_UP(q_data->rect.width, 16) *
-		// ???	DIV_ROUND_UP(q_data->rect.height, 16)) * 3200 / 8 + 512;
-		// ??? size = (4096*2304*3/4); // ???
-		size = 0x1B00 * 1024; // ???
-		// ??? size = 0x2000 * 1024; // ???
+		size = (DIV_ROUND_UP(q_data->rect.width, 16) *
+			DIV_ROUND_UP(q_data->rect.height, 16)) * 3200 / 8 + 512;
+		if (dev->devtype->product == CODA_980)
+			size = (4096 * 2304 * 3 / 4);
 		ret = coda_alloc_context_buf(ctx, &ctx->slicebuf, size,
 					     "slicebuf");
 		if (ret < 0)
@@ -606,7 +614,7 @@ static int coda_alloc_context_buffers(struct coda_ctx *ctx,
 
 	if (!ctx->workbuf.vaddr) {
 		size = dev->devtype->workbuf_size;
-		if ((dev->devtype->product == CODA_960 || dev->devtype->product == CODA_980) && // ???
+		if ((dev->devtype->product == CODA_960 || dev->devtype->product == CODA_980) &&
 		    q_data->fourcc == V4L2_PIX_FMT_H264)
 			size += CODA9_PS_SAVE_SIZE;
 		ret = coda_alloc_context_buf(ctx, &ctx->workbuf, size,
@@ -796,6 +804,7 @@ static void coda_setup_iram(struct coda_ctx *ctx)
 	struct coda_iram_info *iram_info = &ctx->iram_info;
 	struct coda_dev *dev = ctx->dev;
 	int w64, w128;
+	int wAVC;
 	int mb_width;
 	int dbk_bits;
 	int bit_bits;
@@ -840,6 +849,7 @@ static void coda_setup_iram(struct coda_ctx *ctx)
 		mb_width = DIV_ROUND_UP(q_data_src->rect.width, 16);
 		w128 = mb_width * 128;
 		w64 = mb_width * 64;
+		wAVC = (ctx->dev->devtype->product == CODA_980 ? mb_width * 144 : w128);
 
 		/* Prioritize in case IRAM is too small for everything */
 		if (dev->devtype->product == CODA_HX4 ||
@@ -862,7 +872,7 @@ static void coda_setup_iram(struct coda_ctx *ctx)
 			goto out;
 		iram_info->axi_sram_use |= dbk_bits;
 
-		iram_info->buf_bit_use = coda_iram_alloc(iram_info, w128);
+		iram_info->buf_bit_use = coda_iram_alloc(iram_info, (ctx->codec->dst_fourcc == V4L2_PIX_FMT_H264 ? wAVC : w128));
 		if (!iram_info->buf_bit_use)
 			goto out;
 		iram_info->axi_sram_use |= bit_bits;
@@ -878,8 +888,8 @@ static void coda_setup_iram(struct coda_ctx *ctx)
 
 		q_data_dst = get_q_data(ctx, V4L2_BUF_TYPE_VIDEO_CAPTURE);
 		mb_width = DIV_ROUND_UP(q_data_dst->width, 16);
-		// ??? w128 = mb_width * 128;
-		w128 = mb_width * 144; // ???
+		w128 = mb_width * 128;
+		wAVC = (ctx->dev->devtype->product == CODA_980 ? mb_width * 144 : w128);
 
 		iram_info->buf_dbk_y_use = coda_iram_alloc(iram_info, w128);
 		iram_info->buf_dbk_c_use = coda_iram_alloc(iram_info, w128);
@@ -887,7 +897,7 @@ static void coda_setup_iram(struct coda_ctx *ctx)
 			goto out;
 		iram_info->axi_sram_use |= dbk_bits;
 
-		iram_info->buf_bit_use = coda_iram_alloc(iram_info, w128);
+		iram_info->buf_bit_use = coda_iram_alloc(iram_info, (ctx->codec->src_fourcc == V4L2_PIX_FMT_H264 ? wAVC : w128));
 		if (!iram_info->buf_bit_use)
 			goto out;
 		iram_info->axi_sram_use |= bit_bits;

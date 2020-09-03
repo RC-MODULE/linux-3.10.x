@@ -3185,18 +3185,8 @@ static int coda_probe(struct platform_device *pdev)
 	}
 
 	dev->iram.size = dev->devtype->iram_size;
-	// asm("0: b 0b;"); // ???
-	pr_info("* next=%x, prev=%x\n",
-		(unsigned)dev->iram_pool->chunks.next,
-		(unsigned)dev->iram_pool->chunks.prev); // ???
-	pr_info("* min_alloc_order=%i\n", dev->iram_pool->min_alloc_order);
-	pr_info("* algo=%x\n", (unsigned)dev->iram_pool->algo);
-	pr_info("* data=%x\n", (unsigned)dev->iram_pool->data);
-	pr_info("* name=%s\n", dev->iram_pool->name);
-
-	dev->iram.vaddr = 0; /* ??? gen_pool_dma_alloc(dev->iram_pool, dev->iram.size,
+	dev->iram.vaddr = gen_pool_dma_alloc(dev->iram_pool, dev->iram.size,
 					     &dev->iram.paddr);
-	pr_info("* vaddr=%x, paddr=%llx\n", (unsigned)dev->iram.vaddr, dev->iram.paddr); // ???
 	if (!dev->iram.vaddr) {
 		dev_warn(&pdev->dev, "unable to alloc iram\n");
 	} else {
@@ -3206,7 +3196,7 @@ static int coda_probe(struct platform_device *pdev)
 		dev->iram.dentry = debugfs_create_blob("iram", 0644,
 						       dev->debugfs_root,
 						       &dev->iram.blob);
-	}*/
+	}
 
 	dev->workqueue = alloc_workqueue("coda", WQ_UNBOUND | WQ_MEM_RECLAIM, 1);
 	if (!dev->workqueue) {
