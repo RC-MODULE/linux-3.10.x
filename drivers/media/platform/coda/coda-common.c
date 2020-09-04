@@ -72,88 +72,20 @@ static int enable_bwb = 0;
 module_param(enable_bwb, int, 0644);
 MODULE_PARM_DESC(enable_bwb, "Enable BWB unit for decoding, may crash on certain streams");
 
-static bool reg_written[8196];
-static u32 reg_values[8196];
-
 void coda_write(struct coda_dev *dev, u32 data, u32 reg)
 {
-	// ???
-	if (reg > 8196)
-	{
-		pr_info("*** reg=0x%x\n", reg);
-		for (;;) ;
-	}
-
-	/* ???? if ((reg == CODA_REG_BIT_RUN_COMMAND) && (data == 0xF))
-	{
-		coda_write(dev, 0x0, 0x10f0);
-	}
-
-	if ((reg == CODA_REG_BIT_RUN_COMMAND) && (data == 0x1)) // init
-	{
-		coda_write(dev, 0x0, 0x114);
-		// ??? coda_write(dev, 0xc00, 0x184);
-		// ??? coda_write(dev, 0x2, 0x188);
-		coda_write(dev, 0x1, 0x19c);
-	}
-
-	if ((reg == CODA_REG_BIT_RUN_COMMAND) && (data == 0x4)) // set frame
-	{
-		coda_write(dev, 0x0, 0x1a8);
-		coda_write(dev, 0x0, 0x1b8);
-	}
-
-	if ((reg == CODA_REG_BIT_RUN_COMMAND) && (data == 0x3)) // dec pic
-	{
-		// ??? coda_write(dev, 0x780, 0x184);
-		coda_write(dev, 0x0, 0x194);
-		coda_write(dev, 0x0, 0x1ac);
-		// ??? coda_write(dev, 0x0, 0x1b8); !!! need
-	}*/
-
-	reg_written[reg] = true;
-	reg_values[reg] = data;
-
-	/* ??? if ((reg == CODA_REG_BIT_RUN_COMMAND) && (data != 0x0)) { // ??? } && (data != 0xF) && (data != 0x1) && (data != 0x4)) { // ??? && (data != 0x3)) {
-		int i;
-		pr_info("*** before CODA_REG_BIT_RUN_COMMAND (0x164)=0x%x\n", data);
-		for (i = 0; i < 8196; ++i) {
-			if (!reg_written[i]) continue;
-			pr_info("*** reg[0x%x]=0x%x\n", i, reg_values[i]);
-		}
-
-		// for (i = 0x1400; i < 0x1900; i += 4)
-		// {
-		// 	pr_info("*** gdi[0x%x]=0x%x\n", i, readl(dev->regs_base + i)); // ???
-		// }
-
-		// for (;;) ;
-	}*/
-	// ???
-
-	// ??? if ((reg >= 0x188) && (reg <= 0x190))
-	// ???	v4l2_dbg(3, coda_debug, &dev->v4l2_dev,
-	// ???		"%s: data=0x%x, reg=0x%x\n", __func__, data, reg);
-	// ??? if (reg != 0x4) // ???
-	// ??? v4l2_dbg(3, coda_debug, &dev->v4l2_dev,
-	// ??? 	 "%s: data=0x%x, reg=0x%x\n", __func__, data, reg);
+	v4l2_dbg(3, coda_debug, &dev->v4l2_dev,
+		 "%s: data=0x%x, reg=0x%x\n", __func__, data, reg);
 	writel(data, dev->regs_base + reg);
 }
-
-static u32 _last_reg;
-static u32 _last_data;
 
 unsigned int coda_read(struct coda_dev *dev, u32 reg)
 {
 	u32 data;
 
 	data = readl(dev->regs_base + reg);
-	// ??? if ((_last_reg != reg) || (_last_data != data)) {
-	// ??? v4l2_dbg(3, coda_debug, &dev->v4l2_dev,
-	// ??? 	 "%s: data=0x%x, reg=0x%x\n", __func__, data, reg);
-	// ??? }
-	_last_reg = reg;
-	_last_data = data;
+	v4l2_dbg(3, coda_debug, &dev->v4l2_dev,
+		 "%s: data=0x%x, reg=0x%x\n", __func__, data, reg);
 	return data;
 }
 
@@ -231,7 +163,7 @@ static const struct coda_codec coda9_codecs[] = {
 static const struct coda_codec coda980_codecs[] = { // ??? fixme and test and without 980
 	// ??? CODA_CODEC(CODA9_MODE_ENCODE_H264, V4L2_PIX_FMT_YUV420, V4L2_PIX_FMT_H264,   1920, 1088),
 	// ??? CODA_CODEC(CODA9_MODE_ENCODE_MP4,  V4L2_PIX_FMT_YUV420, V4L2_PIX_FMT_MPEG4,  1920, 1088),
-	CODA_CODEC(CODA9_MODE_DECODE_H264, V4L2_PIX_FMT_H264,   V4L2_PIX_FMT_YUV420, 1920, 1088), // ??? size
+	CODA_CODEC(CODA9_MODE_DECODE_H264, V4L2_PIX_FMT_H264,   V4L2_PIX_FMT_YUV420, 4096, 2208),
 	// ??? CODA_CODEC(CODA9_MODE_DECODE_MP2,  V4L2_PIX_FMT_MPEG2,  V4L2_PIX_FMT_YUV420, 1920, 1088),
 	// ??? CODA_CODEC(CODA9_MODE_DECODE_MP4,  V4L2_PIX_FMT_MPEG4,  V4L2_PIX_FMT_YUV420, 1920, 1088),
 };
@@ -825,7 +757,7 @@ static int coda_s_fmt(struct coda_ctx *ctx, struct v4l2_format *f,
 		ctx->tiled_map_type = GDI_TILED_FRAME_MB_RASTER_MAP;
 		break;
 	case V4L2_PIX_FMT_NV12:
-		if (!disable_tiling && (ctx->dev->devtype->product == CODA_960 || ctx->dev->devtype->product == CODA_980)) { // ???
+		if (!disable_tiling && (ctx->dev->devtype->product == CODA_960 || ctx->dev->devtype->product == CODA_980)) {
 			ctx->tiled_map_type = GDI_TILED_FRAME_MB_RASTER_MAP;
 			break;
 		}
@@ -1963,7 +1895,7 @@ static int coda_start_streaming(struct vb2_queue *q, unsigned int count)
 			mutex_unlock(&ctx->bitstream_mutex);
 
 			if (ctx->dev->devtype->product != CODA_960 &&
-			    ctx->dev->devtype->product != CODA_980 && // ???
+			    ctx->dev->devtype->product != CODA_980 &&
 			    coda_get_bitstream_payload(ctx) < 512) {
 				v4l2_err(v4l2_dev, "start payload < 512\n");
 				ret = -EINVAL;
@@ -2249,7 +2181,7 @@ static void coda_encode_ctrls(struct coda_ctx *ctx)
 		V4L2_CID_MPEG_VIDEO_H264_I_FRAME_QP, 0, 51, 1, 25);
 	v4l2_ctrl_new_std(&ctx->ctrls, &coda_ctrl_ops,
 		V4L2_CID_MPEG_VIDEO_H264_P_FRAME_QP, 0, 51, 1, 25);
-	if (ctx->dev->devtype->product != CODA_960 && ctx->dev->devtype->product != CODA_980) { // ???
+	if (ctx->dev->devtype->product != CODA_960 && ctx->dev->devtype->product != CODA_980) {
 		v4l2_ctrl_new_std(&ctx->ctrls, &coda_ctrl_ops,
 			V4L2_CID_MPEG_VIDEO_H264_MIN_QP, 0, 51, 1, 12);
 	}
@@ -2282,7 +2214,7 @@ static void coda_encode_ctrls(struct coda_ctx *ctx)
 			  (1 << V4L2_MPEG_VIDEO_H264_LEVEL_3_1)),
 			V4L2_MPEG_VIDEO_H264_LEVEL_3_1);
 	}
-	if (ctx->dev->devtype->product == CODA_960 || ctx->dev->devtype->product == CODA_980) { // ????
+	if (ctx->dev->devtype->product == CODA_960 || ctx->dev->devtype->product == CODA_980) {
 		v4l2_ctrl_new_std_menu(&ctx->ctrls, &coda_ctrl_ops,
 			V4L2_CID_MPEG_VIDEO_H264_LEVEL,
 			V4L2_MPEG_VIDEO_H264_LEVEL_4_0,
@@ -2303,7 +2235,7 @@ static void coda_encode_ctrls(struct coda_ctx *ctx)
 		V4L2_MPEG_VIDEO_MPEG4_PROFILE_SIMPLE);
 	if (ctx->dev->devtype->product == CODA_HX4 ||
 	    ctx->dev->devtype->product == CODA_7541 ||
-	    ctx->dev->devtype->product == CODA_960 || // ???
+	    ctx->dev->devtype->product == CODA_960 ||
 	    ctx->dev->devtype->product == CODA_980) {
 		v4l2_ctrl_new_std_menu(&ctx->ctrls, &coda_ctrl_ops,
 			V4L2_CID_MPEG_VIDEO_MPEG4_LEVEL,
@@ -2363,7 +2295,7 @@ static void coda_decode_ctrls(struct coda_ctx *ctx)
 	if (ctx->dev->devtype->product == CODA_HX4 ||
 	    ctx->dev->devtype->product == CODA_7541)
 		max = V4L2_MPEG_VIDEO_H264_LEVEL_4_0;
-	else if (ctx->dev->devtype->product == CODA_960 || ctx->dev->devtype->product == CODA_980) // ???
+	else if (ctx->dev->devtype->product == CODA_960 || ctx->dev->devtype->product == CODA_980)
 		max = V4L2_MPEG_VIDEO_H264_LEVEL_4_1;
 	else
 		return;
@@ -3041,8 +2973,8 @@ static const struct coda_devtype coda_devdata[] = {
 			"v4l-rcm-coda980.bin"
 		},
 		.product      = CODA_980,
-		.codecs       = coda980_codecs, // ???
-		.num_codecs   = ARRAY_SIZE(coda980_codecs), // ???
+		.codecs       = coda980_codecs,
+		.num_codecs   = ARRAY_SIZE(coda980_codecs),
 		.vdevs        = coda980_video_devices,
 		.num_vdevs    = ARRAY_SIZE(coda980_video_devices),
 		.workbuf_size = 80 * 1024,
