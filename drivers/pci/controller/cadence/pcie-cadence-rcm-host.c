@@ -12,6 +12,8 @@
 #include "pcie-cadence.h"
 #include "pcie-cadence-rcm.h"
 
+#define LINK_RETRAIN_TIMEOUT HZ
+
 static void __iomem *rcm_cdns_pci_map_bus(struct pci_bus *bus,
                                           unsigned int devfn,
                                           int where)
@@ -42,8 +44,24 @@ static void __iomem *rcm_cdns_pci_map_bus(struct pci_bus *bus,
 		return pcie->reg_base + (where & 0xfff);
 	}
 	/* Check that the link is up */
-	if (!(cdns_pcie_readl(pcie, CDNS_PCIE_LM_BASE) & 0x1))
-		return NULL;
+	if (!(cdns_pcie_readl(pcie, CDNS_PCIE_LM_BASE) & 0x1)) {
+		unsigned long end_jiffies;
+		u32 reg32;
+
+		pr_warn("%s: link is down. It can be retraining. Wait \n",
+		        __func__);
+
+		end_jiffies = jiffies + LINK_RETRAIN_TIMEOUT;
+		do {
+			reg32 = cdns_pcie_readl(pcie, CDNS_PCIE_LM_BASE);
+			if (reg32 & 0x1)
+				break;
+			udelay(1000);
+		} while (time_before(jiffies, end_jiffies));
+		
+		if (!(reg32 & 0x1))
+			return NULL;
+	}
 	/* Clear AXI link-down status */
 	cdns_pcie_writel(pcie, CDNS_PCIE_AT_LINKDOWN, 0x0);
 
