@@ -1039,7 +1039,46 @@ static void coda9_set_frame_cache(struct coda_ctx *ctx, u32 fourcc)
 	coda_write(ctx->dev, cache_size, CODA9_CMD_SET_FRAME_CACHE_SIZE);
 
 	if (ctx->dev->devtype->product == CODA_980) {
-		cache_config = 0x7E0; // ??? fixme
+		int bypass = 0; // default value
+		int burst = 0; // default value
+		int merge = 3; // default value
+		int wayshape = 15; // default value
+
+		if(ctx->inst_type ==  CODA_INST_DECODER) {
+			if (ctx->tiled_map_type == GDI_LINEAR_FRAME_MAP) {
+				// VC1 opposite field padding is not allowable in UV separated, burst 8 and linear map
+				if(fourcc != V4L2_PIX_FMT_NV12 && fourcc != V4L2_PIX_FMT_YUYV) // !interleave
+					burst = 0;
+				wayshape = 15;
+				if (merge == 1) 
+					merge = 3;
+				// GDI constraint. Width should not be over 64
+				if ((merge== 1) && (burst))
+					burst = 0;
+			} else {
+				// horizontal merge constraint in tiled map
+				if (merge == 1) 
+					merge = 3;
+			}
+		} else { // encoder
+			if (ctx->tiled_map_type == GDI_LINEAR_FRAME_MAP) {
+				wayshape = 15;
+				// GDI constraint. Width should not be over 64
+				if ((merge == 1) && (burst))
+					burst= 0;
+			} else {
+				// horizontal merge constraint in tiled map
+				if (merge == 1) 
+					merge = 3; 
+			}
+		}	
+
+		cache_config = (merge & 0x3) << 9;
+		cache_config |= ((wayshape & 0xf) << 5);
+		cache_config |= ((burst & 0x1) << 3);
+		cache_config |= (bypass & 0x3);
+		if (ctx->tiled_map_type != GDI_LINEAR_FRAME_MAP)
+			cache_config = cache_config | 0x00000004;
 	} else {
 		if (fourcc == V4L2_PIX_FMT_NV12 || fourcc == V4L2_PIX_FMT_YUYV) {
 			cache_config |= 32 << CODA9_CACHE_LUMA_BUFFER_SIZE_OFFSET |
