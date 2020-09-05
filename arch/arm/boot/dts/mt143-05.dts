@@ -35,6 +35,16 @@
         reg = <0xC0000000 0x40000000>;
     };
 
+    esram0: esram@0x00040000 {
+        compatible = "syscon";
+        reg = <0x00040000 0x20000>;
+    };
+
+    esram1: esram@0x00060000 {
+        compatible = "syscon";
+        reg = <0x00060000 0x20000>;
+    };
+
     cpus {
         #address-cells = <1>;
         #size-cells = <0>;
@@ -235,6 +245,11 @@
             interrupts = <0 22 4>;
             status = "okay";
         };
+
+        ext_irq_gen: ext_irq_gen@0x01018000 {
+            compatible = "syscon";
+            reg = <0x01018000 0x1000>;
+        };
     };
 
     apbs0 {
@@ -379,6 +394,29 @@
             interrupt-parent = <&gic0>;
             clocks = <&clock_axi_slow>;
             clock-names = "apb_pclk";
+            status = "disabled";
+        };
+
+        pcie_dma: pcie_dma@0x0105e000 {
+            compatible = "rcm,cdns-dma";
+            reg = <0x0105e000 0x1000>;
+            #dma-cells = <1>;
+            interrupt-parent = <&gic0>;
+            interrupts = <0 23 4>;
+            desc_area = <&esram0>;
+        };
+
+        pcie_epc@0x01058000 {
+            compatible = "rcm,cdns-pcie-ep";
+            reg = <0x01058000 0x6000>,
+                  <0x40000000 0x40000000>;
+            reg-names = "reg", "mem";
+            cdns,max-outbound-regions = <16>;
+/*
+            max-functions = /bits/ 8 <8>;
+            phys = <&ep_phy0 &ep_phy1>;
+            phy-names = "pcie-lane0","pcie-lane1";
+*/
             status = "disabled";
         };
 
