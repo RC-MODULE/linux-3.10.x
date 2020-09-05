@@ -30,7 +30,7 @@ static void __iomem *rcm_cdns_pci_map_bus(struct pci_bus *bus,
 	if (nbits < 8)
 		nbits = 8;
 
-	pr_debug("%s: devfn = %u, where = 0x%X\n", __func__, devfn, where);
+	pr_debug("%s: busn = %u, devfn = %u, where = 0x%X\n", __func__, busn, devfn, where);
 
 	if (busn == rc->bus_range->start) {
 		/*
