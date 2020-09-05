@@ -13,12 +13,20 @@
 #include <linux/platform_device.h>
 #include <linux/pm_runtime.h>
 #include <linux/sizes.h>
-#include <linux/mfd/syscon.h>
 
 #include "pcie-cadence-rcm.h"
 
 #define CDNS_PCIE_EP_MIN_APERTURE		128	/* 128 bytes */
 #define CDNS_PCIE_EP_IRQ_PCI_ADDR_NONE		0x1
+
+#if defined(CONFIG_TARGET_1879VM8YA) || defined(CONFIG_TARGET_1888BC048)
+
+int rcm_cdns_pcie_ep_setup_priv(struct rcm_cdns_pcie_ep *ep);
+int rcm_cdns_pcie_ep_send_legacy_irq(struct rcm_cdns_pcie_ep *ep, u8 fn, 
+                                     u8 intx);
+
+#endif
+
 
 static int rcm_cdns_pcie_ep_write_header(struct pci_epc *epc, u8 fn,
                                          struct pci_epf_header *hdr)
@@ -236,40 +244,6 @@ static int rcm_cdns_pcie_ep_get_msi(struct pci_epc *epc, u8 fn)
 	return mme;
 }
 
-static int rcm_cdns_pcie_ep_send_legacy_irq(struct rcm_cdns_pcie_ep *ep, u8 fn, 
-                                            u8 intx)
-{
-	u16 cmd;
-	u32 reg;
-
-	cmd = cdns_pcie_ep_fn_readw(&ep->pcie, fn, PCI_COMMAND);
-	if (cmd & PCI_COMMAND_INTX_DISABLE)
-	{
-		pr_info("%s: INTx Message Disabled\n", __func__);
-		return -EINVAL;
-	}
-
-	regmap_write_bits(ep->csc, 0x18, 0x100, 0x100);
-
-	regmap_write_bits(ep->csc, 0x20, 0x01, 0x01);
-
-	do
-	{
-		regmap_read(ep->csc, 0x20, &reg);
-	} while((reg & 0x04) == 0);
-
-	regmap_write(ep->csc, 0x20, reg | 0x02);
-
-	do
-	{
-		regmap_read(ep->csc, 0x20, &reg);
-	} while((reg & 0x04) == 0);
-
-	regmap_write_bits(ep->csc, 0x18, 0x100, 0x000);
-
-	return 0;
-}
-
 static int rcm_cdns_pcie_ep_send_msi_irq(struct rcm_cdns_pcie_ep *ep, u8 fn,
                                          u8 interrupt_num)
 {
@@ -395,7 +369,6 @@ static const struct pci_epc_ops rcm_cdns_pcie_epc_ops = {
 	.get_features   = rcm_cdns_pcie_ep_get_features,
 };
 
-
 int rcm_cdns_pcie_ep_setup(struct rcm_cdns_pcie_ep *ep)
 {
 	struct device *dev = ep->pcie.dev;
@@ -404,7 +377,6 @@ int rcm_cdns_pcie_ep_setup(struct rcm_cdns_pcie_ep *ep)
 	struct cdns_pcie *pcie = &ep->pcie;
 	struct resource *res;
 	struct pci_epc *epc;
-	struct device_node* node_csc;
 	int ret;
 
 	pcie->is_rc = false;
@@ -470,13 +442,12 @@ int rcm_cdns_pcie_ep_setup(struct rcm_cdns_pcie_ep *ep)
 
 	cdns_pcie_reset_outbound_region(pcie, 0);
 
-	node_csc = of_parse_phandle(np, "csc", 0);
-	if (!node_csc) {
-		dev_err(dev, "failed to find csc node\n");
-		ret = -EFAULT;
+#if defined(CONFIG_TARGET_1879VM8YA) || defined(CONFIG_TARGET_1888BC048)
+	ret = rcm_cdns_pcie_ep_setup_priv(ep);
+
+	if (ret)
 		goto free_epc_mem;
-	}
-	ep->csc = syscon_node_to_regmap(node_csc);
+#endif
 
 	return 0;
 
