@@ -202,11 +202,14 @@
 /* SRAM-NOR */
 // /include/ "mb115-02.dtsi"
 
-/* Ethernet,NAND */
-// /include/ "mb115-03.dtsi"
+/* 100m Ethernet + NAND */
+// /include/ "mb115-03-100mbit.dtsi"
+
+/* Gigabit Ethernet + NAND */
+// /include/ "mb115-03-gbit.dtsi"
 
 /* AV ouput */
-/include/ "mb115-04.dtsi"
+// /include/ "mb115-04.dtsi"
 
 /* VIDEO capture */
-/include/ "mb115-05.dtsi"
+// /include/ "mb115-05.dtsi"
