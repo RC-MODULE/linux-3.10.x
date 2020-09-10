@@ -160,9 +160,9 @@ static const struct coda_codec coda9_codecs[] = {
 	CODA_CODEC(CODA9_MODE_DECODE_MP4,  V4L2_PIX_FMT_MPEG4,  V4L2_PIX_FMT_YUV420, 1920, 1088),
 };
 
-static const struct coda_codec coda980_codecs[] = { // ??? fixme and test and without 980
-	// ??? CODA_CODEC(CODA9_MODE_ENCODE_H264, V4L2_PIX_FMT_YUV420, V4L2_PIX_FMT_H264,   1920, 1088),
-	// ??? CODA_CODEC(CODA9_MODE_ENCODE_MP4,  V4L2_PIX_FMT_YUV420, V4L2_PIX_FMT_MPEG4,  1920, 1088),
+static const struct coda_codec coda980_codecs[] = {
+	CODA_CODEC(CODA9_MODE_ENCODE_H264, V4L2_PIX_FMT_YUV420, V4L2_PIX_FMT_H264,   4096, 2208),
+	CODA_CODEC(CODA9_MODE_ENCODE_MP4,  V4L2_PIX_FMT_YUV420, V4L2_PIX_FMT_MPEG4,  4096, 2208),
 	CODA_CODEC(CODA9_MODE_DECODE_H264, V4L2_PIX_FMT_H264,   V4L2_PIX_FMT_YUV420, 4096, 2208),
 	CODA_CODEC(CODA9_MODE_DECODE_MP2,  V4L2_PIX_FMT_MPEG2,  V4L2_PIX_FMT_YUV420, 4096, 2208),
 	CODA_CODEC(CODA9_MODE_DECODE_MP4,  V4L2_PIX_FMT_MPEG4,  V4L2_PIX_FMT_YUV420, 4096, 2208),
@@ -185,6 +185,21 @@ static const struct coda_video_device coda_bit_encoder = {
 		V4L2_PIX_FMT_NV12,
 		V4L2_PIX_FMT_YUV420,
 		V4L2_PIX_FMT_YVU420,
+	},
+	.dst_formats = {
+		V4L2_PIX_FMT_H264,
+		V4L2_PIX_FMT_MPEG4,
+	},
+};
+
+static const struct coda_video_device coda980_bit_encoder = {
+	.name = "coda-encoder",
+	.type = CODA_INST_ENCODER,
+	.ops = &coda_bit_encode_ops,
+	.src_formats = {
+		// ??? V4L2_PIX_FMT_NV12,
+		V4L2_PIX_FMT_YUV420,
+		// ??? V4L2_PIX_FMT_YVU420,
 	},
 	.dst_formats = {
 		V4L2_PIX_FMT_H264,
@@ -228,7 +243,7 @@ static const struct coda_video_device coda_bit_decoder = {
 	},
 };
 
-static const struct coda_video_device coda980_bit_decoder = { // ??? fixme and test and make without 980
+static const struct coda_video_device coda980_bit_decoder = { // ??? fixme and make without 980
 	.name = "coda-decoder",
 	.type = CODA_INST_DECODER,
 	.ops = &coda_bit_decode_ops,
@@ -285,8 +300,8 @@ static const struct coda_video_device *coda9_video_devices[] = {
 	&coda_bit_decoder,
 };
 
-static const struct coda_video_device *coda980_video_devices[] = { // ??? fixme and test and without 980
-	// ??? &coda_bit_encoder,
+static const struct coda_video_device *coda980_video_devices[] = { // ??? fixme and make without 980
+	&coda980_bit_encoder,
 	&coda980_bit_decoder,
 };
 

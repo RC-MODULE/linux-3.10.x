@@ -667,6 +667,12 @@ static int coda_encode_header(struct coda_ctx *ctx, struct vb2_v4l2_buffer *buf,
 			header_code |= CODA9_HEADER_FRAME_CROP;
 		}
 	}
+
+	if ((ctx->codec->dst_fourcc == V4L2_PIX_FMT_H264) && (dev->devtype->product == CODA_980)) {
+		header_code |= (40 << 8); // hardcoded H264 level 4.0
+		coda_write(dev, 0, CODA980_CMD_ENC_HEADER_PROFILE); // hardcoded H264 baseline-profile
+	}
+
 	coda_write(dev, header_code, CODA_CMD_ENC_HEADER_CODE);
 	ret = coda_command_sync(ctx, CODA_COMMAND_ENCODE_HEADER);
 	if (ret < 0) {
