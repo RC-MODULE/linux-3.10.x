@@ -114,8 +114,14 @@
 		};
 
 		mms {
+			// VPU for user space driver
 			vpu: vpu@0x38020000 {
 				status = "ok";
+			};
+
+			// VPU for kernel V4L2 driver
+			vpu_v4l2: vpu@38020000 {
+				// status = "ok";
 			};
 
 			jpg: jpg@0x3801a000 {
