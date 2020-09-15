@@ -412,6 +412,7 @@
                   <0x40000000 0x40000000>;
             reg-names = "reg", "mem";
             cdns,max-outbound-regions = <16>;
+            bar-msix-table = <1>;
 /*
             max-functions = /bits/ 8 <8>;
             phys = <&ep_phy0 &ep_phy1>;
