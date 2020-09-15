@@ -233,15 +233,22 @@
                                  0x0 0x0 0x0  0x4  &gic0  0x0 0x0 45 0x4>;
 
                 interrupt-map-mask = <0x0 0x0 0x0  0x7>;
-/*
-                msi-parent = <&its_pci>;
 
+                msi-parent = <&msi>;
+/*
                 phys = <&pcie_phy0>;
                 phy-names = "pcie-phy";
 */
-                status = "disabled";
+                status = "okay";
             };
 
+            msi: gic-msi@0 {
+                compatible = "rcm,arm-gic-msi";
+                msi-controller;
+                num-msix = <8>;
+
+                gic = <&gic0>;
+            };
 
             thermal: thermal@0x600D1000 {
                 compatible = "rcm,thermal-v2";
