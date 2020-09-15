@@ -221,6 +221,7 @@ static void gic_eoimode1_mask_irq(struct irq_data *d)
 
 static void gic_unmask_irq(struct irq_data *d)
 {
+	pr_info("%s: irq = %u, hwirq = %lu", __func__, d->irq, d->hwirq);
 	gic_poke_irq(d, GIC_DIST_ENABLE_SET);
 }
 
@@ -355,6 +356,10 @@ static int gic_set_affinity(struct irq_data *d, const struct cpumask *mask_val,
 }
 #endif
 
+#ifdef CONFIG_RCM_ARM_GIC_MSI
+extern void rcm_handle_soft_irq(unsigned int hwirq);
+#endif
+
 static void __exception_irq_entry gic_handle_irq(struct pt_regs *regs)
 {
 	u32 irqstat, irqnr;
@@ -386,6 +391,8 @@ static void __exception_irq_entry gic_handle_irq(struct pt_regs *regs)
 			 */
 			smp_rmb();
 			handle_IPI(irqnr, regs);
+#elif defined(CONFIG_RCM_ARM_GIC_MSI)
+			rcm_handle_soft_irq(irqnr);
 #endif
 			continue;
 		}
