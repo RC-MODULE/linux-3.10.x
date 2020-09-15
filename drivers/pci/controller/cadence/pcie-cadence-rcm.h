@@ -30,7 +30,9 @@
  */
 struct rcm_cdns_pcie_ep {
 	struct cdns_pcie      pcie;
+	struct pci_epc       *epc;
 	u32                   max_regions;
+	u32                   bar_msix_table;
 	unsigned long         ob_region_map;
 	phys_addr_t          *ob_addr;
 	phys_addr_t           irq_phys_addr;
