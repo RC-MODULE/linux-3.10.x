@@ -13,6 +13,7 @@ config TARGET_1888BC048
 	bool "Support 1888BC048 based boards"
 	select CACHE_L2X0
 	select HAVE_PCI
+	select RCM_ARM_GIC_MSI
 
 endchoice
 
