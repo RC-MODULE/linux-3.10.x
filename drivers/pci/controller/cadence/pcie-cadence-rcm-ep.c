@@ -409,8 +409,8 @@ static int rcm_cdns_pcie_ep_send_msix_irq(struct rcm_cdns_pcie_ep *ep, u8 fn,
 	msg_data = readl(msix_tbl + PCI_MSIX_ENTRY_DATA);
 	vec_ctrl = readl(msix_tbl + PCI_MSIX_ENTRY_VECTOR_CTRL);
 
-	pr_debug("%s: msg_addr_lower = 0x%X, msg_addr_upper = 0x%X,
-	         msg_data = 0x%X, vec_ctrl = 0x%X\n", __func__,
+	pr_debug("%s: msg_addr_lower = 0x%X, msg_addr_upper = 0x%X,"
+	         "msg_data = 0x%X, vec_ctrl = 0x%X\n", __func__,
 	         msg_addr_lower, msg_addr_upper, msg_data, vec_ctrl);
 
 	if (vec_ctrl & PCI_MSIX_ENTRY_CTRL_MASKBIT) {
