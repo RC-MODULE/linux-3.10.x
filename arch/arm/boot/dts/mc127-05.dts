@@ -239,7 +239,7 @@
                 phys = <&pcie_phy0>;
                 phy-names = "pcie-phy";
 */
-                status = "okay";
+                status = "disabled";
             };
 
             msi: gic-msi@0 {
