@@ -221,7 +221,6 @@ static void gic_eoimode1_mask_irq(struct irq_data *d)
 
 static void gic_unmask_irq(struct irq_data *d)
 {
-	pr_info("%s: irq = %u, hwirq = %lu", __func__, d->irq, d->hwirq);
 	gic_poke_irq(d, GIC_DIST_ENABLE_SET);
 }
 
