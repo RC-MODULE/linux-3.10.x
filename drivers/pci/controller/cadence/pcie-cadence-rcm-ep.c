@@ -13,12 +13,20 @@
 #include <linux/platform_device.h>
 #include <linux/pm_runtime.h>
 #include <linux/sizes.h>
-#include <linux/mfd/syscon.h>
 
 #include "pcie-cadence-rcm.h"
 
 #define CDNS_PCIE_EP_MIN_APERTURE		128	/* 128 bytes */
 #define CDNS_PCIE_EP_IRQ_PCI_ADDR_NONE		0x1
+
+#if defined(CONFIG_TARGET_1879VM8YA) || defined(CONFIG_TARGET_1888BC048)
+
+int rcm_cdns_pcie_ep_setup_priv(struct rcm_cdns_pcie_ep *ep);
+int rcm_cdns_pcie_ep_send_legacy_irq(struct rcm_cdns_pcie_ep *ep, u8 fn, 
+                                     u8 intx);
+
+#endif
+
 
 static int rcm_cdns_pcie_ep_write_header(struct pci_epc *epc, u8 fn,
                                          struct pci_epf_header *hdr)
@@ -236,38 +244,43 @@ static int rcm_cdns_pcie_ep_get_msi(struct pci_epc *epc, u8 fn)
 	return mme;
 }
 
-static int rcm_cdns_pcie_ep_send_legacy_irq(struct rcm_cdns_pcie_ep *ep, u8 fn, 
-                                            u8 intx)
+static int rcm_cdns_pcie_ep_set_msix(struct pci_epc *epc, u8 fn, u16 interrupts)
 {
-	u16 cmd;
+	struct rcm_cdns_pcie_ep *ep = epc_get_drvdata(epc);
+	struct cdns_pcie *pcie = &ep->pcie;
+	u32 cap = CDNS_PCIE_EP_FUNC_MSIX_CAP_OFFSET;
+	u16 flags;
 	u32 reg;
 
-	cmd = cdns_pcie_ep_fn_readw(&ep->pcie, fn, PCI_COMMAND);
-	if (cmd & PCI_COMMAND_INTX_DISABLE)
-	{
-		pr_info("%s: INTx Message Disabled\n", __func__);
-		return -EINVAL;
-	}
+	flags = cdns_pcie_ep_fn_readw(pcie, fn, cap + PCI_MSIX_FLAGS);
+	flags &= ~PCI_MSIX_FLAGS_QSIZE;
+	flags |= interrupts;
+	rcm_cdns_pcie_ep_fn_writew(pcie, fn, cap + PCI_MSIX_FLAGS, flags);
 
-	regmap_write_bits(ep->csc, 0x18, 0x100, 0x100);
+	reg = ep->bar_msix_table;
 
-	regmap_write_bits(ep->csc, 0x20, 0x01, 0x01);
+	cdns_pcie_ep_fn_writel(pcie, fn, cap + PCI_MSIX_TABLE, reg);
 
-	do
-	{
-		regmap_read(ep->csc, 0x20, &reg);
-	} while((reg & 0x04) == 0);
+	reg = ep->bar_msix_table | ((interrupts + 1) * PCI_MSIX_ENTRY_SIZE);
 
-	regmap_write(ep->csc, 0x20, reg | 0x02);
-
-	do
-	{
-		regmap_read(ep->csc, 0x20, &reg);
-	} while((reg & 0x04) == 0);
-
-	regmap_write_bits(ep->csc, 0x18, 0x100, 0x000);
+	cdns_pcie_ep_fn_writel(pcie, fn, cap + PCI_MSIX_PBA, reg);
 
 	return 0;
+}
+
+static int rcm_cdns_pcie_ep_get_msix(struct pci_epc *epc, u8 fn)
+{
+	struct rcm_cdns_pcie_ep *ep = epc_get_drvdata(epc);
+	struct cdns_pcie *pcie = &ep->pcie;
+	u32 cap = CDNS_PCIE_EP_FUNC_MSIX_CAP_OFFSET;
+	u16 flags;
+
+	/* Validate that the MSI feature is actually enabled. */
+	flags = cdns_pcie_ep_fn_readw(pcie, fn, cap + PCI_MSIX_FLAGS);
+	if (!(flags & PCI_MSIX_FLAGS_ENABLE))
+		return -EINVAL;
+
+	return flags & PCI_MSIX_FLAGS_QSIZE;
 }
 
 static int rcm_cdns_pcie_ep_send_msi_irq(struct rcm_cdns_pcie_ep *ep, u8 fn,
@@ -331,6 +344,98 @@ static int rcm_cdns_pcie_ep_send_msi_irq(struct rcm_cdns_pcie_ep *ep, u8 fn,
 	return 0;
 }
 
+static int rcm_cdns_pcie_ep_send_msix_irq(struct rcm_cdns_pcie_ep *ep, u8 fn,
+                                          u8 interrupt_num)
+{
+	struct cdns_pcie *pcie = &ep->pcie;
+	u32 cap = CDNS_PCIE_EP_FUNC_MSIX_CAP_OFFSET;
+	u16 flags;
+	u16 msix_count;
+	u32 tbl_offset, bir;
+	u32 bar_addr_upper, bar_addr_lower;
+	u32 msg_addr_upper, msg_addr_lower;
+	u64 tbl_addr;
+	u64 msg_addr;
+	u64 pci_addr_mask = 0xff;
+	u32 msg_data;
+	u32 vec_ctrl;
+	void __iomem *msix_tbl;
+	u32 reg;
+
+	pr_debug("%s: fn = %u, interrupt_num = %u\n", __func__,
+	         (u32)fn, (u32)interrupt_num);
+
+	/* Check whether the MSI-X feature has been enabled by the PCI host. */
+	flags = cdns_pcie_ep_fn_readw(pcie, fn, cap + PCI_MSIX_FLAGS);
+	if (!(flags & PCI_MSIX_FLAGS_ENABLE))
+	{
+		pr_err("%s: MSI-X is not enabled\n", __func__);
+		return -EINVAL;
+	}
+
+	msix_count = (flags & PCI_MSIX_FLAGS_QSIZE) + 1;
+
+	if (!interrupt_num || interrupt_num > msix_count)
+	{
+		pr_err("%s: interrupt_num = %u, msi_count = %d\n",
+		       __func__, (u32)interrupt_num, (u32)msix_count);
+		return -EINVAL;
+	}
+
+	tbl_offset = cdns_pcie_ep_fn_readl(pcie, fn, cap + PCI_MSIX_TABLE);
+	bir = (tbl_offset & PCI_MSIX_TABLE_BIR);
+	tbl_offset &= PCI_MSIX_TABLE_OFFSET;
+
+	reg = PCI_BASE_ADDRESS_0 + (4 * bir);
+
+	bar_addr_lower = 
+		cdns_pcie_readl(pcie, CDNS_PCIE_AT_IB_EP_FUNC_BAR_ADDR0(fn, bir));
+	bar_addr_upper = 
+		cdns_pcie_readl(pcie, CDNS_PCIE_AT_IB_EP_FUNC_BAR_ADDR1(fn, bir));
+
+	tbl_addr = ((u64) bar_addr_upper) << 32 | bar_addr_lower;
+	tbl_addr += (tbl_offset + ((interrupt_num - 1) * PCI_MSIX_ENTRY_SIZE));
+	tbl_addr &= PCI_BASE_ADDRESS_MEM_MASK;
+
+	msix_tbl = phys_to_virt(tbl_addr);
+	if (!msix_tbl) {
+		pr_err("%s: Failed to map MSI-X table\n", __func__);
+		return -EINVAL;
+	}
+
+	msg_addr_lower = readl(msix_tbl + PCI_MSIX_ENTRY_LOWER_ADDR);
+	msg_addr_upper = readl(msix_tbl + PCI_MSIX_ENTRY_UPPER_ADDR);
+	msg_addr = ((u64) msg_addr_upper) << 32 | msg_addr_lower;
+	msg_data = readl(msix_tbl + PCI_MSIX_ENTRY_DATA);
+	vec_ctrl = readl(msix_tbl + PCI_MSIX_ENTRY_VECTOR_CTRL);
+
+	pr_debug("%s: msg_addr_lower = 0x%X, msg_addr_upper = 0x%X,"
+	         "msg_data = 0x%X, vec_ctrl = 0x%X\n", __func__,
+	         msg_addr_lower, msg_addr_upper, msg_data, vec_ctrl);
+
+	if (vec_ctrl & PCI_MSIX_ENTRY_CTRL_MASKBIT) {
+		pr_info("MSI-X entry ctrl set\n");
+		return -EPERM;
+	}
+
+	/* Set the outbound region if needed. */
+	if (unlikely(ep->irq_pci_addr != (msg_addr & ~pci_addr_mask) ||
+	             ep->irq_pci_fn != fn)) {
+		/* First region was reserved for IRQ writes. */
+		rcm_cdns_pcie_set_outbound_region(pcie, fn, 0,
+		                                  false,
+		                                  ep->irq_phys_addr,
+		                                  msg_addr & ~pci_addr_mask,
+		                                  pci_addr_mask + 1);
+		ep->irq_pci_addr = msg_addr & ~pci_addr_mask;
+		ep->irq_pci_fn = fn;
+	}
+
+	writel(msg_data, ep->irq_cpu_addr + (msg_addr & pci_addr_mask));
+
+	return 0;
+}
+
 static int rcm_cdns_pcie_ep_raise_irq(struct pci_epc *epc, u8 fn,
                                       enum pci_epc_irq_type type,
                                       u16 interrupt_num)
@@ -344,7 +449,12 @@ static int rcm_cdns_pcie_ep_raise_irq(struct pci_epc *epc, u8 fn,
 	case PCI_EPC_IRQ_MSI:
 		return rcm_cdns_pcie_ep_send_msi_irq(ep, fn, interrupt_num);
 
+	case PCI_EPC_IRQ_MSIX:
+		return rcm_cdns_pcie_ep_send_msix_irq(ep, fn, interrupt_num);
+
 	default:
+		pr_err("Can't raise IRQ (unsupported type = %d)\n", (int)type);
+
 		break;
 	}
 
@@ -373,7 +483,7 @@ static int rcm_cdns_pcie_ep_start(struct pci_epc *epc)
 static const struct pci_epc_features rcm_cdns_pcie_epc_features = {
 	.linkup_notifier = false,
 	.msi_capable = true,
-	.msix_capable = false,
+	.msix_capable = true,
 };
 
 static const struct pci_epc_features*
@@ -390,11 +500,12 @@ static const struct pci_epc_ops rcm_cdns_pcie_epc_ops = {
 	.unmap_addr     = rcm_cdns_pcie_ep_unmap_addr,
 	.set_msi        = rcm_cdns_pcie_ep_set_msi,
 	.get_msi        = rcm_cdns_pcie_ep_get_msi,
+	.set_msix       = rcm_cdns_pcie_ep_set_msix,
+	.get_msix       = rcm_cdns_pcie_ep_get_msix,
 	.raise_irq      = rcm_cdns_pcie_ep_raise_irq,
 	.start          = rcm_cdns_pcie_ep_start,
 	.get_features   = rcm_cdns_pcie_ep_get_features,
 };
-
 
 int rcm_cdns_pcie_ep_setup(struct rcm_cdns_pcie_ep *ep)
 {
@@ -404,7 +515,6 @@ int rcm_cdns_pcie_ep_setup(struct rcm_cdns_pcie_ep *ep)
 	struct cdns_pcie *pcie = &ep->pcie;
 	struct resource *res;
 	struct pci_epc *epc;
-	struct device_node* node_csc;
 	int ret;
 
 	pcie->is_rc = false;
@@ -445,10 +555,14 @@ int rcm_cdns_pcie_ep_setup(struct rcm_cdns_pcie_ep *ep)
 		goto err_init;
 	}
 
+	ep->epc = epc;
 	epc_set_drvdata(epc, ep);
 
 	if (of_property_read_u8(np, "max-functions", &epc->max_functions) < 0)
 		epc->max_functions = 1;
+
+	if (of_property_read_u32(np, "bar-msix-table", &ep->bar_msix_table) < 0)
+		ep->bar_msix_table = 0;
 
 	ret = pci_epc_mem_init(epc, pcie->mem_res->start,
 	                       resource_size(pcie->mem_res));
@@ -470,13 +584,12 @@ int rcm_cdns_pcie_ep_setup(struct rcm_cdns_pcie_ep *ep)
 
 	cdns_pcie_reset_outbound_region(pcie, 0);
 
-	node_csc = of_parse_phandle(np, "csc", 0);
-	if (!node_csc) {
-		dev_err(dev, "failed to find csc node\n");
-		ret = -EFAULT;
+#if defined(CONFIG_TARGET_1879VM8YA) || defined(CONFIG_TARGET_1888BC048)
+	ret = rcm_cdns_pcie_ep_setup_priv(ep);
+
+	if (ret)
 		goto free_epc_mem;
-	}
-	ep->csc = syscon_node_to_regmap(node_csc);
+#endif
 
 	return 0;
 

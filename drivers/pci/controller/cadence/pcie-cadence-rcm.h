@@ -29,16 +29,25 @@
  * @csc: CSC region.
  */
 struct rcm_cdns_pcie_ep {
-	struct cdns_pcie pcie;
-	u32              max_regions;
-	unsigned long    ob_region_map;
-	phys_addr_t      *ob_addr;
-	phys_addr_t      irq_phys_addr;
-	void __iomem     *irq_cpu_addr;
-	u64              irq_pci_addr;
-	u8               irq_pci_fn;
-	u8               irq_pending;
-	struct regmap    *csc;
+	struct cdns_pcie      pcie;
+	struct pci_epc       *epc;
+	u32                   max_regions;
+	u32                   bar_msix_table;
+	unsigned long         ob_region_map;
+	phys_addr_t          *ob_addr;
+	phys_addr_t           irq_phys_addr;
+	void __iomem         *irq_cpu_addr;
+	u64                   irq_pci_addr;
+	u8                    irq_pci_fn;
+#ifdef CONFIG_TARGET_1879VM8YA
+	struct regmap        *csc;
+#endif
+#ifdef CONFIG_TARGET_1888BC048
+	void __iomem         *ext_irq_gen_base;
+	void __iomem         *timer_base;
+	int                   irq_timer;
+	struct tasklet_struct tasklet;
+#endif
 };
 
 /* Register access */

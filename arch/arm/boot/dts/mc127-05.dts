@@ -219,7 +219,7 @@
                 device-id = /bits/ 16 <0x0200>;
 
                 reg = <0x600d8000 0x6000>,
-                      <0x50000000 0x10000000>,
+                      <0x50000000 0x00001000>,
                       <0x40000000 0x20000000>;
                 reg-names = "reg", "cfg", "mem";
 
@@ -227,21 +227,28 @@
 
                 #interrupt-cells = <0x1>;
 
-                interrupt-map = <0x0 0x0 0x0  0x1  &gic0  0x0 42 0x4
-                                 0x0 0x0 0x0  0x2  &gic0  0x0 43 0x4
-                                 0x0 0x0 0x0  0x3  &gic0  0x0 44 0x4
-                                 0x0 0x0 0x0  0x4  &gic0  0x0 45 0x4>;
+                interrupt-map = <0x0 0x0 0x0  0x1  &gic0  0x0 0x0 42 0x4
+                                 0x0 0x0 0x0  0x2  &gic0  0x0 0x0 43 0x4
+                                 0x0 0x0 0x0  0x3  &gic0  0x0 0x0 44 0x4
+                                 0x0 0x0 0x0  0x4  &gic0  0x0 0x0 45 0x4>;
 
                 interrupt-map-mask = <0x0 0x0 0x0  0x7>;
-/*
-                msi-parent = <&its_pci>;
 
+                msi-parent = <&msi>;
+/*
                 phys = <&pcie_phy0>;
                 phy-names = "pcie-phy";
 */
                 status = "disabled";
             };
 
+            msi: gic-msi@0 {
+                compatible = "rcm,arm-gic-msi";
+                msi-controller;
+                num-msix = <8>;
+
+                gic = <&gic0>;
+            };
 
             thermal: thermal@0x600D1000 {
                 compatible = "rcm,thermal-v2";
