@@ -160,6 +160,14 @@ static const struct coda_codec coda9_codecs[] = {
 	CODA_CODEC(CODA9_MODE_DECODE_MP4,  V4L2_PIX_FMT_MPEG4,  V4L2_PIX_FMT_YUV420, 1920, 1088),
 };
 
+static const struct coda_codec coda980_codecs[] = {
+	CODA_CODEC(CODA9_MODE_ENCODE_H264, V4L2_PIX_FMT_YUV420, V4L2_PIX_FMT_H264,   4096, 2208),
+	CODA_CODEC(CODA9_MODE_ENCODE_MP4,  V4L2_PIX_FMT_YUV420, V4L2_PIX_FMT_MPEG4,  4096, 2208),
+	CODA_CODEC(CODA9_MODE_DECODE_H264, V4L2_PIX_FMT_H264,   V4L2_PIX_FMT_YUV420, 4096, 2208),
+	CODA_CODEC(CODA9_MODE_DECODE_MP2,  V4L2_PIX_FMT_MPEG2,  V4L2_PIX_FMT_YUV420, 4096, 2208),
+	CODA_CODEC(CODA9_MODE_DECODE_MP4,  V4L2_PIX_FMT_MPEG4,  V4L2_PIX_FMT_YUV420, 4096, 2208),
+};
+
 struct coda_video_device {
 	const char *name;
 	enum coda_inst_type type;
@@ -177,6 +185,21 @@ static const struct coda_video_device coda_bit_encoder = {
 		V4L2_PIX_FMT_NV12,
 		V4L2_PIX_FMT_YUV420,
 		V4L2_PIX_FMT_YVU420,
+	},
+	.dst_formats = {
+		V4L2_PIX_FMT_H264,
+		V4L2_PIX_FMT_MPEG4,
+	},
+};
+
+static const struct coda_video_device coda980_bit_encoder = {
+	.name = "coda-encoder",
+	.type = CODA_INST_ENCODER,
+	.ops = &coda_bit_encode_ops,
+	.src_formats = {
+		// ??? V4L2_PIX_FMT_NV12,
+		V4L2_PIX_FMT_YUV420,
+		// ??? V4L2_PIX_FMT_YVU420,
 	},
 	.dst_formats = {
 		V4L2_PIX_FMT_H264,
@@ -220,6 +243,27 @@ static const struct coda_video_device coda_bit_decoder = {
 	},
 };
 
+static const struct coda_video_device coda980_bit_decoder = { // ??? fixme and make without 980
+	.name = "coda-decoder",
+	.type = CODA_INST_DECODER,
+	.ops = &coda_bit_decode_ops,
+	.src_formats = {
+		V4L2_PIX_FMT_H264,
+		V4L2_PIX_FMT_MPEG2,
+		V4L2_PIX_FMT_MPEG4,
+	},
+	.dst_formats = {
+		// ??? V4L2_PIX_FMT_NV12,
+		V4L2_PIX_FMT_YUV420,
+		// ??? V4L2_PIX_FMT_YVU420,
+		/*
+		 * If V4L2_PIX_FMT_YUYV should be default,
+		 * set_default_params() must be adjusted.
+		 */
+		// ??? V4L2_PIX_FMT_YUYV,
+	},
+};
+
 static const struct coda_video_device coda_bit_jpeg_decoder = {
 	.name = "coda-jpeg-decoder",
 	.type = CODA_INST_DECODER,
@@ -254,6 +298,11 @@ static const struct coda_video_device *coda7_video_devices[] = {
 static const struct coda_video_device *coda9_video_devices[] = {
 	&coda_bit_encoder,
 	&coda_bit_decoder,
+};
+
+static const struct coda_video_device *coda980_video_devices[] = { // ??? fixme and make without 980
+	&coda980_bit_encoder,
+	&coda980_bit_decoder,
 };
 
 /*
@@ -348,6 +397,8 @@ const char *coda_product_name(int product)
 		return "CODA7541";
 	case CODA_960:
 		return "CODA960";
+	case CODA_980:
+		return "CODA980";
 	default:
 		snprintf(buf, sizeof(buf), "(0x%04x)", product);
 		return buf;
@@ -721,7 +772,7 @@ static int coda_s_fmt(struct coda_ctx *ctx, struct v4l2_format *f,
 		ctx->tiled_map_type = GDI_TILED_FRAME_MB_RASTER_MAP;
 		break;
 	case V4L2_PIX_FMT_NV12:
-		if (!disable_tiling && ctx->dev->devtype->product == CODA_960) {
+		if (!disable_tiling && (ctx->dev->devtype->product == CODA_960 || ctx->dev->devtype->product == CODA_980)) {
 			ctx->tiled_map_type = GDI_TILED_FRAME_MB_RASTER_MAP;
 			break;
 		}
@@ -1859,6 +1910,7 @@ static int coda_start_streaming(struct vb2_queue *q, unsigned int count)
 			mutex_unlock(&ctx->bitstream_mutex);
 
 			if (ctx->dev->devtype->product != CODA_960 &&
+			    ctx->dev->devtype->product != CODA_980 &&
 			    coda_get_bitstream_payload(ctx) < 512) {
 				v4l2_err(v4l2_dev, "start payload < 512\n");
 				ret = -EINVAL;
@@ -2144,7 +2196,7 @@ static void coda_encode_ctrls(struct coda_ctx *ctx)
 		V4L2_CID_MPEG_VIDEO_H264_I_FRAME_QP, 0, 51, 1, 25);
 	v4l2_ctrl_new_std(&ctx->ctrls, &coda_ctrl_ops,
 		V4L2_CID_MPEG_VIDEO_H264_P_FRAME_QP, 0, 51, 1, 25);
-	if (ctx->dev->devtype->product != CODA_960) {
+	if (ctx->dev->devtype->product != CODA_960 && ctx->dev->devtype->product != CODA_980) {
 		v4l2_ctrl_new_std(&ctx->ctrls, &coda_ctrl_ops,
 			V4L2_CID_MPEG_VIDEO_H264_MIN_QP, 0, 51, 1, 12);
 	}
@@ -2177,7 +2229,7 @@ static void coda_encode_ctrls(struct coda_ctx *ctx)
 			  (1 << V4L2_MPEG_VIDEO_H264_LEVEL_3_1)),
 			V4L2_MPEG_VIDEO_H264_LEVEL_3_1);
 	}
-	if (ctx->dev->devtype->product == CODA_960) {
+	if (ctx->dev->devtype->product == CODA_960 || ctx->dev->devtype->product == CODA_980) {
 		v4l2_ctrl_new_std_menu(&ctx->ctrls, &coda_ctrl_ops,
 			V4L2_CID_MPEG_VIDEO_H264_LEVEL,
 			V4L2_MPEG_VIDEO_H264_LEVEL_4_0,
@@ -2198,7 +2250,8 @@ static void coda_encode_ctrls(struct coda_ctx *ctx)
 		V4L2_MPEG_VIDEO_MPEG4_PROFILE_SIMPLE);
 	if (ctx->dev->devtype->product == CODA_HX4 ||
 	    ctx->dev->devtype->product == CODA_7541 ||
-	    ctx->dev->devtype->product == CODA_960) {
+	    ctx->dev->devtype->product == CODA_960 ||
+	    ctx->dev->devtype->product == CODA_980) {
 		v4l2_ctrl_new_std_menu(&ctx->ctrls, &coda_ctrl_ops,
 			V4L2_CID_MPEG_VIDEO_MPEG4_LEVEL,
 			V4L2_MPEG_VIDEO_MPEG4_LEVEL_5,
@@ -2257,7 +2310,7 @@ static void coda_decode_ctrls(struct coda_ctx *ctx)
 	if (ctx->dev->devtype->product == CODA_HX4 ||
 	    ctx->dev->devtype->product == CODA_7541)
 		max = V4L2_MPEG_VIDEO_H264_LEVEL_4_0;
-	else if (ctx->dev->devtype->product == CODA_960)
+	else if (ctx->dev->devtype->product == CODA_960 || ctx->dev->devtype->product == CODA_980)
 		max = V4L2_MPEG_VIDEO_H264_LEVEL_4_1;
 	else
 		return;
@@ -2463,6 +2516,11 @@ static int coda_open(struct file *file)
 	case CODA_7541:
 		ctx->reg_idx = 0;
 		break;
+	case CODA_980:
+		if (enable_bwb || ctx->inst_type == CODA_INST_ENCODER)
+			ctx->frame_mem_ctrl = CODA980_FRAME_ENABLE_BWB;
+		ctx->reg_idx = 0;
+		break;
 	default:
 		ctx->reg_idx = idx;
 	}
@@ -2615,8 +2673,8 @@ static int coda_hw_init(struct coda_dev *dev)
 	} else {
 		for (i = 0; i < (CODA_ISRAM_SIZE / 2); i++) {
 			data = CODA_DOWN_ADDRESS_SET(i) |
-				CODA_DOWN_DATA_SET(p[round_down(i, 4) +
-							3 - (i % 4)]);
+				CODA_DOWN_DATA_SET(cpu_to_le16(
+					p[round_down(i, 4) + 3 - (i % 4)]));
 			coda_write(dev, data, CODA_REG_BIT_CODE_DOWN);
 		}
 	}
@@ -2627,6 +2685,7 @@ static int coda_hw_init(struct coda_dev *dev)
 
 	/* Tell the BIT where to find everything it needs */
 	if (dev->devtype->product == CODA_960 ||
+	    dev->devtype->product == CODA_980 ||
 	    dev->devtype->product == CODA_7541 ||
 	    dev->devtype->product == CODA_HX4) {
 		coda_write(dev, dev->tempbuf.paddr,
@@ -2652,6 +2711,9 @@ static int coda_hw_init(struct coda_dev *dev)
 	}
 	if (dev->devtype->product == CODA_960)
 		coda_write(dev, CODA9_FRAME_ENABLE_BWB,
+				CODA_REG_BIT_FRAME_MEM_CTRL);
+	else if (dev->devtype->product == CODA_980)
+		coda_write(dev, CODA980_FRAME_ENABLE_BWB,
 				CODA_REG_BIT_FRAME_MEM_CTRL);
 	else
 		coda_write(dev, 0, CODA_REG_BIT_FRAME_MEM_CTRL);
@@ -2841,6 +2903,7 @@ enum coda_platform {
 	CODA_IMX53,
 	CODA_IMX6Q,
 	CODA_IMX6DL,
+	CODA_RCM
 };
 
 static const struct coda_devtype coda_devdata[] = {
@@ -2918,6 +2981,21 @@ static const struct coda_devtype coda_devdata[] = {
 		.tempbuf_size = 204 * 1024,
 		.iram_size    = 0x1f000, /* leave 4k for suspend code */
 	},
+	[CODA_RCM] = {
+		.firmware     = {
+			"rcm-coda980.bin",
+			"vpu/rcm-coda980.bin",
+			"v4l-rcm-coda980.bin"
+		},
+		.product      = CODA_980,
+		.codecs       = coda980_codecs,
+		.num_codecs   = ARRAY_SIZE(coda980_codecs),
+		.vdevs        = coda980_video_devices,
+		.num_vdevs    = ARRAY_SIZE(coda980_video_devices),
+		.workbuf_size = 80 * 1024,
+		.tempbuf_size = 470 * 1024,
+		.iram_size    = 0x1f000, /* leave 4k for suspend code */
+	},
 };
 
 static const struct platform_device_id coda_platform_ids[] = {
@@ -2933,6 +3011,7 @@ static const struct of_device_id coda_dt_ids[] = {
 	{ .compatible = "fsl,imx53-vpu", .data = &coda_devdata[CODA_IMX53] },
 	{ .compatible = "fsl,imx6q-vpu", .data = &coda_devdata[CODA_IMX6Q] },
 	{ .compatible = "fsl,imx6dl-vpu", .data = &coda_devdata[CODA_IMX6DL] },
+	{ .compatible = "rcm,vpu-coda980-v4l2", .data = &coda_devdata[CODA_RCM] },
 	{ /* sentinel */ }
 };
 MODULE_DEVICE_TABLE(of, coda_dt_ids);
@@ -2948,6 +3027,10 @@ static int coda_probe(struct platform_device *pdev)
 	struct gen_pool *pool;
 	struct coda_dev *dev;
 	int ret, irq;
+
+#ifdef CONFIG_1888TX018
+	pdev->dev.archdata.dma_offset = -(pdev->dev.dma_pfn_offset << PAGE_SHIFT);
+#endif
 
 	dev = devm_kzalloc(&pdev->dev, sizeof(*dev), GFP_KERNEL);
 	if (!dev)

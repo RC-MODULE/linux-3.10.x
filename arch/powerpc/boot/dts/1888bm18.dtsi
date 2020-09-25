@@ -1,0 +1,232 @@
+/*
+ * Device Tree Source for RCM 1888BM18 platform
+ *
+ * Copyright (C) 2020 MIR
+ *	Mikhail.Petrov@mir.dev
+ *
+ * SPDX-License-Identifier: GPL-2.0+
+ */
+
+/dts-v1/;
+
+#include <dt-bindings/memory/rcm-emi.h>
+
+/ {
+	#address-cells = <2>;
+	#size-cells = <2>;
+	dcr-parent = <&{/cpus/cpu@0}>;
+
+	cpus {
+		#address-cells = <1>;
+		#size-cells = <0>;
+
+		cpu@0 {
+			status = "ok";
+			device_type = "cpu";
+			model = "PowerPC,470S";
+			reg = <0>;
+			clock-frequency = <200000000>; // 200 Mhz
+			timebase-frequency = <200000000>; // 200 Mhz
+			i-cache-line-size = <32>;
+			d-cache-line-size = <32>;
+			i-cache-size = <32768>;
+			d-cache-size = <32768>;
+			dcr-controller;
+			dcr-access-method = "native";
+		};
+	};
+
+	reserved-memory {
+		#address-cells = <2>;
+		#size-cells = <2>;
+		ranges;
+	};
+
+	memory {
+		device_type = "memory";
+		reg = <0x00000000 0x00000000 0x00000000 0x00000000>; // should be mofified at startup
+	};
+
+	lsif_clock: lsif_clock@100M {
+		#clock-cells = <0>;
+		compatible = "fixed-clock";
+		clock-frequency = <100000000>;
+	};
+
+	pclk: pclk {
+		#clock-cells = <0>;
+		compatible = "fixed-clock";
+		clock-frequency = <100000000>;
+	};
+
+	MPIC: interrupt-controller {
+		compatible = "chrp,open-pic";
+		interrupt-controller;
+		dcr-reg = <0xffc00000 0x00040000>;
+		#address-cells = <0>;
+		#size-cells = <0>;
+		#interrupt-cells = <2>;
+	};
+
+
+	dcr {
+		compatible = "simple-bus";
+
+		cpufreq: cpufreq@0x38006000 {
+			status = "disabled";
+			compatible = "rcm,1888bm18-cpufreq";
+			dcr-reg = <0x80080000 0x10000>;
+		};
+	};
+
+	plb {
+		compatible = "ibm,plb6";
+		#address-cells = <2>;
+		#size-cells = <2>;
+		ranges;
+		dma-ranges;
+		clock-frequency = <100000000>; // 100 Mhz
+
+		emi0: emi@80060000 {
+			status = "disabled";
+			compatible = "rcm,emi";
+			#address-cells = <1>;
+			#size-cells = <1>;
+			dcr-reg = <0x80060000 0x1000>;
+			ranges = <0x00000000 0x00 0x00000000 0x80000000>;
+			interrupt-parent = <&MPIC>;
+			interrupts = <56 2 57 2>; // active high level-sensitive
+		};
+
+		lsif {
+			compatible = "arm,amba-bus", "ibm,plb6";
+			#address-cells = <1>;
+			#size-cells = <1>;
+			ranges = <0xC0000000 0x20 0xC0000000 0x00400000>;
+			dma-ranges;
+
+			// console
+			uart0: uart0@C0029000 {
+				status = "disabled";
+				compatible = "arm,pl011", "arm,primecell";
+				reg = <0xC0029000 0x1000>;
+				clocks = <&lsif_clock>, <&pclk>;
+				clock-names = "uartclk", "apb_pclk";
+				interrupt-parent = <&MPIC>;
+				interrupts = <36 0>; // IRQ_TYPE_EDGE_RISING
+			};
+
+			uart1: uart1@C0039000 {
+				status = "disabled";
+				compatible = "arm,pl011", "arm,primecell";
+				reg = <0xC0039000 0x1000>;
+				clocks = <&lsif_clock>, <&pclk>;
+				clock-names = "uartclk", "apb_pclk";
+				interrupt-parent = <&MPIC>;
+				interrupts = <37 0>; // IRQ_TYPE_EDGE_RISING
+			};
+
+			gpio0: gpio0@C0028000 {
+				status = "disabled";
+				#gpio-cells = <2>;
+				compatible = "arm,pl061", "arm,primecell";
+				gpio-controller;
+				reg = <0xC0028000 0x1000>;
+				interrupt-controller;
+				#interrupt-cells = <2>;
+				interrupt-parent = <&MPIC>;
+				interrupts = <32 0>; // IRQ_TYPE_EDGE_RISING
+				clocks = <&pclk>;
+				clock-names = "apb_pclk";
+			};
+
+			gpio1: gpio1@C0038000 {
+				status = "disabled";
+				#gpio-cells = <2>;
+				compatible = "arm,pl061", "arm,primecell";
+				gpio-controller;
+				reg = <0xC0038000 0x1000>;
+				interrupt-controller;
+				#interrupt-cells = <2>;
+				interrupt-parent = <&MPIC>;
+				interrupts = <33 0>; // IRQ_TYPE_EDGE_RISING
+				clocks = <&pclk>;
+				clock-names = "apb_pclk";
+			};
+
+			greth0: greth0@C002A000 {
+				status = "disabled";
+				compatible = "rcm,greth";
+				reg = <0xC002A000 0x1000>;
+				interrupt-parent = <&MPIC>;
+				interrupts = <52 0>; // IRQ_TYPE_EDGE_RISING
+			};
+
+			greth1: greth1@C003A000 {
+				status = "disabled";
+				compatible = "rcm,greth";
+				reg = <0xC003A000 0x1000>;
+				interrupt-parent = <&MPIC>;
+				interrupts = <53 0>; // IRQ_TYPE_EDGE_RISING
+			};
+
+			mmc0: mmc0@C002C000 {
+				status = "disabled";
+				compatible = "rcm,mmc-0.2";
+				reg = <0xC002C000 0x1000>;
+				interrupt-parent = <&MPIC>;
+				interrupts = <34 2>; // active high level-sensitive
+				clocks = <&lsif_clock>;
+				clock-names = "mmc";
+				min-frequency = <1000000>;
+				max-frequency = <25000000>;
+				axi-awlen = <15>; // 16 data frames
+				axi-arlen = <15>; // 16 data frames
+				axi-awsize = <2>; // 4 bytes 
+				axi-arsize = <2>; // 4 bytes 
+				sdio-timeout = <200>; // 200 ms
+			};
+
+			mmc1: mmc1@C003C000 {
+				status = "disabled";
+				compatible = "rcm,mmc-0.2";
+				reg = <0xC003C000 0x1000>;
+				interrupt-parent = <&MPIC>;
+				interrupts = <35 2>; // active high level-sensitive
+				clocks = <&lsif_clock>;
+				clock-names = "mmc";
+				min-frequency = <1000000>;
+				max-frequency = <25000000>;
+				axi-awlen = <15>; // 16 data frames
+				axi-arlen = <15>; // 16 data frames
+				axi-awsize = <2>; // 4 bytes 
+				axi-arsize = <2>; // 4 bytes 
+				sdio-timeout = <200>; // 200 ms
+			};
+
+			spi0: spi@C002B000 {
+				status = "disabled";
+				compatible = "arm,pl022", "arm,primecell";
+				reg = <0xC002B000 0x1000>;
+				interrupt-parent = <&MPIC>;
+				interrupts = <34 0>; // IRQ_TYPE_EDGE_RISING
+				#address-cells = <1>;
+				#size-cells = <0>;
+				clocks = <&pclk>;
+				clock-names = "apb_pclk";
+			};
+
+			spi1: spi@C003B000 {
+				status = "disabled";
+				compatible = "arm,pl022", "arm,primecell";
+				reg = <0xC003B000 0x1000>;
+				interrupt-parent = <&MPIC>;
+				interrupts = <35 0>; // IRQ_TYPE_EDGE_RISING
+				#address-cells = <1>;
+				#size-cells = <0>;
+				clocks = <&pclk>;
+				clock-names = "apb_pclk";
+			};
+		};
+	};
+};

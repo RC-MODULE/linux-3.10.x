@@ -43,6 +43,7 @@ enum coda_product {
 	CODA_HX4 = 0xf00a,
 	CODA_7541 = 0xf012,
 	CODA_960 = 0xf020,
+	CODA_980 = 0xd628,
 };
 
 struct coda_video_device;

@@ -105,6 +105,7 @@
 
 			frame_buffer_0: frame_buffer@0x37C00000 {
 				reg = <0x0 0x37C00000 0x0 0x02200000>;
+				no-map;
 			};
 			video_buffer_0: video_buffer@0x39E00000 {
 				no-map;
@@ -113,6 +114,7 @@
 
 			frame_buffer_1: frame_buffer@0x3BE00000 {
 				reg = <0x0 0x3BE00000 0x0 0x02200000>;
+				no-map;
 			};
 			video_buffer_1: video_buffer@0x3E000000 {
 				no-map;
@@ -171,6 +173,27 @@
 		ranges;
 		dma-ranges;
 		clock-frequency = <250000000>; // 250Mhz
+
+		plb4@40000 {
+			compatible = "simple-bus";
+			#address-cells = <1>;
+			#size-cells = <1>;
+			ranges = <0x00040000 0x10 0x00040000 0x40000>;
+			dma-ranges = <0x00040000 0x10 0x00040000 0x40000>;
+
+			sram@40000 {
+				compatible = "mmio-sram";
+				#address-cells = <1>;
+				#size-cells = <1>;
+				reg = <0x00040000 0x40000>;
+				ranges = <0x00000000 0x00040000 0x40000>;
+
+				ocram: sram@0 {
+					reg = <0x00000000 0x40000>;
+					pool;
+				};
+			};
+		};
 
 		sram_nor_arbiter {
 			status = "disabled";
@@ -807,8 +830,6 @@
 				clock-names = "apb_pclk";
 				pinctrl-names = "default";
 				pinctrl-0 = <&spi0_mux>;
-				num-cs = <1>;
-				cs-gpios = <&gpio1 2 0>;
 			};
 
 			spi1: spi@0x3C062000 {
@@ -829,7 +850,7 @@
 
 			mmc0: mmc0@0x3C064000 {
 				status = "disabled";
-				compatible = "rcm,1888tx018", "rcm,mmc-0.2";
+				compatible = "rcm,mmc-0.2";
 				reg = <0x3C064000 0x1000>;
 				interrupt-parent = <&MPIC>;
 				interrupts = <67 2>; // active high level-sensitive
@@ -1043,12 +1064,26 @@
 				vdubuffer = <0x39E00000 0x02000000>;
 			};
 
+			// VPU for user space driver
 			vpu: vpu@0x38020000 {
 				status = "disabled";
 				compatible = "rcm,vpu-coda980";
 				reg = <0x38020000 0x4000>;
 				interrupt-parent = <&MPIC>;
 				interrupts = <123 2>; // active high level-sensitive
+			};
+
+			// VPU for kernel V4L2 driver
+			vpu_v4l2: vpu@38020000 {
+				status = "disabled";
+				compatible = "rcm,vpu-coda980-v4l2";
+				reg = <0x38020000 0x4000>;
+				interrupt-parent = <&MPIC>;
+				interrupts = <123 2>; // active high level-sensitive
+				interrupt-names = "bit";
+				clocks = <&pclk>, <&pclk>; // fake clocks
+				clock-names = "ahb", "per";
+				iram = <&ocram>;
 			};
 
 			jpg: jpg@0x3801a000 {

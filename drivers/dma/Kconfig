@@ -499,7 +499,7 @@ config PXA_DMA
 
 config RCM_AUDIO_DMA
 	tristate "RCM Audio DMA support"
-	depends on 1888TX018
+	depends on 1888TX018 || ARCH_RCM_K1879XB1
 	select DMA_ENGINE
 	select DMA_VIRTUAL_CHANNELS
 	help
@@ -512,6 +512,18 @@ config RCM_CDNS_DMA
 	help
 	  Support the DMA engine for RC Module Cadence PCIE
 	  internal DMA controller.
+
+config RCM_MDMA
+	tristate "RCM MDMA support"
+	depends on TARGET_1888BC048
+	select DMA_ENGINE
+	select DMA_VIRTUAL_CHANNELS
+	select RCM_MDMA_DESC_POOL
+	help
+	  Support the MDMA engine for RC Module Basis platform.
+
+config RCM_MDMA_DESC_POOL
+	bool
 
 config SIRF_DMA
 	tristate "CSR SiRFprimaII/SiRFmarco DMA support"

@@ -1,0 +1,26 @@
+/*
+ * Device Tree Source for RCM MB115.03 extention board (Ethernet)
+ *
+ * Copyright (C) 2020 MIR
+ *	Mikhail.Petrov@mir.dev
+ *
+ * SPDX-License-Identifier: GPL-2.0+
+ */
+
+/ {
+	plb {
+
+		lsif {
+
+			greth0: greth0@C002A000 {
+				status = "ok";
+				mac-address = [ EC 17 66 77 05 03 ];
+			};
+
+			greth1: greth1@C003A000 {
+				status = "ok";
+				mac-address = [ EC 17 66 77 05 04 ];
+			};
+		};
+	};
+};

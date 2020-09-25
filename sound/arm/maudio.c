@@ -31,6 +31,10 @@
 
 #define DRIVER_NAME "maudio"
 
+#define dma_alloc_writecombine dma_alloc_wc
+#define dma_free_writecombine dma_free_wc
+#define dma_mmap_writecombine dma_mmap_wc
+
 #define MAUDIO_DECLARE_PARAM(name, def) \
 	static int g_maudio_##name = def; \
 	module_param_named(name, g_maudio_##name, int, 0);
@@ -150,7 +154,7 @@ static void maudio_chip_free(struct maudio_chip *chip)
 				      chip->dma_area, chip->dma_handle);
 	}
 
-	memset(chip, 0, sizeof(chip));
+	memset(chip, 0, sizeof(struct maudio_chip));
 }
 /* }}} */
 

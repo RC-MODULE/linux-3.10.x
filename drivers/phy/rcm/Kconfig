@@ -8,3 +8,12 @@ config PHY_RCM_USB
 	select USB_PHY
 	help
 	  Support for USB PHY found on RCM PPC SoCs.
+
+config PHY_RCM_SGMII
+	tristate "RCM SGMII PHY driver"
+	depends on ARCH_RCM_ARM
+	select GENERIC_PHY
+	select REGMAP_MMIO
+	select MFD_SYSCON
+	help
+	  Support for SBMII PHY device on RCM SoCs.

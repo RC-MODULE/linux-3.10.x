@@ -22,6 +22,7 @@
 #include <linux/of_device.h>
 #include <linux/of_dma.h>
 #include <linux/of_irq.h>
+#include <linux/of_address.h>
 
 #include "dmaengine.h"
 
@@ -170,6 +171,11 @@ static struct dma_async_tx_descriptor *
 	unsigned long lock_flags;
 	unsigned int ena;
 	unsigned long dma_offset = 0x40000000; // to do fix on upper level
+
+#ifdef CONFIG_ARCH_RCM_K1879XB1
+	dma_offset = 0;
+#endif
+
 	// setup addresses for each descriptors based on numer of channels
 	u32 page0_start = (u32)dma_addr + period_len + dma_offset;
 	u32 page1_start = (u32)dma_addr + dma_offset;
@@ -177,7 +183,7 @@ static struct dma_async_tx_descriptor *
 	u32 page1_end = page1_start + period_len;
 
 	TRACE("len: %d, period_len: %d, flags: %d, dma_addr: %llx", (int)len,
-	      (int)period_len, (int)flags, dma_addr);
+	      (int)period_len, (int)flags, (long long unsigned int)dma_addr);
 
 	// we always have only 2 DMA descriptios for each hw channel.
 	// call hw channels should works simultaniously, so we should prepare all of its at the same time
@@ -193,7 +199,7 @@ static struct dma_async_tx_descriptor *
 	dma_async_tx_descriptor_init(&ch->desc, &ch->chan);
 	ch->desc.flags = flags;
 
-	TRACE("channel %i, %llx, %08X, %08X, %08X, %08X", ch_no, ch->fifo_addr,
+	TRACE("channel %i, %llx, %08X, %08X, %08X, %08X", ch_no, (long long unsigned int)ch->fifo_addr,
 	      (u32)page1_start, (u32)page1_end, (u32)page0_start,
 	      (u32)page0_end);
 
@@ -246,7 +252,7 @@ static int rcm_config(struct dma_chan *chan,
 	int requested_mode;
 
 	TRACE("slave_config->dst_addr = %llx, slave_config->dst_maxburst = %d",
-	      slave_config->dst_addr, slave_config->dst_maxburst);
+	      (long long unsigned int)slave_config->dst_addr, slave_config->dst_maxburst);
 
 	ch->fifo_addr = slave_config->dst_addr;
 
@@ -429,6 +435,13 @@ static int rcm_audio_dma_probe(struct platform_device *pdev)
 	int ret, irq, i;
 	struct resource *res;
 
+#ifdef CONFIG_ARCH_RCM_K1879XB1
+	#define MAUDIO_CONTROL_DMA_OFFSET 0x28
+	struct device_node* dn;
+	struct resource r;
+	void __iomem* io;
+#endif
+
 	// hardware able to use only first Gb for transfers
 	ret = dma_set_mask_and_coherent(&pdev->dev, DMA_BIT_MASK(32));
 	if (ret)
@@ -462,8 +475,37 @@ static int rcm_audio_dma_probe(struct platform_device *pdev)
 		return -ENODEV;
 	};
 
+#ifdef CONFIG_ARCH_RCM_K1879XB1
+	dn = of_parse_phandle(pdev->dev.of_node, "control", 0);
+	if( dn == NULL ) {
+		dev_err(&pdev->dev, "Cannot get control phandle\n");
+		return -ENODEV;
+	}
+
+	if( of_address_to_resource( dn, 0, &r ) != 0 ) {
+		dev_err( &pdev->dev, "of_address_to_resource: failed\n" );
+		return -ENODEV;
+	}
+
+	io = ioremap( r.start, resource_size(&r) );
+	if( io == 0 ) {
+		dev_err( &pdev->dev, "ioremap: error\n" );
+		return -ENOMEM;
+	}
+
+	iowrite32(1, io + MAUDIO_CONTROL_DMA_OFFSET);
+	iowrite32(0, io + MAUDIO_CONTROL_DMA_OFFSET);
+	iowrite32(1, io + MAUDIO_CONTROL_DMA_OFFSET);
+#endif
+
 	regmap_write(d->regmap, RCM_DMA_ENA_REG, 0x8000);
 	regmap_write(d->regmap, RCM_DMA_ENA_REG, 0);
+
+#ifdef CONFIG_ARCH_RCM_K1879XB1
+	iowrite32(1, io + MAUDIO_CONTROL_DMA_OFFSET);
+	iowrite32(0, io + MAUDIO_CONTROL_DMA_OFFSET);
+	iowrite32(1, io + MAUDIO_CONTROL_DMA_OFFSET);
+#endif
 
 	INIT_LIST_HEAD(&d->slave.channels);
 	spin_lock_init(&d->lock);

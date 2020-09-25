@@ -573,7 +573,6 @@ greth_start_xmit_gbit(struct sk_buff *skb, struct net_device *dev)
 	bdp = greth->tx_bd_base + greth->tx_next;
 	greth_write_bd(&bdp->stat,
 		       greth_read_bd(&bdp->stat) | GRETH_BD_EN);
-
 	spin_lock_irqsave(&greth->devlock, flags); /*save from poll/irq*/
 	greth->tx_next = curr_tx;
 	greth_enable_tx_and_irq(greth);
@@ -638,7 +637,13 @@ static irqreturn_t greth_interrupt(int irq, void *dev_id)
 		greth_disable_irqs(greth);
 		napi_schedule(&greth->napi);
 	}
-
+#ifdef CONFIG_ARCH_RCM_K1879XB1
+	if(IRQ_HANDLED != retval) {
+	/* clear the bad interrupts, otherwise will big message "irq 50: nobody cared..." */
+		GRETH_REGSAVE(greth->regs->status,
+			(status & (GRETH_INT_RE | GRETH_INT_RX | GRETH_INT_TE | GRETH_INT_TX)));
+	};
+#endif
 	spin_unlock(&greth->devlock);
 
 	return retval;

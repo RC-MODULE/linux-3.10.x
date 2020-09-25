@@ -499,4 +499,10 @@ config SIFIVE_PLIC
 
 	   If you don't know what to do here, say Y.
 
+config RCM_ARM_GIC_MSI
+	bool
+	depends on PCI
+	depends on ARM_GIC && !SMP
+	select PCI_MSI
+
 endmenu

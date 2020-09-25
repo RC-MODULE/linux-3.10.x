@@ -389,6 +389,8 @@ static int vdu_video_mmap(struct file *file, struct vm_area_struct *vma)
 		return -EINVAL;
 
 	vma->vm_flags |= (VM_IO | VM_DONTEXPAND | VM_DONTDUMP);
+	vma->vm_page_prot = pgprot_writecombine(vma->vm_page_prot);
+
 	return io_remap_pfn_range(vma, vma->vm_start,
 			(off + start) >> PAGE_SHIFT,
 			vma->vm_end - vma->vm_start, vma->vm_page_prot);

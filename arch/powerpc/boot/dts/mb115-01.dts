@@ -77,13 +77,14 @@
 
 			spi0: spi@0x3C061000 {
 				status = "ok";
+				num-cs = <1>;
+				cs-gpios = <&gpio1 2 0>;
 
 				spi_flash@0 {
-					compatible = "st,m25p32", "spi-flash";
+					compatible = "st,m25p32", "spi-nor";
 					reg = <0>;
 					spi-max-frequency = <20000000>;
 				};
-
 			};
 
 			mmc0: mmc0@0x3C064000 {
@@ -113,8 +114,14 @@
 		};
 
 		mms {
+			// VPU for user space driver
 			vpu: vpu@0x38020000 {
 				status = "ok";
+			};
+
+			// VPU for kernel V4L2 driver
+			vpu_v4l2: vpu@38020000 {
+				// status = "ok";
 			};
 
 			jpg: jpg@0x3801a000 {
@@ -201,8 +208,11 @@
 /* SRAM-NOR */
 // /include/ "mb115-02.dtsi"
 
-/* Ethernet,NAND */
-// /include/ "mb115-03.dtsi"
+/* 100m Ethernet + NAND */
+// /include/ "mb115-03-100mbit.dtsi"
+
+/* Gigabit Ethernet + NAND */
+// /include/ "mb115-03-gbit.dtsi"
 
 /* AV ouput */
 // /include/ "mb115-04.dtsi"
