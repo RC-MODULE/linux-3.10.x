@@ -456,7 +456,7 @@ config GPIO_RCM_PL060
 	bool "PL060 GPIO support (RCM Implementation)"
 	depends on OF_GPIO
 	select IRQ_DOMAIN
-	select GPIOLIB_IRQCHIP
+	select GENERIC_IRQ_CHIP
 	select IRQ_DOMAIN_HIERARCHY
 	help
 	  Say yes here to support the RC Module PL060 GPIO device
