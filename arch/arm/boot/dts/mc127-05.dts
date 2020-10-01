@@ -258,6 +258,17 @@
                 #thermal-sensor-cells = <0>;
             };
 
+            gpio0: gpio@0x600cc000 {
+                compatible = "rcm,pl060";
+                reg = <0x600cc000 0x1000>;
+                gpio-controller;
+                #gpio-cells = <2>;
+                interrupt-parent = <&gic0>;
+                interrupt-controller;
+                #interrupt-cells = <2>;
+                interrupts = <0 30 4>, <0 31 4>, <0 38 4>, <0 39 4>, <0 46 4>, <0 47 4>, <0 56 4>, <0 57 4>;
+            };
+
             ccpu_ccmb0: ccmb@0x60000000 {
                 compatible = "syscon";
                 reg = <0x60000000 0x20000>;

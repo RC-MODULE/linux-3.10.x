@@ -29,4 +29,9 @@ config RCM_DMA_TEST
 	help
 	  This driver allow to test DMA devices (RC-Module implementation).
 
+config RCM_GPIO_EXTINT
+	tristate "RCM GPIO EXTINT"
+	help
+	  This driver allow to test interrupts from GPIO-devices.
+
 endmenu
