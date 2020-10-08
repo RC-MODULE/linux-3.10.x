@@ -309,15 +309,9 @@
 			};
 
 			i2c0: i2c@1000 {
-				speed = <100000>;
-				clock-frequency = <54000000>;
 				status = "okay";
-				#address-cells = <1>;
-				#size-cells = <0>;
 				hdmi0: hdmi@39 {
-					compatible = "rcm,hdmi";
-					reg = <0x39>;
-					force-dvi = <1>;
+					status = "okay";
 				};
 			};
 

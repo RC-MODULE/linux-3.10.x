@@ -11,16 +11,15 @@
  */
 
 / {
+
+	model = "RC Module K1879XB1YA";
+	compatible = "rcm,k1879xb1ya";
+
 	#address-cells = <1>;
 	#size-cells = <1>;
 	chosen { };
 	aliases { };
 	memory { device_type = "memory"; reg = <0 0>; };
-};
-
-/ {
-	model = "RC Module K1879XB1YA";
-	compatible = "rcm,k1879xb1ya";
 
 	cpus {
 		#address-cells = <1>;
@@ -484,10 +483,16 @@
 				interrupt-parent = <&vic1>;
 				clocks = <&clk_prf>;
 				clock-names = "clk_prf";
-				clock-frequency = <81000000>;
+				clock-frequency = <81000000>; // <54000000>
+				speed = <100000>;
 				reg-shift = <2>;
 				rcm-irq-fixup-id = <0>;
 				status = "disabled";
+				hdmi0: hdmi@39 {
+					compatible = "module,hdmi";
+					reg = <0x39>;
+					status = "disabled";
+				};
 			};
 
 			audio_dma_control: audio_dma_control@5000 {
