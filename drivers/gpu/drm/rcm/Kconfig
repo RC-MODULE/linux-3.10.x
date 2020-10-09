@@ -1,0 +1,7 @@
+config DRM_RCM_VDU
+	tristate "RCM VDU KMS driver"
+	depends on DRM
+	select DRM_KMS_HELPER
+	select DRM_GEM_SHMEM_HELPER
+	help
+	 This is a KMS driver for RCM VDU display apater.

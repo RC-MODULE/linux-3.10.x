@@ -4,6 +4,17 @@
 *
 */
 / {
+
+	// ???
+	hdmi-out0 {
+		status = "ok";
+	};
+
+	// ???
+	hdmi-out1 {
+		status = "ok";
+	};
+
 	plb {
 		lsif1 {
 			i2c0: i2c@0x3C05A000 {
@@ -11,11 +22,20 @@
 
 				// HDMI channel 0
 				adv7513_0: adv7513@39 {
-					status = "ok";
+					// ??? status = "ok";
 				};
 
 				// HDMI channel 1
 				adv7513_1: adv7513@3d {
+					// ??? status = "ok";
+				};
+
+				hdmi@3d { // ???
+					status = "ok";
+				};
+
+				// HDMI channel 1
+				hdmi@39 { // ???
 					status = "ok";
 				};
 			};
@@ -111,11 +131,21 @@
 
 			// HDMI channel 0 (actually VDU index 1)
 			vdu0: vdu@0x38013000 {
-				status = "ok";
+				// ??? status = "ok";
 			};
 
 			// HDMI channel 1 (actually VDU index 0)
 			vdu1: vdu@0x38011000 {
+				// ??? status = "ok";
+			};
+
+			// HDMI channel 0 (actually VDU index 1)
+			vdu0_drm: vdu@38013000 {
+				// ??? status = "ok";
+			};
+
+			// HDMI channel 1 (actually VDU index 0)
+			vdu1_drm: vdu@38011000 {
 				status = "ok";
 			};
 		};

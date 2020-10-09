@@ -40,7 +40,7 @@
  * drm_debug: Enable debug output.
  * Bitmask of DRM_UT_x. See include/drm/drm_print.h for details.
  */
-unsigned int drm_debug;
+unsigned int drm_debug = -1; // ???
 EXPORT_SYMBOL(drm_debug);
 
 MODULE_PARM_DESC(debug, "Enable debug output, where each bit enables a debug category.\n"

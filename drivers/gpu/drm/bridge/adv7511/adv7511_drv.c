@@ -5,6 +5,8 @@
  * Copyright 2012 Analog Devices Inc.
  */
 
+#define DEBUG // ???
+
 #include <linux/clk.h>
 #include <linux/device.h>
 #include <linux/gpio/consumer.h>
