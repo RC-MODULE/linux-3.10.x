@@ -254,7 +254,7 @@ static void __init k1879_map_io(void) {
     iotable_init(k1879_io_desc, ARRAY_SIZE(k1879_io_desc));
 }
 
-DT_MACHINE_START(K1879, "RC Module K1879XB1YA (Device Tree)")
+DT_MACHINE_START(K1879, "Module MB77.07  (Device Tree)")
 	.map_io			= k1879_map_io,
 	.init_machine   = k1879_dt_mach_init,
 	.dt_compat      = k1879_dt_match,

@@ -209,10 +209,11 @@ static int module_hdmi_probe(struct i2c_client *client,
 	struct i2c_adapter *adapter = to_i2c_adapter(client->dev.parent);
 	struct module_hdmi_data *data;
 
-	bool* force_dvi_ptr;
+	//bool* force_dvi_ptr;
 
 	u16 did;
 	int ret;
+
 	pr_info("probing RCM HDMI\n");
 
 	ret = module_hdmi_read_u16(adapter, client->addr, 0x02, &did);
@@ -260,7 +261,7 @@ static int module_hdmi_probe(struct i2c_client *client,
 	return 0;
 
 kthread_run_failed:
-pr_info("module_hdmi: error bail out\n");
+	pr_err("module_hdmi: error bail out\n");
 	i2c_set_clientdata(client, 0);
 	return ret;
 }
@@ -289,24 +290,12 @@ static struct i2c_driver module_hdmi_driver = {
 	.driver = {
 		.name = DRIVER_NAME,
 		.owner = THIS_MODULE,
-		.of_match_table = module_hdmi_dt_ids,
+		.of_match_table = of_match_ptr(module_hdmi_dt_ids),
 	},
-	.id_table = module_hdmi_id_table,
 	.probe = module_hdmi_probe,
 	.remove = module_hdmi_remove,
+	.id_table = module_hdmi_id_table
 };
 
-static int __init module_hdmi_init(void)
-{
-	return i2c_add_driver(&module_hdmi_driver);
-}
+module_i2c_driver(module_hdmi_driver);
 
-static void __exit module_hdmi_exit(void)
-{
-	i2c_del_driver(&module_hdmi_driver);
-}
-
-MODULE_LICENSE("GPL");
-
-module_init(module_hdmi_init);
-module_exit(module_hdmi_exit);

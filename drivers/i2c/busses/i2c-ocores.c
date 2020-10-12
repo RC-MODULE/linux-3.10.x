@@ -487,6 +487,10 @@ static const struct of_device_id ocores_i2c_match[] = {
 		.compatible = "rcm,i2cmst",
 		.data = (void *)TYPE_RCM,
 	},
+	{
+		.compatible = "rcm,i2c-ocores",
+		.data = (void *)TYPE_RCM,
+	},
 	{},
 };
 MODULE_DEVICE_TABLE(of, ocores_i2c_match);
