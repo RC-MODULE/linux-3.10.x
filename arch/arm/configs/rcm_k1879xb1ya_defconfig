@@ -1616,7 +1616,7 @@ CONFIG_MEDIA_SUBDRV_AUTOSELECT=y
 #
 # Video decoders
 #
-
+CONFIG_RCM_1879_MSVDHD=y
 #
 # Video and audio decoders
 #
