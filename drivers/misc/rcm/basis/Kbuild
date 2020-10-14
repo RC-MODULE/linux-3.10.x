@@ -1,2 +1,3 @@
-obj-m := basis-core.o rcm-pci-map.o device-test.o
+CFLAGS_../../../tty/serial/rcm_muart.o = -DCONFIG_BASIS_PLATFORM -DCONFIG_SERIAL_MUART_NR_PORTS=2
+obj-m := basis-core.o rcm-pci-map.o device-test.o ../../../tty/serial/rcm_muart.o
 basis-core-y := basis-init.o basis-cfs.o basis-controller.o basis-device.o
