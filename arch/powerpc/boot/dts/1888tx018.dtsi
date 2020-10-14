@@ -1168,8 +1168,8 @@
 				reg = <0x38013000 0x1000>;
 				interrupt-parent = <&MPIC>;
 				interrupts = <120 2>; // active high level-sensitive
-				// ??? vdu-index = <1>;
-				// ??? crg-control = <&crg_vdu>;
+				vdu-index = <1>;
+				crg-control = <&crg_vdu>;
 				// ??? supported_modes = <0x7FFE>;
 				// ??? default_mode = <0x4>;
 				// ??? output_flags = <0x200>;
@@ -1193,8 +1193,8 @@
 				reg = <0x38011000 0x1000>;
 				interrupt-parent = <&MPIC>;
 				interrupts = <117 2>; // active high level-sensitive
-				// ??? vdu-index = <0>;
-				// ??? crg-control = <&crg_vdu>;
+				vdu-index = <0>;
+				crg-control = <&crg_vdu>;
 				// ??? supported_modes = <0x7FFE>;
 				// ??? default_mode = <0x4>;
 				// ??? output_flags = <0x200>;
