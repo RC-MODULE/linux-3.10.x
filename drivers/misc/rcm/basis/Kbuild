@@ -1,0 +1,2 @@
+obj-m := basis-core.o rcm-pci-map.o device-test.o
+basis-core-y := basis-init.o basis-cfs.o basis-controller.o basis-device.o
