@@ -772,12 +772,12 @@ static void force_stop(void)
     release_device();
   }
 }
-
+/*
 static
 void decode_timeout(unsigned long not_used) {
 	force_stop();
 }
-
+*/
 static
 void start_decode(struct stream* stream) {
  	unsigned long flags;
@@ -1267,7 +1267,7 @@ int configure_device_for_mpeg(struct stream* stream, struct msvd_mpeg_decode_par
 	uint32_t volatile* cfg = device.regs->vdsi_cfg_data, *ct_ba[2], *ct_wt[2], *ct_info[2], *dma[2];
  	int r;
 
-	if((r == assign_internal_buffers_for_mpeg(stream, p)) < 0) return r;
+	if((r = assign_internal_buffers_for_mpeg(stream, p)) < 0) return r;
 
 	ct_ba[0] = cfg;
   *cfg++ = set(ct_hdr_always_1, 1) | set(ct_hdr_ctxt_type, CT_BA);
