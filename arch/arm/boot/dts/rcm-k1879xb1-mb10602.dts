@@ -1,0 +1,342 @@
+/*
+ * Copyright Promwad inc(C) 2011
+ * Copyright RC Module      2015
+ *
+ * Michail Kurachkin <stelhs@ya.ru>
+ * Andrew Andrianov  <andrew@ncrmnt.org>
+ *
+ * This program is free software; you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License as published by
+ * the Free Software Foundation; either version 2 of the License, or
+ * (at your option) any later version.
+ *
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ * GNU General Public License for more details.
+ *
+ */
+
+/dts-v1/;
+#include "rcm-k1879xb1.dtsi"
+
+/ {
+	model = "RC Module MB77.07";
+	compatible = "rcm,mb7707";
+
+    memory {
+        device_type = "memory";
+        reg = <0x40000000 0x8000000>;
+    };
+
+	reserved-memory {
+	    #address-cells = <1>;
+	    #size-cells = <1>;
+	    ranges;
+
+	    fb_reserved: framebuffer@45C00000 {
+		reg = <0x45C00000 0x2400000>;
+	    };
+	};
+
+	chosen {
+		bootargs = "ignore_loglevel console=ttyS0,38400n8 earlyprintk=serial ubi.mtd=4,2048 root=ubi0:rootfs rootfstype=ubifs mtdparts=nand:0x40000@0x0(boot),0x40000@0x40000(env),0x80000@0x80000(kernel_dtb),0x400000@0x100000(kernel),0x3FB00000@0x500000(rootfs) irqpoll noapic";
+	};
+
+	leds {
+		compatible = "gpio-leds";
+		one {
+			label = "mb7707::led1";
+			gpios = <&gpiofj 31 0>; /* LED1 */
+			linux,default-trigger = "heartbeat";
+		};
+		two {
+			label = "mb7707::led2";
+			gpios = <&gpiofj 30 0>; /* LED2 */
+			default-state = "off";
+		};
+	};
+
+	clocks {
+		oscillator_27m: oscillator@27M {
+			/* On-board crystal, 27MHz clock */
+			compatible = "fixed-clock";
+			#clock-cells = <0>;
+			clock-frequency = <27000000>;
+			clock-accuracy = <0>;
+			clock-output-names = "clk_27m";
+		};
+
+		oscillator_48m: oscillator@48M {
+			/* On-board crystal, 48MHz clock */
+			compatible = "fixed-clock";
+			#clock-cells = <0>;
+			clock-frequency = <48000000>;
+			clock-output-names = "clk_48m";
+		};
+
+		oscillator_74_25m: oscillator@74M {
+			/* On-board crystal, 74.25MHz clock */
+			compatible = "fixed-clock";
+			#clock-cells = <0>;
+			clock-frequency = <74250000>;
+			clock-output-names = "clk_74m";
+		};
+
+		oscillator_12_288m: oscillator@12M {
+			/* On-board crystal, 12.288MHz clock */
+			compatible = "fixed-clock";
+			#clock-cells = <0>;
+			clock-frequency = <12288000>;
+			clock-output-names = "clk_12m";
+		};
+	};
+
+	axi {
+		apb_c {
+			spi0: spi@e000 {
+				status = "okay";
+				#address-cells = <1>;
+				#size-cells = <0>;
+				spidev@0 {
+					compatible = "rohm,dh2228fv";
+					reg = <0>;
+					spi-max-frequency = <25000000>;
+					spi-cpha;
+					pl022,hierarchy = <0>;
+					pl022,interface = <0>;
+					pl022,slave-tx-disable;
+					pl022,com-mode = <0x1>; /* polling mode */
+					pl022,rx-level-trig = <0>;
+					pl022,tx-level-trig = <0>;
+					pl022,ctrl-len = <0x11>;
+					pl022,wait-state = <0>;
+					pl022,duplex = <0>;
+				};
+			};
+
+			i2c1: i2c@1000 {
+				status = "okay";
+				speed = <100000>;
+				clock-frequency = <54000000>;
+			};
+
+			i2c2: i2c@6000 {
+				status = "okay";
+				speed = <100000>;
+				clock-frequency = <54000000>;
+				#address-cells = <1>;
+				#size-cells = <0>;
+				at24: at24@50 {
+							compatible = "at24,24c64";
+							reg = <0x50>;
+				};
+			};
+
+			i2c3: i2c@d000 {
+				status = "okay";
+				speed = <100000>;
+				clock-frequency = <54000000>;
+				usb2512b3: usb-hub3@2c { // hub is hier
+					compatible = "microchip,usb2512b";
+					reg = <0x2c>;
+					/* reset-gpios = <&gpio0 29 GPIO_ACTIVE_LOW>; */
+				};
+			};
+		};
+
+		apb_d {
+			ethernet: greth@4000 {
+				local-mac-address = [ EC 17 66 77 07 00 ];
+				status = "okay";
+				mdio {
+				phy0: ethernet-phy@0 {
+						reg = <0x1f>;
+					};
+				};
+			};
+
+			nand0: nand@f000 {
+				status = "okay";
+				partitions {
+					compatible = "fixed-partitions";
+					#address-cells = <1>;
+					#size-cells = <1>;
+					status = "okay";
+					partition@0 {
+						label = "boot";
+						reg = <0x00000000 0x00040000>;
+					};
+					partition@40000 {
+						label = "env";
+						reg = <0x00040000 0x00020000>;
+					};
+					partition@60000 {
+						label = "dtb";
+						reg = <0x00060000 0x00020000>;
+					};
+					partition@80000 {
+						label = "kernel";
+						reg = <0x0080000 0x00500000>;
+					};
+					partition@580000 {
+						label = "rootfs";
+						reg = <0x00580000 0x3FA80000>;
+					};
+				};
+			};
+		};
+
+		au@0 {
+			i2sc0: i2sc@0 {
+				status = "okay";
+			};
+			i2s0: i2s0@0 {
+				status = "okay";
+			};
+			i2s1: i2s1@0 {
+				//status = "okay";
+			};
+			i2s2: i2s2@0 {
+				//status = "okay";
+			};
+			i2s3: i2s3@0 {
+				//status = "okay";
+			};
+		};
+
+		au@1 {
+			spdif: spdif@0 {
+				//status = "okay";
+			};
+
+			sound0 {
+				status = "okay";
+				compatible = "simple-audio-card";
+				simple-audio-card,name = "RCM Audio 0";
+				#address-cells = <1>;
+				#size-cells = <0>;
+				#sound-dai-cells = <0>;
+
+				simple-audio-card,dai-link@0 {
+					reg = <0>;
+					format = "i2s";
+					cpu {
+						sound-dai = <&i2s0>;
+					};
+					codec {
+						sound-dai = <&i2s_codec0>;
+					};
+				};
+			};
+			sound1 {
+				//status = "okay";
+				compatible = "simple-audio-card";
+				simple-audio-card,name = "RCM Audio 1";
+				#address-cells = <1>;
+				#size-cells = <0>;
+				#sound-dai-cells = <0>;
+
+				simple-audio-card,dai-link@1 {
+					reg = <1>;
+					format = "i2s";
+					cpu {
+						sound-dai = <&i2s1>;
+					};
+					codec {
+						sound-dai = <&i2s_codec1>;
+					};
+				};
+			};
+			sound2 {
+				//status = "okay";
+				compatible = "simple-audio-card";
+				simple-audio-card,name = "RCM Audio 2";
+				#address-cells = <1>;
+				#size-cells = <0>;
+				#sound-dai-cells = <0>;
+
+				simple-audio-card,dai-link@2 {
+					reg = <2>;
+					format = "i2s";
+					cpu {
+						sound-dai = <&i2s2>;
+					};
+					codec {
+						sound-dai = <&i2s_codec2>;
+					};
+				};
+			};
+			sound3 {
+				//status = "okay";
+				compatible = "simple-audio-card";
+				simple-audio-card,name = "RCM Audio 3";
+				#address-cells = <1>;
+				#size-cells = <0>;
+				#sound-dai-cells = <0>;
+
+				simple-audio-card,dai-link@3 {
+					reg = <3>;
+					format = "i2s";
+					cpu {
+						sound-dai = <&i2s3>;
+					};
+					codec {
+						sound-dai = <&i2s_codec3>;
+					};
+				};
+			};
+			i2s_codec0: i2scodec0 {
+				compatible = "linux,spdif-dit";
+				#sound-dai-cells = <0>;
+				status = "okay";
+			};
+			i2s_codec1: i2scodec1 {
+				compatible = "linux,spdif-dit";
+				#sound-dai-cells = <0>;
+				//status = "okay";
+			};
+			i2s_codec2: i2scodec2 {
+				compatible = "linux,spdif-dit";
+				#sound-dai-cells = <0>;
+				//status = "okay";
+			};
+			i2s_codec3: i2scodec3 {
+				compatible = "linux,spdif-dit";
+				#sound-dai-cells = <0>;
+				//status = "okay";
+			};
+		};
+
+		apb_mult {
+			audio_dma: audio_dma@0x2800 {
+				status = "okay";
+			};
+
+			i2c0: i2c@1000 {
+				status = "okay";
+				hdmi0: hdmi@39 {
+					status = "okay";
+				};
+			};
+
+			vdu: vdu@0x3000 {
+				memory-region = <&fb_reserved>;
+				status = "okay";
+			};
+		};
+
+		usbehci: ehci@0x10040000 {
+			status = "okay";
+		};
+
+		video_decoder: video_decoder@80180000 {
+			status = "okay";
+		};
+
+		//sound: audio@0x80175000 {
+		//	status = "okay";
+		//	maudio,model = "Module MB7707";
+		//};
+	};
+};
