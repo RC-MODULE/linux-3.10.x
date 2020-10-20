@@ -18,6 +18,8 @@
 #include <drm/drm_ioctl.h>
 #include <drm/drm_encoder.h>
 #include <drm/drm_bridge.h>
+#include <drm/drm_vblank.h>
+#include <drm/drm_irq.h>
 #include <drm/drm_gem_shmem_helper.h>
 #include <drm/drm_gem_framebuffer_helper.h>
 #include <drm/drm_atomic_helper.h>
@@ -69,9 +71,6 @@
 #define CRG_VDU_UPD_CK_UPD_CKDIV (1U << 0)
 // ????
 
-// ???
-#define RCM_VDU_MAX_PITCH 4096 /* ???? not used */
-
 struct vdu_device {
 	struct drm_device drm_dev;
 	struct platform_device *pdev;
@@ -86,9 +85,13 @@ struct vdu_device {
 	struct drm_plane primary_plane;
 	bool primary_plane_initialized;
 	struct drm_encoder encoder;
+
+	// ???
+	struct drm_pending_vblank_event *event; // ???
 };
 
 DEFINE_DRM_GEM_FOPS(rcm_vdu_fops);
+static irqreturn_t irq_handler(int irq, void *arg);
 
 static struct drm_driver rcm_vdu_drm_driver = {
 	.driver_features = DRIVER_GEM | DRIVER_MODESET | DRIVER_ATOMIC,
@@ -99,6 +102,7 @@ static struct drm_driver rcm_vdu_drm_driver = {
 	.minor = DRIVER_MINOR,
 	.fops = &rcm_vdu_fops,
 	DRM_GEM_SHMEM_DRIVER_OPS,
+	.irq_handler = irq_handler
 };
 
 static const struct drm_mode_config_funcs mode_config_funcs = {
@@ -139,6 +143,11 @@ static const struct drm_plane_helper_funcs plane_helper_funcs = {
 	.atomic_update = plane_atomic_update,
 };
 
+int (*enable_vblank)(struct drm_crtc *crtc);
+
+static int crtc_enable_vblank(struct drm_crtc *crtc);
+static void crtc_disable_vblank(struct drm_crtc *crtc);
+
 static const struct drm_crtc_funcs crtc_funcs = {
 	.reset = drm_atomic_helper_crtc_reset,
 	// ??? .reset = rcar_du_crtc_reset,
@@ -149,22 +158,33 @@ static const struct drm_crtc_funcs crtc_funcs = {
 	.atomic_duplicate_state = drm_atomic_helper_crtc_duplicate_state,
 	// ??? .atomic_destroy_state = rcar_du_crtc_atomic_destroy_state,
 	.atomic_destroy_state = drm_atomic_helper_crtc_destroy_state,
-	// ??? .enable_vblank = rcar_du_crtc_enable_vblank,
-	// ??? .disable_vblank = rcar_du_crtc_disable_vblank,
+	.enable_vblank = crtc_enable_vblank,
+	.disable_vblank = crtc_disable_vblank
 };
 
+static enum drm_mode_status crtc_mode_valid(struct drm_crtc *crtc, const struct drm_display_mode *mode);
+static void crtc_atomic_begin(struct drm_crtc *crtc, struct drm_crtc_state *old_crtc_state);
+static void crtc_atomic_flush(struct drm_crtc *crtc, struct drm_crtc_state *old_crtc_state);
+static void crtc_atomic_enable(struct drm_crtc *crtc, struct drm_crtc_state *old_crtc_state);
+static void crtc_atomic_disable(struct drm_crtc *crtc, struct drm_crtc_state *old_crtc_state);
+
 static const struct drm_crtc_helper_funcs crtc_helper_funcs = {
+	.mode_valid = crtc_mode_valid,
 	// ??? .atomic_check = rcar_du_crtc_atomic_check,
-	// ??? .atomic_begin = rcar_du_crtc_atomic_begin,
-	// ??? .atomic_flush = rcar_du_crtc_atomic_flush,
-	// ??? .atomic_enable = rcar_du_crtc_atomic_enable,
-	// ??? .atomic_disable = rcar_du_crtc_atomic_disable,
-	// ??? .mode_valid = rcar_du_crtc_mode_valid,
+	.atomic_begin = crtc_atomic_begin,
+	.atomic_flush = crtc_atomic_flush,
+	.atomic_enable = crtc_atomic_enable,
+	.atomic_disable = crtc_atomic_disable
 };
 
 static const struct drm_encoder_funcs encoder_funcs = {
 	.destroy = drm_encoder_cleanup,
 };
+
+static inline struct vdu_device *drm_dev_to_vdu(struct drm_device *drm_dev)
+{
+	return container_of(drm_dev, struct vdu_device, drm_dev);
+}
 
 // ???
 static u32 read_vdu_reg(struct vdu_device *vdu, u32 offset)
@@ -349,11 +369,13 @@ static int set_crtc_mode(struct vdu_device *vdu, struct drm_display_mode *mode)
 	u32 val;
 	int ret;
 
+	pr_info("*** set_crtc_mode\n"); // ???
+
 	ret = turn_off_vdu(vdu);
 	if (ret != 0)
 		return 0;
 
-	ret = setup_pll_pixel_clock(vdu,74250000); // ???
+	ret = setup_pll_pixel_clock(vdu, mode->clock * 1000);
 	if (ret != 0) {
 		dev_err(&vdu->pdev->dev, "PLL setup error (%i)\n", ret);
 		return ret;
@@ -361,55 +383,78 @@ static int set_crtc_mode(struct vdu_device *vdu, struct drm_display_mode *mode)
 
 	val = VDU_REG_DIF_CTRL_EXT_SYNC_EN_MASK
 		| VDU_REG_DIF_CTRL_SDTV_FORM_MASK
-		| VDU_REG_DIF_CTRL_HSYNC_P_MASK
-		| VDU_REG_DIF_CTRL_VSYNC_P_MASK
-		| VDU_REG_DIF_CTRL_DIF_444_MODE_MASK
-		| 0x1A; // ??? 1920x1080p 30 Hz
+		| VDU_REG_DIF_CTRL_HSYNC_P_MASK // ??? get from mode
+		| VDU_REG_DIF_CTRL_VSYNC_P_MASK // ??? get from mode
+		| VDU_REG_DIF_CTRL_DIF_444_MODE_MASK;
+	if (drm_mode_vrefresh(mode) == 50)
+		val |= (1 << 0); // ??? const
+	if ((mode->flags & DRM_MODE_FLAG_INTERLACE) == 0)
+		val |= (1 << 1); // ??? const
+	val |= (1 << 4); // ??? HDTV const
 	write_vdu_reg(vdu, VDU_REG_DIF_CTRL, val);
 
-	val = ((272 - 1) << VDU_REG_DIF_BLANK_HBLANK_SHIFT) // ???
-		| (41 << VDU_REG_DIF_BLANK_VBLANK_BEG_SHIFT) // ???
-		| (4 << VDU_REG_DIF_BLANK_VBLANK_END_SHIFT); // ???
+	/// ????? ++++++++++++++++++++
+	val = ((mode->htotal - mode->hdisplay - 4 - 4 - 1) << VDU_REG_DIF_BLANK_HBLANK_SHIFT)
+		| ((mode->vtotal - mode->vdisplay) << VDU_REG_DIF_BLANK_VBLANK_BEG_SHIFT)
+		| (0 << VDU_REG_DIF_BLANK_VBLANK_END_SHIFT);
 	write_vdu_reg(vdu, VDU_REG_DIF_BLANK, val);
 
-	val = (mode->crtc_htotal << VDU_REG_DIF_FSIZE_HTOTAL_SHIFT) // ???
+	val = (mode->htotal << VDU_REG_DIF_FSIZE_HTOTAL_SHIFT)
 		| (mode->crtc_vtotal << VDU_REG_DIF_FSIZE_VTOTAL_SHIFT);
 	write_vdu_reg(vdu, VDU_REG_DIF_FSIZE, val);
 
-	val = (mode->crtc_hdisplay << VDU_REG_DIF_ASIZE_HACTIVE_SHIFT) // ???
-		| (mode->crtc_vdisplay << VDU_REG_DIF_ASIZE_VACTIVE_SHIFT);
-	write_vdu_reg(vdu, VDU_REG_DIF_FSIZE, val);
+	val = ((mode->hdisplay - 1) << VDU_REG_DIF_ASIZE_HACTIVE_SHIFT)
+		| (mode->vdisplay << VDU_REG_DIF_ASIZE_VACTIVE_SHIFT);
+	write_vdu_reg(vdu, VDU_REG_DIF_ASIZE, val);
 
-	val = (88 << VDU_REG_DIF_HSYNC_START_SHIFT) // ???
-		| (44 << VDU_REG_DIF_HSYNC_LEN_SHIFT) // ???
-		| (148 << VDU_REG_DIF_HSYNC_DELAY_SHIFT);
+	val = ((mode->hsync_start - mode->hdisplay) << VDU_REG_DIF_HSYNC_START_SHIFT)
+		| ((mode->hsync_end - mode->hsync_start) << VDU_REG_DIF_HSYNC_LEN_SHIFT)
+		| ((mode->htotal - mode->hsync_end) << VDU_REG_DIF_HSYNC_DELAY_SHIFT);
 	write_vdu_reg(vdu, VDU_REG_DIF_HSYNC, val);
 
-	val = (0< VDU_REG_DIF_VSYNC_START_SHIFT) // ???
-		| (5 << VDU_REG_DIF_VSYNC_LEN_SHIFT); // ???
+	val = ((mode->vsync_start - mode->vdisplay) << VDU_REG_DIF_VSYNC_START_SHIFT)
+		| ((mode->vsync_end - mode->vsync_start) << VDU_REG_DIF_VSYNC_LEN_SHIFT);
 	write_vdu_reg(vdu, VDU_REG_DIF_VSYNC, val);
 
+	pr_info("*** VDU_REG_DIF_CTRL = 0x%08X\n", read_vdu_reg(vdu, VDU_REG_DIF_CTRL));
+	pr_info("*** VDU_REG_DIF_BGR = 0x%08X\n", read_vdu_reg(vdu, VDU_REG_DIF_BGR));
+	pr_info("*** VDU_REG_DIF_BLANK = 0x%08X\n", read_vdu_reg(vdu, VDU_REG_DIF_BLANK));
+	pr_info("*** VDU_REG_DIF_FSIZE = 0x%08X\n", read_vdu_reg(vdu, VDU_REG_DIF_FSIZE));
+	pr_info("*** VDU_REG_DIF_ASIZE = 0x%08X\n", read_vdu_reg(vdu, VDU_REG_DIF_ASIZE));
+	pr_info("*** VDU_REG_DIF_HSYNC = 0x%08X\n", read_vdu_reg(vdu, VDU_REG_DIF_HSYNC));
+	pr_info("*** VDU_REG_DIF_VSYNC = 0x%08X\n", read_vdu_reg(vdu, VDU_REG_DIF_VSYNC));
 
-	/* ??? [MVDU_MODE_HD_1080_P_30] = {
-		.width = 1920,
-		.height = 1080,
-		.vmode = MVDU_MODE_PROGRESSIVE,
-		.pixclock = 74250000,
-		.mode = 0x1A,
-		.h_blank = 272,
-		.h_active = 1920,
-		.h_total = 2200,
-		.hs_start = 88,
-		.hs_len = 44,
-		.hs_delay = 148,
-		.v_blank_beg = 41,
-		.v_active = 1080,
-		.v_total = 1125,
-		.v_blank_end = 4,
-		.vs_start = 0,
-		.vs_len = 5,
-		.vs_p = 1,
-	}*/
+	// ???
+	{
+		int y_r = 750;	/* round(0.183 * 4096) */
+		int y_g = 2515;	/* round(0.614 * 4096) */
+		int y_b = 254;	/* round(0.062 * 4096) */
+
+		int cb_r = -414;	/* round(-0.101 * 4096) */
+		int cb_g = -1384;	/* round(-0.338 * 4096) */
+		int cb_b = 1798;	/* round(0.439 * 4096) */
+
+		int cr_r = 1798;	/* round(0.439 * 4096) */
+		int cr_g = -1636;	/* round(-0.399 * 4096) */
+		int cr_b = -164;	/* round(-0.040 * 4096) */
+
+		int r = 0xFF; // ??? 0xFF;
+		int g = 0xFF; // ??? 0xFF;
+		int b = 0; // ??? 0xFF;
+
+		int y = 16 + ((r * y_r) + (g * y_g) + (b * y_b) + 2048) / 4096;
+		int cb = 128 + ((r * cb_r) + (g * cb_g) + (b * cb_b) + 2048) / 4096;
+		int cr = 128 + ((r * cr_r) + (g * cr_g) + (b * cr_b) + 2048) / 4096;
+		
+		y = max(16, min(235, y));
+		cb = max(16, min(240, cb));
+		cr = max(16, min(240, cr));
+
+		val = (y << VDU_REG_DIF_BGR_Y_SHIFT)
+			| (cb << VDU_REG_DIF_BGR_CB_SHIFT)
+			| (cr << VDU_REG_DIF_BGR_CR_SHIFT);
+		write_vdu_reg(vdu, VDU_REG_DIF_BGR, val);
+	}
 
 	return 0;
 }
@@ -422,17 +467,231 @@ static void plane_atomic_update(struct drm_plane *plane, struct drm_plane_state 
 	//
 }
 
+static int crtc_enable_vblank(struct drm_crtc *crtc)
+{
+	struct vdu_device *vdu = drm_dev_to_vdu(crtc->dev);
+	u32 val;
+
+	// ??? race
+	write_vdu_reg(vdu, VDU_REG_INT_STAT, VDU_REG_INT_VDU_STAT_SA_MASK); // ??? clear
+	val = read_vdu_reg(vdu, VDU_REG_INT_ENA);
+	val |= VDU_REG_INT_VDU_STAT_SA_MASK;
+	write_vdu_reg(vdu, VDU_REG_INT_ENA, val);
+
+	//
+	// ???
+	//
+	pr_info("*** crtc_enable_vblank\n"); // ???
+
+	return 0;
+}
+
+static void crtc_disable_vblank(struct drm_crtc *crtc)
+{
+	struct vdu_device *vdu = drm_dev_to_vdu(crtc->dev);
+	u32 val;
+
+	// ??? race
+	val = read_vdu_reg(vdu, VDU_REG_INT_ENA);
+	val &= ~VDU_REG_INT_VDU_STAT_SA_MASK;
+	write_vdu_reg(vdu, VDU_REG_INT_ENA, val);
+	//
+	// ???
+	//
+	pr_info("*** crtc_disable_vblank\n"); // ???
+
+	// ??? WARN_ON(true); // ???
+}
+
+static enum drm_mode_status crtc_mode_valid(struct drm_crtc *crtc, const struct drm_display_mode *mode)
+{
+	if ((mode->flags & DRM_MODE_FLAG_INTERLACE))
+		return MODE_NO_INTERLACE; // ??? just now
+
+	if (mode->clock < 25000)
+		return MODE_CLOCK_LOW;
+	if (mode->clock >  148500)
+		return MODE_CLOCK_HIGH;
+
+	if (mode->htotal - mode->hdisplay < 9) // ??? const
+		return MODE_HBLANK_NARROW;
+	if (mode->htotal - mode->hdisplay > (1 << 10) - 1) // ??? const
+		return MODE_HBLANK_WIDE;
+
+	if (mode->vtotal - mode->vdisplay > (1 << 6) - 1) // ??? const
+		return MODE_VBLANK_WIDE;
+
+	if (mode->htotal > (1 << 12) - 1) // ??? const
+		return MODE_VIRTUAL_X;
+
+
+	if (mode->vtotal > (1 << 11) - 1) // ??? const
+		return MODE_VIRTUAL_Y;
+
+	if (mode->hsync_start - mode->hdisplay > (1 << 10) - 1) // ??? const
+		return MODE_HSYNC;
+
+	if (mode->hsync_end - mode->hsync_start > (1 << 8) - 1) // ??? const
+		return MODE_HSYNC;
+
+	if (mode->htotal - mode->hsync_end > (1 << 8) - 1) // ??? const
+		return MODE_HSYNC;
+
+	if (mode->vsync_start - mode->vdisplay > (1 << 3) - 1) // ??? const
+		return MODE_VSYNC;
+
+	if (mode->vsync_end - mode->vsync_start > (1 << 3) - 1) // ??? const
+		return MODE_VSYNC;
+
+	return MODE_OK;
+}
+
+static void crtc_atomic_begin(struct drm_crtc *crtc, struct drm_crtc_state *old_crtc_state)
+{
+	//
+	// ???
+	//
+	pr_info("*** crt_atomic_begin\n"); // ???
+}
+
+static void crtc_atomic_flush(struct drm_crtc *crtc, struct drm_crtc_state *old_crtc_state)
+{
+	struct vdu_device *vdu = drm_dev_to_vdu(crtc->dev);
+	int ret; // /??
+	//
+	// ???
+	//
+	pr_info("*** crt_atomic_flush\n"); // ???
+	//
+	// ???
+	//
+	if (crtc->state->mode_changed) {
+		ret = set_crtc_mode(vdu, &crtc->state->mode); // ???
+		if (ret != 0)
+			dev_err(&vdu->pdev->dev, "cannot setup crtc mode\n");
+	} else {
+		pr_info("*** no mode changed\n");
+	}
+
+	// ??? not here
+	/* ??? if (crtc->state->event) {
+		pr_info("*** crtc_atomic_flush event 0x%08X\n", (unsigned)crtc->state->event); // ???
+		spin_lock_irq(&crtc->dev->event_lock);
+		drm_crtc_send_vblank_event(crtc, crtc->state->event);
+		crtc->state->event = NULL;
+		spin_unlock_irq(&crtc->dev->event_lock);
+	}*/
+
+	// ???
+	if (crtc->state->event) {
+		pr_info("*** crtc_atomic_flush event 0x%08X\n", (unsigned)crtc->state->event); // ???
+		spin_lock_irq(&crtc->dev->event_lock);
+		vdu->event = crtc->state->event;
+		crtc->state->event = NULL;
+		spin_unlock_irq(&crtc->dev->event_lock);
+	}
+}
+
+static void crtc_atomic_enable(struct drm_crtc *crtc, struct drm_crtc_state *old_crtc_state)
+{
+	struct vdu_device *vdu = drm_dev_to_vdu(crtc->dev);
+	u32 val;
+
+	// ??? race
+	val = read_vdu_reg(vdu, VDU_REG_CTRL_ENA);
+	val |= VDU_REG_CTRL_ENA_VDU_ENA_MASK;
+	write_vdu_reg(vdu, VDU_REG_CTRL_ENA, val);
+
+	drm_crtc_vblank_on(&vdu->crtc);
+	//
+	// ???
+	//
+	pr_info("*** crtc_atomic_enable\n"); // ???
+}
+
+static void crtc_atomic_disable(struct drm_crtc *crtc, struct drm_crtc_state *old_crtc_state)
+{
+	struct vdu_device *vdu = drm_dev_to_vdu(crtc->dev);
+	u32 val;
+
+	drm_crtc_vblank_off(&vdu->crtc);
+
+	// ??? race
+	val = read_vdu_reg(vdu, VDU_REG_CTRL_ENA);
+	val &= VDU_REG_CTRL_ENA_VDU_ENA_MASK;
+	write_vdu_reg(vdu, VDU_REG_CTRL_ENA, val); // ??? wait
+
+	udelay(100000); // ???
+
+	if (crtc->state->event) {
+		pr_info("*** crtc_atomic_disable event 0x%08X\n", (unsigned)crtc->state->event); // ???
+		// ???
+		// ??? spin_lock_irq(&crtc->dev->event_lock);
+		// ??? vdu->event = crtc->state->event;
+		// ??? crtc->state->event = NULL;
+		// ??? spin_unlock_irq(&crtc->dev->event_lock);
+		// ???
+	}
+
+	//
+	// ???
+	//
+	pr_info("*** crtc_atomic_disable\n"); // ???
+}
+
+static irqreturn_t irq_handler(int irq, void *arg)
+{
+	struct drm_device *drm_dev = arg;
+	struct vdu_device *vdu = drm_dev_to_vdu(drm_dev);
+	u32 irq_status;
+
+	pr_info("*** %lu %u irq 0x%08X 0x%08X\n", jiffies, HZ, read_vdu_reg(vdu, VDU_REG_INT_STAT), read_vdu_reg(vdu, VDU_REG_INT_ENA)); // ???
+
+	// ??? race
+	irq_status = read_vdu_reg(vdu, VDU_REG_INT_STAT);
+	irq_status &= read_vdu_reg(vdu, VDU_REG_INT_ENA);
+	write_vdu_reg(vdu, VDU_REG_INT_STAT, irq_status);
+
+	pr_info("*** stat = 0x%08X\n", read_vdu_reg(vdu, VDU_REG_INT_STAT)); // ???
+
+	if ((irq_status & VDU_REG_INT_VDU_STAT_SA_MASK) != 0) {
+		drm_crtc_handle_vblank(&vdu->crtc);
+		// ??? rcar_du_crtc_finish_page_flip(rcrtc);
+
+		/* ??? if (vdu->crtc.state->event) {
+			pr_info("*** irq_handler event 0x%08X\n", (unsigned)vdu->crtc.state->event); // ???
+			// ??? spin_lock_irq(&vdu->crtc.dev->event_lock); // ??? path
+			spin_lock(&vdu->crtc.dev->event_lock); // ??? path
+			drm_crtc_send_vblank_event(&vdu->crtc, vdu->crtc.state->event);
+			vdu->crtc.state->event = NULL;
+			// ??? spin_unlock_irq(&vdu->crtc.dev->event_lock); // ??? path
+			spin_unlock(&vdu->crtc.dev->event_lock); // ??? path
+		}*/
+		if (vdu->event) {
+			pr_info("*** irq_handler event 0x%08X\n", (unsigned)vdu->event); // ???
+			// ??? spin_lock_irq(&vdu->crtc.dev->event_lock); // ??? path
+			spin_lock(&vdu->crtc.dev->event_lock); // ??? path
+			drm_crtc_send_vblank_event(&vdu->crtc, vdu->event);
+			vdu->event = NULL;
+			// ??? spin_unlock_irq(&vdu->crtc.dev->event_lock); // ??? path
+			spin_unlock(&vdu->crtc.dev->event_lock); // ??? path
+		}
+	}
+
+	return IRQ_HANDLED;
+}
+
 static void mode_config_init(struct vdu_device *vdu)
 {
 	struct drm_device *dev = &vdu->drm_dev;
 
 	drm_mode_config_init(dev);
-	dev->mode_config.min_width = 0; // ???
-	dev->mode_config.min_height = 0; // ???
+	dev->mode_config.min_width = 320; // ???
+	dev->mode_config.min_height = 200; // ???
 	dev->mode_config.max_width = 1920; // ??? RCM_VDU_MAX_PITCH / 2; // ???
 	dev->mode_config.max_height = 1080; // ???
-	dev->mode_config.preferred_depth = 16; // ???
-	dev->mode_config.prefer_shadow = 0; // ???
+	// ??? dev->mode_config.preferred_depth = 16; // ???
+	// ??? dev->mode_config.prefer_shadow = 0; // ???
 	dev->mode_config.funcs = &mode_config_funcs;
 }
 
@@ -467,36 +726,6 @@ static int crtc_init(struct vdu_device *vdu)
 
 	// allow connection the primary plane with CRTC
 	vdu->primary_plane.possible_crtcs = drm_crtc_mask(&vdu->crtc);
-// ???
-// ???	drm_crtc_helper_add(crtc, &crtc_helper_funcs);
-// ???
-// ???	/* Start with vertical blanking interrupt reporting disabled. */
-// ???	drm_crtc_vblank_off(crtc);
-// ???
-// ???	/* Register the interrupt handler. */
-// ???	if (rcar_du_has(rcdu, RCAR_DU_FEATURE_CRTC_IRQ_CLOCK)) {
-// ???		/* The IRQ's are associated with the CRTC (sw)index. */
-// ???		irq = platform_get_irq(pdev, swindex);
-// ???		irqflags = 0;
-// ???	} else {
-// ???		irq = platform_get_irq(pdev, 0);
-// ???		irqflags = IRQF_SHARED;
-// ???	}
-// ???
-// ???	if (irq < 0) {
-// ???		dev_err(rcdu->dev, "no IRQ for CRTC %u\n", swindex);
-// ???		return irq;
-// ???	}
-// ???
-// ???	ret = devm_request_irq(rcdu->dev, irq, rcar_du_crtc_irq, irqflags,
-// ???			       dev_name(rcdu->dev), rcrtc);
-// ???	if (ret < 0) {
-// ???		dev_err(rcdu->dev,
-// ???			"failed to register IRQ for CRTC %u\n", swindex);
-// ???		return ret;
-// ???	}
-// ???
-// ???	rcar_du_crtc_crc_init(rcrtc);
 
 	return 0;
 }
@@ -542,6 +771,9 @@ static void cleanup(struct platform_device *pdev)
 	if (vdu->drm_dev.registered)
 		drm_dev_unregister(&vdu->drm_dev);
 
+	if (vdu->drm_dev.irq_enabled)
+		drm_irq_uninstall(&vdu->drm_dev);
+
 	drm_kms_helper_poll_fini(&vdu->drm_dev); // ???
 	drm_mode_config_cleanup(&vdu->drm_dev);
 	drm_dev_fini(&vdu->drm_dev);
@@ -552,6 +784,7 @@ static int probe_internal(struct platform_device *pdev)
 	struct vdu_device *vdu;
 	struct device_node *syscon_node;
 	u32 hardware_id;
+	int irq;
 	int ret;
 
 	vdu = devm_kzalloc(&pdev->dev, sizeof(*vdu), GFP_KERNEL);
@@ -617,6 +850,10 @@ static int probe_internal(struct platform_device *pdev)
 	if (ret != 0)
 		return ret;
 
+	ret = drm_vblank_init(&vdu->drm_dev, 1);
+	if (ret != 0)
+		return ret;
+
 	ret = encoder_init(vdu);
 	if (ret != 0)
 		return ret;
@@ -625,6 +862,18 @@ static int probe_internal(struct platform_device *pdev)
 	drm_mode_config_reset(&vdu->drm_dev); // ???
 
 	drm_kms_helper_poll_init(&vdu->drm_dev); // ???
+
+	drm_crtc_vblank_off(&vdu->crtc);
+
+	irq = platform_get_irq(pdev, 0);
+	if (irq < 0) {
+		dev_err(&pdev->dev, "failed to find device irq\n");
+		return -EINVAL;
+	};
+	vdu->drm_dev.dev_private = vdu; // needs for drm_irq_install
+	ret = drm_irq_install(&vdu->drm_dev, irq);
+	if (ret != 0)
+		return ret;
 
 	ret = drm_dev_register(&vdu->drm_dev, 0);
 	if (ret != 0)

@@ -22,7 +22,7 @@
 
 				// HDMI channel 0
 				adv7513_0: adv7513@39 {
-					// ??? status = "ok";
+					// status = "ok";
 				};
 
 				// HDMI channel 1
@@ -30,13 +30,14 @@
 					// ??? status = "ok";
 				};
 
-				hdmi@3d { // ???
+				// HDMI channel 0
+				hdmi@39 { // ???
 					status = "ok";
 				};
 
 				// HDMI channel 1
-				hdmi@39 { // ???
-					status = "ok";
+				hdmi@3d { // ???
+					// ??? status = "ok";
 				};
 			};
 		};
@@ -141,12 +142,12 @@
 
 			// HDMI channel 0 (actually VDU index 1)
 			vdu0_drm: vdu@38013000 {
-				// ??? status = "ok";
+				status = "ok";
 			};
 
 			// HDMI channel 1 (actually VDU index 0)
 			vdu1_drm: vdu@38011000 {
-				status = "ok";
+				// ??? status = "ok";
 			};
 		};
 	};

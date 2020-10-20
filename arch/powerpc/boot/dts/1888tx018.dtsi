@@ -733,32 +733,33 @@
 				// HDMI channel 0
 				adv7513_0: adv7513@39 {
 					status = "disabled";
-					// ??? compatible = "rcm,adv7513";
-					compatible = "rcmmmm,adv7513zzz";
+					compatible = "rcm,adv7513";
+					// ??? compatible = "rcmmmm,adv7513zzz";
 					reg = <0x39>;
 				};
 
 				// HDMI channel 1
 				adv7513_1: adv7513@3d {
 					status = "disabled";
-					// ??? compatible = "rcm,adv7513";
-					compatible = "rcmmmm,adv7513zzz";
+					compatible = "rcm,adv7513";
+					// ??? compatible = "rcmmmm,adv7513zzz";
 					reg = <0x3D>;
 				};
 
 				// HDMI channel 0
-				hdmi@3d { // ???
+				hdmi@39 { // ???
 					status = "disabled";
 					/// ??? compatible = "adi,adv7513";
 					compatible = "adi,adv7511";
-					reg = <0x3d>, <0x2d>, <0x4d>, <0x5d>;
+					reg = <0x39>, <0x29>, <0x49>, <0x59>;
 					reg-names = "main", "cec", "edid", "packet";
 
 					adi,input-depth = <8>;
-					adi,input-colorspace = "rgb";
+					// ??? adi,input-colorspace = "rgb"; + other channels
+					adi,input-colorspace = "yuv444";
 					adi,input-clock = "1x";
-					adi,input-style = <1>;
-					adi,input-justification = "evenly";
+					// ??? adi,input-style = <1>;
+					// ??? adi,input-justification = "evenly";
 
 					ports {
 						#address-cells = <1>;
@@ -781,11 +782,11 @@
 				};
 
 				// HDMI channel 1
-				hdmi@39 { // ???
+				hdmi@3d { // ???
 					status = "disabled";
 					// ??? compatible = "adi,adv7513";
 					compatible = "adi,adv7511";
-					reg = <0x39>, <0x29>, <0x49>, <0x59>;
+					reg = <0x3d>, <0x2d>, <0x4d>, <0x5d>;
 					reg-names = "main", "cec", "edid", "packet";
 
 					adi,input-depth = <8>;
@@ -1135,7 +1136,7 @@
 				vdu-index = <1>;
 				crg-control = <&crg_vdu>;
 				supported_modes = <0x7FFE>;
-				default_mode = <0x4>;
+				default_mode = <10>; // ??? <0x4>;
 				output_flags = <0x200>;
 				axi_osd_param = <0x0f310000>;
 				axi_mvl_param = <0x0f310000>;
