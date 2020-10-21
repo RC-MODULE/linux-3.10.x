@@ -14,12 +14,25 @@
 
 #include <linux/phy/phy.h>
 
+#ifdef CONFIG_BASIS_PLATFORM
+#	include "../../misc/rcm/basis/basis-device.h"
+#	include "../../misc/rcm/basis/basis-controller.h"
+#	include "../../misc/rcm/basis/basis-cfs.h"
+#endif
+
 struct rcm_sgmii_phy_data {
 	struct regmap     *reg;
 	struct regmap     *ctrl;
 	u32                ctrl_offset;
 	struct phy        *phy;
 	bool               auto_negotiation;
+#ifdef CONFIG_BASIS_PLATFORM
+	struct basis_device    *device;
+	u32                     regs;
+	u32                     regs_size;
+	u32                     sctl;
+	u32                     sctl_size;
+#endif
 };
 
 static const struct of_device_id rcm_sgmii_phy_of_table[];
@@ -107,6 +120,175 @@ static const struct regmap_config rcm_sgmii_phy_regmap_config = {
 	.fast_io = true,
 };
 
+#ifdef CONFIG_BASIS_PLATFORM
+
+static const struct regmap_config rcm_sgmii_phy_regmap_config_sctl = {
+	.reg_bits = 32,
+	.reg_stride = 4,
+	.val_bits = 32,
+	.fast_io = true,
+};
+
+static int rcm_sgmii_phy_bind(struct basis_device *device)
+{
+	struct phy_provider *phy_provider;
+	struct rcm_sgmii_phy_data *data = basis_device_get_drvdata(device);
+	void __iomem *base;
+	struct device *dev = &device->dev;
+
+	dev_info(dev, "%s: controller: \"%s\"\n",
+	         __func__, dev_name(&device->controller->dev));
+
+	base = devm_ioremap(dev, data->regs + device->controller->ep_base_phys,
+	                    data->regs_size);
+	if (IS_ERR(base)) {
+		dev_err(dev, "missing \"reg\"\n");
+		return PTR_ERR(base);
+	}
+
+	data->reg = devm_regmap_init(dev, &basis_regmap_bus, base, 
+	                             &rcm_sgmii_phy_regmap_config);
+	if (IS_ERR(data->reg)) {
+		dev_err(dev, "failed to init regmap\n");
+		return PTR_ERR(data->reg);
+	}
+
+	base = devm_ioremap(dev, data->sctl + device->controller->ep_base_phys,
+	                    data->sctl_size);
+	if (IS_ERR(base)) {
+		dev_err(dev, "missing \"sctl\"\n");
+		return PTR_ERR(base);
+	}
+
+	data->ctrl = devm_regmap_init(dev, &basis_regmap_bus, base, 
+	                              &rcm_sgmii_phy_regmap_config_sctl);
+	if (IS_ERR(data->reg)) {
+		dev_err(dev, "failed to init regmap\n");
+		return PTR_ERR(data->reg);
+	}
+
+	if (IS_ERR(data->ctrl)) {
+		dev_err(dev, "failed to map SCTL\n");
+		return PTR_ERR(data->ctrl);
+	}
+
+	data->phy = devm_phy_create(dev, NULL, &rcm_sgmii_phy_ops);
+	if (IS_ERR(data->phy)) {
+		dev_err(dev, "failed to create PHY: %ld\n", PTR_ERR(data->phy));
+		return PTR_ERR(data->phy);
+	}
+
+	device->priv = data->phy;
+
+	phy_set_drvdata(data->phy, data);
+	phy_provider = devm_of_phy_provider_register(dev, of_phy_simple_xlate);
+
+	return PTR_ERR_OR_ZERO(phy_provider);
+}
+
+static void rcm_sgmii_phy_unbind(struct basis_device *device)
+{
+	device->priv = NULL;
+}
+
+static int rcm_sgmii_phy_probe(struct basis_device *device)
+{
+	struct rcm_sgmii_phy_data *data;
+	struct device *dev = &device->dev;
+
+	data = devm_kzalloc(dev, sizeof(*data), GFP_KERNEL);
+	if (!data)
+		return -ENOMEM;
+
+	data->device = device;
+
+	basis_device_set_drvdata(device, data);
+
+	return 0;
+}
+
+static const struct basis_device_id rcm_sgmii_phy_ids[] = {
+	{
+		.name = "rcm-sgmii-phy",
+	},
+	{},
+};
+
+static struct basis_device_ops rcm_sgmii_phy_basis_ops = {
+	.unbind = rcm_sgmii_phy_unbind,
+	.bind   = rcm_sgmii_phy_bind,
+};
+
+static ssize_t rcm_sgmii_phy_auto_negotiation_store(struct config_item *item,
+                                                    const char *page,
+                                                    size_t len)
+{
+	struct basis_device *device = config_item_to_basis_device(item);
+	struct rcm_sgmii_phy_data *data = basis_device_get_drvdata(device);
+	int ret;
+	bool auto_negotiation;
+
+	ret = kstrtobool(page, &auto_negotiation);
+	if (ret)
+		return ret;
+
+	data->auto_negotiation = auto_negotiation;
+
+	return len;
+}
+
+static ssize_t rcm_sgmii_phy_auto_negotiation_show(struct config_item *item,
+                                                   char *page)
+{
+	struct basis_device *device = config_item_to_basis_device(item);
+	struct rcm_sgmii_phy_data *data = basis_device_get_drvdata(device);
+	return sprintf(page, "%d\n", (int)data->auto_negotiation);
+}
+
+BASIS_DEV_ATTR_U32_SHOW(rcm_sgmii_phy_,  regs,        struct rcm_sgmii_phy_data);
+BASIS_DEV_ATTR_U32_STORE(rcm_sgmii_phy_, regs,        struct rcm_sgmii_phy_data);
+
+BASIS_DEV_ATTR_U32_SHOW(rcm_sgmii_phy_,  regs_size,   struct rcm_sgmii_phy_data);
+BASIS_DEV_ATTR_U32_STORE(rcm_sgmii_phy_, regs_size,   struct rcm_sgmii_phy_data);
+
+BASIS_DEV_ATTR_U32_SHOW(rcm_sgmii_phy_,  sctl,        struct rcm_sgmii_phy_data);
+BASIS_DEV_ATTR_U32_STORE(rcm_sgmii_phy_, sctl,        struct rcm_sgmii_phy_data);
+
+BASIS_DEV_ATTR_U32_SHOW(rcm_sgmii_phy_,  sctl_size,   struct rcm_sgmii_phy_data);
+BASIS_DEV_ATTR_U32_STORE(rcm_sgmii_phy_, sctl_size,   struct rcm_sgmii_phy_data);
+
+BASIS_DEV_ATTR_U32_SHOW(rcm_sgmii_phy_,  ctrl_offset, struct rcm_sgmii_phy_data);
+BASIS_DEV_ATTR_U32_STORE(rcm_sgmii_phy_, ctrl_offset, struct rcm_sgmii_phy_data);
+
+CONFIGFS_ATTR(rcm_sgmii_phy_, regs);
+CONFIGFS_ATTR(rcm_sgmii_phy_, regs_size);
+CONFIGFS_ATTR(rcm_sgmii_phy_, sctl);
+CONFIGFS_ATTR(rcm_sgmii_phy_, sctl_size);
+CONFIGFS_ATTR(rcm_sgmii_phy_, ctrl_offset);
+CONFIGFS_ATTR(rcm_sgmii_phy_, auto_negotiation);
+
+static struct configfs_attribute *rcm_sgmii_phy_attrs[] = {
+	&rcm_sgmii_phy_attr_regs,
+	&rcm_sgmii_phy_attr_regs_size,
+	&rcm_sgmii_phy_attr_sctl,
+	&rcm_sgmii_phy_attr_sctl_size,
+	&rcm_sgmii_phy_attr_ctrl_offset,
+	&rcm_sgmii_phy_attr_auto_negotiation,
+	NULL,
+};
+
+static struct basis_device_driver rcm_sgmii_phy_driver = {
+	.driver.name    = "rcm-sgmii-phy",
+	.probe          = rcm_sgmii_phy_probe,
+	.id_table       = rcm_sgmii_phy_ids,
+	.ops            = &rcm_sgmii_phy_basis_ops,
+	.owner          = THIS_MODULE,
+	.attrs          = rcm_sgmii_phy_attrs,
+};
+module_basis_driver(rcm_sgmii_phy_driver);
+
+#else /* CONFIG_BASIS_PLATFORM */
+
 static int rcm_sgmii_phy_probe(struct platform_device *pdev)
 {
 	struct phy_provider *phy_provider;
@@ -184,6 +366,8 @@ static struct platform_driver rcm_sgmii_phy_driver = {
 	},
 };
 module_platform_driver(rcm_sgmii_phy_driver);
+
+#endif /* CONFIG_BASIS_PLATFORM */
 
 MODULE_AUTHOR("Alexander Shtreys <alexander.shtreys@mir.dev>");
 MODULE_DESCRIPTION("RC-Module SGMII PHY Driver");
