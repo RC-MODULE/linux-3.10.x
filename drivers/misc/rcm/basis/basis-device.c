@@ -19,6 +19,30 @@ static DEFINE_MUTEX(basis_device_mutex);
 static struct bus_type basis_device_bus_type;
 static const struct device_type basis_device_type;
 
+static int basis_regmap_read(void *context, unsigned int reg, unsigned int *val)
+{
+	void __iomem *base = context;
+
+	*val = readl(base + reg);
+
+	return 0;
+}
+
+static int basis_regmap_write(void *context, unsigned int reg, unsigned int val)
+{
+	void __iomem *base = context;
+
+	writel(val, base + reg);
+
+	return 0;
+}
+
+struct regmap_bus basis_regmap_bus = {
+	.reg_write = basis_regmap_write,
+	.reg_read = basis_regmap_read,
+};
+EXPORT_SYMBOL_GPL(basis_regmap_bus);
+
 void basis_device_unbind(struct basis_device *device)
 {
 	if (!device->driver) {

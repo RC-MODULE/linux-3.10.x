@@ -10,6 +10,7 @@
 
 #include <linux/device.h>
 #include <linux/mod_devicetable.h>
+#include <linux/regmap.h>
 
 struct basis_device;
 
@@ -154,5 +155,7 @@ static ssize_t _pfx##_name##_store(struct config_item *item, const char *page, \
 #define module_basis_driver(__driver) \
 	module_driver(__driver, basis_device_register_driver, \
 	              basis_device_unregister_driver)
+
+extern struct regmap_bus basis_regmap_bus;
 
 #endif /* __BASIS_DEVICE_H */
