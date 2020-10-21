@@ -50,6 +50,8 @@ struct basis_device {
 	struct basis_controller        *controller;
 	struct basis_device_driver     *driver;
 	struct list_head                list;
+
+	void                           *priv;
 };
 
 #define to_basis_device(basis_dev) container_of((basis_dev), \
@@ -81,6 +83,8 @@ int __basis_device_register_driver(struct basis_device_driver *driver,
 void basis_device_unregister_driver(struct basis_device_driver *driver);
 int basis_device_bind(struct basis_device *device);
 void basis_device_unbind(struct basis_device *device);
+
+struct basis_device *basis_device_find(const char *name);
 
 #define BASIS_DEV_ATTR_U32_SHOW(_pfx, _name, _data_type)		       \
 static ssize_t _pfx##_name##_show(struct config_item *item, char *page)	       \

@@ -43,6 +43,44 @@ struct regmap_bus basis_regmap_bus = {
 };
 EXPORT_SYMBOL_GPL(basis_regmap_bus);
 
+struct basis_driver_find_device_data
+{
+	const char*          name;
+	struct basis_device *device;
+};
+
+static int basis_driver_find_device(struct device_driver *drv, void* d)
+{
+	struct basis_device_driver *driver = to_basis_device_driver(drv);
+	struct basis_driver_find_device_data* data = d;
+	struct config_group *group;
+	struct config_item *item;
+
+	list_for_each_entry(group, &driver->device_group, group_entry) {
+		item = config_group_find_item(group, data->name);
+		if (item) {
+			data->device = config_item_to_basis_device(item);
+			config_item_put(item);
+			return 1;
+		}
+	}
+
+	return 0;
+};
+
+struct basis_device *basis_device_find(const char *name)
+{
+	struct basis_driver_find_device_data data;
+	data.name = name;
+	data.device = NULL;
+
+	bus_for_each_drv(&basis_device_bus_type, NULL, &data,
+	                 basis_driver_find_device);
+
+	return data.device;
+}
+EXPORT_SYMBOL_GPL(basis_device_find);
+
 void basis_device_unbind(struct basis_device *device)
 {
 	if (!device->driver) {
