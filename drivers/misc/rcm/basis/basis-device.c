@@ -14,6 +14,10 @@
 #include "basis-device.h"
 #include "basis-cfs.h"
 
+#ifndef BASIS_DMA_MASK_SIZE
+#	define BASIS_DMA_MASK_SIZE 32
+#endif
+
 static DEFINE_MUTEX(basis_device_mutex);
 
 static struct bus_type basis_device_bus_type;
@@ -202,6 +206,14 @@ struct basis_device *basis_device_create(const char *name)
 	device_initialize(dev);
 	dev->bus = &basis_device_bus_type;
 	dev->type = &basis_device_type;
+
+	ret = dma_coerce_mask_and_coherent(dev,
+	                                   DMA_BIT_MASK(BASIS_DMA_MASK_SIZE));
+	if (ret < 0) {
+		dev_err(dev, "Failed to set DMA mask: %d\n", ret);
+		put_device(dev);
+		return ERR_PTR(ret);
+	}
 
 	ret = dev_set_name(dev, "%s", name);
 	if (ret) {
