@@ -422,6 +422,9 @@ static int rcm_mgeth_open(struct net_device *netdev)
 	struct rcm_mgeth_data *data = netdev_priv(netdev);
 	int err;
 	int i;
+#ifdef CONFIG_BASIS_PLATFORM
+	struct basis_device *device;
+#endif
 
 	err = request_irq(data->irq, rcm_mgeth_irq, IRQF_SHARED, "rcm_mgeth",
 	                  (void *)data);
@@ -438,9 +441,31 @@ static int rcm_mgeth_open(struct net_device *netdev)
 
 	regmap_write(data->reg, RCM_MGETH_IRQ_MASK, 0);
 
+#ifdef CONFIG_BASIS_PLATFORM
+	device = basis_device_find(data->phy_dev);
+	if (!device) {
+		netdev_err(netdev, "Failed to found BASIS-device \"%s\"\n",
+		           data->phy_dev);
+		return -ENODEV;
+	}
+
+	if (!device->priv) {
+		netdev_err(netdev, "BASIS-device \"%s\" is not PHY-Device\n",
+		           data->phy_dev);
+		return -ENODEV;
+	}
+
+	data->phydev = device->priv;
+
+	err = phy_connect_direct(netdev, data->phydev, &rcm_mgeth_adjust_link,
+	                         data->phy_if);
+	put_device(&data->phydev->mdio.dev);
+	if (err)
+		data->phydev = NULL;
+#else
 	data->phydev = of_phy_connect(netdev, data->phynode,
 	                              &rcm_mgeth_adjust_link, 0, data->phy_if);
-
+#endif
 	if (!data->phydev) {
 		netdev_err(netdev, "Could not find the PHY\n");
 		return -ENODEV;
@@ -604,6 +629,430 @@ static void rcm_mgeth_set_rx_mode(struct net_device *netdev)
 */
 }
 
+static void rcm_mgeth_free_dma(struct rcm_mgeth_data *data)
+{
+	int i;
+
+	for (i = 0; i < RCM_MGETH_MAX_DMA_CHANNELS * 2; ++i) {
+		struct rcm_mgeth_dma_chan* chan = 
+			(i < RCM_MGETH_MAX_DMA_CHANNELS) ? 
+			data->tx[i] : 
+			data->rx[i - RCM_MGETH_MAX_DMA_CHANNELS];
+
+		if (!chan)
+			continue;
+
+		rcm_mgeth_dma_chan_remove(chan);
+
+		if (i < RCM_MGETH_MAX_DMA_CHANNELS)
+			data->tx[i] = NULL;
+		else
+			data->rx[i - RCM_MGETH_MAX_DMA_CHANNELS] = NULL;
+	}
+}
+
+static const struct net_device_ops rcm_mgeth_netdev_ops = {
+	.ndo_open               = rcm_mgeth_open,
+	.ndo_stop               = rcm_mgeth_close,
+	.ndo_start_xmit         = rcm_mgeth_start_xmit,
+	.ndo_set_mac_address    = rcm_mgeth_set_mac,
+	.ndo_validate_addr      = eth_validate_addr,
+	.ndo_set_rx_mode        = rcm_mgeth_set_rx_mode
+};
+
+static const struct ethtool_ops rcm_mgeth_ethtool_ops = {
+	.get_link               = ethtool_op_get_link,
+};
+
+static const struct regmap_config rcm_mgeth_regmap_cfg_0 = {
+	.reg_bits = 32,
+	.reg_stride = 4,
+	.val_bits = 32,
+	.max_register = 0x1FC,
+	.fast_io = true,
+};
+
+static const struct regmap_config rcm_mgeth_regmap_cfg_1 = {
+	.reg_bits = 32,
+	.reg_stride = 4,
+	.val_bits = 32,
+	.max_register = 0xFC,
+	.fast_io = true,
+};
+
+#ifdef CONFIG_BASIS_PLATFORM
+
+static int rcm_mgeth_init_phy(struct net_device *netdev)
+{
+	struct rcm_mgeth_data *data = netdev_priv(netdev);
+	struct basis_device *device;
+	struct phy *ifphy;
+
+	int ret;
+	int i;
+
+	data->link = 0;
+	data->speed = 0;
+	data->duplex = -1;
+
+	device = basis_device_find(data->phy);
+	if (!device) {
+		netdev_err(netdev, "Failed to found BASIS-device \"%s\"\n",
+		           data->phy);
+		return -ENODEV;
+	}
+
+	if (!device->priv) {
+		netdev_err(netdev, "BASIS-device \"%s\" is not PHY\n",
+		           data->phy);
+		return -ENODEV;
+	}
+
+	ifphy = device->priv;
+
+	ret = phy_init(ifphy);
+	if (ret) {
+		netdev_err(netdev, "Failed to init PHY: %d\n", ret);
+		return ret;
+	}
+
+	data->phy_if = PHY_INTERFACE_MODE_NA;
+
+	for (i = 0; i < PHY_INTERFACE_MODE_MAX; i++)
+		if (!strcasecmp(data->phy_mode, phy_modes(i))) {
+			data->phy_if = i;
+			break;
+		}
+
+	if (data->phy_if == PHY_INTERFACE_MODE_NA) {
+		netdev_err(netdev, "Unknown phy-mode: \"%s\"\n",
+		           data->phy_mode);
+		return -EINVAL;
+	}
+
+	return 0;
+}
+
+static int rcm_mgeth_prep_dma(struct rcm_mgeth_data *data)
+{
+	int ret = 0;
+	int i;
+	void __iomem *base;
+
+	for (i = 0; i < RCM_MGETH_MAX_DMA_CHANNELS * 2; ++i) {
+		char ch_name[8];
+
+		struct rcm_mgeth_dma_chan* chan = NULL;
+
+		enum dma_data_direction dir = (i < RCM_MGETH_MAX_DMA_CHANNELS) ?
+		                              DMA_TO_DEVICE :
+		                              DMA_FROM_DEVICE;
+		u32 reg;
+		u32 reg_size;
+
+		if (i < RCM_MGETH_MAX_DMA_CHANNELS) {
+			snprintf(ch_name, sizeof(ch_name), "tx%d", i);
+			reg = data->reg_tx_chan[i];
+			reg_size = data->reg_tx_chan_size;
+		} else {
+			snprintf(ch_name, sizeof(ch_name), "rx%d",
+			         i - RCM_MGETH_MAX_DMA_CHANNELS);
+			reg = data->reg_rx_chan[i - RCM_MGETH_MAX_DMA_CHANNELS];
+			reg_size = data->reg_rx_chan_size;
+		}
+
+		base = devm_ioremap(data->dev,
+		                    reg + data->device->controller->ep_base_phys,
+		                    reg_size);
+		if (IS_ERR(base)) {
+			netdev_err(data->netdev, "missing \"%s\"\n", ch_name);
+			ret = PTR_ERR(base);
+			break;
+		}
+
+		chan = rcm_mgeth_dma_chan_create(data->netdev, ch_name, base,
+		                                 (i % RCM_MGETH_MAX_DMA_CHANNELS),
+		                                 dir);
+
+		if (!chan) {
+			ret = -EFAULT;
+			break;
+		}
+
+		if (i < RCM_MGETH_MAX_DMA_CHANNELS)
+			data->tx[i] = chan;
+		else
+			data->rx[i - RCM_MGETH_MAX_DMA_CHANNELS] = chan;
+	}
+
+	if (ret != 0)
+		rcm_mgeth_free_dma(data);
+
+	return ret;
+}
+
+static int rcm_mgeth_bind(struct basis_device *device)
+{
+	struct device *dev = &device->dev;
+	struct rcm_mgeth_data *data = basis_device_get_drvdata(device);
+	struct net_device *netdev = data->netdev;
+	void __iomem *base;
+	int err = -ENOMEM;
+	int i;
+	u32 id;
+	u32 ver;
+
+	dev_info(dev, "%s: controller: \"%s\"\n",
+	         __func__, dev_name(&device->controller->dev));
+
+	base = devm_ioremap(dev, data->regs + device->controller->ep_base_phys,
+	                    data->regs_size);
+	if (IS_ERR(base)) {
+		dev_err(dev, "missing \"reg\"\n");
+		return PTR_ERR(base);
+	}
+
+	data->reg = devm_regmap_init(dev, &basis_regmap_bus, base,
+	                             &rcm_mgeth_regmap_cfg_0);
+	if (IS_ERR(data->reg)) {
+		dev_err(dev, "failed to init regmap\n");
+		return PTR_ERR(data->reg);
+	}
+
+	for (i = 0; i < RCM_MGETH_MAX_DMA_CHANNELS; ++i) {
+		base = devm_ioremap(dev,
+		                    data->reg_rx_mask[i] + 
+		                    device->controller->ep_base_phys,
+	                            data->reg_rx_mask_size);
+		if (IS_ERR(base)) {
+			dev_err(dev, "missing \"rx-mask%d\"\n", i);
+			return PTR_ERR(base);
+		}
+
+		data->mask[i] = devm_regmap_init(dev, &basis_regmap_bus, base,
+		                                 &rcm_mgeth_regmap_cfg_1);
+		if (IS_ERR(data->mask[i])) {
+			dev_err(dev, "failed to init regmap\n");
+			return PTR_ERR(data->mask[i]);
+		}
+	}
+
+	regmap_read(data->reg, RCM_MGETH_ID,      &id);
+	regmap_read(data->reg, RCM_MGETH_VERSION, &ver);
+
+	dev_info(dev, "ID: 0x%08X, VER: 0x%08X.\n", id, ver);
+
+	err = rcm_mgeth_init_phy(netdev);
+
+	if (err != 0) 
+		return err;
+
+	data->irq = irq_create_mapping(device->controller->domain,
+	                               data->hwirq);
+
+	err = rcm_mgeth_prep_dma(data);
+
+	if (err != 0) 
+		return err;
+
+	err = rcm_mgeth_reset(data);
+
+	if (err) 
+		goto err_dma;
+
+	netdev->netdev_ops = &rcm_mgeth_netdev_ops;
+	netdev->ethtool_ops = &rcm_mgeth_ethtool_ops;
+
+	netdev->max_mtu = RCM_MGETH_MAX_FRAME_SIZE;
+
+	if (!rcm_mgeth_read_mac_addr(data, netdev->dev_addr))
+		eth_hw_addr_random(netdev);
+
+	err = register_netdev(netdev);
+	if (err)
+		goto err_dma;
+
+	if (device_create_file(data->dev, &dev_attr_stats)) {
+		dev_warn(dev, "Failed to create \"stats\" file.\n");
+	}
+
+	netif_napi_add(netdev, &data->napi, rcm_mgeth_poll, 64);
+
+	dev_info(dev, "initialized\n");
+
+	return 0;
+
+err_dma:
+	rcm_mgeth_free_dma(data);
+
+	return err;
+}
+
+static void rcm_mgeth_unbind(struct basis_device *device)
+{
+	struct rcm_mgeth_data *data = basis_device_get_drvdata(device);
+
+	device_remove_file(data->dev, &dev_attr_stats);
+
+	unregister_netdev(data->netdev);
+
+	rcm_mgeth_free_dma(data);
+}
+
+static int rcm_mgeth_probe(struct basis_device *device)
+{
+	struct device *dev = &device->dev;
+	struct net_device *netdev;
+	struct rcm_mgeth_data *data;
+
+	netdev = devm_alloc_etherdev(dev, sizeof(struct rcm_mgeth_data));
+
+	if (netdev == NULL)
+		return -ENOMEM;
+
+	data = netdev_priv(netdev);
+	data->netdev = netdev;
+	data->dev = dev;
+	data->device = device;
+
+	SET_NETDEV_DEV(netdev, dev);
+
+	basis_device_set_drvdata(device, data);
+
+	return 0;
+}
+
+static const struct basis_device_id rcm_mgeth_ids[] = {
+	{
+		.name = "rcm-mgeth",
+	},
+	{},
+};
+
+static struct basis_device_ops rcm_mgeth_ops = {
+	.unbind = rcm_mgeth_unbind,
+	.bind   = rcm_mgeth_bind,
+};
+
+BASIS_DEV_ATTR_U32_SHOW(rcm_mgeth_,  regs,      struct rcm_mgeth_data);
+BASIS_DEV_ATTR_U32_STORE(rcm_mgeth_, regs,      struct rcm_mgeth_data);
+
+BASIS_DEV_ATTR_U32_SHOW(rcm_mgeth_,  regs_size, struct rcm_mgeth_data);
+BASIS_DEV_ATTR_U32_STORE(rcm_mgeth_, regs_size, struct rcm_mgeth_data);
+
+BASIS_DEV_ATTR_ARR_U32_SHOW(rcm_mgeth_,  reg_rx_mask, 0, struct rcm_mgeth_data);
+BASIS_DEV_ATTR_ARR_U32_STORE(rcm_mgeth_, reg_rx_mask, 0, struct rcm_mgeth_data);
+
+BASIS_DEV_ATTR_ARR_U32_SHOW(rcm_mgeth_,  reg_rx_mask, 1, struct rcm_mgeth_data);
+BASIS_DEV_ATTR_ARR_U32_STORE(rcm_mgeth_, reg_rx_mask, 1, struct rcm_mgeth_data);
+
+BASIS_DEV_ATTR_ARR_U32_SHOW(rcm_mgeth_,  reg_rx_mask, 2, struct rcm_mgeth_data);
+BASIS_DEV_ATTR_ARR_U32_STORE(rcm_mgeth_, reg_rx_mask, 2, struct rcm_mgeth_data);
+
+BASIS_DEV_ATTR_ARR_U32_SHOW(rcm_mgeth_,  reg_rx_mask, 3, struct rcm_mgeth_data);
+BASIS_DEV_ATTR_ARR_U32_STORE(rcm_mgeth_, reg_rx_mask, 3, struct rcm_mgeth_data);
+
+BASIS_DEV_ATTR_U32_SHOW(rcm_mgeth_,  reg_rx_mask_size, struct rcm_mgeth_data);
+BASIS_DEV_ATTR_U32_STORE(rcm_mgeth_, reg_rx_mask_size, struct rcm_mgeth_data);
+
+BASIS_DEV_ATTR_ARR_U32_SHOW(rcm_mgeth_,  reg_rx_chan, 0, struct rcm_mgeth_data);
+BASIS_DEV_ATTR_ARR_U32_STORE(rcm_mgeth_, reg_rx_chan, 0, struct rcm_mgeth_data);
+
+BASIS_DEV_ATTR_ARR_U32_SHOW(rcm_mgeth_,  reg_rx_chan, 1, struct rcm_mgeth_data);
+BASIS_DEV_ATTR_ARR_U32_STORE(rcm_mgeth_, reg_rx_chan, 1, struct rcm_mgeth_data);
+
+BASIS_DEV_ATTR_ARR_U32_SHOW(rcm_mgeth_,  reg_rx_chan, 2, struct rcm_mgeth_data);
+BASIS_DEV_ATTR_ARR_U32_STORE(rcm_mgeth_, reg_rx_chan, 2, struct rcm_mgeth_data);
+
+BASIS_DEV_ATTR_ARR_U32_SHOW(rcm_mgeth_,  reg_rx_chan, 3, struct rcm_mgeth_data);
+BASIS_DEV_ATTR_ARR_U32_STORE(rcm_mgeth_, reg_rx_chan, 3, struct rcm_mgeth_data);
+
+BASIS_DEV_ATTR_U32_SHOW(rcm_mgeth_,  reg_rx_chan_size, struct rcm_mgeth_data);
+BASIS_DEV_ATTR_U32_STORE(rcm_mgeth_, reg_rx_chan_size, struct rcm_mgeth_data);
+
+BASIS_DEV_ATTR_ARR_U32_SHOW(rcm_mgeth_,  reg_tx_chan, 0, struct rcm_mgeth_data);
+BASIS_DEV_ATTR_ARR_U32_STORE(rcm_mgeth_, reg_tx_chan, 0, struct rcm_mgeth_data);
+
+BASIS_DEV_ATTR_ARR_U32_SHOW(rcm_mgeth_,  reg_tx_chan, 1, struct rcm_mgeth_data);
+BASIS_DEV_ATTR_ARR_U32_STORE(rcm_mgeth_, reg_tx_chan, 1, struct rcm_mgeth_data);
+
+BASIS_DEV_ATTR_ARR_U32_SHOW(rcm_mgeth_,  reg_tx_chan, 2, struct rcm_mgeth_data);
+BASIS_DEV_ATTR_ARR_U32_STORE(rcm_mgeth_, reg_tx_chan, 2, struct rcm_mgeth_data);
+
+BASIS_DEV_ATTR_ARR_U32_SHOW(rcm_mgeth_,  reg_tx_chan, 3, struct rcm_mgeth_data);
+BASIS_DEV_ATTR_ARR_U32_STORE(rcm_mgeth_, reg_tx_chan, 3, struct rcm_mgeth_data);
+
+BASIS_DEV_ATTR_U32_SHOW(rcm_mgeth_,  reg_tx_chan_size, struct rcm_mgeth_data);
+BASIS_DEV_ATTR_U32_STORE(rcm_mgeth_, reg_tx_chan_size, struct rcm_mgeth_data);
+
+BASIS_DEV_ATTR_STR_SHOW(rcm_mgeth_,  phy,       struct rcm_mgeth_data);
+BASIS_DEV_ATTR_STR_STORE(rcm_mgeth_, phy,       struct rcm_mgeth_data);
+
+BASIS_DEV_ATTR_STR_SHOW(rcm_mgeth_,  phy_dev,   struct rcm_mgeth_data);
+BASIS_DEV_ATTR_STR_STORE(rcm_mgeth_, phy_dev,   struct rcm_mgeth_data);
+
+BASIS_DEV_ATTR_STR_SHOW(rcm_mgeth_,  phy_mode,  struct rcm_mgeth_data);
+BASIS_DEV_ATTR_STR_STORE(rcm_mgeth_, phy_mode,  struct rcm_mgeth_data);
+
+CONFIGFS_ATTR(rcm_mgeth_, regs);
+CONFIGFS_ATTR(rcm_mgeth_, regs_size);
+
+CONFIGFS_ATTR(rcm_mgeth_, reg_rx_mask_0);
+CONFIGFS_ATTR(rcm_mgeth_, reg_rx_mask_1);
+CONFIGFS_ATTR(rcm_mgeth_, reg_rx_mask_2);
+CONFIGFS_ATTR(rcm_mgeth_, reg_rx_mask_3);
+CONFIGFS_ATTR(rcm_mgeth_, reg_rx_mask_size);
+CONFIGFS_ATTR(rcm_mgeth_, reg_rx_chan_0);
+CONFIGFS_ATTR(rcm_mgeth_, reg_rx_chan_1);
+CONFIGFS_ATTR(rcm_mgeth_, reg_rx_chan_2);
+CONFIGFS_ATTR(rcm_mgeth_, reg_rx_chan_3);
+CONFIGFS_ATTR(rcm_mgeth_, reg_rx_chan_size);
+CONFIGFS_ATTR(rcm_mgeth_, reg_tx_chan_0);
+CONFIGFS_ATTR(rcm_mgeth_, reg_tx_chan_1);
+CONFIGFS_ATTR(rcm_mgeth_, reg_tx_chan_2);
+CONFIGFS_ATTR(rcm_mgeth_, reg_tx_chan_3);
+CONFIGFS_ATTR(rcm_mgeth_, reg_tx_chan_size);
+
+CONFIGFS_ATTR(rcm_mgeth_, phy);
+CONFIGFS_ATTR(rcm_mgeth_, phy_dev);
+CONFIGFS_ATTR(rcm_mgeth_, phy_mode);
+
+static struct configfs_attribute *rcm_mgeth_attrs[] = {
+	&rcm_mgeth_attr_regs,
+	&rcm_mgeth_attr_regs_size,
+	&rcm_mgeth_attr_reg_rx_mask_0,
+	&rcm_mgeth_attr_reg_rx_mask_1,
+	&rcm_mgeth_attr_reg_rx_mask_2,
+	&rcm_mgeth_attr_reg_rx_mask_3,
+	&rcm_mgeth_attr_reg_rx_mask_size,
+	&rcm_mgeth_attr_reg_rx_chan_0,
+	&rcm_mgeth_attr_reg_rx_chan_1,
+	&rcm_mgeth_attr_reg_rx_chan_2,
+	&rcm_mgeth_attr_reg_rx_chan_3,
+	&rcm_mgeth_attr_reg_rx_chan_size,
+	&rcm_mgeth_attr_reg_tx_chan_0,
+	&rcm_mgeth_attr_reg_tx_chan_1,
+	&rcm_mgeth_attr_reg_tx_chan_2,
+	&rcm_mgeth_attr_reg_tx_chan_3,
+	&rcm_mgeth_attr_reg_tx_chan_size,
+	&rcm_mgeth_attr_phy,
+	&rcm_mgeth_attr_phy_dev,
+	&rcm_mgeth_attr_phy_mode,
+	NULL,
+};
+
+static struct basis_device_driver rcm_mgeth_driver = {
+	.driver.name    = "rcm-mgeth",
+	.probe          = rcm_mgeth_probe,
+	.id_table       = rcm_mgeth_ids,
+	.ops            = &rcm_mgeth_ops,
+	.owner          = THIS_MODULE,
+	.attrs          = rcm_mgeth_attrs,
+};
+module_basis_driver(rcm_mgeth_driver);
+
+#else /* CONFIG_BASIS_PLATFORM */
+
 static int rcm_mgeth_init_phy(struct net_device *netdev)
 {
 	struct rcm_mgeth_data *data = netdev_priv(netdev);
@@ -642,28 +1091,6 @@ static int rcm_mgeth_init_phy(struct net_device *netdev)
 	}
 
 	return 0;
-}
-
-static void rcm_mgeth_free_dma(struct rcm_mgeth_data *data)
-{
-	int i;
-
-	for (i = 0; i < RCM_MGETH_MAX_DMA_CHANNELS * 2; ++i) {
-		struct rcm_mgeth_dma_chan* chan = 
-			(i < RCM_MGETH_MAX_DMA_CHANNELS) ? 
-			data->tx[i] : 
-			data->rx[i - RCM_MGETH_MAX_DMA_CHANNELS];
-
-		if (!chan)
-			continue;
-
-		rcm_mgeth_dma_chan_remove(chan);
-
-		if (i < RCM_MGETH_MAX_DMA_CHANNELS)
-			data->tx[i] = NULL;
-		else
-			data->rx[i - RCM_MGETH_MAX_DMA_CHANNELS] = NULL;
-	}
 }
 
 static int rcm_mgeth_prep_dma(struct rcm_mgeth_data *data,
@@ -718,35 +1145,6 @@ static int rcm_mgeth_prep_dma(struct rcm_mgeth_data *data,
 
 	return ret;
 }
-
-static const struct net_device_ops rcm_mgeth_netdev_ops = {
-	.ndo_open               = rcm_mgeth_open,
-	.ndo_stop               = rcm_mgeth_close,
-	.ndo_start_xmit         = rcm_mgeth_start_xmit,
-	.ndo_set_mac_address    = rcm_mgeth_set_mac,
-	.ndo_validate_addr      = eth_validate_addr,
-	.ndo_set_rx_mode        = rcm_mgeth_set_rx_mode
-};
-
-static const struct ethtool_ops rcm_mgeth_ethtool_ops = {
-	.get_link               = ethtool_op_get_link,
-};
-
-static const struct regmap_config rcm_mgeth_regmap_cfg_0 = {
-	.reg_bits = 32,
-	.reg_stride = 4,
-	.val_bits = 32,
-	.max_register = 0x1FC,
-	.fast_io = true,
-};
-
-static const struct regmap_config rcm_mgeth_regmap_cfg_1 = {
-	.reg_bits = 32,
-	.reg_stride = 4,
-	.val_bits = 32,
-	.max_register = 0xFC,
-	.fast_io = true,
-};
 
 static const struct of_device_id rcm_mgeth_of_match[];
 
@@ -898,7 +1296,7 @@ static const struct of_device_id rcm_mgeth_of_match[] = {
 	{},
 };
 
-MODULE_DEVICE_TABLE(of, greth_of_match);
+MODULE_DEVICE_TABLE(of, rcm_mgeth_of_match);
 
 static struct platform_driver rcm_mgeth_driver = {
 	.driver = {
@@ -910,6 +1308,8 @@ static struct platform_driver rcm_mgeth_driver = {
 };
 
 module_platform_driver(rcm_mgeth_driver);
+
+#endif /* CONFIG_BASIS_PLATFORM */
 
 MODULE_AUTHOR("Alexander Shtreys <alexander.shtreys@mir.dev>");
 MODULE_DESCRIPTION("RC-Module MGETH Driver");
