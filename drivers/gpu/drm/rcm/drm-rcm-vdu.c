@@ -11,6 +11,7 @@
 #include <linux/of_device.h>
 #include <linux/of_graph.h>
 #include <linux/mfd/syscon.h>
+#include <linux/dma-mapping.h>
 #include <linux/regmap.h>
 
 #include <drm/drm_drv.h>
@@ -20,11 +21,15 @@
 #include <drm/drm_bridge.h>
 #include <drm/drm_vblank.h>
 #include <drm/drm_irq.h>
-#include <drm/drm_gem_shmem_helper.h>
+#include <drm/drm_fourcc.h>
+#include <drm/drm_atomic.h>
+#include <drm/drm_plane_helper.h>
+#include <drm/drm_gem_cma_helper.h>
 #include <drm/drm_gem_framebuffer_helper.h>
 #include <drm/drm_atomic_helper.h>
 #include <drm/drm_probe_helper.h>
 #include <drm/drm_fb_helper.h>
+#include <drm/drm_fb_cma_helper.h>
 
 #include "drm-rcm-vdu-reg.h"
 
@@ -71,6 +76,23 @@
 #define CRG_VDU_UPD_CK_UPD_CKDIV (1U << 0)
 // ????
 
+struct osd_area_desc {
+	__le32 next;
+	__le32 image_base;
+	__le16 width;
+	__le16 height;
+	__le16 x;
+	__le16 y;
+	__le16 pitch;
+	u8 flags;
+	u8 alpha;
+	u8 pad[12];
+};
+
+struct dma_data {
+	struct osd_area_desc osd_area_descs[2];
+};
+
 struct vdu_device {
 	struct drm_device drm_dev;
 	struct platform_device *pdev;
@@ -80,17 +102,19 @@ struct vdu_device {
 
 	u32 vdu_index; // for PLL setup
 	struct regmap *pll_control;
+	struct dma_data *dma_data;
+	dma_addr_t dma_data_phys_addr;
 
 	struct drm_crtc crtc;
 	struct drm_plane primary_plane;
 	bool primary_plane_initialized;
 	struct drm_encoder encoder;
 
-	// ???
-	struct drm_pending_vblank_event *event; // ???
+	unsigned osd_area_desc_free_index;
+	struct drm_pending_vblank_event *pending_vblank_event;
 };
 
-DEFINE_DRM_GEM_FOPS(rcm_vdu_fops);
+DEFINE_DRM_GEM_CMA_FOPS(rcm_vdu_fops);
 static irqreturn_t irq_handler(int irq, void *arg);
 
 static struct drm_driver rcm_vdu_drm_driver = {
@@ -101,12 +125,15 @@ static struct drm_driver rcm_vdu_drm_driver = {
 	.major = DRIVER_MAJOR,
 	.minor = DRIVER_MINOR,
 	.fops = &rcm_vdu_fops,
-	DRM_GEM_SHMEM_DRIVER_OPS,
-	.irq_handler = irq_handler
+	.irq_handler = irq_handler,
+	DRM_GEM_CMA_VMAP_DRIVER_OPS
 };
 
+static struct drm_framebuffer *fb_create(
+	struct drm_device *dev, struct drm_file *file, const struct drm_mode_fb_cmd2 *mode_cmd);
+
 static const struct drm_mode_config_funcs mode_config_funcs = {
-	.fb_create = drm_gem_fb_create, // ??? check format
+	.fb_create = fb_create,
 	.atomic_check = drm_atomic_helper_check,
 	.atomic_commit = drm_atomic_helper_commit,
 };
@@ -125,22 +152,18 @@ static const uint64_t plane_format_modifiers[] = {
 static const struct drm_plane_funcs plane_funcs = {
 	.update_plane = drm_atomic_helper_update_plane,
 	.disable_plane = drm_atomic_helper_disable_plane,
-	// ??? .reset = rcar_du_plane_reset,
 	.reset = drm_atomic_helper_plane_reset,
 	.destroy = drm_plane_cleanup,
-	// ??? .atomic_duplicate_state = rcar_du_plane_atomic_duplicate_state,
 	.atomic_duplicate_state = drm_atomic_helper_plane_duplicate_state,
-	// ??? .atomic_destroy_state = rcar_du_plane_atomic_destroy_state,
-	.atomic_destroy_state = drm_atomic_helper_plane_destroy_state,
-	// ??? .atomic_set_property = rcar_du_plane_atomic_set_property,
-	// ??? .atomic_get_property = rcar_du_plane_atomic_get_property,
+	.atomic_destroy_state = drm_atomic_helper_plane_destroy_state
 };
 
+static int plane_atomic_check(struct drm_plane *plane, struct drm_plane_state *plane_state);
 static void plane_atomic_update(struct drm_plane *plane, struct drm_plane_state *old_state);
 
 static const struct drm_plane_helper_funcs plane_helper_funcs = {
-	// ??? .atomic_check = rcar_du_plane_atomic_check,
-	.atomic_update = plane_atomic_update,
+	.atomic_check = plane_atomic_check,
+	.atomic_update = plane_atomic_update
 };
 
 int (*enable_vblank)(struct drm_crtc *crtc);
@@ -150,28 +173,22 @@ static void crtc_disable_vblank(struct drm_crtc *crtc);
 
 static const struct drm_crtc_funcs crtc_funcs = {
 	.reset = drm_atomic_helper_crtc_reset,
-	// ??? .reset = rcar_du_crtc_reset,
 	.destroy = drm_crtc_cleanup,
 	.set_config = drm_atomic_helper_set_config,
 	.page_flip = drm_atomic_helper_page_flip,
-	// ??? .atomic_duplicate_state = rcar_du_crtc_atomic_duplicate_state,
 	.atomic_duplicate_state = drm_atomic_helper_crtc_duplicate_state,
-	// ??? .atomic_destroy_state = rcar_du_crtc_atomic_destroy_state,
 	.atomic_destroy_state = drm_atomic_helper_crtc_destroy_state,
 	.enable_vblank = crtc_enable_vblank,
 	.disable_vblank = crtc_disable_vblank
 };
 
 static enum drm_mode_status crtc_mode_valid(struct drm_crtc *crtc, const struct drm_display_mode *mode);
-static void crtc_atomic_begin(struct drm_crtc *crtc, struct drm_crtc_state *old_crtc_state);
 static void crtc_atomic_flush(struct drm_crtc *crtc, struct drm_crtc_state *old_crtc_state);
 static void crtc_atomic_enable(struct drm_crtc *crtc, struct drm_crtc_state *old_crtc_state);
 static void crtc_atomic_disable(struct drm_crtc *crtc, struct drm_crtc_state *old_crtc_state);
 
 static const struct drm_crtc_helper_funcs crtc_helper_funcs = {
 	.mode_valid = crtc_mode_valid,
-	// ??? .atomic_check = rcar_du_crtc_atomic_check,
-	.atomic_begin = crtc_atomic_begin,
 	.atomic_flush = crtc_atomic_flush,
 	.atomic_enable = crtc_atomic_enable,
 	.atomic_disable = crtc_atomic_disable
@@ -186,7 +203,6 @@ static inline struct vdu_device *drm_dev_to_vdu(struct drm_device *drm_dev)
 	return container_of(drm_dev, struct vdu_device, drm_dev);
 }
 
-// ???
 static u32 read_vdu_reg(struct vdu_device *vdu, u32 offset)
 {
 	return ioread32(vdu->regs + offset);
@@ -197,7 +213,48 @@ static void write_vdu_reg(struct vdu_device *vdu, u32 offset, u32 data)
 	iowrite32(data, vdu->regs + offset);
 }
 
-static int init_pll(struct vdu_device *dev)
+// ????
+/* ??? static void debug_dump_irqs(struct vdu_device *vdu)
+{
+	u32 ena_save;
+	u32 curr_state;
+	u32 new_state;
+	u32 new_states[32];
+	unsigned new_states_count;
+	unsigned long timeout;
+	unsigned i;
+
+	ena_save = read_vdu_reg(vdu, VDU_REG_INT_ENA);
+	write_vdu_reg(vdu, VDU_REG_INT_ENA, 0);
+
+	write_vdu_reg(vdu, VDU_REG_INT_STAT, 0xFFFFFFFF);
+	curr_state = 0xFFFFFFFF; // fake value
+
+	pr_info("*********** irq dump begin ***********\n");
+
+	timeout = jiffies + HZ / 10;
+	new_states_count = 0;
+	while (true) {
+		if (time_after(jiffies, timeout))
+			break;
+		new_state = read_vdu_reg(vdu, VDU_REG_INT_STAT);
+		if (new_state != curr_state) {
+			new_states[new_states_count++] = new_state;
+			curr_state = new_state;
+		}
+	}
+
+	for (i = 0; i < new_states_count; ++i)
+		pr_info("irq_stat = 0x%08X\n", new_states[i]);
+
+	pr_info("ctrl_ena = 0x%08X\n", read_vdu_reg(vdu, VDU_REG_CTRL_ENA));
+	pr_info("*********** irq dump end ***********\n");
+
+	write_vdu_reg(vdu, VDU_REG_INT_ENA, ena_save);
+}*/
+// ???
+
+static int init_pll(struct vdu_device *vdu)
 {
 	int ret;
 	unsigned data;
@@ -205,27 +262,27 @@ static int init_pll(struct vdu_device *dev)
 	unsigned long timeout;
 
 	// unlock the PLL controller if it is locked
-	ret = regmap_read(dev->pll_control, CRG_VDU_WR_LOCK, &data);
+	ret = regmap_read(vdu->pll_control, CRG_VDU_WR_LOCK, &data);
 	if (ret != 0)
 		return ret;
 	locked = (data == CRG_VDU_WR_LOCK_LOCKED);
 	if (locked) {
-		ret = regmap_write(dev->pll_control, CRG_VDU_WR_LOCK, CRG_VDU_WR_LOCK_UNLOCK);
+		ret = regmap_write(vdu->pll_control, CRG_VDU_WR_LOCK, CRG_VDU_WR_LOCK_UNLOCK);
 		if (ret != 0)
 			return ret;
 	}
 
 	// restart the PLL controller
-	ret = regmap_write(dev->pll_control, CRG_VDU_PLL_PRDIV, 1); // div 1
+	ret = regmap_write(vdu->pll_control, CRG_VDU_PLL_PRDIV, 1); // div 1
 	if (ret != 0)
 		return ret;
-	ret = regmap_write(dev->pll_control, CRG_VDU_PLL_FBDIV, 88); // mul 88
+	ret = regmap_write(vdu->pll_control, CRG_VDU_PLL_FBDIV, 88); // mul 88
 	if (ret != 0)
 		return ret;
-	ret = regmap_write(dev->pll_control, CRG_VDU_PLL_PSDIV, 2); // dev 4
+	ret = regmap_write(vdu->pll_control, CRG_VDU_PLL_PSDIV, 2); // dev 4
 	if (ret != 0)
 		return ret;
-	ret = regmap_write(dev->pll_control, CRG_VDU_PLL_CTRL,
+	ret = regmap_write(vdu->pll_control, CRG_VDU_PLL_CTRL,
 		CRG_VDU_PLL_CTRL_PLL_ENABLE | CRG_VDU_PLL_CTRL_PLL_RESTART);
 	if (ret != 0)
 		return ret;
@@ -235,12 +292,12 @@ static int init_pll(struct vdu_device *dev)
 	while (true) {
 		if (time_after(jiffies, timeout))
 			return -ETIMEDOUT;
-		ret = regmap_read(dev->pll_control, CRG_VDU_PLL_CTRL, &data);
+		ret = regmap_read(vdu->pll_control, CRG_VDU_PLL_CTRL, &data);
 		if (ret != 0)
 			return ret;
 		if ((data & CRG_VDU_PLL_CTRL_PLL_RESTART) != 0)
 			continue;
-		ret = regmap_read(dev->pll_control, CRG_VDU_PLL_STATE, &data);
+		ret = regmap_read(vdu->pll_control, CRG_VDU_PLL_STATE, &data);
 		if (ret != 0)
 			return ret;
 		if ((data & CRG_VDU_PLL_STATE_PLL_RDY) != 0)
@@ -249,7 +306,7 @@ static int init_pll(struct vdu_device *dev)
 
 	// lock the PLL controller if needed
 	if (locked) {
-		ret = regmap_write(dev->pll_control, CRG_VDU_WR_LOCK, CRG_VDU_WR_LOCK_LOCK);
+		ret = regmap_write(vdu->pll_control, CRG_VDU_WR_LOCK, CRG_VDU_WR_LOCK_LOCK);
 		if (ret != 0)
 			return ret;
 	}
@@ -310,19 +367,19 @@ int setup_pll_pixel_clock(struct vdu_device *vdu, unsigned hz)
 	return 0;
 }
 
-// ???
-// ??? comment
-static int turn_off_vdu(struct vdu_device *vdu)
+static int reset_vdu(struct vdu_device *vdu)
 {
+	unsigned i;
+
 	// disable and clear all interrupts
 	write_vdu_reg(vdu, VDU_REG_INT_ENA, 0);
 	write_vdu_reg(vdu, VDU_REG_INT_STAT, 0xFFFFFFFF);
 
-	// turn off the hardware
+	// turn off the hardware if it is needed
 	if ((read_vdu_reg(vdu, VDU_REG_CTRL_ENA) & VDU_REG_CTRL_ENA_VDU_ENA_MASK) != 0)
 	{
 		write_vdu_reg(vdu, VDU_REG_CTRL_ENA, 0);
-		udelay(100000);
+		udelay(100000); // ???
 		if ((read_vdu_reg(vdu, VDU_REG_INT_STAT) & VDU_REG_INT_VDU_ENA_MASK) == 0) {
 			dev_err(&vdu->pdev->dev, "hardware off timeout");
 			return -ETIMEDOUT;
@@ -330,23 +387,9 @@ static int turn_off_vdu(struct vdu_device *vdu)
 		write_vdu_reg(vdu, VDU_REG_INT_STAT, 0xFFFFFFFF);
 	}
 
-	return 0;
-}
-// ???
-
-// ???
-static int reset_vdu(struct vdu_device *vdu)
-{
-	unsigned i;
-	int ret;
-
-	ret = turn_off_vdu(vdu);
-	if (ret != 0)
-		return 0;
-
 	// reset the hardware
 	write_vdu_reg(vdu, VDU_REG_CTRL_SOFT_RESET, VDU_REG_CTRL_SOFT_RESET_MASK);
-	udelay(1000);
+	udelay(1000); // ???
 	if ((read_vdu_reg(vdu, VDU_REG_CTRL_SOFT_RESET) & VDU_REG_CTRL_SOFT_RESET_MASK) != 0) {
 		dev_err(&vdu->pdev->dev, "hardware reset timeout");
 		return -ETIMEDOUT;
@@ -356,30 +399,26 @@ static int reset_vdu(struct vdu_device *vdu)
 	for (i = 0; i < vdu->regs_size; i += 4)
 		iowrite32(0, vdu->regs + i);
 
+	// setup AXI bus parameters
+	write_vdu_reg(vdu, VDU_REG_MI_AXI_MVL_PARAM, 0x0F310000);
+	write_vdu_reg(vdu, VDU_REG_MI_AXI_OSD_PARAM, 0x0F310000);
+
 	return 0;
 }
-// ???
 
-// ??? drmM functions
-
-// ???
-// ??? comment
-static int set_crtc_mode(struct vdu_device *vdu, struct drm_display_mode *mode)
+// VDU must be disabled before the call
+static void set_crtc_mode(struct vdu_device *vdu, struct drm_display_mode *mode)
 {
 	u32 val;
 	int ret;
 
-	pr_info("*** set_crtc_mode\n"); // ???
+	pr_info("*** set_crtc_mode VDU_REG_CTRL_ENA=0x%08X\n", read_vdu_reg(vdu, VDU_REG_CTRL_ENA)); // ???
 
-	ret = turn_off_vdu(vdu);
-	if (ret != 0)
-		return 0;
+	WARN_ON((read_vdu_reg(vdu, VDU_REG_CTRL_ENA) & VDU_REG_CTRL_ENA_VDU_ENA_MASK) != 0);
 
 	ret = setup_pll_pixel_clock(vdu, mode->clock * 1000);
-	if (ret != 0) {
+	if (ret != 0)
 		dev_err(&vdu->pdev->dev, "PLL setup error (%i)\n", ret);
-		return ret;
-	}
 
 	val = VDU_REG_DIF_CTRL_EXT_SYNC_EN_MASK
 		| VDU_REG_DIF_CTRL_SDTV_FORM_MASK
@@ -416,13 +455,13 @@ static int set_crtc_mode(struct vdu_device *vdu, struct drm_display_mode *mode)
 		| ((mode->vsync_end - mode->vsync_start) << VDU_REG_DIF_VSYNC_LEN_SHIFT);
 	write_vdu_reg(vdu, VDU_REG_DIF_VSYNC, val);
 
-	pr_info("*** VDU_REG_DIF_CTRL = 0x%08X\n", read_vdu_reg(vdu, VDU_REG_DIF_CTRL));
-	pr_info("*** VDU_REG_DIF_BGR = 0x%08X\n", read_vdu_reg(vdu, VDU_REG_DIF_BGR));
-	pr_info("*** VDU_REG_DIF_BLANK = 0x%08X\n", read_vdu_reg(vdu, VDU_REG_DIF_BLANK));
-	pr_info("*** VDU_REG_DIF_FSIZE = 0x%08X\n", read_vdu_reg(vdu, VDU_REG_DIF_FSIZE));
-	pr_info("*** VDU_REG_DIF_ASIZE = 0x%08X\n", read_vdu_reg(vdu, VDU_REG_DIF_ASIZE));
-	pr_info("*** VDU_REG_DIF_HSYNC = 0x%08X\n", read_vdu_reg(vdu, VDU_REG_DIF_HSYNC));
-	pr_info("*** VDU_REG_DIF_VSYNC = 0x%08X\n", read_vdu_reg(vdu, VDU_REG_DIF_VSYNC));
+	// ??? pr_info("*** VDU_REG_DIF_CTRL = 0x%08X\n", read_vdu_reg(vdu, VDU_REG_DIF_CTRL));
+	// ??? pr_info("*** VDU_REG_DIF_BGR = 0x%08X\n", read_vdu_reg(vdu, VDU_REG_DIF_BGR));
+	// ??? pr_info("*** VDU_REG_DIF_BLANK = 0x%08X\n", read_vdu_reg(vdu, VDU_REG_DIF_BLANK));
+	// ??? pr_info("*** VDU_REG_DIF_FSIZE = 0x%08X\n", read_vdu_reg(vdu, VDU_REG_DIF_FSIZE));
+	// ??? pr_info("*** VDU_REG_DIF_ASIZE = 0x%08X\n", read_vdu_reg(vdu, VDU_REG_DIF_ASIZE));
+	// ??? pr_info("*** VDU_REG_DIF_HSYNC = 0x%08X\n", read_vdu_reg(vdu, VDU_REG_DIF_HSYNC));
+	// ??? pr_info("*** VDU_REG_DIF_VSYNC = 0x%08X\n", read_vdu_reg(vdu, VDU_REG_DIF_VSYNC));
 
 	// ???
 	{
@@ -456,15 +495,117 @@ static int set_crtc_mode(struct vdu_device *vdu, struct drm_display_mode *mode)
 		write_vdu_reg(vdu, VDU_REG_DIF_BGR, val);
 	}
 
-	return 0;
+	// ???
+	val = (0x2F << VDU_REG_OSD_COLOR_Y_R_SHIFT)
+		| (0x9D << VDU_REG_OSD_COLOR_Y_G_SHIFT)
+		| (0x10 << VDU_REG_OSD_COLOR_Y_B_SHIFT);
+	write_vdu_reg(vdu, VDU_REG_OSD_COLOR_Y, val);
+
+	val = (0x11A << VDU_REG_OSD_COLOR_CB_R_SHIFT)
+		| (0x157 << VDU_REG_OSD_COLOR_CB_G_SHIFT)
+		| (0x70 << VDU_REG_OSD_COLOR_CB_B_SHIFT);
+	write_vdu_reg(vdu, VDU_REG_OSD_COLOR_CB, val);
+
+	val = (0x70 << VDU_REG_OSD_COLOR_CR_R_SHIFT)
+		| (0x166 << VDU_REG_OSD_COLOR_CR_G_SHIFT)
+		| (0x10a << VDU_REG_OSD_COLOR_CR_B_SHIFT);
+	write_vdu_reg(vdu, VDU_REG_OSD_COLOR_CR, val);
 }
 // ???
 
-static void plane_atomic_update(struct drm_plane *plane, struct drm_plane_state *old_state)
+// ???
+// ??? comment
+static int init_osd(struct vdu_device *vdu)
 {
+	// ??? u32 val;
+	dma_addr_t phys_addr;
+
+	phys_addr = vdu->dma_data_phys_addr + offsetof(struct dma_data, osd_area_descs);
+	write_vdu_reg(vdu, VDU_REG_OSD_BASE0, phys_addr);
+	write_vdu_reg(vdu, VDU_REG_OSD_BASE1, phys_addr + sizeof(struct osd_area_desc));
+
+	// ???
+	pr_info("*** VDU_REG_OSD_BASE0 = 0x%08X\n", read_vdu_reg(vdu, VDU_REG_OSD_BASE0));
+	pr_info("*** VDU_REG_OSD_BASE1 = 0x%08X\n", read_vdu_reg(vdu, VDU_REG_OSD_BASE1));
+
+
 	//
 	// ???
 	//
+
+	return 0;
+}
+
+// ???
+// ??? comment
+// ??? fb must be
+static void fill_osd_descriptor(struct vdu_device *vdu, struct osd_area_desc *desc)
+{
+	struct drm_plane_state *state = vdu->primary_plane.state;
+
+	desc->next = 0;
+	desc->image_base = cpu_to_le32(drm_fb_cma_get_gem_addr(state->fb, state, 0));
+	desc->width = cpu_to_le16(state->dst.x2 - state->dst.x1 - 1);
+	desc->height = cpu_to_le16(state->dst.y2 - state->dst.y1 - 1);
+	desc->x = cpu_to_le16(0);
+	desc->y = cpu_to_le16(0);
+	desc->pitch = cpu_to_le16(state->fb->pitches[0] / state->fb->format->char_per_block[0]);
+	desc->flags = 0; // ???5:6:6 ARGB - ???
+	desc->alpha = 0xFF; // ???
+
+	pr_info("*** osd next = 0x%08X\n", (unsigned)le32_to_cpu(desc->next));
+	pr_info("*** osd image_base = 0x%08X\n", (unsigned)le32_to_cpu(desc->image_base));
+	pr_info("*** osd width = %u\n", (unsigned)le16_to_cpu(desc->width));
+	pr_info("*** osd height = %u\n", (unsigned)le16_to_cpu(desc->height));
+	pr_info("*** osd x = %u\n", (unsigned)le16_to_cpu(desc->x));
+	pr_info("*** osd y = %u\n", (unsigned)le16_to_cpu(desc->y));
+	pr_info("*** osd pitch = %u\n", (unsigned)le16_to_cpu(desc->pitch));
+	pr_info("*** osd flags = 0x%08X\n", (unsigned)desc->flags);
+	pr_info("*** osd alpha = %u\n", (unsigned)desc->alpha);
+}
+
+static struct drm_framebuffer *fb_create(
+	struct drm_device *dev, struct drm_file *file, const struct drm_mode_fb_cmd2 *mode_cmd)
+{
+	bool pixel_format_found;
+	const struct drm_format_info *format;
+	int i;
+
+	// check format
+	pixel_format_found = false;
+	for (i = 0; i < ARRAY_SIZE(plane_formats); ++i) {
+		if (plane_formats[i] == mode_cmd->pixel_format) {
+			pixel_format_found = true;
+			break;
+		}
+	}
+	if (!pixel_format_found)
+		return ERR_PTR(-EINVAL);
+
+	// check pitch
+	format = drm_format_info(mode_cmd->pixel_format);
+	if (mode_cmd->pitches[0] / format->char_per_block[0] > (1 << 13) - 1) // ??? 13
+		return ERR_PTR(-EINVAL);
+
+	return drm_gem_fb_create(dev, file, mode_cmd);
+}
+
+static int plane_atomic_check(struct drm_plane *plane, struct drm_plane_state *plane_state)
+{
+	struct vdu_device *vdu = drm_dev_to_vdu(plane->dev);
+	struct drm_crtc_state *crtc_state;
+
+	crtc_state = drm_atomic_get_new_crtc_state(plane_state->state, &vdu->crtc);
+
+	return drm_atomic_helper_check_plane_state(plane_state, crtc_state,
+		DRM_PLANE_HELPER_NO_SCALING, DRM_PLANE_HELPER_NO_SCALING, false, true);
+}
+
+// It is an empty function.
+// All work is done in the crtc_atomic_flush function, but the function must be present
+// (the DRM framework expectes a non-null pointer to the function).
+static void plane_atomic_update(struct drm_plane *plane, struct drm_plane_state *old_state)
+{
 }
 
 static int crtc_enable_vblank(struct drm_crtc *crtc)
@@ -546,18 +687,11 @@ static enum drm_mode_status crtc_mode_valid(struct drm_crtc *crtc, const struct 
 	return MODE_OK;
 }
 
-static void crtc_atomic_begin(struct drm_crtc *crtc, struct drm_crtc_state *old_crtc_state)
-{
-	//
-	// ???
-	//
-	pr_info("*** crt_atomic_begin\n"); // ???
-}
-
 static void crtc_atomic_flush(struct drm_crtc *crtc, struct drm_crtc_state *old_crtc_state)
 {
 	struct vdu_device *vdu = drm_dev_to_vdu(crtc->dev);
-	int ret; // /??
+	dma_addr_t phys_addr;
+	u32 val;
 	//
 	// ???
 	//
@@ -565,28 +699,35 @@ static void crtc_atomic_flush(struct drm_crtc *crtc, struct drm_crtc_state *old_
 	//
 	// ???
 	//
-	if (crtc->state->mode_changed) {
-		ret = set_crtc_mode(vdu, &crtc->state->mode); // ???
-		if (ret != 0)
-			dev_err(&vdu->pdev->dev, "cannot setup crtc mode\n");
+	if (crtc->state->mode_changed)
+		set_crtc_mode(vdu, &crtc->state->mode);
+
+	if (vdu->primary_plane.state->fb != NULL) {
+		fill_osd_descriptor(vdu, &vdu->dma_data->osd_area_descs[vdu->osd_area_desc_free_index]); // ??? need fill_osd_descriptor
+		phys_addr = vdu->dma_data_phys_addr + offsetof(struct dma_data, osd_area_descs)
+			+ vdu->osd_area_desc_free_index * sizeof(struct osd_area_desc);
+		++vdu->osd_area_desc_free_index;
+		// ??? race
+		write_vdu_reg(vdu, VDU_REG_OSD_BASE0, phys_addr);
+		write_vdu_reg(vdu, VDU_REG_OSD_BASE1, phys_addr);
+		val = read_vdu_reg(vdu, VDU_REG_CTRL_ENA);
+		val |= VDU_REG_CTRL_ENA_OSD_ENA_MASK | VDU_REG_CTRL_ENA_OSD_BASE_SW_ENA_MASK;
+		write_vdu_reg(vdu, VDU_REG_CTRL_ENA, val);
+		//
+		val = VDU_REG_OSD_CTRL_ARGB_RGBA_MASK; // ??? val
+		write_vdu_reg(vdu, VDU_REG_OSD_CTRL, val);
 	} else {
-		pr_info("*** no mode changed\n");
+		// ??? race
+		val = read_vdu_reg(vdu, VDU_REG_CTRL_ENA);
+		val &= ~(VDU_REG_CTRL_ENA_OSD_ENA_MASK | VDU_REG_CTRL_ENA_OSD_BASE_SW_ENA_MASK);
+		write_vdu_reg(vdu, VDU_REG_CTRL_ENA, val);
 	}
 
-	// ??? not here
-	/* ??? if (crtc->state->event) {
-		pr_info("*** crtc_atomic_flush event 0x%08X\n", (unsigned)crtc->state->event); // ???
-		spin_lock_irq(&crtc->dev->event_lock);
-		drm_crtc_send_vblank_event(crtc, crtc->state->event);
-		crtc->state->event = NULL;
-		spin_unlock_irq(&crtc->dev->event_lock);
-	}*/
-
-	// ???
+	// if the event was not handled before it must be handled here
 	if (crtc->state->event) {
 		pr_info("*** crtc_atomic_flush event 0x%08X\n", (unsigned)crtc->state->event); // ???
 		spin_lock_irq(&crtc->dev->event_lock);
-		vdu->event = crtc->state->event;
+		vdu->pending_vblank_event = crtc->state->event;
 		crtc->state->event = NULL;
 		spin_unlock_irq(&crtc->dev->event_lock);
 	}
@@ -597,10 +738,47 @@ static void crtc_atomic_enable(struct drm_crtc *crtc, struct drm_crtc_state *old
 	struct vdu_device *vdu = drm_dev_to_vdu(crtc->dev);
 	u32 val;
 
+	/* ??? // ??? debug
+	vdu->dma_data->osd_area_descs[0].next = 0;
+	// ??? vdu->dma_data->osd_area_descs[0].image_base = cpu_to_le32(vdu->dma_data_phys_addr + offsetof(struct dma_data, screen_buffer_0));
+	vdu->dma_data->osd_area_descs[0].width = cpu_to_le16(1920 - 1);
+	// ??? vdu->dma_data->osd_area_descs[0].width = cpu_to_le16(512 - 1);
+	vdu->dma_data->osd_area_descs[0].height = cpu_to_le16(1080 - 1);
+	// ??? vdu->dma_data->osd_area_descs[0].height = cpu_to_le16(512 - 1);
+	vdu->dma_data->osd_area_descs[0].x = cpu_to_le16(0);
+	vdu->dma_data->osd_area_descs[0].y = cpu_to_le16(0);
+	vdu->dma_data->osd_area_descs[0].pitch = cpu_to_le16(1920);
+	vdu->dma_data->osd_area_descs[0].flags = 0; // ???5:6:6 ARGB - ???
+	vdu->dma_data->osd_area_descs[0].alpha = 0xFF; // ???
+	// ????
+	vdu->dma_data->osd_area_descs[1].next = 0;
+	// ??? vdu->dma_data->osd_area_descs[1].image_base = cpu_to_le32(vdu->dma_data_phys_addr + offsetof(struct dma_data, screen_buffer_1));
+	vdu->dma_data->osd_area_descs[1].width = cpu_to_le16(1920 - 1);
+	// ??? vdu->dma_data->osd_area_descs[1].width = cpu_to_le16(512 - 1);
+	vdu->dma_data->osd_area_descs[1].height = cpu_to_le16(1080 - 1);
+	// ??? vdu->dma_data->osd_area_descs[1].height = cpu_to_le16(512 - 1);
+	vdu->dma_data->osd_area_descs[1].x = cpu_to_le16(0);
+	vdu->dma_data->osd_area_descs[1].y = cpu_to_le16(0);
+	vdu->dma_data->osd_area_descs[1].pitch = cpu_to_le16(1920);
+	vdu->dma_data->osd_area_descs[1].flags = 0; // ???5:6:6 ARGB - ???
+	vdu->dma_data->osd_area_descs[1].alpha = 0xFF; // ???
+	//
+	pr_info("*** image base 0 = 0x%08X\n", le32_to_cpu(vdu->dma_data->osd_area_descs[0].image_base));
+	pr_info("*** image base 1 = 0x%08X\n", le32_to_cpu(vdu->dma_data->osd_area_descs[1].image_base));
+	//
+	val = VDU_REG_OSD_CTRL_ARGB_RGBA_MASK;
+	write_vdu_reg(vdu, VDU_REG_OSD_CTRL, val);
+	// ???
+	val = read_vdu_reg(vdu, VDU_REG_CTRL_ENA);
+	val |= VDU_REG_CTRL_ENA_OSD_ENA_MASK | VDU_REG_CTRL_ENA_OSD_BASE_SW_ENA_MASK;
+	write_vdu_reg(vdu, VDU_REG_CTRL_ENA, val);*/
+
+
 	// ??? race
 	val = read_vdu_reg(vdu, VDU_REG_CTRL_ENA);
 	val |= VDU_REG_CTRL_ENA_VDU_ENA_MASK;
 	write_vdu_reg(vdu, VDU_REG_CTRL_ENA, val);
+
 
 	drm_crtc_vblank_on(&vdu->crtc);
 	//
@@ -618,20 +796,18 @@ static void crtc_atomic_disable(struct drm_crtc *crtc, struct drm_crtc_state *ol
 
 	// ??? race
 	val = read_vdu_reg(vdu, VDU_REG_CTRL_ENA);
-	val &= VDU_REG_CTRL_ENA_VDU_ENA_MASK;
+	val &= ~(VDU_REG_CTRL_ENA_VDU_ENA_MASK | VDU_REG_CTRL_ENA_OSD_ENA_MASK | VDU_REG_CTRL_ENA_OSD_BASE_SW_ENA_MASK);
 	write_vdu_reg(vdu, VDU_REG_CTRL_ENA, val); // ??? wait
 
 	udelay(100000); // ???
 
+	// in case the apadter has been disabled all the resources can be released
+	spin_lock_irq(&crtc->dev->event_lock);
 	if (crtc->state->event) {
-		pr_info("*** crtc_atomic_disable event 0x%08X\n", (unsigned)crtc->state->event); // ???
-		// ???
-		// ??? spin_lock_irq(&crtc->dev->event_lock);
-		// ??? vdu->event = crtc->state->event;
-		// ??? crtc->state->event = NULL;
-		// ??? spin_unlock_irq(&crtc->dev->event_lock);
-		// ???
+		drm_crtc_send_vblank_event(crtc, crtc->state->event);
+		crtc->state->event = NULL;
 	}
+	spin_unlock_irq(&crtc->dev->event_lock);
 
 	//
 	// ???
@@ -643,9 +819,11 @@ static irqreturn_t irq_handler(int irq, void *arg)
 {
 	struct drm_device *drm_dev = arg;
 	struct vdu_device *vdu = drm_dev_to_vdu(drm_dev);
+	unsigned long irq_flags;
 	u32 irq_status;
 
-	pr_info("*** %lu %u irq 0x%08X 0x%08X\n", jiffies, HZ, read_vdu_reg(vdu, VDU_REG_INT_STAT), read_vdu_reg(vdu, VDU_REG_INT_ENA)); // ???
+	pr_info("*** %lu %u irq 0x%08X 0x%08X 0x%08X 0x%08X\n", jiffies, HZ, read_vdu_reg(vdu, VDU_REG_INT_STAT), read_vdu_reg(vdu, VDU_REG_INT_ENA),
+		read_vdu_reg(vdu, VDU_REG_STAT_VDU_AVMP), read_vdu_reg(vdu, VDU_REG_CTRL_ENA)); // ???
 
 	// ??? race
 	irq_status = read_vdu_reg(vdu, VDU_REG_INT_STAT);
@@ -656,25 +834,12 @@ static irqreturn_t irq_handler(int irq, void *arg)
 
 	if ((irq_status & VDU_REG_INT_VDU_STAT_SA_MASK) != 0) {
 		drm_crtc_handle_vblank(&vdu->crtc);
-		// ??? rcar_du_crtc_finish_page_flip(rcrtc);
 
-		/* ??? if (vdu->crtc.state->event) {
-			pr_info("*** irq_handler event 0x%08X\n", (unsigned)vdu->crtc.state->event); // ???
-			// ??? spin_lock_irq(&vdu->crtc.dev->event_lock); // ??? path
-			spin_lock(&vdu->crtc.dev->event_lock); // ??? path
-			drm_crtc_send_vblank_event(&vdu->crtc, vdu->crtc.state->event);
-			vdu->crtc.state->event = NULL;
-			// ??? spin_unlock_irq(&vdu->crtc.dev->event_lock); // ??? path
-			spin_unlock(&vdu->crtc.dev->event_lock); // ??? path
-		}*/
-		if (vdu->event) {
-			pr_info("*** irq_handler event 0x%08X\n", (unsigned)vdu->event); // ???
-			// ??? spin_lock_irq(&vdu->crtc.dev->event_lock); // ??? path
-			spin_lock(&vdu->crtc.dev->event_lock); // ??? path
-			drm_crtc_send_vblank_event(&vdu->crtc, vdu->event);
-			vdu->event = NULL;
-			// ??? spin_unlock_irq(&vdu->crtc.dev->event_lock); // ??? path
-			spin_unlock(&vdu->crtc.dev->event_lock); // ??? path
+		if (vdu->pending_vblank_event) {
+			spin_lock_irqsave(&vdu->crtc.dev->event_lock, irq_flags);
+			drm_crtc_send_vblank_event(&vdu->crtc, vdu->pending_vblank_event);
+			vdu->pending_vblank_event = NULL;
+			spin_unlock_irqrestore(&vdu->crtc.dev->event_lock, irq_flags);
 		}
 	}
 
@@ -693,6 +858,9 @@ static void mode_config_init(struct vdu_device *vdu)
 	// ??? dev->mode_config.preferred_depth = 16; // ???
 	// ??? dev->mode_config.prefer_shadow = 0; // ???
 	dev->mode_config.funcs = &mode_config_funcs;
+
+	// it is needed for correct working DRM_IOCTL_MODE_ADDFB2
+	dev->mode_config.quirk_addfb_prefer_host_byte_order = true;
 }
 
 static int crtc_init(struct vdu_device *vdu)
@@ -787,6 +955,9 @@ static int probe_internal(struct platform_device *pdev)
 	int irq;
 	int ret;
 
+	// setup dma -offset for bus
+	pdev->dev.archdata.dma_offset = -(pdev->dev.dma_pfn_offset << PAGE_SHIFT);
+
 	vdu = devm_kzalloc(&pdev->dev, sizeof(*vdu), GFP_KERNEL);
 	if (vdu == NULL)
 		return -ENOMEM;
@@ -836,6 +1007,15 @@ static int probe_internal(struct platform_device *pdev)
 	}
 
 	ret = reset_vdu(vdu); // ???
+	if (ret != 0)
+		return ret;
+
+	// ??? maybe up
+	vdu->dma_data = dmam_alloc_coherent(&pdev->dev, sizeof *(vdu->dma_data), &vdu->dma_data_phys_addr, GFP_KERNEL);
+	if (vdu->dma_data == NULL)
+		return -ENOMEM;
+
+	ret = init_osd(vdu); // ???
 	if (ret != 0)
 		return ret;
 
