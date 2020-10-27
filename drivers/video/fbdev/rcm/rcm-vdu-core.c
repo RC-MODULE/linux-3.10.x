@@ -787,13 +787,25 @@ static void mvdu_write_osd_weights(struct mvdu_device *dev)
 	/* Values from VDU documentation */
 
 	if (mvdu_mode_def(dev->current_mode) == MVDU_MODE_SD) {
+#ifdef CONFIG_1888TX018
+		y_r  = 0x42;  y_g  = 0x81;  y_b = 0x19;
+		cb_r = 0x126; cb_g = 0x14A; cb_b = 0x70;
+		cr_r = 0x70;  cr_g = 0x15E; cr_b = 0x112;
+#else
 		y_r  = 0x21;  y_g  = 0x41;  y_b = 0xd;
 		cb_r = 0x113; cb_g = 0x125; cb_b = 0x38;
 		cr_r = 0x38;  cr_g = 0x12f; cr_b = 0x109;
+#endif
 	} else {
+#ifdef CONFIG_1888TX018
+		y_r  = 0x2F;  y_g  = 0x9D;  y_b = 0x10;
+		cb_r = 0x11a; cb_g = 0x157; cb_b = 0x70;
+		cr_r = 0x70;  cr_g = 0x166; cr_b = 0x10A;
+#else
 		y_r  = 0x17;  y_g  = 0x4f;  y_b = 0x8;
 		cb_r = 0x10d; cb_g = 0x12b; cb_b = 0x38;
 		cr_r = 0x38;  cr_g = 0x133; cr_b = 0x105;
+#endif
 	}
 
 	val = shift_value(y_r, OSD_COLOR_Y_R) |
