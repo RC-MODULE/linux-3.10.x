@@ -40,9 +40,6 @@ struct rcm_thermal_regs {
 
 #define RCM_THERMAL_DATA_MASK 0xFFF
 
-#define read_term_reg(X) le32_to_cpu(__raw_readl(&(X)))
-#define write_term_reg(Y, X) __raw_writel(cpu_to_le32(Y), &(X))
-
 struct rcm_thermal_data {
 	struct device              *dev;
 	struct rcm_thermal_regs    *regs;
@@ -50,6 +47,7 @@ struct rcm_thermal_data {
 	int                         irq_overheat;
 	int                         temp_overheat;
 	int                         hist_overheat;
+	struct delayed_work         work;
 };
 
 static const int temp_table[] = {
@@ -94,6 +92,7 @@ static const int size_temp_table = sizeof(temp_table) / sizeof(temp_table[0]) / 
 static int rcm_thermal_to_temp(u32 val)
 {
 	int i;
+	int temp_diff, temp;
 
 	for(i = 0; i < size_temp_table; ++i)
 	{
@@ -104,12 +103,19 @@ static int rcm_thermal_to_temp(u32 val)
 	if (i == size_temp_table)
 		--i;
 
-	return temp_table[2 * i + 1] * 1000;
+
+	temp_diff = (temp_table[2 * i - 2] - temp_table[2 * i]) / 5;
+
+	temp = temp_table[2 * i - 1] + ((temp_table[2 * i - 2] - val) / temp_diff);
+
+	return temp * 1000;
+
 }
 
 static u32 rcm_thermal_from_temp(int temp)
 {
 	int i;
+	int adc_diff, adc, temp_diff;
 
 	for(i = 0; i < size_temp_table; ++i)
 	{
@@ -120,7 +126,36 @@ static u32 rcm_thermal_from_temp(int temp)
 	if (i == size_temp_table)
 		--i;
 
-	return temp_table[2 * i];
+	if (temp != temp_table[2 * i + 1] * 1000) {
+
+		adc_diff = (temp_table[2 * i - 2] - temp_table[2 * i]) / 5;
+
+		temp_diff = (temp/1000) - temp_table[2 * i - 1];
+
+		adc = temp_table[2 * (i-1)] - (adc_diff * temp_diff);
+
+		return adc;
+	}
+	else {
+
+		return temp_table[2 * i];
+
+	}
+	
+}
+
+
+static int read_term_reg(void __iomem *addr) {
+
+	u32 val;
+	val = ioread32(addr);
+
+	return val;
+}
+
+static void write_term_reg(u32 val, void __iomem *addr) {
+
+	iowrite32(val, addr);
 }
 
 /**
@@ -132,10 +167,12 @@ static u32 rcm_thermal_from_temp(int temp)
  */
 static int rcm_thermal_read_temp(void *_data, int *temp)
 {
+
 	struct rcm_thermal_data *data = _data;
 	u32 val;
 
-	val = read_term_reg(data->regs->data) & RCM_THERMAL_DATA_MASK;
+	val = read_term_reg(&data->regs->data);
+
 
 	pr_debug("%s: data = %u\n", __func__, val);
 
@@ -163,12 +200,40 @@ static int rcm_thermal_configure_overheat_interrupt(struct rcm_thermal_data *dat
 	data->temp_overheat = trips[i].temperature;
 	data->hist_overheat = trips[i].hysteresis;
 
-	write_term_reg(rcm_thermal_from_temp(data->temp_overheat), data->regs->level);
+	write_term_reg(rcm_thermal_from_temp(data->temp_overheat), &data->regs->level);
 
-	write_term_reg(1, data->regs->im);
+	write_term_reg(0, &data->regs->ir);
+	write_term_reg(1, &data->regs->im);
 
 	return 0;
 } 
+
+
+void rcm_thermal_work_handler(struct work_struct *_work){
+
+	struct rcm_thermal_data *data;
+	int temp, low;
+
+	data = container_of(_work, struct rcm_thermal_data, work.work);
+
+	rcm_thermal_read_temp(data, &temp);
+
+	low = data->temp_overheat - data->hist_overheat;
+
+
+	if (temp >= low) {
+		
+		queue_delayed_work(system_wq, &data->work, msecs_to_jiffies(1000));
+
+	}
+	else {
+
+		thermal_zone_device_update(data->tz_device,
+	                           THERMAL_EVENT_UNSPECIFIED);
+	}
+
+
+}
 
 static const struct thermal_zone_of_device_ops rcm_thermal_ops = {
 	.get_temp = rcm_thermal_read_temp
@@ -181,30 +246,24 @@ static irqreturn_t rcm_thermal_overheat_isr(int irq, void *dev_id)
 	return IRQ_WAKE_THREAD;
 }
 
+
 static irqreturn_t rcm_thermal_overheat_isr_thread(int irq, void *dev_id)
 {
 	struct rcm_thermal_data *data = dev_id;
 	int low = data->temp_overheat - data->hist_overheat;
 	int temp;
 
+
 	pr_debug("%s >>>\n", __func__);
 
+	write_term_reg(0, &data->regs->im);
 	thermal_zone_device_update(data->tz_device,
 	                           THERMAL_EVENT_UNSPECIFIED);
 
-	do {
-		msleep(RCM_THERMAL_OVERHEAT_POLL_DELAY);
-		rcm_thermal_read_temp(data, &temp);
-	} while (temp >= low);
+	queue_delayed_work(system_wq, &data->work, msecs_to_jiffies(1000));
 
-	thermal_zone_device_update(data->tz_device,
-	                           THERMAL_EVENT_UNSPECIFIED);
-
-	write_term_reg(0, data->regs->ir);
 
 	enable_irq(irq);
-
-	pr_debug("%s <<<\n", __func__);
 
 	return IRQ_HANDLED;
 }
@@ -225,12 +284,15 @@ static int rcm_thermal_probe(struct platform_device *pdev)
 		return -ENODEV;
 	}
 
+	INIT_DELAYED_WORK(&data->work, rcm_thermal_work_handler);
+
 	data->irq_overheat = platform_get_irq(pdev, 0);
 
+
 	if (data->irq_overheat > 0) {
-		write_term_reg(0, data->regs->level);
-		write_term_reg(0, data->regs->im);
-		write_term_reg(0, data->regs->ir);
+		write_term_reg(0, &data->regs->level);
+		write_term_reg(0, &data->regs->im);
+		write_term_reg(0, &data->regs->ir);
 
 		ret = devm_request_threaded_irq(data->dev, data->irq_overheat,
 		                                rcm_thermal_overheat_isr, 
@@ -244,8 +306,8 @@ static int rcm_thermal_probe(struct platform_device *pdev)
 		}
 	}
 
-	write_term_reg(0, data->regs->pwdn);
-	write_term_reg(1, data->regs->start);
+	write_term_reg(0, &data->regs->pwdn);
+	write_term_reg(1, &data->regs->start);
 
 	// It's needed to wait until data became valid (at least 7 ADC-cycles)
 	msleep(RCM_THERMAL_DATA_PREPARE_DELAY);
