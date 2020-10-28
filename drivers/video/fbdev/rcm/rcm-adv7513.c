@@ -319,7 +319,7 @@ static const struct of_device_id rcm_adv7513_of_ids[] = {
 MODULE_DEVICE_TABLE(of, rcm_adv7513_of_ids);
 
 static const struct i2c_device_id rcm_adv7513_i2c_ids[] = {
-	{ "rcm,rcm-adv7513" },
+	{ "rcm-adv7513" },
 	{ }
 };
 MODULE_DEVICE_TABLE(i2c, rcm_adv7513_i2c_ids);
