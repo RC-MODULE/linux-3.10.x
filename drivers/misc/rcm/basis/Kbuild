@@ -1,3 +1,9 @@
 CFLAGS_../../../tty/serial/rcm_muart.o = -DCONFIG_BASIS_PLATFORM -DCONFIG_SERIAL_MUART_NR_PORTS=2
-obj-m := basis-core.o rcm-pci-map.o device-test.o ../../../tty/serial/rcm_muart.o
+CFLAGS_../../../phy/rcm/phy-rcm-sgmii.o = -DCONFIG_BASIS_PLATFORM
+CFLAGS_../../../net/ethernet/rcm/rcm_mdio.o = -DCONFIG_BASIS_PLATFORM
+CFLAGS_../../../net/ethernet/rcm/rcm_mgeth.o = -DCONFIG_BASIS_PLATFORM
+CFLAGS_../../../net/ethernet/rcm/rcm_mgeth_mdma.o = -DCONFIG_BASIS_PLATFORM
+CFLAGS_../../../dma/rcm-mdma-desc-pool.o = -DCONFIG_BASIS_PLATFORM
+obj-m := basis-core.o rcm-pci-map.o device-test.o ../../../tty/serial/rcm_muart.o ../../../phy/rcm/phy-rcm-sgmii.o ../../../net/ethernet/rcm/rcm_mdio.o rcm-mgeth.o
 basis-core-y := basis-init.o basis-cfs.o basis-controller.o basis-device.o
+rcm-mgeth-y := ../../../dma/rcm-mdma-desc-pool.o ../../../net/ethernet/rcm/rcm_mgeth.o ../../../net/ethernet/rcm/rcm_mgeth_mdma.o
