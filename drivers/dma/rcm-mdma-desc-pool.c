@@ -7,15 +7,27 @@
 
 #include "rcm-mdma.h"
 
+#ifdef CONFIG_BASIS_PLATFORM
+#	include "../misc/rcm/basis/basis-device.h"
+#endif
+
 void mdma_desc_pool_free(struct mdma_desc_pool* pool)
 {
 	int i;
 
 	for (i = 0; i < pool->cnt_chunks; ++i) {
 		if (pool->chunks[i].descs) {
+#ifdef CONFIG_BASIS_PLATFORM
+			basis_device_dma_free_coherent(pool->dev,
+			                               MDMA_POOL_CHUNK_SIZE,
+			                               pool->chunks[i].descs,
+			                               pool->chunks[i].dma_addr,
+			                               pool->chunks[i].ep_addr);
+#else
 			dma_free_coherent(pool->dev, MDMA_POOL_CHUNK_SIZE,
 			                  pool->chunks[i].descs,
 			                  pool->chunks[i].dma_addr);
+#endif
 			pool->chunks[i].descs = NULL;
 		}
 	}
@@ -60,9 +72,17 @@ int mdma_desc_pool_alloc(struct mdma_desc_pool* pool, unsigned cnt,
 
 	while (pool->size < cnt) {
 		pool->chunks[i].descs = 
+#ifdef CONFIG_BASIS_PLATFORM
+			basis_device_dma_alloc_coherent(
+				dev, MDMA_POOL_CHUNK_SIZE,
+				&pool->chunks[i].dma_addr,
+				&pool->chunks[i].ep_addr,
+				GFP_KERNEL);
+#else
 			dma_alloc_coherent(dev, MDMA_POOL_CHUNK_SIZE,
 			                   &pool->chunks[i].dma_addr,
 			                   GFP_KERNEL);
+#endif
 
 		if (!pool->chunks[i].descs) {
 			dev_err(dev, 
@@ -100,9 +120,17 @@ int mdma_desc_pool_alloc(struct mdma_desc_pool* pool, unsigned cnt,
 		                        (pool->size - 1) % cnt_in_chunk;
 
 		if (i + 1 < pool->cnt_chunks)
+#ifdef CONFIG_BASIS_PLATFORM
+			link.memptr = pool->chunks[i + 1].ep_addr;
+#else
 			link.memptr = pool->chunks[i + 1].dma_addr;
+#endif
 		else
+#ifdef CONFIG_BASIS_PLATFORM
+			link.memptr = pool->chunks[0].ep_addr;
+#else
 			link.memptr = pool->chunks[0].dma_addr;
+#endif
 
 		pool->chunks[i].descs[num_in_chunk] = link;
 	}
@@ -124,8 +152,13 @@ dma_addr_t mdma_desc_pool_get_addr(struct mdma_desc_pool* pool, unsigned pos)
 	                              sizeof(struct mdma_desc_long_ll);
 	unsigned num_chunk = pos / cnt_in_chunk;
 
+#ifdef CONFIG_BASIS_PLATFORM
+	return pool->chunks[num_chunk].ep_addr + 
+	       (pos % cnt_in_chunk) * sizeof(struct mdma_desc_long_ll);
+#else
 	return pool->chunks[num_chunk].dma_addr + 
 	       (pos % cnt_in_chunk) * sizeof(struct mdma_desc_long_ll);
+#endif
 }
 
 struct mdma_desc_long_ll* mdma_desc_pool_get_desc(struct mdma_desc_pool* pool,

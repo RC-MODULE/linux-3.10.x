@@ -24,6 +24,9 @@ struct mdma_desc_long_ll {
 struct mdma_pool_chunk {
 	struct mdma_desc_long_ll *descs;
 	dma_addr_t                dma_addr;
+#ifdef CONFIG_BASIS_PLATFORM
+	u32                       ep_addr;
+#endif
 };
 
 struct mdma_desc_pool {

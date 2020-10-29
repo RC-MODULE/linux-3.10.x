@@ -934,6 +934,9 @@ static struct basis_device_ops rcm_mgeth_ops = {
 	.bind   = rcm_mgeth_bind,
 };
 
+BASIS_DEV_ATTR_U32_SHOW(rcm_mgeth_,  hwirq,     struct rcm_mgeth_data);
+BASIS_DEV_ATTR_U32_STORE(rcm_mgeth_, hwirq,     struct rcm_mgeth_data);
+
 BASIS_DEV_ATTR_U32_SHOW(rcm_mgeth_,  regs,      struct rcm_mgeth_data);
 BASIS_DEV_ATTR_U32_STORE(rcm_mgeth_, regs,      struct rcm_mgeth_data);
 
@@ -994,6 +997,7 @@ BASIS_DEV_ATTR_STR_STORE(rcm_mgeth_, phy_dev,   struct rcm_mgeth_data);
 BASIS_DEV_ATTR_STR_SHOW(rcm_mgeth_,  phy_mode,  struct rcm_mgeth_data);
 BASIS_DEV_ATTR_STR_STORE(rcm_mgeth_, phy_mode,  struct rcm_mgeth_data);
 
+CONFIGFS_ATTR(rcm_mgeth_, hwirq);
 CONFIGFS_ATTR(rcm_mgeth_, regs);
 CONFIGFS_ATTR(rcm_mgeth_, regs_size);
 
@@ -1018,6 +1022,7 @@ CONFIGFS_ATTR(rcm_mgeth_, phy_dev);
 CONFIGFS_ATTR(rcm_mgeth_, phy_mode);
 
 static struct configfs_attribute *rcm_mgeth_attrs[] = {
+	&rcm_mgeth_attr_hwirq,
 	&rcm_mgeth_attr_regs,
 	&rcm_mgeth_attr_regs_size,
 	&rcm_mgeth_attr_reg_rx_mask_0,
