@@ -89,6 +89,11 @@ int basis_controller_ep_map_addr(struct basis_controller *controller,
 
 	controller->ep_ob_addr[r] = addr;
 
+	dev_dbg(&controller->dev,
+	        "EP address mapped 0x%08X -> 0x%016llx (0x%X bytes) "
+	        "(region #%u)\n",
+	        addr, pci_addr, size, r);
+
 	return 0;
 }
 EXPORT_SYMBOL_GPL(basis_controller_ep_map_addr);
@@ -108,6 +113,9 @@ void basis_controller_ep_unmap_addr(struct basis_controller *controller,
 	basis_controller_ep_reset_outbound_region(controller->ep_base, r);
 
 	controller->ep_ob_addr[r] = 0;
+
+	dev_dbg(&controller->dev, "EP address unmapped 0x%08X (region #%u)\n",
+	        addr, r);
 }
 EXPORT_SYMBOL_GPL(basis_controller_ep_unmap_addr);
 
