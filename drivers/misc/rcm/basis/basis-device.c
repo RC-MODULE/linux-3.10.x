@@ -23,6 +23,159 @@ static DEFINE_MUTEX(basis_device_mutex);
 static struct bus_type basis_device_bus_type;
 static const struct device_type basis_device_type;
 
+void* basis_device_dma_alloc_coherent(struct device *dev,
+                                      size_t size, dma_addr_t *dma_addr,
+                                      u32 *ep_addr, gfp_t gfp)
+{
+	struct basis_device *device = to_basis_device(dev);
+	struct basis_controller* controller = device->controller;
+	void* cpu_addr;
+	int ret;
+	size_t sz = 1ULL << fls64(size - 1);
+
+	if (!controller) {
+		dev_err(dev,
+		        "No BASIS-controller bind. Can't allocate DMA memory.\n");
+		return NULL;
+	}
+
+	cpu_addr = dma_alloc_coherent(dev, sz, dma_addr, gfp);
+
+	if (!cpu_addr) {
+		dev_err(dev,
+		        "Failed to allocate DMA-coherent memory (%u bytes).\n",
+		        (unsigned)sz);
+		return NULL;
+	}
+
+	if (!IS_ALIGNED(*dma_addr, sz)) {
+		dev_err(dev,
+		        "Allocated DMA-buffer is not aligned as required "
+		        "(dma_addr: 0x%016llx, required alignment: 0x%08x).\n",
+		        (u64)(*dma_addr), (unsigned)sz);
+		goto err_free_coherent;
+	}
+
+	*ep_addr = basis_controller_ep_mem_alloc_addr(controller, sz);
+
+	if (*ep_addr == 0) {
+		dev_err(dev,
+		        "Failed to allocate EP-memory address (%u bytes).\n",
+		        (unsigned)sz);
+		goto err_free_coherent;
+	}
+
+	ret = basis_controller_ep_map_addr(controller, *ep_addr, *dma_addr, 
+	                                   sz);
+	if (ret) {
+		dev_err(dev, "Failed to map EP-memory.\n");
+		goto err_ep_mem_free;
+	}
+
+	return cpu_addr;
+
+err_ep_mem_free:
+	basis_controller_ep_mem_free_addr(controller, *ep_addr, sz);
+	*ep_addr = 0;
+
+err_free_coherent:
+	dma_free_coherent(dev, sz, cpu_addr, *dma_addr);
+	*dma_addr = 0;
+
+	return NULL;
+}
+EXPORT_SYMBOL_GPL(basis_device_dma_alloc_coherent);
+
+void basis_device_dma_free_coherent(struct device *dev,
+                                    size_t size, void* cpu_addr,
+                                    dma_addr_t dma_addr, u32 ep_addr)
+{
+	struct basis_device *device = to_basis_device(dev);
+	struct basis_controller* controller = device->controller;
+	size_t sz = 1ULL << fls64(size - 1);
+
+	if (!controller)
+		return;
+
+	basis_controller_ep_unmap_addr(controller, ep_addr);
+	basis_controller_ep_mem_free_addr(controller, ep_addr, sz);
+	dma_free_coherent(dev, sz, cpu_addr, dma_addr);
+}
+EXPORT_SYMBOL_GPL(basis_device_dma_free_coherent);
+
+dma_addr_t basis_device_dma_map_single(struct device *dev, void *ptr,
+                                       size_t size, enum dma_data_direction dir,
+                                       u32 *ep_addr)
+{
+	struct basis_device *device = to_basis_device(dev);
+	struct basis_controller* controller = device->controller;
+	int ret;
+	dma_addr_t dma_addr;
+	size_t sz = 1ULL << fls64(size - 1);
+
+	if (!controller) {
+		dev_err(dev,
+		        "No BASIS-controller bind. Can't map to DMA memory.\n");
+		return DMA_MAPPING_ERROR;
+	}
+
+	dma_addr = dma_map_single(dev, ptr, sz, dir);
+	if (dma_addr == DMA_MAPPING_ERROR)
+		return DMA_MAPPING_ERROR;
+
+	if (!IS_ALIGNED(dma_addr, sz)) {
+		dev_err(dev,
+		        "Mapped DMA-buffer is not aligned as required "
+		        "(dma_addr: 0x%016llx, required alignment: 0x%08x).\n",
+		        (u64)dma_addr, (unsigned)sz);
+		goto err_dma_unmap;
+	}
+
+	*ep_addr = basis_controller_ep_mem_alloc_addr(controller, sz);
+
+	if (*ep_addr == 0) {
+		dev_err(dev,
+		        "Failed to allocate EP-memory address (%u bytes).\n",
+		        (unsigned)sz);
+		goto err_dma_unmap;
+	}
+
+	ret = basis_controller_ep_map_addr(controller, *ep_addr, dma_addr, sz);
+	if (ret) {
+		dev_err(dev, "Failed to map EP-memory.\n");
+		goto err_ep_mem_free;
+	}
+
+	return dma_addr;
+
+err_ep_mem_free:
+	basis_controller_ep_mem_free_addr(controller, *ep_addr, sz);
+	*ep_addr = 0;
+
+err_dma_unmap:
+	dma_unmap_single(dev, dma_addr, sz, dir);
+
+	return DMA_MAPPING_ERROR;
+}
+EXPORT_SYMBOL_GPL(basis_device_dma_map_single);
+
+void basis_device_dma_unmap_single(struct device *dev, dma_addr_t dma_addr,
+                                   u32 ep_addr, size_t size,
+                                   enum dma_data_direction dir)
+{
+	struct basis_device *device = to_basis_device(dev);
+	struct basis_controller* controller = device->controller;
+	size_t sz = 1ULL << fls64(size - 1);
+
+	if (!controller)
+		return;
+
+	basis_controller_ep_unmap_addr(controller, ep_addr);
+	basis_controller_ep_mem_free_addr(controller, ep_addr, sz);
+	dma_unmap_single(dev, dma_addr, sz, dir);
+}
+EXPORT_SYMBOL_GPL(basis_device_dma_unmap_single);
+
 static int basis_regmap_read(void *context, unsigned int reg, unsigned int *val)
 {
 	void __iomem *base = context;

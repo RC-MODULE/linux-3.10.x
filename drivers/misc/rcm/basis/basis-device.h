@@ -11,6 +11,7 @@
 #include <linux/device.h>
 #include <linux/mod_devicetable.h>
 #include <linux/regmap.h>
+#include <linux/dma-mapping.h>
 
 struct basis_device;
 
@@ -85,6 +86,20 @@ int basis_device_bind(struct basis_device *device);
 void basis_device_unbind(struct basis_device *device);
 
 struct basis_device *basis_device_find(const char *name);
+
+void* basis_device_dma_alloc_coherent(struct device *dev,
+                                      size_t size, dma_addr_t *dma_addr,
+                                      u32 *ep_addr, gfp_t gfp);
+void basis_device_dma_free_coherent(struct device *dev,
+                                    size_t size, void* cpu_addr,
+                                    dma_addr_t dma_addr, u32 ep_addr);
+dma_addr_t basis_device_dma_map_single(struct device *dev, void *ptr,
+                                       size_t size, enum dma_data_direction dir,
+                                       u32 *ep_addr);
+void basis_device_dma_unmap_single(struct device *dev, dma_addr_t dma_addr,
+                                   u32 ep_addr, size_t size,
+                                   enum dma_data_direction dir);
+
 
 #define BASIS_DEV_ATTR_U32_SHOW(_pfx, _name, _data_type)		       \
 static ssize_t _pfx##_name##_show(struct config_item *item, char *page)	       \
