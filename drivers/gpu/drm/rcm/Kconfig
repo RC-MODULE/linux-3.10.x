@@ -1,0 +1,7 @@
+config DRM_RCM_VDU_DIRECT
+	tristate "RCM VDU KMS driver with direct rendering"
+	depends on DRM
+	select DRM_KMS_HELPER
+	select DRM_KMS_CMA_HELPER
+	help
+	 This is a KMS driver for RCM VDU display apater.
