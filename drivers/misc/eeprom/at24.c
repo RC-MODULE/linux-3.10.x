@@ -107,7 +107,11 @@ struct at24_data {
  *
  * This value is forced to be a power of two so that writes align on pages.
  */
+#ifndef CONFIG_I2C_RCM_BC048
 static unsigned int at24_io_limit = 128;
+#else
+static unsigned int at24_io_limit = 64;
+#endif
 module_param_named(io_limit, at24_io_limit, uint, 0);
 MODULE_PARM_DESC(at24_io_limit, "Maximum bytes per I/O (default 128)");
 

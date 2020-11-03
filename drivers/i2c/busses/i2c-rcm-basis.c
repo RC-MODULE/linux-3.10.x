@@ -48,7 +48,7 @@
 #define		RCM_I2C_CTRL_W		BIT(4)	/* Write command */
 #define		RCM_I2C_CTRL_REPEAT	BIT(5)	/* Send REPEAT START */
 #define		RCM_I2C_CTRL_STOP	BIT(6)	/* Send STOP cindition */
-#define RCM_I2C_SR	0x14			/* Status Register */
+#define RCM_I2C_SR	0x18			/* Status Register */
 #define		RCM_I2C_SR_BSY		BIT(0)	/* I2C bus busy */
 #define		RCM_I2C_SR_ARB		BIT(1)	/* Arbitration lost */
 #define		RCM_I2C_SR_DNE		BIT(2)	/* One byte complete trans */
@@ -58,12 +58,12 @@
 #define		RCM_I2C_SR_TXF		BIT(6)	/* TX FIFO FULL */
 #define		RCM_I2C_SR_RXE		BIT(7)	/* RX FIFO EMPTY */
 #define		RCM_I2C_SR_NACK		BIT(9)	/* Not Acknowledge */
-#define RCM_I2C_TX	0x18			/* TX FIFO */
+#define RCM_I2C_TX	0x30			/* TX FIFO */
 #define RCM_I2C_NMBR	0x1C			/* Number of bytes to receive */
-#define RCM_I2C_RX	0x20			/* RX FIFO */
+#define RCM_I2C_RX	0x430			/* RX FIFO */
 #define RCM_I2C_CLK	0x24			/* Clock Prescale Register*/
 #define RCM_I2C_FILL	0x28			/* FIFO FILL SET */
-#define RCM_I2C_RES_STAT	0x2C		/* Reset Status Register */
+#define RCM_I2C_RES_STAT	0x20		/* Reset Status Register */
 
 #define RCM_I2C_IRQ_MASK	(RCM_I2C_IER_ARB | RCM_I2C_IER_TXE	\
 				| RCM_I2C_IER_NACK)
@@ -118,12 +118,15 @@ struct rcm_i2c {
 
 static const struct of_device_id rcm_i2c_match[] = {
 	{
-		.compatible = "rcm,rcm-i2c",
+		.compatible = "rcm,i2c-bc048",
 	},
 	{
-		.compatible = "at,24c64",
+		.compatible = "atmel,24c64",
 	},
-	{},
+	{
+		.compatible = "microchip,24c64",
+	},
+	{}
 };
 
 static inline void i2c_write(uint32_t value, void *base, uint32_t addr)
@@ -131,7 +134,7 @@ static inline void i2c_write(uint32_t value, void *base, uint32_t addr)
 	writel(value, base + addr);
 
 #if defined DEBUG
-	dev_dbg(rdev->dev, "iowrite32(0x%x, base + 0x%x);\n", value, addr);
+	//dev_dbg(rdev->dev, "iowrite32(0x%x, base + 0x%x);\n", value, addr);
 #endif
 }
 
@@ -140,7 +143,7 @@ static inline uint32_t i2c_read(void *base, uint32_t addr)
 	uint32_t reg =  readl(base + addr);
 
 #if defined DEBUG
-	dev_dbg(rdev->dev, "/* ioread32(base + 0x%x) == 0x%x */\n", addr, reg);
+	//dev_dbg(rdev->dev, "/* ioread32(base + 0x%x) == 0x%x */\n", addr, reg);
 #endif
 	return reg;
 }
@@ -559,7 +562,7 @@ static int rcm_i2c_probe(struct platform_device *pdev)
 				       &rdev->bus_clock);
 
 	if (val) {
-		dev_err(&pdev->dev, "Default to 100kHz\n");
+		dev_warn(&pdev->dev, "Default to 100kHz\n");
 		rdev->bus_clock = 100000;	/* default clock rate */
 	}
 
