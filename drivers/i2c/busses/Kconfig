@@ -904,6 +904,12 @@ config I2C_QUP
 	  This driver can also be built as a module.  If so, the module
 	  will be called i2c-qup.
 
+config I2C_RCM_BC048
+	tristate "RCM 1888BC048 I2C controller"
+	depends on TARGET_1888BC048
+	help
+		Support I2C bus for 1888BC048 based SoC
+
 config I2C_RIIC
 	tristate "Renesas RIIC adapter"
 	depends on ARCH_RENESAS || COMPILE_TEST
