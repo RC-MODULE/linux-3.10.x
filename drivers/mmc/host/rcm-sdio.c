@@ -66,6 +66,11 @@
 
 #include "rcm-sdio.h"
 
+#ifdef CONFIG_BASIS_PLATFORM
+#	include "../../misc/rcm/basis/basis-device.h"
+#	include "../../misc/rcm/basis/basis-controller.h"
+#	include "../../misc/rcm/basis/basis-cfs.h"
+#endif
 
 #define DRIVER_NAME	"rmsdio"
 
@@ -118,6 +123,23 @@ struct rmsdio_host {
 
 	dma_addr_t dma_addr;
 	void      *buff;
+#ifdef CONFIG_BASIS_PLATFORM
+	u32        ep_addr;
+#endif
+
+#ifdef CONFIG_BASIS_PLATFORM
+	struct basis_device    *device;
+	u32                     regs;
+	u32                     regs_size;
+	u32                     hwirq;
+	u32                     min_frequency;
+	u32                     max_frequency;
+	u32                     axi_awlen;
+	u32                     axi_arlen;
+	u32                     axi_awsize;
+	u32                     axi_arsize;
+	u32                     sdio_timeout_ms;
+#endif
 };
 
 
@@ -798,8 +820,12 @@ static void rmsdio_request(struct mmc_host * mmc, struct mmc_request * mrq)
 		}
 
 		if (wret == 0) {
-			host->dma_target = host->dma_addr;//sg_dma_address(data->sg);
-			host->cpu_target = host->buff;//sg_virt(data->sg);
+#ifdef CONFIG_BASIS_PLATFORM
+			host->dma_target = host->ep_addr;
+#else
+			host->dma_target = host->dma_addr;
+#endif
+			host->cpu_target = host->buff;
 			/* Do all the register voodoo */
 			ctrlreg |= RMSDIO_CTRL_HAVEDATA;
 			rmsdio_setup_data(host, data);
@@ -1003,6 +1029,246 @@ static const struct mmc_host_ops rmsdio_ops = {
 	.enable_sdio_irq	= rmsdio_enable_sdio_irq,
 };
 
+#ifdef CONFIG_BASIS_PLATFORM
+
+static int rmsdio_bind(struct basis_device *device)
+{
+	struct rmsdio_host *host = basis_device_get_drvdata(device);
+	struct mmc_host *mmc = host->mmc;
+	int ret = 0, irq;
+
+	printk(KERN_INFO "rmsdio: RC Module SD/SDIO/MMC driver (c) 2018\n");
+
+	dev_info(&device->dev, "%s: controller: \"%s\"\n",
+	         __func__, dev_name(&device->controller->dev));
+
+	irq = irq_create_mapping(device->controller->domain, host->hwirq);
+
+	if (irq < 0)
+		return -ENXIO;
+
+	STEP(1);
+
+	mmc->ops = &rmsdio_ops;
+	/* TODO: More caps & ocr_avail */
+
+	mmc->ocr_avail = MMC_VDD_32_33 | MMC_VDD_33_34 | MMC_VDD_33_34;
+	mmc->caps = MMC_CAP_4_BIT_DATA | MMC_CAP_SDIO_IRQ;
+
+	mmc->max_blk_size = 512;
+	mmc->max_blk_count = 0xff; 
+
+	mmc->max_segs = 1;
+	mmc->max_seg_size = mmc->max_blk_size * mmc->max_blk_count;
+	mmc->max_req_size = mmc->max_blk_size * mmc->max_blk_count;
+
+	mmc->f_max = host->max_frequency;
+	mmc->f_min = host->min_frequency;
+
+	host->sdio_timeout = msecs_to_jiffies(host->sdio_timeout_ms);
+
+	host->dccr0_flags = (host->axi_awlen & RMSDIO_AXI_BURST_MASK) << RMSDIO_AXI_BURST_SHIFT;
+	host->dccr0_flags |= (host->axi_awsize & RMSDIO_AXI_SIZE_MASK) << RMSDIO_AXI_SIZE_SHIFT;
+	host->dccr1_flags = (host->axi_arlen & RMSDIO_AXI_BURST_MASK) << RMSDIO_AXI_BURST_SHIFT;
+	host->dccr1_flags |= (host->axi_arsize & RMSDIO_AXI_SIZE_MASK) << RMSDIO_AXI_SIZE_SHIFT;
+
+	pr_debug("rmsdio: maximum clock is %d Hz minimum is %d Hz\n", mmc->f_max, mmc->f_min);
+	host->sdio_irq_enabled = 0;
+	spin_lock_init(&host->lock);
+	host->base = devm_ioremap(&device->dev,
+	                          host->regs + device->controller->ep_base_phys,
+	                          host->regs_size);
+	printk(KERN_INFO "rmsdio start is 0x%Lx, base is 0x%x\n", 
+	       (long long)(host->regs + device->controller->ep_base_phys),
+	       (uint) host->base);
+	if (!host->base) {
+		ret = -ENOMEM;
+		goto out;
+	}
+
+#ifdef CONFIG_1888TX018
+	device->dev.archdata.dma_offset = - (device->dev.dma_pfn_offset << PAGE_SHIFT);
+#endif
+
+	host->buff = basis_device_dma_alloc_coherent(&device->dev,
+	                                             mmc->max_req_size,
+	                                             &host->dma_addr,
+	                                             &host->ep_addr,
+	                                             GFP_KERNEL);
+	if (!host->buff) {
+		dev_err(&device->dev,
+		        "Failed to allocate DMA-coherent memory (%u bytes).\n",
+		        mmc->max_req_size);
+		goto out;
+	}
+
+	STEP(4);
+
+	init_waitqueue_head(&host->queue);
+
+	rmsdio_power_down(host);
+	ret = request_irq(irq, rmsdio_irq, 0, DRIVER_NAME, host);
+	if (ret) {
+		LIGHT();
+		pr_err("%s: cannot assign irq %d\n", DRIVER_NAME, irq);
+		LIGHT();
+		goto out;
+	}
+
+	STEP(5);
+
+	host->irq = irq;
+	pr_debug("rmsdio: Using irq %d\n", irq);
+
+	rmsdio_clean_isr(host, 0); /* Clean up anything */
+	ret = mmc_add_host(mmc);
+	if (ret)
+		goto out;
+
+	/* Now we need to enable all in-host isrs. We'll use 
+	   added regs for fine-tuning */
+				    
+	STEP(7);
+
+	pr_notice("%s: %s driver initialized, ",
+		  mmc_hostname(mmc), DRIVER_NAME);
+
+	host->dev->coherent_dma_mask=DMA_BIT_MASK(25);
+	printk(KERN_INFO "rmsdio becomes ready\n");
+	return 0;
+	
+out:
+	if (host) {
+		if (host->irq)
+			free_irq(host->irq, host);
+		if (!host->buff)
+			basis_device_dma_free_coherent(&device->dev,
+			                               mmc->max_req_size,
+			                               host->buff,
+			                               host->dma_addr,
+			                               host->ep_addr);
+	}
+	if (mmc)
+		mmc_free_host(mmc);
+
+	return ret;
+}
+
+static void rmsdio_unbind(struct basis_device *device)
+{
+}
+
+static int rmsdio_probe(struct basis_device *device)
+{
+	struct device *dev = &device->dev;
+	struct mmc_host *mmc;
+	struct rmsdio_host *host;
+
+	mmc = mmc_alloc_host(sizeof(struct rmsdio_host), dev);
+	if (!mmc)
+		return -ENOMEM;
+
+	host = mmc_priv(mmc);
+	host->mmc = mmc;
+	host->dev = dev;
+
+	host->axi_arlen = 15;	// 16 data frames
+	host->axi_awlen = 15;	// 16 data frames
+	host->axi_arsize = 2;	// 4 bytes
+	host->axi_awsize = 2;	// 4 bytes
+
+	host->sdio_timeout_ms = 200;
+
+	host->device = device;
+
+	basis_device_set_drvdata(device, host);
+
+	return 0;
+}
+
+static const struct basis_device_id rmsdio_ids[] = {
+	{
+		.name = "rcm-sdio",
+	},
+	{},
+};
+
+static struct basis_device_ops rcm_sdio_ops = {
+	.unbind = rmsdio_unbind,
+	.bind   = rmsdio_bind,
+};
+
+BASIS_DEV_ATTR_U32_SHOW(rmsdio_,  hwirq,           struct rmsdio_host);
+BASIS_DEV_ATTR_U32_STORE(rmsdio_, hwirq,           struct rmsdio_host);
+
+BASIS_DEV_ATTR_U32_SHOW(rmsdio_,  regs,            struct rmsdio_host);
+BASIS_DEV_ATTR_U32_STORE(rmsdio_, regs,            struct rmsdio_host);
+
+BASIS_DEV_ATTR_U32_SHOW(rmsdio_,  regs_size,       struct rmsdio_host);
+BASIS_DEV_ATTR_U32_STORE(rmsdio_, regs_size,       struct rmsdio_host);
+
+BASIS_DEV_ATTR_U32_SHOW(rmsdio_,  base_clock,      struct rmsdio_host);
+BASIS_DEV_ATTR_U32_STORE(rmsdio_, base_clock,      struct rmsdio_host);
+
+BASIS_DEV_ATTR_U32_SHOW(rmsdio_,  min_frequency,   struct rmsdio_host);
+BASIS_DEV_ATTR_U32_STORE(rmsdio_, min_frequency,   struct rmsdio_host);
+
+BASIS_DEV_ATTR_U32_SHOW(rmsdio_,  max_frequency,   struct rmsdio_host);
+BASIS_DEV_ATTR_U32_STORE(rmsdio_, max_frequency,   struct rmsdio_host);
+
+BASIS_DEV_ATTR_U32_SHOW(rmsdio_,  axi_awlen,       struct rmsdio_host);
+BASIS_DEV_ATTR_U32_STORE(rmsdio_, axi_awlen,       struct rmsdio_host);
+
+BASIS_DEV_ATTR_U32_SHOW(rmsdio_,  axi_arlen,       struct rmsdio_host);
+BASIS_DEV_ATTR_U32_STORE(rmsdio_, axi_arlen,       struct rmsdio_host);
+
+BASIS_DEV_ATTR_U32_SHOW(rmsdio_,  axi_awsize,      struct rmsdio_host);
+BASIS_DEV_ATTR_U32_STORE(rmsdio_, axi_awsize,      struct rmsdio_host);
+
+BASIS_DEV_ATTR_U32_SHOW(rmsdio_,  axi_arsize,      struct rmsdio_host);
+BASIS_DEV_ATTR_U32_STORE(rmsdio_, axi_arsize,      struct rmsdio_host);
+
+BASIS_DEV_ATTR_U32_SHOW(rmsdio_,  sdio_timeout_ms, struct rmsdio_host);
+BASIS_DEV_ATTR_U32_STORE(rmsdio_, sdio_timeout_ms, struct rmsdio_host);
+
+CONFIGFS_ATTR(rmsdio_, hwirq);
+CONFIGFS_ATTR(rmsdio_, regs);
+CONFIGFS_ATTR(rmsdio_, regs_size);
+CONFIGFS_ATTR(rmsdio_, base_clock);
+CONFIGFS_ATTR(rmsdio_, min_frequency);
+CONFIGFS_ATTR(rmsdio_, max_frequency);
+CONFIGFS_ATTR(rmsdio_, axi_awlen);
+CONFIGFS_ATTR(rmsdio_, axi_arlen);
+CONFIGFS_ATTR(rmsdio_, axi_awsize);
+CONFIGFS_ATTR(rmsdio_, axi_arsize);
+CONFIGFS_ATTR(rmsdio_, sdio_timeout_ms);
+
+static struct configfs_attribute *rmsdio_attrs[] = {
+	&rmsdio_attr_hwirq,
+	&rmsdio_attr_regs,
+	&rmsdio_attr_regs_size,
+	&rmsdio_attr_base_clock,
+	&rmsdio_attr_min_frequency,
+	&rmsdio_attr_max_frequency,
+	&rmsdio_attr_axi_awlen,
+	&rmsdio_attr_axi_arlen,
+	&rmsdio_attr_axi_awsize,
+	&rmsdio_attr_axi_arsize,
+	&rmsdio_attr_sdio_timeout_ms,
+	NULL,
+};
+
+static struct basis_device_driver rcm_mmc_driver = {
+	.driver.name    = DRIVER_NAME,
+	.probe          = rmsdio_probe,
+	.id_table       = rmsdio_ids,
+	.ops            = &rcm_sdio_ops,
+	.owner          = THIS_MODULE,
+	.attrs          = rmsdio_attrs,
+};
+module_basis_driver(rcm_mmc_driver);
+
+#else /* CONFIG_BASIS_PLATFORM */
 
 static int rmsdio_probe(struct platform_device *pdev)
 {
@@ -1328,6 +1594,8 @@ static struct platform_driver rcm_mmc_driver = {
 };
 
 module_platform_driver(rcm_mmc_driver);
+
+#endif /* CONFIG_BASIS_PLATFORM */
 
 MODULE_DESCRIPTION("RCM SD/MMC driver");
 MODULE_AUTHOR("Astrosoft <astrosoft@astrosoft.ru>");
