@@ -115,6 +115,9 @@ struct rmsdio_host {
 	unsigned int dccr0_flags;
 	unsigned int dccr1_flags;
 	unsigned int sdio_timeout;
+
+	dma_addr_t dma_addr;
+	void      *buff;
 };
 
 
@@ -715,7 +718,8 @@ static void rmsdio_request(struct mmc_host * mmc, struct mmc_request * mrq)
 	struct mmc_data * data = mrq->data;
 	uint32_t ctrlreg = 0, intr = 0, err_status = 0;
 	uint32_t eereg;
-	int wret;
+	int wret = 0;
+	size_t copied;
 	
 	MARK();
 	
@@ -782,15 +786,20 @@ static void rmsdio_request(struct mmc_host * mmc, struct mmc_request * mrq)
 		eereg |= RMSDIO_ERR_ENABLE_CARD_INT; 
 
 	if ( data ) {  
-		int dir = (data->flags & MMC_DATA_WRITE) ? DMA_TO_DEVICE : DMA_FROM_DEVICE;
-		/* Prepare dma stuff */
-		host->sg_frags = dma_map_sg(mmc_dev(host->mmc), data->sg, data->sg_len, dir);
-		if (host->sg_frags == 0) {
-			dev_err(host->dev, "cannot map sg list\n");
-			wret = -EFAULT;
-		} else {
-			host->dma_target = sg_dma_address(data->sg);
-			host->cpu_target = sg_virt(data->sg);
+		if (data->flags & MMC_DATA_WRITE) {
+			copied = sg_copy_to_buffer(data->sg, data->sg_len, 
+			                           host->buff,
+			                           data->blocks * data->blksz);
+			if (copied != data->blocks * data->blksz) {
+				dev_err(host->dev,
+				        "cannot copy data from sg list\n");
+				wret = -EFAULT;
+			}
+		}
+
+		if (wret == 0) {
+			host->dma_target = host->dma_addr;//sg_dma_address(data->sg);
+			host->cpu_target = host->buff;//sg_virt(data->sg);
 			/* Do all the register voodoo */
 			ctrlreg |= RMSDIO_CTRL_HAVEDATA;
 			rmsdio_setup_data(host, data);
@@ -807,7 +816,18 @@ static void rmsdio_request(struct mmc_host * mmc, struct mmc_request * mrq)
 
 			wret = (data->flags & MMC_DATA_WRITE ? rmsdio_write_flow : rmsdio_read_flow)(mmc, mrq, ctrlreg);
 
-			dma_unmap_sg(mmc_dev(host->mmc), data->sg, data->sg_len, dir);
+			if ((wret > 0) &&
+			    ((data->flags & MMC_DATA_WRITE) == 0)) {
+				copied = sg_copy_from_buffer(data->sg,
+				                             data->sg_len, 
+				                             host->buff,
+				                             data->blocks * data->blksz);
+				if (copied != data->blocks * data->blksz) {
+					dev_err(host->dev,
+					        "cannot copy data to sg list\n");
+					wret = -EFAULT;
+				}
+			}
 		}
 	} else {
 		/* We only reach this place when no xfer data issued */
@@ -1113,6 +1133,15 @@ static int rmsdio_probe(struct platform_device *pdev)
 	pdev->dev.archdata.dma_offset = - (pdev->dev.dma_pfn_offset << PAGE_SHIFT); /* before v5.5 it was: set_dma_offset(&pdev->dev, - (pdev->dev.dma_pfn_offset << PAGE_SHIFT)); */
 #endif
 
+	host->buff = dma_alloc_coherent(&pdev->dev, mmc->max_req_size,
+	                                &host->dma_addr, GFP_KERNEL);
+	if (!host->buff) {
+		dev_err(&pdev->dev,
+		        "Failed to allocate DMA-coherent memory (%u bytes).\n",
+		        mmc->max_req_size);
+		goto out;
+	}
+
 	STEP(4);
 
 	init_waitqueue_head(&host->queue);
@@ -1205,6 +1234,9 @@ out:
 //		}
 //		if (host->gpio_write_protect)
 //			gpio_free(host->gpio_write_protect);
+		if (host->buff)
+			dma_free_coherent(&pdev->dev, mmc->max_req_size,
+			                  host->buff, host->dma_addr);
 		if (host->base)
 			iounmap(host->base);
 	}
