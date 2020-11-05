@@ -48,7 +48,7 @@ static inline void gpio_write(uint32_t value, void *base, uint32_t addr)
 {
 	writel(value, base + addr);
 #if defined DEBUG
-	dev_dbg(rdev->dev, "iowrite32(0x%x, base + 0x%x);\n", value, addr);
+	//dev_dbg(rdev->dev, "iowrite32(0x%x, base + 0x%x);\n", value, addr);
 #endif
 }
 
@@ -56,7 +56,7 @@ static inline uint32_t gpio_read(void *base, uint32_t addr)
 {
 	uint32_t reg =  readl(base + addr);
 #if defined DEBUG
-	dev_dbg(rdev->dev, "/* ioread32(base + 0x%x) == 0x%x */\n", addr, reg);
+	//dev_dbg(rdev->dev, "/* ioread32(base + 0x%x) == 0x%x */\n", addr, reg);
 #endif
 	return reg;
 }
@@ -222,12 +222,7 @@ static int rcm_gpio_irq_domain_map(struct irq_domain *d, unsigned int irq,
 	irq_set_chip_data(irq, d->host_data);
 	irq_set_chip_and_handler(irq, &rcm_irq_chip,
 					handle_simple_irq);
-#ifdef CONFIG_ARM
-	set_irq_flags(irq, IRQF_VALID);
-#else
 	irq_set_noprobe(irq);
-#endif
-
 	return 0;
 }
 
@@ -235,8 +230,9 @@ static struct irq_domain_ops rcm_gpio_irq_domain_ops = {
 	.map = rcm_gpio_irq_domain_map,
 };
 
-static void rcm_irq_handler(unsigned int irq, struct irq_desc *desc)
+static void rcm_irq_handler(struct irq_desc *desc)
 {
+	unsigned int irq = irq_desc_get_irq(desc);
 	struct rcm_gpio_chip *rcm_gc = irq_get_handler_data(irq);
 	struct irq_chip *chip = irq_desc_get_chip(desc);
 	void __iomem *base;
@@ -306,11 +302,8 @@ static int rcm_gpio_probe(struct platform_device *pdev)
 	rcm_gc->gchip.owner = THIS_MODULE;
 	rcm_gc->gchip.to_irq = rcm_gpio_to_irq;
 	rcm_gc->gchip.base = -1;
-
-	if (ret) {
-		dev_err(&pdev->dev, "Failed adding memory mapped gpiochip\n");
-		return ret;
-	}
+	rcm_gc->gchip.parent = &pdev->dev;
+	rcm_gc->gchip.label = pdev->name;
 
 	platform_set_drvdata(pdev, rcm_gc);
 
@@ -328,23 +321,25 @@ static int rcm_gpio_probe(struct platform_device *pdev)
 
 	ret = gpiochip_add(&rcm_gc->gchip);
 
+	if (ret) {
+		dev_err(&pdev->dev,
+			"Failed to register gpio chip (%d)\n", ret);
+		goto free;
+	}
+
 	for (i = 0; i < rcm_gc->gchip.ngpio; i++) {
 		int irq = rcm_gpio_to_irq(&rcm_gc->gchip, i);
 
 		irq_set_chip_and_handler(irq, &rcm_irq_chip, handle_simple_irq);
-#ifdef CONFIG_ARM
-		set_irq_flags(irq, IRQF_VALID);
-#else
 		irq_set_noprobe(irq);
-#endif
 	}
 
 	irq_set_chained_handler(rcm_gc->irq, rcm_irq_handler);
 	irq_set_handler_data(rcm_gc->irq, rcm_gc);
 
-	dev_info(&pdev->dev, "RC Module GPIO probe complete (%d .. %d)\n",
+	dev_info(&pdev->dev, "RC Module GPIO probe complete (%d..%d)\n",
 				rcm_gc->gchip.base,
-				rcm_gc->gchip.base + rcm_gc->gchip.ngpio);
+				rcm_gc->gchip.base + rcm_gc->gchip.ngpio - 1);
 
 	return 0;
 free:
@@ -355,15 +350,12 @@ free:
 static int rcm_gpio_remove(struct platform_device *pdev)
 {
 	struct rcm_gpio_chip *rcm_gc = platform_get_drvdata(pdev);
-	int rv;
-
-	rv = gpiochip_remove(&rcm_gc->gchip);
-
+	gpiochip_remove(&rcm_gc->gchip);
 	return 0;
 }
 
 static const struct of_device_id rcm_gpio_of_match[] = {
-	{ .compatible = "rcm-gpio" },
+	{ .compatible = "rcm,gpio-bc048" },
 	{ },
 };
 
