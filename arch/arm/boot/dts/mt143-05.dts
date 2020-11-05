@@ -482,7 +482,7 @@
         };
 
         gpio0: gpio0@01088000 {
-            compatible = "rcm,gpio";
+            compatible = "rcm,gpio-bc048";
             #address-cells = <1>;
             #size-cells = <0>;
             clocks = <&clock_axi_slow>;
@@ -490,13 +490,12 @@
             interrupt-parent = <&gic0>;
             interrupts = <0 46 1>;  // rising
             gpio-controller;
-            #gpio-cells = <2>;
-            interrupt-controller;
-            #interrupt-cells = <2>;
+            #gpio-cells = <2>;  // Local offset to the GPIO line and the consumer flags, such as active low (inverted) or open drain
+            status = "okay";
         };
 
         gpio1: gpio1@01089000 {
-            compatible = "rcm,gpio";
+            compatible = "rcm,gpio-bc048";
             #address-cells = <1>;
             #size-cells = <0>;
             clocks = <&clock_axi_slow>;
@@ -505,12 +504,11 @@
             interrupts = <0 47 1>;  // rising
             gpio-controller;
             #gpio-cells = <2>;
-            interrupt-controller;
-            #interrupt-cells = <2>;
+            status = "okay";
         };
 
         gpio2: gpio0@0108a000 {
-            compatible = "rcm,gpio";
+            compatible = "rcm,gpio-bc048";
             #address-cells = <1>;
             #size-cells = <0>;
             clocks = <&clock_axi_slow>;
@@ -519,12 +517,11 @@
             interrupts = <0 48 1>;  // rising
             gpio-controller;
             #gpio-cells = <2>;
-            interrupt-controller;
-            #interrupt-cells = <2>;
+            status = "okay";
         };
 
         gpio3: gpio0@0108b000 {
-            compatible = "rcm,gpio";
+            compatible = "rcm,gpio-bc048";
             #address-cells = <1>;
             #size-cells = <0>;
             clocks = <&clock_axi_slow>;
@@ -533,12 +530,11 @@
             interrupts = <0 49 1>;  // rising
             gpio-controller;
             #gpio-cells = <2>;
-            interrupt-controller;
-            #interrupt-cells = <2>;
+            status = "okay";
         };
 
         gpio4: gpio0@0108c000 {
-            compatible = "rcm,gpio";
+            compatible = "rcm,gpio-bc048";
             #address-cells = <1>;
             #size-cells = <0>;
             clocks = <&clock_axi_slow>;
@@ -547,8 +543,7 @@
             interrupts = <0 50 1>;  // rising
             gpio-controller;
             #gpio-cells = <2>;
-            interrupt-controller;
-            #interrupt-cells = <2>;
+            status = "okay";
         };
 
         sctl: sctl@0x0108d000 {

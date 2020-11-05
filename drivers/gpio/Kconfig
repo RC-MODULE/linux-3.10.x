@@ -461,6 +461,12 @@ config GPIO_RCM_PL060
 	help
 	  Say yes here to support the RC Module PL060 GPIO device
 
+config GPIO_RCM_BC048
+	tristate "RCM 1888BC048 GPIO controller"
+	depends on TARGET_1888BC048
+	help
+		Support GPIO pins for 1888BC048 based SoC
+
 config GPIO_RDA
 	bool "RDA Micro GPIO controller support"
 	depends on ARCH_RDA || COMPILE_TEST
