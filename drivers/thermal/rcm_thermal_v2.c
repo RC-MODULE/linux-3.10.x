@@ -1,7 +1,10 @@
 /*
  * RCM temperature thermal.
  *
- * Copyright (C) 2020 Alexander Shtreys <alexander.shtreys@mir.dev>
+ * Copyright (C) 2020 mir.dev, driver was originally written by:
+ * 
+ * - Alexander Shtreys <alexander.shtreys@mir.dev>
+ * - Nadezhda Kharlamova <nadezhda.kharlamova@mir.dev>
  *
  * This program is free software; you can redistribute it and/or modify it
  * under the terms and conditions of the GNU General Public License,
@@ -20,10 +23,7 @@
 #include "thermal_core.h"
 
 #define RCM_THERMAL_OVERHEAT_POLL_DELAY 1000
-#define RCM_THERMAL_DATA_PREPARE_DELAY 5
-
-#pragma pack(push)
-#pragma pack(4)
+#define RCM_THERMAL_DATA_PREPARE_DELAY 5 // probe: need to wait until data became valid 
 
 struct rcm_thermal_regs {
 	u32 pwdn;
@@ -35,10 +35,6 @@ struct rcm_thermal_regs {
 	u32 data;
 	u32 enzc;
 };
-
-#pragma pack(pop)
-
-#define RCM_THERMAL_DATA_MASK 0xFFF
 
 struct rcm_thermal_data {
 	struct device              *dev;
@@ -87,65 +83,88 @@ static const int temp_table[] = {
 	3409	,	125
 };
 
+struct adc_temp {
+	u32 adc;
+	int temp; // millidegree Celsius
+};
+
 static const int size_temp_table = sizeof(temp_table) / sizeof(temp_table[0]) / 2;
+
+struct adc_temp table[34];
+
+static void table_init(struct adc_temp *table)
+{
+	int i, j;
+	j = 0;
+
+	for (i=0; i < size_temp_table; i++) {
+		table[i].adc = temp_table[j];
+		table[i].temp = temp_table[j+1];
+		j += 2;
+	}
+}
 
 static int rcm_thermal_to_temp(u32 val)
 {
 	int i;
 	int temp_diff, temp;
+	
 
 	for(i = 0; i < size_temp_table; ++i)
 	{
-		if(val >= temp_table[2 * i])
+		if(val >= table[i].adc)
 			break;
 	}
 
 	if (i == size_temp_table)
 		--i;
 
+	if (val != table[i].adc) { // to avoid conversion errors
 
-	temp_diff = (temp_table[2 * i - 2] - temp_table[2 * i]) / 5;
+		temp_diff = (table[i-1].adc - table[i].adc) / 5;
 
-	temp = temp_table[2 * i - 1] + ((temp_table[2 * i - 2] - val) / temp_diff);
+		temp = table[i-1].temp + ((table[i-1].adc - val) / temp_diff);
 
-	return temp * 1000;
-
+		return temp * 1000;
+	}
+	else {
+		return table[i].temp * 1000;
+	}
 }
 
 static u32 rcm_thermal_from_temp(int temp)
 {
 	int i;
 	int adc_diff, adc, temp_diff;
+	
 
 	for(i = 0; i < size_temp_table; ++i)
 	{
-		if(temp <= temp_table[2 * i + 1] * 1000)
+		if(temp <= table[i].temp * 1000)
 			break;
 	}
 
 	if (i == size_temp_table)
 		--i;
 
-	if (temp != temp_table[2 * i + 1] * 1000) {
+	if (temp != table[i].temp * 1000) { // to avoid conversion errors
 
-		adc_diff = (temp_table[2 * i - 2] - temp_table[2 * i]) / 5;
+		adc_diff = (table[i-1].adc - table[i].adc) / 5;
 
-		temp_diff = (temp/1000) - temp_table[2 * i - 1];
+		temp_diff = (temp/1000) - table[i-1].temp;
 
-		adc = temp_table[2 * (i-1)] - (adc_diff * temp_diff);
+		adc = table[i-1].adc - (adc_diff * temp_diff);
 
 		return adc;
 	}
 	else {
-
-		return temp_table[2 * i];
-
+		return table[i].adc;
 	}
-	
 }
 
 
-static int read_term_reg(void __iomem *addr) {
+static int read_term_reg(void __iomem *addr) 
+{
 
 	u32 val;
 	val = ioread32(addr);
@@ -153,7 +172,8 @@ static int read_term_reg(void __iomem *addr) {
 	return val;
 }
 
-static void write_term_reg(u32 val, void __iomem *addr) {
+static void write_term_reg(u32 val, void __iomem *addr) 
+{
 
 	iowrite32(val, addr);
 }
@@ -209,30 +229,30 @@ static int rcm_thermal_configure_overheat_interrupt(struct rcm_thermal_data *dat
 } 
 
 
-void rcm_thermal_work_handler(struct work_struct *_work){
+void rcm_thermal_work_handler(struct work_struct *work)
+{
 
 	struct rcm_thermal_data *data;
 	int temp, low;
 
-	data = container_of(_work, struct rcm_thermal_data, work.work);
+	data = container_of(work, struct rcm_thermal_data, work.work);
 
 	rcm_thermal_read_temp(data, &temp);
 
 	low = data->temp_overheat - data->hist_overheat;
 
-
 	if (temp >= low) {
 		
-		queue_delayed_work(system_wq, &data->work, msecs_to_jiffies(1000));
-
+		queue_delayed_work(system_wq, &data->work, msecs_to_jiffies(RCM_THERMAL_OVERHEAT_POLL_DELAY));
 	}
 	else {
+
+		write_term_reg(0, &data->regs->ir);
+		write_term_reg(1, &data->regs->im);
 
 		thermal_zone_device_update(data->tz_device,
 	                           THERMAL_EVENT_UNSPECIFIED);
 	}
-
-
 }
 
 static const struct thermal_zone_of_device_ops rcm_thermal_ops = {
@@ -250,9 +270,6 @@ static irqreturn_t rcm_thermal_overheat_isr(int irq, void *dev_id)
 static irqreturn_t rcm_thermal_overheat_isr_thread(int irq, void *dev_id)
 {
 	struct rcm_thermal_data *data = dev_id;
-	int low = data->temp_overheat - data->hist_overheat;
-	int temp;
-
 
 	pr_debug("%s >>>\n", __func__);
 
@@ -260,7 +277,7 @@ static irqreturn_t rcm_thermal_overheat_isr_thread(int irq, void *dev_id)
 	thermal_zone_device_update(data->tz_device,
 	                           THERMAL_EVENT_UNSPECIFIED);
 
-	queue_delayed_work(system_wq, &data->work, msecs_to_jiffies(1000));
+	queue_delayed_work(system_wq, &data->work, msecs_to_jiffies(RCM_THERMAL_OVERHEAT_POLL_DELAY));
 
 
 	enable_irq(irq);
@@ -272,6 +289,7 @@ static int rcm_thermal_probe(struct platform_device *pdev)
 {
 	struct rcm_thermal_data *data;
 	int ret;
+	table_init(table);
 
 	data = devm_kzalloc(&pdev->dev, sizeof(*data), GFP_KERNEL);
 	if (!data)
@@ -281,7 +299,7 @@ static int rcm_thermal_probe(struct platform_device *pdev)
 	data->regs = devm_ioremap_resource(data->dev, pdev->resource);
 	if (IS_ERR(data->regs)) {
 		dev_err(&pdev->dev, "Failed to allocate registers\n");
-		return -ENODEV;
+		return PTR_ERR(data->regs);
 	}
 
 	INIT_DELAYED_WORK(&data->work, rcm_thermal_work_handler);
@@ -291,7 +309,6 @@ static int rcm_thermal_probe(struct platform_device *pdev)
 
 	if (data->irq_overheat > 0) {
 		write_term_reg(0, &data->regs->level);
-		write_term_reg(0, &data->regs->im);
 		write_term_reg(0, &data->regs->ir);
 
 		ret = devm_request_threaded_irq(data->dev, data->irq_overheat,
@@ -305,6 +322,8 @@ static int rcm_thermal_probe(struct platform_device *pdev)
 			return ret;
 		}
 	}
+
+	// register clk_div has default value 0xFFF
 
 	write_term_reg(0, &data->regs->pwdn);
 	write_term_reg(1, &data->regs->start);
@@ -355,5 +374,5 @@ static struct platform_driver rcm_thermal_driver = {
 module_platform_driver(rcm_thermal_driver);
 
 MODULE_DESCRIPTION("RCM temperature Thermal driver (v2)");
-MODULE_AUTHOR("Alexander Shtreys");
+MODULE_AUTHOR("Alexander Shtreys, Nadezhda Kharlamova");
 MODULE_LICENSE("GPL v2");
