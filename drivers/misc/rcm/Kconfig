@@ -34,4 +34,10 @@ config RCM_GPIO_EXTINT
 	help
 	  This driver allow to test interrupts from GPIO-devices.
 
+
+config RCM_1879_MSVDHD
+	tristate "MSVD-HD video decoder support"
+	help
+	  Video decoder driver for minicomputer
+
 endmenu

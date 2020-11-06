@@ -313,6 +313,8 @@ source "drivers/gpu/drm/mgag200/Kconfig"
 
 source "drivers/gpu/drm/cirrus/Kconfig"
 
+source "drivers/gpu/drm/rcm/Kconfig"
+
 source "drivers/gpu/drm/armada/Kconfig"
 
 source "drivers/gpu/drm/atmel-hlcdc/Kconfig"

@@ -358,6 +358,26 @@
             interrupts = <0 45 4>;
         };
 
+        i2c0: i2c@0x01046000 {
+            compatible = "rcm,i2c-bc048";
+            #address-cells = <1>;
+            #size-cells = <0>;
+            reg = <0x01046000 0x1000>;
+            interrupt-parent = <&gic0>;
+            interrupts = <0 42 4>;
+            clock-names = "i2c";
+            clocks = <&clock_axi_slow>;
+            clock-frequency = <100000>;
+            status = "okay";
+            eeprom@50 {
+                compatible = "microchip,24c64", "atmel,24c64";
+                reg = <0x50>;
+                pagesize = <32>;
+                address-width = <16>;
+                size = <8192>;
+            };
+        };
+
         timer01@01048000 {
             compatible = "arm,sp804", "arm,primecell";
             reg = <0x01048000 0x1000>;
