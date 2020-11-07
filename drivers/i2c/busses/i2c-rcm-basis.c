@@ -604,6 +604,9 @@ static int rcm_i2c_bind(struct basis_device *device)
 
 static void rcm_i2c_unbind(struct basis_device *device)
 {
+	struct rcm_i2c *rdev = basis_device_get_drvdata(device);
+
+	i2c_del_adapter(&rdev->adap);
 }
 
 static int rcm_i2c_probe(struct basis_device *device)
