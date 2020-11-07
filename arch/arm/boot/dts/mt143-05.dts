@@ -492,7 +492,9 @@
             interrupt-parent = <&gic0>;
             interrupts = <0 46 1>;  // rising
             gpio-controller;
-            #gpio-cells = <2>;  // Local offset to the GPIO line and the consumer flags, such as active low (inverted) or open drain
+            #gpio-cells = <2>;
+            interrupt-controller;
+            #interrupt-cells = <2>;
             status = "okay";
         };
 
@@ -506,6 +508,8 @@
             interrupts = <0 47 1>;  // rising
             gpio-controller;
             #gpio-cells = <2>;
+            interrupt-controller;
+            #interrupt-cells = <2>;
             status = "okay";
         };
 
@@ -519,6 +523,8 @@
             interrupts = <0 48 1>;  // rising
             gpio-controller;
             #gpio-cells = <2>;
+            interrupt-controller;
+            #interrupt-cells = <2>;
             status = "okay";
         };
 
@@ -532,6 +538,8 @@
             interrupts = <0 49 1>;  // rising
             gpio-controller;
             #gpio-cells = <2>;
+            interrupt-controller;
+            #interrupt-cells = <2>;
             status = "okay";
         };
 
@@ -545,6 +553,8 @@
             interrupts = <0 50 1>;  // rising
             gpio-controller;
             #gpio-cells = <2>;
+            interrupt-controller;
+            #interrupt-cells = <2>;
             status = "okay";
         };
 
