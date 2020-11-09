@@ -46,126 +46,107 @@ struct rcm_thermal_data {
 	struct delayed_work         work;
 };
 
-static const int temp_table[] = {
-	3795	,	-40	,
-	3787	,	-35	,
-	3779	,	-30	,
-	3769	,	-25	,
-	3761	,	-20	,
-	3751	,	-15	,
-	3743	,	-10	,
-	3733	,	-5	,
-	3723	,	0	,
-	3713	,	5	,
-	3703	,	10	,
-	3693	,	15	,
-	3683	,	20	,
-	3673	,	25	,
-	3663	,	30	,
-	3651	,	35	,
-	3641	,	40	,
-	3629	,	45	,
-	3617	,	50	,
-	3605	,	55	,
-	3593	,	60	,
-	3581	,	65	,
-	3569	,	70	,
-	3555	,	75	,
-	3543	,	80	,
-	3529	,	85	,
-	3515	,	90	,
-	3501	,	95	,
-	3487	,	100	,
-	3471	,	105	,
-	3457	,	110	,
-	3441	,	115	,
-	3425	,	120	,
-	3409	,	125
-};
-
 struct adc_temp {
 	u32 adc;
 	int temp; // millidegree Celsius
 };
 
-static const int size_temp_table = sizeof(temp_table) / sizeof(temp_table[0]) / 2;
+static const struct adc_temp temp_table[] = {
+    { 3795	,	-40000  },
+	{ 3787	,	-35000	},
+	{ 3779	,	-30000	},
+	{ 3769	,	-25000	},
+	{ 3761	,	-20000	},
+	{ 3751	,	-15000	},
+	{ 3743	,	-10000	},
+	{ 3733	,	-5000	},
+	{ 3723	,	0	    },
+	{ 3713	,	5000	},
+	{ 3703	,	10000	},
+	{ 3693	,	15000	},
+	{ 3683	,	20000	},
+	{ 3673	,	25000	},
+	{ 3663	,	30000	},
+	{ 3651	,	35000	},
+	{ 3641	,	40000	},
+	{ 3629	,	45000	},
+	{ 3617	,	50000	},
+	{ 3605	,	55000	},
+	{ 3593	,	60000	},
+	{ 3581	,	65000	},
+	{ 3569	,	70000	},
+	{ 3555	,	75000	},
+	{ 3543	,	80000	},
+	{ 3529	,	85000	},
+	{ 3515	,	90000	},
+	{ 3501	,	95000	},
+	{ 3487	,	100000  },
+	{ 3471	,	105000	},
+	{ 3457	,	110000	},
+	{ 3441	,	115000	},
+	{ 3425	,	120000	},
+	{ 3409	,	125000  }
+};
 
-struct adc_temp table[34];
+static int ARRAY_SIZE = sizeof(temp_table) / sizeof(temp_table[0]);
 
-static void table_init(struct adc_temp *table)
-{
-	int i, j;
-	j = 0;
-
-	for (i=0; i < size_temp_table; i++) {
-		table[i].adc = temp_table[j];
-		table[i].temp = temp_table[j+1];
-		j += 2;
-	}
-}
-
-static int rcm_thermal_to_temp(u32 val)
+static int adc_to_temp(u32 val)
 {
 	int i;
-	int temp_diff, temp;
-	
 
-	for(i = 0; i < size_temp_table; ++i)
+	for(i = 0; i < ARRAY_SIZE; ++i)
 	{
-		if(val >= table[i].adc)
+		if(val >= temp_table[i].adc)
 			break;
 	}
 
-	if (i == size_temp_table)
-		--i;
+	if (i > 0) 
+		i--;
 
-	if (val != table[i].adc) { // to avoid conversion errors
+	if (val == temp_table[i].adc)
+	    return temp_table[i].temp;
 
-		temp_diff = (table[i-1].adc - table[i].adc) / 5;
-
-		temp = table[i-1].temp + ((table[i-1].adc - val) / temp_diff);
-
-		return temp * 1000;
+	if (i < ARRAY_SIZE - 1) {
+	    u32 adc_begin = temp_table[i].adc;
+	    u32 adc_end = temp_table[i+1].adc;
+	    int temp_begin = temp_table[i].temp;
+	    int temp_end = temp_table[i+1].temp;
+	    return temp_begin + (temp_end - temp_begin) * (s32)(val - adc_begin) / (s32)(adc_end - adc_begin);
 	}
 	else {
-		return table[i].temp * 1000;
+	    return temp_table[i].temp;
 	}
 }
 
-static u32 rcm_thermal_from_temp(int temp)
+static u32 temp_to_adc(int temp)
 {
 	int i;
-	int adc_diff, adc, temp_diff;
-	
 
-	for(i = 0; i < size_temp_table; ++i)
+	for(i = 0; i < ARRAY_SIZE; ++i)
 	{
-		if(temp <= table[i].temp * 1000)
+		if(temp <= temp_table[i].temp)
 			break;
 	}
+	
+	if (temp == temp_table[i].temp)
+	    return temp_table[i].adc;
+	    
+	temp /= 1000;
 
-	if (i == size_temp_table)
-		--i;
-
-	if (temp != table[i].temp * 1000) { // to avoid conversion errors
-
-		adc_diff = (table[i-1].adc - table[i].adc) / 5;
-
-		temp_diff = (temp/1000) - table[i-1].temp;
-
-		adc = table[i-1].adc - (adc_diff * temp_diff);
-
-		return adc;
+	if (i < ARRAY_SIZE - 1) {
+	    u32 adc_begin = temp_table[i].adc;
+	    u32 adc_end = temp_table[i+1].adc;
+	    int temp_begin = temp_table[i].temp / 1000;
+	    int temp_end = temp_table[i+1].temp / 1000;
+	    return (s32)(adc_begin - (s32)(adc_begin - adc_end) / (temp_end - temp_begin) * (temp - temp_begin));
 	}
 	else {
-		return table[i].adc;
+	    return temp_table[i].adc;
 	}
 }
-
 
 static int read_term_reg(void __iomem *addr) 
 {
-
 	u32 val;
 	val = ioread32(addr);
 
@@ -174,7 +155,6 @@ static int read_term_reg(void __iomem *addr)
 
 static void write_term_reg(u32 val, void __iomem *addr) 
 {
-
 	iowrite32(val, addr);
 }
 
@@ -187,16 +167,14 @@ static void write_term_reg(u32 val, void __iomem *addr)
  */
 static int rcm_thermal_read_temp(void *_data, int *temp)
 {
-
 	struct rcm_thermal_data *data = _data;
 	u32 val;
 
 	val = read_term_reg(&data->regs->data);
 
-
 	pr_debug("%s: data = %u\n", __func__, val);
 
-	*temp = rcm_thermal_to_temp(val);
+	*temp = adc_to_temp(val);
 
 	return 0;
 }
@@ -220,7 +198,7 @@ static int rcm_thermal_configure_overheat_interrupt(struct rcm_thermal_data *dat
 	data->temp_overheat = trips[i].temperature;
 	data->hist_overheat = trips[i].hysteresis;
 
-	write_term_reg(rcm_thermal_from_temp(data->temp_overheat), &data->regs->level);
+	write_term_reg(temp_to_adc(data->temp_overheat), &data->regs->level);
 
 	write_term_reg(0, &data->regs->ir);
 	write_term_reg(1, &data->regs->im);
@@ -231,7 +209,6 @@ static int rcm_thermal_configure_overheat_interrupt(struct rcm_thermal_data *dat
 
 void rcm_thermal_work_handler(struct work_struct *work)
 {
-
 	struct rcm_thermal_data *data;
 	int temp, low;
 
@@ -250,8 +227,7 @@ void rcm_thermal_work_handler(struct work_struct *work)
 		write_term_reg(0, &data->regs->ir);
 		write_term_reg(1, &data->regs->im);
 
-		thermal_zone_device_update(data->tz_device,
-	                           THERMAL_EVENT_UNSPECIFIED);
+		thermal_zone_device_update(data->tz_device, THERMAL_EVENT_UNSPECIFIED);
 	}
 }
 
@@ -274,11 +250,9 @@ static irqreturn_t rcm_thermal_overheat_isr_thread(int irq, void *dev_id)
 	pr_debug("%s >>>\n", __func__);
 
 	write_term_reg(0, &data->regs->im);
-	thermal_zone_device_update(data->tz_device,
-	                           THERMAL_EVENT_UNSPECIFIED);
+	thermal_zone_device_update(data->tz_device, THERMAL_EVENT_UNSPECIFIED);
 
 	queue_delayed_work(system_wq, &data->work, msecs_to_jiffies(RCM_THERMAL_OVERHEAT_POLL_DELAY));
-
 
 	enable_irq(irq);
 
@@ -289,7 +263,6 @@ static int rcm_thermal_probe(struct platform_device *pdev)
 {
 	struct rcm_thermal_data *data;
 	int ret;
-	table_init(table);
 
 	data = devm_kzalloc(&pdev->dev, sizeof(*data), GFP_KERNEL);
 	if (!data)
