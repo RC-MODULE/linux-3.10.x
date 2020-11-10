@@ -37,13 +37,13 @@ struct rcm_thermal_regs {
 };
 
 struct rcm_thermal_data {
-	struct device              *dev;
-	struct rcm_thermal_regs    *regs;
-	struct thermal_zone_device *tz_device;
-	int                         irq_overheat;
-	int                         temp_overheat;
-	int                         hist_overheat;
-	struct delayed_work         work;
+	struct device			*dev;
+	struct rcm_thermal_regs		*regs;
+	struct thermal_zone_device	*tz_device;
+	int				irq_overheat;
+	int				temp_overheat;
+	int				hist_overheat;
+	struct delayed_work		work;
 };
 
 struct adc_temp {
@@ -52,7 +52,7 @@ struct adc_temp {
 };
 
 static const struct adc_temp temp_table[] = {
-    { 3795	,	-40000  },
+	{ 3795	,	-40000	},
 	{ 3787	,	-35000	},
 	{ 3779	,	-30000	},
 	{ 3769	,	-25000	},
@@ -60,7 +60,7 @@ static const struct adc_temp temp_table[] = {
 	{ 3751	,	-15000	},
 	{ 3743	,	-10000	},
 	{ 3733	,	-5000	},
-	{ 3723	,	0	    },
+	{ 3723	,	0	},
 	{ 3713	,	5000	},
 	{ 3703	,	10000	},
 	{ 3693	,	15000	},
@@ -88,13 +88,11 @@ static const struct adc_temp temp_table[] = {
 	{ 3409	,	125000  }
 };
 
-static int ARRAY_SIZE = sizeof(temp_table) / sizeof(temp_table[0]);
-
 static int adc_to_temp(u32 val)
 {
 	int i;
 
-	for(i = 0; i < ARRAY_SIZE; ++i)
+	for(i = 0; i < ARRAY_SIZE(temp_table); ++i)
 	{
 		if(val >= temp_table[i].adc)
 			break;
@@ -102,54 +100,50 @@ static int adc_to_temp(u32 val)
 
 	if (i > 0) 
 		i--;
+	if (i == 0)
+		return temp_table[i].temp;
 
-	if (val == temp_table[i].adc)
-	    return temp_table[i].temp;
-
-	if (i < ARRAY_SIZE - 1) {
-	    u32 adc_begin = temp_table[i].adc;
-	    u32 adc_end = temp_table[i+1].adc;
-	    int temp_begin = temp_table[i].temp;
-	    int temp_end = temp_table[i+1].temp;
-	    return temp_begin + (temp_end - temp_begin) * (s32)(val - adc_begin) / (s32)(adc_end - adc_begin);
+	if (i < ARRAY_SIZE(temp_table) - 1) {
+		u32 adc_begin = temp_table[i].adc;
+		u32 adc_end = temp_table[i+1].adc;
+		int temp_begin = temp_table[i].temp;
+		int temp_end = temp_table[i+1].temp;
+		return temp_begin + (temp_end - temp_begin) * (s32)(val - adc_begin) / (s32)(adc_end - adc_begin);
 	}
-	else {
-	    return temp_table[i].temp;
-	}
+	else
+		return temp_table[i].temp;
 }
 
 static u32 temp_to_adc(int temp)
 {
 	int i;
 
-	for(i = 0; i < ARRAY_SIZE; ++i)
+	for(i = 0; i < ARRAY_SIZE(temp_table); ++i)
 	{
 		if(temp <= temp_table[i].temp)
 			break;
 	}
-	
-	if (temp == temp_table[i].temp)
-	    return temp_table[i].adc;
-	    
-	temp /= 1000;
 
-	if (i < ARRAY_SIZE - 1) {
-	    u32 adc_begin = temp_table[i].adc;
-	    u32 adc_end = temp_table[i+1].adc;
-	    int temp_begin = temp_table[i].temp / 1000;
-	    int temp_end = temp_table[i+1].temp / 1000;
-	    return (s32)(adc_begin - (s32)(adc_begin - adc_end) / (temp_end - temp_begin) * (temp - temp_begin));
+	if (i > 0)
+		i--;
+	if (i == 0)
+		return temp_table[i].adc;
+
+	if (i < ARRAY_SIZE(temp_table) - 1) {
+		u32 adc_begin = temp_table[i].adc;
+		u32 adc_end = temp_table[i+1].adc;
+		int temp_begin = temp_table[i].temp;
+		int temp_end = temp_table[i+1].temp;
+		return (s32)(adc_begin - (temp - temp_begin) * (s32)(adc_begin - adc_end) / (temp_end - temp_begin));
 	}
-	else {
-	    return temp_table[i].adc;
-	}
+	else
+		return temp_table[i].adc;
 }
 
 static int read_term_reg(void __iomem *addr) 
 {
 	u32 val;
 	val = ioread32(addr);
-
 	return val;
 }
 
@@ -194,7 +188,6 @@ static int rcm_thermal_configure_overheat_interrupt(struct rcm_thermal_data *dat
 	if (i == of_thermal_get_ntrips(data->tz_device))
 		return -EINVAL;
 
-
 	data->temp_overheat = trips[i].temperature;
 	data->hist_overheat = trips[i].hysteresis;
 
@@ -219,14 +212,11 @@ void rcm_thermal_work_handler(struct work_struct *work)
 	low = data->temp_overheat - data->hist_overheat;
 
 	if (temp >= low) {
-		
 		queue_delayed_work(system_wq, &data->work, msecs_to_jiffies(RCM_THERMAL_OVERHEAT_POLL_DELAY));
 	}
 	else {
-
 		write_term_reg(0, &data->regs->ir);
 		write_term_reg(1, &data->regs->im);
-
 		thermal_zone_device_update(data->tz_device, THERMAL_EVENT_UNSPECIFIED);
 	}
 }
@@ -238,7 +228,6 @@ static const struct thermal_zone_of_device_ops rcm_thermal_ops = {
 static irqreturn_t rcm_thermal_overheat_isr(int irq, void *dev_id)
 {
 	disable_irq_nosync(irq);
-
 	return IRQ_WAKE_THREAD;
 }
 
@@ -279,16 +268,13 @@ static int rcm_thermal_probe(struct platform_device *pdev)
 
 	data->irq_overheat = platform_get_irq(pdev, 0);
 
-
 	if (data->irq_overheat > 0) {
 		write_term_reg(0, &data->regs->level);
 		write_term_reg(0, &data->regs->ir);
-
 		ret = devm_request_threaded_irq(data->dev, data->irq_overheat,
-		                                rcm_thermal_overheat_isr, 
-		                                rcm_thermal_overheat_isr_thread,
-		                                0, "rcm-thermal", data);
-
+						rcm_thermal_overheat_isr, 
+						rcm_thermal_overheat_isr_thread,
+						0, "rcm-thermal", data);
 		if (ret)
 		{
 			dev_err(&pdev->dev, "Unable to request thermal IRQ\n");
@@ -297,7 +283,6 @@ static int rcm_thermal_probe(struct platform_device *pdev)
 	}
 
 	// register clk_div has default value 0xFFF
-
 	write_term_reg(0, &data->regs->pwdn);
 	write_term_reg(1, &data->regs->start);
 
@@ -309,7 +294,7 @@ static int rcm_thermal_probe(struct platform_device *pdev)
 
 	if (IS_ERR(data->tz_device)) {
 		dev_err(&pdev->dev, "Failed to register thermal zone: %d\n",
-		        ret);
+			ret);
 		return PTR_ERR(data->tz_device);
 	}
 
@@ -319,7 +304,7 @@ static int rcm_thermal_probe(struct platform_device *pdev)
 		rcm_thermal_configure_overheat_interrupt(data);
 
 	dev_dbg(&pdev->dev, "probe succeeded\n");
-
+	
 	return 0;
 }
 
