@@ -18,6 +18,12 @@
 #include <linux/delay.h>
 #include <linux/device.h>
 
+#ifdef CONFIG_BASIS_PLATFORM
+#	include "../../misc/rcm/basis/basis-device.h"
+#	include "../../misc/rcm/basis/basis-controller.h"
+#	include "../../misc/rcm/basis/basis-cfs.h"
+#endif
+
 /*
  * Registers description.
  */
@@ -114,6 +120,14 @@ struct rcm_i2c {
 	u8 *buf;
 	u32 bus_clock;
 	spinlock_t lock;
+
+#ifdef CONFIG_BASIS_PLATFORM
+	struct basis_device    *device;
+	u32                     regs;
+	u32                     regs_size;
+	u32                     hwirq;
+	u32                     i2c_clk;
+#endif
 };
 
 static const struct of_device_id rcm_i2c_match[] = {
@@ -453,7 +467,11 @@ static int rcm_i2c_xfer_msg(struct rcm_i2c *rdev, struct i2c_msg *msg)
 static int rcm_i2c_init(struct rcm_i2c *rdev)
 {
 	u32 bus_clk_khz = rdev->bus_clock / 1000;
+#ifdef CONFIG_BASIS_PLATFORM
+	u32 clk_khz  = rdev->i2c_clk / 1000;
+#else
 	u32 clk_khz  = clk_get_rate(rdev->clk) / 1000;
+#endif
 	int prescale;
 	int diff;
 
@@ -521,6 +539,145 @@ static const struct i2c_algorithm rcm_i2c_algo = {
 	.master_xfer = rcm_i2c_xfer,
 	.functionality = rcm_i2c_func,
 };
+
+#ifdef CONFIG_BASIS_PLATFORM
+
+static int rcm_i2c_bind(struct basis_device *device)
+{
+	struct rcm_i2c *rdev = basis_device_get_drvdata(device);
+	struct device *dev = &device->dev;
+	int irq, ret;
+
+	rdev->base = devm_ioremap(dev,
+	                          rdev->regs + device->controller->ep_base_phys,
+	                          rdev->regs_size);
+	if (IS_ERR(rdev->base))
+		return PTR_ERR(rdev->base);
+
+	irq = irq_create_mapping(device->controller->domain, rdev->hwirq);
+
+	if (irq < 0) {
+		dev_err(dev, "Missing interrupt resource\n");
+		return irq;
+	}
+
+	rdev->dev = dev;
+	init_completion(&rdev->msg_complete);
+	spin_lock_init(&rdev->lock);
+
+	if (rdev->bus_clock == 0) {
+		dev_warn(dev, "Default to 100kHz\n");
+		rdev->bus_clock = 100000;	/* default clock rate */
+	}
+
+	if (rdev->bus_clock > 400000) {
+		dev_err(dev, "Invalid clock-frequency %d\n", rdev->bus_clock);
+		return -EINVAL;
+	}
+
+	ret = devm_request_irq(dev, irq, rcm_i2c_isr, 0, "rcm-i2c", rdev);
+
+	if (ret) {
+		dev_err(dev, "Failed to claim IRQ %d\n", irq);
+		return ret;
+	}
+
+	rcm_i2c_init(rdev);
+
+	i2c_set_adapdata(&rdev->adap, rdev);
+	strlcpy(rdev->adap.name, "rcm-i2c", sizeof(rdev->adap.name));
+
+	rdev->adap.owner = THIS_MODULE;
+	rdev->adap.algo = &rcm_i2c_algo;
+	rdev->adap.dev.parent = dev;
+//	rdev->adap.dev.of_node  = pdev->dev.of_node;
+
+	ret = i2c_add_adapter(&rdev->adap);
+
+	if (ret)
+		return ret;
+
+	dev_info(dev, "RC Module I2C probe complete\n");
+
+	return 0;
+}
+
+static void rcm_i2c_unbind(struct basis_device *device)
+{
+	struct rcm_i2c *rdev = basis_device_get_drvdata(device);
+
+	i2c_del_adapter(&rdev->adap);
+}
+
+static int rcm_i2c_probe(struct basis_device *device)
+{
+	struct rcm_i2c *data;
+	struct device *dev = &device->dev;
+
+	data = devm_kzalloc(dev, sizeof(*data), GFP_KERNEL);
+	if (!data)
+		return -ENOMEM;
+
+	data->device = device;
+
+	basis_device_set_drvdata(device, data);
+
+	return 0;
+}
+
+static const struct basis_device_id rcm_i2c_ids[] = {
+	{
+		.name = "rcm-i2c",
+	},
+	{},
+};
+
+static struct basis_device_ops rcm_i2c_ops = {
+	.unbind = rcm_i2c_unbind,
+	.bind   = rcm_i2c_bind,
+};
+
+BASIS_DEV_ATTR_U32_SHOW(rcm_i2c_,  hwirq,       struct rcm_i2c);
+BASIS_DEV_ATTR_U32_STORE(rcm_i2c_, hwirq,       struct rcm_i2c);
+
+BASIS_DEV_ATTR_U32_SHOW(rcm_i2c_,  regs,        struct rcm_i2c);
+BASIS_DEV_ATTR_U32_STORE(rcm_i2c_, regs,        struct rcm_i2c);
+
+BASIS_DEV_ATTR_U32_SHOW(rcm_i2c_,  regs_size,   struct rcm_i2c);
+BASIS_DEV_ATTR_U32_STORE(rcm_i2c_, regs_size,   struct rcm_i2c);
+
+BASIS_DEV_ATTR_U32_SHOW(rcm_i2c_,  i2c_clk,     struct rcm_i2c);
+BASIS_DEV_ATTR_U32_STORE(rcm_i2c_, i2c_clk,     struct rcm_i2c);
+
+BASIS_DEV_ATTR_U32_SHOW(rcm_i2c_,  bus_clock,   struct rcm_i2c);
+BASIS_DEV_ATTR_U32_STORE(rcm_i2c_, bus_clock,   struct rcm_i2c);
+
+CONFIGFS_ATTR(rcm_i2c_, hwirq);
+CONFIGFS_ATTR(rcm_i2c_, regs);
+CONFIGFS_ATTR(rcm_i2c_, regs_size);
+CONFIGFS_ATTR(rcm_i2c_, i2c_clk);
+CONFIGFS_ATTR(rcm_i2c_, bus_clock);
+
+static struct configfs_attribute *rcm_i2c_attrs[] = {
+	&rcm_i2c_attr_hwirq,
+	&rcm_i2c_attr_regs,
+	&rcm_i2c_attr_regs_size,
+	&rcm_i2c_attr_i2c_clk,
+	&rcm_i2c_attr_bus_clock,
+	NULL,
+};
+
+static struct basis_device_driver rcm_i2c_driver = {
+	.driver.name    = "rcm-i2c",
+	.probe          = rcm_i2c_probe,
+	.id_table       = rcm_i2c_ids,
+	.ops            = &rcm_i2c_ops,
+	.owner          = THIS_MODULE,
+	.attrs          = rcm_i2c_attrs,
+};
+module_basis_driver(rcm_i2c_driver);
+
+#else /* CONFIG_BASIS_PLATFORM */
 
 static int rcm_i2c_probe(struct platform_device *pdev)
 {
@@ -631,6 +788,8 @@ static struct platform_driver rcm_i2c_driver = {
 };
 
 module_platform_driver(rcm_i2c_driver);
+
+#endif /* CONFIG_BASIS_PLATFORM */
 
 MODULE_AUTHOR("Alexey Ivanov");
 MODULE_DESCRIPTION("RC MODULE I2C bus driver");
