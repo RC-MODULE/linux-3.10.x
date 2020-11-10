@@ -4,7 +4,7 @@
  *
  *  Copyright (C) 2020 Alexander Shtreys <alexander.shtreys@mir.dev>
  */
-#define DEBUG
+//#define DEBUG
 
 #include <linux/io.h>
 #include <linux/interrupt.h>
@@ -403,7 +403,7 @@ err:
 	return false;
 }
 
-static void rcm_pci_map_irq_ack(struct irq_data *d)
+static void rcm_pci_map_irq_eoi(struct irq_data *d)
 {
 	struct irq_chip_generic *gc = irq_data_get_irq_chip_data(d);
 	struct rcm_pci_map_data *data = gc->private;
@@ -456,53 +456,19 @@ static void rcm_pci_map_irq_unmask(struct irq_data *d)
 	reg &= ~BIT(d->hwirq % 32);
 	writel(reg, data->bar[0] + addr);
 }
-/*
-static int rcm_pci_map_set_type(struct irq_data *d, unsigned int flow_type)
+
+static int rcm_pci_map_irq_set_type(struct irq_data *d, unsigned int type)
 {
-	struct irq_chip_generic *gc = irq_data_get_irq_chip_data(d);
-	struct rcm_pci_map_data *data = gc->private;
+//	struct irq_chip_generic *gc = irq_data_get_irq_chip_data(d);
+//	struct rcm_pci_map_data *data = gc->private;
 
-	if (d->hwirq >= 64)
+	if ( (d->hwirq >= 64) || 
+	     ((type != IRQ_TYPE_LEVEL_HIGH) && (type != IRQ_TYPE_EDGE_RISING)) )
 		return -EINVAL;
-
-	if ((irq_type == IRQ_TYPE_LEGACY) && (flow_type != IRQ_TYPE_LEVEL_HIGH)) {
-		return -EINVAL;
-	} else if ((irq_type != IRQ_TYPE_LEGACY) && (flow_type != IRQ_TYPE_EDGE_RISING)) {
-
-	}
-
-	switch (flow_type) {
-	case IRQ_TYPE_EDGE_RISING:
-		val = 0x2;
-		break;
-	case IRQ_TYPE_EDGE_FALLING:
-		val = 0x3;
-		break;
-	case IRQ_TYPE_LEVEL_HIGH:
-		val = 0x1;
-		break;
-	case IRQ_TYPE_LEVEL_LOW:
-		val = 0x0;
-		break;
-	default:
-		pr_err("%s: Unsupported IRQ type = %u.\n", __func__, flow_type);
-		return -EINVAL;
-	}
-
-	regmap_update_bits(data->reg, RCM_PL060_EILVL,
-	                   0x03 << (2 * d->hwirq), val << (2 * d->hwirq));
-
-	if ((flow_type & IRQ_TYPE_EDGE_BOTH) == 0)
-		irq_set_handler_locked(d, handle_level_irq);
-	else
-		irq_set_handler_locked(d, handle_edge_irq);
-
-	type_parent = (flow_type & IRQ_TYPE_EDGE_BOTH) ? IRQ_TYPE_EDGE_RISING : 
-	                                                 IRQ_TYPE_LEVEL_HIGH;
 
 	return 0;
 }
-*/
+
 static long rcm_pci_map_ioctl(struct file *file, unsigned int cmd,
                               unsigned long arg)
 {
@@ -543,7 +509,6 @@ static int rcm_pci_map_probe(struct pci_dev *pdev,
 	struct rcm_pci_map_data *data;
 	struct miscdevice *misc_device;
 	struct irq_chip_generic *gc;
-	int i;
 	int num_chip;
 	struct basis_controller *controller;
 
@@ -627,8 +592,8 @@ static int rcm_pci_map_probe(struct pci_dev *pdev,
 	controller->domain = data->domain;
 
 	err = irq_alloc_domain_generic_chips(
-	    data->domain, 32, 2, "rcm-pci-map",
-	    handle_level_irq, IRQ_NOREQUEST | IRQ_NOPROBE | IRQ_LEVEL,
+	    data->domain, 32, 1, "rcm-pci-map",
+	    handle_fasteoi_irq, IRQ_NOREQUEST | IRQ_NOPROBE,
 	    0, 0);
 	if (err) {
 		dev_err(dev, "couldn't allocate irq chips.\n");
@@ -639,18 +604,14 @@ static int rcm_pci_map_probe(struct pci_dev *pdev,
 		gc = irq_get_domain_generic_chip(data->domain, num_chip * 32);
 		gc->private = data;
 
-		gc->chip_types[0].type = IRQ_TYPE_LEVEL_MASK;
-		gc->chip_types[1].type = IRQ_TYPE_EDGE_BOTH;
-		gc->chip_types[1].handler = handle_edge_irq;
+		gc->chip_types[0].type              = IRQ_TYPE_SENSE_MASK;
+		gc->chip_types[0].chip.irq_mask     = rcm_pci_map_irq_mask;
+		gc->chip_types[0].chip.irq_unmask   = rcm_pci_map_irq_unmask;
+		gc->chip_types[0].chip.irq_eoi      = rcm_pci_map_irq_eoi;
+		gc->chip_types[0].chip.irq_set_type = rcm_pci_map_irq_set_type;
+		gc->chip_types[0].chip.name         = "rcm-pci-map";
 
-		for (i = 0; i < 2; ++i) {
-			gc->chip_types[i].chip.irq_ack      = rcm_pci_map_irq_ack;
-			gc->chip_types[i].chip.irq_mask     = rcm_pci_map_irq_mask;
-			gc->chip_types[i].chip.irq_unmask   = rcm_pci_map_irq_unmask;
-	//		gc->chip_types[i].chip.irq_set_type = rcm_pci_map_irq_set_type;
-
-			gc->chip_types[i].chip.name = "rcm-pci-map";
-		}
+		gc->chip_types[0].chip.flags        = IRQCHIP_EOI_IF_HANDLED;
 	}
 
 	data->irq_type = irq_type;
