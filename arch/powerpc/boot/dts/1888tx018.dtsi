@@ -1160,7 +1160,7 @@
 			// HDMI channel 0 for DRM drivers (actually VDU index 1)
 			vdu0_drm: vdu@38013000 {
 				status = "disabled";
-				compatible = "rcm,vdu-drm-direct";
+				compatible = "rcm,vdu-drm";
 				reg = <0x38013000 0x1000>;
 				interrupt-parent = <&MPIC>;
 				interrupts = <120 2>; // active high level-sensitive
@@ -1179,7 +1179,7 @@
 			// HDMI channel 1 for DRM drivers (actually VDU index 0)
 			vdu1_drm: vdu@38011000 {
 				status = "disabled";
-				compatible = "rcm,vdu-drm-direct";
+				compatible = "rcm,vdu-drm";
 				reg = <0x38011000 0x1000>;
 				interrupt-parent = <&MPIC>;
 				interrupts = <117 2>; // active high level-sensitive

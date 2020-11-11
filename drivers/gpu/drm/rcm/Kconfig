@@ -1,5 +1,5 @@
-config DRM_RCM_VDU_DIRECT
-	tristate "RCM VDU KMS driver with direct rendering"
+config DRM_RCM_VDU
+	tristate "RCM VDU KMS driver"
 	depends on DRM
 	select DRM_KMS_HELPER
 	select DRM_KMS_CMA_HELPER

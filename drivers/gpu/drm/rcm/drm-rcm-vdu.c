@@ -714,11 +714,6 @@ static void crtc_disable_vblank(struct drm_crtc *crtc)
 
 static enum drm_mode_status crtc_mode_valid(struct drm_crtc *crtc, const struct drm_display_mode *mode)
 {
-	if (mode->hdisplay > 1280) // ???
-		return MODE_BAD; // ???
-	if (mode->vdisplay > 720) // ???
-		return MODE_BAD; // ???
-
 	if ((mode->flags & DRM_MODE_FLAG_INTERLACE))
 		return MODE_NO_INTERLACE; // [***]
 
@@ -1130,7 +1125,7 @@ static int rcm_vdu_remove(struct platform_device *pdev)
 
 #ifdef CONFIG_OF
 static const struct of_device_id rcm_vdu_dt_ids[] = {
-	{ .compatible = "rcm,vdu-drm-dirty" },
+	{ .compatible = "rcm,vdu-drm" },
 	{ } // sentinel
 };
 MODULE_DEVICE_TABLE(of, coda_dt_ids);
