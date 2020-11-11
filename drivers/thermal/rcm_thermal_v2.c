@@ -10,7 +10,6 @@
  * under the terms and conditions of the GNU General Public License,
  * version 2, as published by the Free Software Foundation.
  */
-
 #include <linux/irq.h>
 #include <linux/interrupt.h>
 #include <linux/module.h>
@@ -92,16 +91,17 @@ static int adc_to_temp(u32 val)
 {
 	int i;
 
+	if (val > temp_table[0].adc)
+		return temp_table[0].temp;
+
 	for(i = 0; i < ARRAY_SIZE(temp_table); ++i)
 	{
 		if(val >= temp_table[i].adc)
 			break;
 	}
 
-	if (i > 0) 
+	if (i > 0)
 		i--;
-	if (i == 0)
-		return temp_table[i].temp;
 
 	if (i < ARRAY_SIZE(temp_table) - 1) {
 		u32 adc_begin = temp_table[i].adc;
@@ -118,6 +118,9 @@ static u32 temp_to_adc(int temp)
 {
 	int i;
 
+	if (temp < temp_table[0].temp)
+		return temp_table[0].adc;
+
 	for(i = 0; i < ARRAY_SIZE(temp_table); ++i)
 	{
 		if(temp <= temp_table[i].temp)
@@ -126,8 +129,6 @@ static u32 temp_to_adc(int temp)
 
 	if (i > 0)
 		i--;
-	if (i == 0)
-		return temp_table[i].adc;
 
 	if (i < ARRAY_SIZE(temp_table) - 1) {
 		u32 adc_begin = temp_table[i].adc;
@@ -199,7 +200,6 @@ static int rcm_thermal_configure_overheat_interrupt(struct rcm_thermal_data *dat
 	return 0;
 } 
 
-
 void rcm_thermal_work_handler(struct work_struct *work)
 {
 	struct rcm_thermal_data *data;
@@ -228,6 +228,7 @@ static const struct thermal_zone_of_device_ops rcm_thermal_ops = {
 static irqreturn_t rcm_thermal_overheat_isr(int irq, void *dev_id)
 {
 	disable_irq_nosync(irq);
+
 	return IRQ_WAKE_THREAD;
 }
 
@@ -304,7 +305,7 @@ static int rcm_thermal_probe(struct platform_device *pdev)
 		rcm_thermal_configure_overheat_interrupt(data);
 
 	dev_dbg(&pdev->dev, "probe succeeded\n");
-	
+
 	return 0;
 }
 
