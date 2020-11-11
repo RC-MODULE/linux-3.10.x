@@ -30,6 +30,7 @@
 #include <drm/drm_probe_helper.h>
 #include <drm/drm_fb_helper.h>
 #include <drm/drm_fb_cma_helper.h>
+#include <drm/drm_damage_helper.h>
 
 #include "drm-rcm-vdu-reg.h"
 #include "drm-rcm-vdu-pll-reg.h"
@@ -42,7 +43,13 @@
 
 #define BACKGROUND_RGB 0x000000 // 0xFFFF00 (yellow) for testing
 
+#define MIN_WIDTH 320
+#define MIN_HEIGHT 200
+#define MAX_WIDTH 1920
+#define MAX_HEIGHT 1080
+
 #define HARDWARE_PITCH_BITS 13
+#define SHADOW_PITCH MAX_WIDTH // in pixels
 
 #define MAX_BIT_VALUE(bits) ((1U << (bits)) - 1U)
 
@@ -66,6 +73,7 @@ struct osd_area_desc {
 
 struct dma_data {
 	struct osd_area_desc osd_area_descs[2];
+	u8 screen_buffer[MAX_WIDTH * MAX_HEIGHT * 4]; // 4 for ARGB
 };
 
 struct vdu_device {
@@ -89,6 +97,8 @@ struct vdu_device {
 	struct drm_encoder encoder;
 
 	unsigned osd_area_desc_free_index;
+	u32 osd_primary_plane_format; // 0 if primary plane osd rendering is off
+
 	struct drm_pending_vblank_event *pending_vblank_event;
 	struct completion vdu_off_done;
 };
@@ -125,12 +135,10 @@ static const struct drm_mode_config_funcs mode_config_funcs = {
 };
 
 static const uint32_t plane_formats[] = {
-	DRM_FORMAT_ARGB8888,
-	// DRM_FORMAT_BGRA8888, // [***] just for testing, really it will be DRM_FORMAT_RGBA8888
-	DRM_FORMAT_RGBA8888,
-	DRM_FORMAT_RGB565,
-	// DRM_FORMAT_RGB565 | DRM_FORMAT_BIG_ENDIAN, // [***] just for testing, really it will be DRM_FORMAT_RGB565
-	DRM_FORMAT_ARGB1555
+	DRM_FORMAT_RGB565, // native
+	DRM_FORMAT_RGB565 | DRM_FORMAT_BIG_ENDIAN, // shadow
+	DRM_FORMAT_XRGB8888, // shadow
+	DRM_FORMAT_BGRX8888 // shadow
 };
 
 static const uint64_t plane_format_modifiers[] = {
@@ -456,38 +464,138 @@ static void set_crtc_mode(struct vdu_device *vdu, struct drm_display_mode *mode)
 	write_vdu_reg(vdu, VDU_REG_OSD_COLOR_CR, val);
 }
 
-// fb field in the primary plane state must be not-NULL
-static void fill_osd_descriptor(struct vdu_device *vdu, struct osd_area_desc *desc)
+static void fill_osd_descriptor(struct vdu_device *vdu, struct osd_area_desc *desc, u32 format)
 {
 	struct drm_plane_state *state = vdu->primary_plane.state;
 
+	u32 screen_buffer_phys_addr = vdu->dma_data_phys_addr + offsetof(struct dma_data,screen_buffer);
+	u32 fb_buffer_phys_addr = drm_fb_cma_get_gem_addr(state->fb, state, 0);
+	u16 fb_pitch = state->fb->pitches[0] / state->fb->format->char_per_block[0];
+
 	desc->next = 0;
-	desc->image_base = cpu_to_le32(drm_fb_cma_get_gem_addr(state->fb, state, 0));
 	desc->width = cpu_to_le16(state->dst.x2 - state->dst.x1 - 1);
 	desc->height = cpu_to_le16(state->dst.y2 - state->dst.y1 - 1);
 	desc->x = cpu_to_le16(0);
 	desc->y = cpu_to_le16(0);
-	desc->pitch = cpu_to_le16(state->fb->pitches[0] / state->fb->format->char_per_block[0]);
-	switch (state->fb->format->format)
+	switch (format)
 	{
-	case DRM_FORMAT_ARGB8888:
-	case DRM_FORMAT_BGRA8888:
-	case DRM_FORMAT_RGBA8888:
-		desc->flags = 0;
-		break;
 	case DRM_FORMAT_RGB565:
-	case DRM_FORMAT_RGB565 | DRM_FORMAT_BIG_ENDIAN: // [***] just for testing
+		desc->image_base = cpu_to_le32(fb_buffer_phys_addr);
+		desc->pitch = cpu_to_le16(fb_pitch);
 		desc->flags = 1;
 		break;
-	case DRM_FORMAT_ARGB1555:
-		desc->flags = 2;
+	case DRM_FORMAT_RGB565 | DRM_FORMAT_BIG_ENDIAN:
+		desc->image_base = cpu_to_le32(screen_buffer_phys_addr);
+		desc->pitch = cpu_to_le16(SHADOW_PITCH);
+		desc->flags = 1;
+		break;
+	case DRM_FORMAT_XRGB8888:
+	case DRM_FORMAT_BGRX8888:
+		desc->image_base = cpu_to_le32(screen_buffer_phys_addr);
+		desc->pitch = cpu_to_le16(SHADOW_PITCH);
+		desc->flags = 0;
 		break;
 	default:
 		dev_err(&vdu->pdev->dev, "error format\n");
+		desc->image_base = cpu_to_le32(screen_buffer_phys_addr);
+		desc->pitch = cpu_to_le16(SHADOW_PITCH);
 		desc->flags = 1;
 		break;
 	}
 	desc->alpha = 0xFF;
+}
+
+static void osd_rendering_on(struct vdu_device *vdu, u32 format)
+{
+	dma_addr_t phys_addr;
+	u32 val;
+
+	if (format == vdu->osd_primary_plane_format)
+		return;
+
+	fill_osd_descriptor(vdu, &vdu->dma_data->osd_area_descs[vdu->osd_area_desc_free_index], format);
+	phys_addr = vdu->dma_data_phys_addr + offsetof(struct dma_data, osd_area_descs)
+		+ vdu->osd_area_desc_free_index * sizeof(struct osd_area_desc);
+	vdu->osd_area_desc_free_index ^= 1; // flip next index
+
+	// [***] actually we mustnot do it, but we do
+	val = read_vdu_reg(vdu, VDU_REG_OSD_CTRL);
+	val |= VDU_REG_OSD_CTRL_ARGB_RGBA_MASK;
+	write_vdu_reg(vdu, VDU_REG_OSD_CTRL, val);
+	write_vdu_reg(vdu, VDU_REG_OSD_BASE0, phys_addr);
+	write_vdu_reg(vdu, VDU_REG_OSD_BASE1, phys_addr);
+
+	spin_lock_irq(&vdu->reg_lock);
+	val = read_vdu_reg(vdu, VDU_REG_CTRL_ENA);
+	val |= VDU_REG_CTRL_ENA_OSD_ENA_MASK | VDU_REG_CTRL_ENA_OSD_BASE_SW_ENA_MASK;
+	write_vdu_reg(vdu, VDU_REG_CTRL_ENA, val);
+	spin_unlock_irq(&vdu->reg_lock);
+
+	vdu->osd_primary_plane_format = format;
+}
+
+static void osd_rendering_off(struct vdu_device *vdu)
+{
+	u32 val;
+
+	spin_lock_irq(&vdu->reg_lock);
+	val = read_vdu_reg(vdu, VDU_REG_CTRL_ENA);
+	val &= ~(VDU_REG_CTRL_ENA_OSD_ENA_MASK | VDU_REG_CTRL_ENA_OSD_BASE_SW_ENA_MASK);
+	write_vdu_reg(vdu, VDU_REG_CTRL_ENA, val);
+	spin_unlock_irq(&vdu->reg_lock);
+
+	vdu->osd_primary_plane_format = 0;
+}
+
+static void blit_rgb565_be(void *src_buffer, unsigned src_pitch, void *dest_buffer, unsigned dest_pitch, int dx, int dy)
+{
+	int x;
+	int y;
+	u16 *src;
+	u16 *dest;
+
+	for (y = 0; y < dy; ++y) {
+		src = src_buffer;
+		dest = dest_buffer;
+		for (x = 0; x < dx; ++x)
+			*(dest++) = swab16(*(src++));
+		src_buffer += src_pitch;
+		dest_buffer += dest_pitch;
+	}
+}
+
+static void blit_xrgb8888(void *src_buffer, unsigned src_pitch, void *dest_buffer, unsigned dest_pitch, int dx, int dy)
+{
+	int x;
+	int y;
+	u32 *src;
+	u32 *dest;
+
+	for (y = 0; y < dy; ++y) {
+		src = src_buffer;
+		dest = dest_buffer;
+		for (x = 0; x < dx; ++x)
+			*(dest++) = *(src++) | cpu_to_le32(0xFF000000);
+		src_buffer += src_pitch;
+		dest_buffer += dest_pitch;
+	}
+}
+
+static void blit_bgrx8888(void *src_buffer, unsigned src_pitch, void *dest_buffer, unsigned dest_pitch, int dx, int dy)
+{
+	int x;
+	int y;
+	u32 *src;
+	u32 *dest;
+
+	for (y = 0; y < dy; ++y) {
+		src = src_buffer;
+		dest = dest_buffer;
+		for (x = 0; x < dx; ++x)
+			*(dest++) = swab32(*(src++)) | cpu_to_le32(0xFF000000);
+		src_buffer += src_pitch;
+		dest_buffer += dest_pitch;
+	}
 }
 
 static struct drm_framebuffer *fb_create(
@@ -508,12 +616,12 @@ static struct drm_framebuffer *fb_create(
 	if (!pixel_format_found)
 		return ERR_PTR(-EINVAL);
 
-	// check pitch
+	// check pitch (in case for native mode)
 	format = drm_format_info(mode_cmd->pixel_format);
 	if (mode_cmd->pitches[0] / format->char_per_block[0] > MAX_BIT_VALUE(HARDWARE_PITCH_BITS))
 		return ERR_PTR(-EINVAL);
 
-	return drm_gem_fb_create(dev, file, mode_cmd);
+	return drm_gem_fb_create_with_dirty(dev, file, mode_cmd);
 }
 
 static int plane_atomic_check(struct drm_plane *plane, struct drm_plane_state *plane_state)
@@ -527,11 +635,52 @@ static int plane_atomic_check(struct drm_plane *plane, struct drm_plane_state *p
 		DRM_PLANE_HELPER_NO_SCALING, DRM_PLANE_HELPER_NO_SCALING, false, true);
 }
 
-// It is an empty function.
-// All work is done in the crtc_atomic_flush function, but the function must be present
-// (the DRM framework expectes a non-null pointer to the function).
 static void plane_atomic_update(struct drm_plane *plane, struct drm_plane_state *old_state)
 {
+	struct vdu_device *vdu = drm_dev_to_vdu(plane->dev);
+	struct drm_gem_cma_object *gem;
+	struct drm_rect rect;
+	void *src_buffer;
+	void *dest_buffer;
+	unsigned src_pitch;
+	unsigned dest_pitch;
+	int dx;
+	int dy;
+	unsigned bpp;
+
+	if (plane->state->fb == NULL)
+		osd_rendering_off(vdu);
+	else {
+		osd_rendering_on(vdu, plane->state->fb->format->format);
+		if ((vdu->osd_primary_plane_format != DRM_FORMAT_RGB565) &&
+			drm_atomic_helper_damage_merged(old_state, plane->state, &rect))
+		{
+			bpp = plane->state->fb->format->char_per_block[0];
+			gem = drm_fb_cma_get_gem_obj(plane->state->fb, 0);
+			src_pitch = plane->state->fb->pitches[0];
+			src_buffer = gem->vaddr + plane->state->fb->offsets[0]
+				+ rect.y1 * src_pitch
+				+ rect.x1 * bpp;
+			dest_pitch = SHADOW_PITCH * bpp;
+			dest_buffer = vdu->dma_data->screen_buffer
+				+ rect.y1 * dest_pitch
+				+ rect.x1 * bpp;
+			dx = rect.x2 - rect.x1;
+			dy = rect.y2 - rect.y1;
+			switch (vdu->osd_primary_plane_format)
+			{
+			case DRM_FORMAT_RGB565 | DRM_FORMAT_BIG_ENDIAN:
+				blit_rgb565_be(src_buffer, src_pitch, dest_buffer, dest_pitch, dx, dy);
+				break;
+			case DRM_FORMAT_XRGB8888:
+				blit_xrgb8888(src_buffer, src_pitch, dest_buffer, dest_pitch, dx, dy);
+				break;
+			case DRM_FORMAT_BGRX8888:
+				blit_bgrx8888(src_buffer, src_pitch, dest_buffer, dest_pitch, dx, dy);
+				break;
+			}
+		}
+	}
 }
 
 static int crtc_enable_vblank(struct drm_crtc *crtc)
@@ -614,42 +763,9 @@ static enum drm_mode_status crtc_mode_valid(struct drm_crtc *crtc, const struct 
 static void crtc_atomic_flush(struct drm_crtc *crtc, struct drm_crtc_state *old_crtc_state)
 {
 	struct vdu_device *vdu = drm_dev_to_vdu(crtc->dev);
-	dma_addr_t phys_addr;
-	u32 val;
 
 	if (crtc->state->mode_changed)
 		set_crtc_mode(vdu, &crtc->state->mode);
-
-	if (vdu->primary_plane.state->fb != NULL) {
-		fill_osd_descriptor(vdu, &vdu->dma_data->osd_area_descs[vdu->osd_area_desc_free_index]);
-		phys_addr = vdu->dma_data_phys_addr + offsetof(struct dma_data, osd_area_descs)
-			+ vdu->osd_area_desc_free_index * sizeof(struct osd_area_desc);
-		vdu->osd_area_desc_free_index ^= 1; // flip next index
-
-		// [***] actually we mustnot do it, but we do
-		val = read_vdu_reg(vdu, VDU_REG_OSD_CTRL);
-		if ((vdu->primary_plane.state->fb->format->format == DRM_FORMAT_BGRA8888)
-			|| (vdu->primary_plane.state->fb->format->format == DRM_FORMAT_RGBA8888))
-			val &= ~VDU_REG_OSD_CTRL_ARGB_RGBA_MASK;
-		else
-			val |= VDU_REG_OSD_CTRL_ARGB_RGBA_MASK;
-		write_vdu_reg(vdu, VDU_REG_OSD_CTRL, val);
-		write_vdu_reg(vdu, VDU_REG_OSD_BASE0, phys_addr);
-		write_vdu_reg(vdu, VDU_REG_OSD_BASE1, phys_addr);
-
-		spin_lock_irq(&vdu->reg_lock);
-		val = read_vdu_reg(vdu, VDU_REG_CTRL_ENA);
-		val |= VDU_REG_CTRL_ENA_OSD_ENA_MASK | VDU_REG_CTRL_ENA_OSD_BASE_SW_ENA_MASK;
-		write_vdu_reg(vdu, VDU_REG_CTRL_ENA, val);
-		spin_unlock_irq(&vdu->reg_lock);
-
-	} else {
-		spin_lock_irq(&vdu->reg_lock);
-		val = read_vdu_reg(vdu, VDU_REG_CTRL_ENA);
-		val &= ~(VDU_REG_CTRL_ENA_OSD_ENA_MASK | VDU_REG_CTRL_ENA_OSD_BASE_SW_ENA_MASK);
-		write_vdu_reg(vdu, VDU_REG_CTRL_ENA, val);
-		spin_unlock_irq(&vdu->reg_lock);
-	}
 
 	// if the event was not handled before it must be handled here
 	if (crtc->state->event) {
@@ -758,10 +874,10 @@ static void mode_config_init(struct vdu_device *vdu)
 	struct drm_device *dev = &vdu->drm_dev;
 
 	drm_mode_config_init(dev);
-	dev->mode_config.min_width = 320;
-	dev->mode_config.min_height = 200;
-	dev->mode_config.max_width = 1920;
-	dev->mode_config.max_height = 1080;
+	dev->mode_config.min_width = MIN_WIDTH;
+	dev->mode_config.min_height = MIN_HEIGHT;
+	dev->mode_config.max_width = MAX_WIDTH;
+	dev->mode_config.max_height = MAX_HEIGHT;
 	dev->mode_config.preferred_depth = 16;
 	dev->mode_config.prefer_shadow = 0;
 	dev->mode_config.funcs = &mode_config_funcs;
@@ -1009,7 +1125,7 @@ static int rcm_vdu_remove(struct platform_device *pdev)
 
 #ifdef CONFIG_OF
 static const struct of_device_id rcm_vdu_dt_ids[] = {
-	{ .compatible = "rcm,vdu-drm-direct" },
+	{ .compatible = "rcm,vdu-drm" },
 	{ } // sentinel
 };
 MODULE_DEVICE_TABLE(of, coda_dt_ids);
