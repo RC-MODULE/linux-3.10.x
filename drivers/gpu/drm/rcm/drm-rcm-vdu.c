@@ -98,6 +98,7 @@ struct vdu_device {
 
 	unsigned osd_area_desc_free_index;
 	u32 osd_primary_plane_format; // 0 if primary plane osd rendering is off
+	u32 osd_primary_plane_fb_phys_addr; // 0 if primary plane osd rendering is off
 
 	struct drm_pending_vblank_event *pending_vblank_event;
 	struct completion vdu_off_done;
@@ -464,12 +465,11 @@ static void set_crtc_mode(struct vdu_device *vdu, struct drm_display_mode *mode)
 	write_vdu_reg(vdu, VDU_REG_OSD_COLOR_CR, val);
 }
 
-static void fill_osd_descriptor(struct vdu_device *vdu, struct osd_area_desc *desc, u32 format)
+static void fill_osd_descriptor(struct vdu_device *vdu, struct osd_area_desc *desc, u32 format, u32 fb_phys_addr)
 {
 	struct drm_plane_state *state = vdu->primary_plane.state;
 
-	u32 screen_buffer_phys_addr = vdu->dma_data_phys_addr + offsetof(struct dma_data,screen_buffer);
-	u32 fb_buffer_phys_addr = drm_fb_cma_get_gem_addr(state->fb, state, 0);
+	u32 screen_phys_addr = vdu->dma_data_phys_addr + offsetof(struct dma_data,screen_buffer);
 	u16 fb_pitch = state->fb->pitches[0] / state->fb->format->char_per_block[0];
 
 	desc->next = 0;
@@ -480,24 +480,24 @@ static void fill_osd_descriptor(struct vdu_device *vdu, struct osd_area_desc *de
 	switch (format)
 	{
 	case DRM_FORMAT_RGB565:
-		desc->image_base = cpu_to_le32(fb_buffer_phys_addr);
+		desc->image_base = cpu_to_le32(fb_phys_addr);
 		desc->pitch = cpu_to_le16(fb_pitch);
 		desc->flags = 1;
 		break;
 	case DRM_FORMAT_RGB565 | DRM_FORMAT_BIG_ENDIAN:
-		desc->image_base = cpu_to_le32(screen_buffer_phys_addr);
+		desc->image_base = cpu_to_le32(screen_phys_addr);
 		desc->pitch = cpu_to_le16(SHADOW_PITCH);
 		desc->flags = 1;
 		break;
 	case DRM_FORMAT_XRGB8888:
 	case DRM_FORMAT_BGRX8888:
-		desc->image_base = cpu_to_le32(screen_buffer_phys_addr);
+		desc->image_base = cpu_to_le32(screen_phys_addr);
 		desc->pitch = cpu_to_le16(SHADOW_PITCH);
 		desc->flags = 0;
 		break;
 	default:
 		dev_err(&vdu->pdev->dev, "error format\n");
-		desc->image_base = cpu_to_le32(screen_buffer_phys_addr);
+		desc->image_base = cpu_to_le32(screen_phys_addr);
 		desc->pitch = cpu_to_le16(SHADOW_PITCH);
 		desc->flags = 1;
 		break;
@@ -505,16 +505,19 @@ static void fill_osd_descriptor(struct vdu_device *vdu, struct osd_area_desc *de
 	desc->alpha = 0xFF;
 }
 
-static void osd_rendering_on(struct vdu_device *vdu, u32 format)
+static void osd_rendering_on(struct vdu_device *vdu, u32 format, u32 fb_phys_addr)
 {
-	dma_addr_t phys_addr;
+	dma_addr_t osd_desc_phys_addr;
 	u32 val;
 
-	if (format == vdu->osd_primary_plane_format)
+	if ((format == vdu->osd_primary_plane_format)
+		&& ((format != DRM_FORMAT_RGB565) || (fb_phys_addr == vdu->osd_primary_plane_fb_phys_addr)))
+	{
 		return;
+	}
 
-	fill_osd_descriptor(vdu, &vdu->dma_data->osd_area_descs[vdu->osd_area_desc_free_index], format);
-	phys_addr = vdu->dma_data_phys_addr + offsetof(struct dma_data, osd_area_descs)
+	fill_osd_descriptor(vdu, &vdu->dma_data->osd_area_descs[vdu->osd_area_desc_free_index], format, fb_phys_addr);
+	osd_desc_phys_addr = vdu->dma_data_phys_addr + offsetof(struct dma_data, osd_area_descs)
 		+ vdu->osd_area_desc_free_index * sizeof(struct osd_area_desc);
 	vdu->osd_area_desc_free_index ^= 1; // flip next index
 
@@ -522,8 +525,8 @@ static void osd_rendering_on(struct vdu_device *vdu, u32 format)
 	val = read_vdu_reg(vdu, VDU_REG_OSD_CTRL);
 	val |= VDU_REG_OSD_CTRL_ARGB_RGBA_MASK;
 	write_vdu_reg(vdu, VDU_REG_OSD_CTRL, val);
-	write_vdu_reg(vdu, VDU_REG_OSD_BASE0, phys_addr);
-	write_vdu_reg(vdu, VDU_REG_OSD_BASE1, phys_addr);
+	write_vdu_reg(vdu, VDU_REG_OSD_BASE0, osd_desc_phys_addr);
+	write_vdu_reg(vdu, VDU_REG_OSD_BASE1, osd_desc_phys_addr);
 
 	spin_lock_irq(&vdu->reg_lock);
 	val = read_vdu_reg(vdu, VDU_REG_CTRL_ENA);
@@ -532,6 +535,7 @@ static void osd_rendering_on(struct vdu_device *vdu, u32 format)
 	spin_unlock_irq(&vdu->reg_lock);
 
 	vdu->osd_primary_plane_format = format;
+	vdu->osd_primary_plane_fb_phys_addr = fb_phys_addr;
 }
 
 static void osd_rendering_off(struct vdu_device *vdu)
@@ -545,6 +549,7 @@ static void osd_rendering_off(struct vdu_device *vdu)
 	spin_unlock_irq(&vdu->reg_lock);
 
 	vdu->osd_primary_plane_format = 0;
+	vdu->osd_primary_plane_fb_phys_addr = 0;
 }
 
 static void blit_rgb565_be(void *src_buffer, unsigned src_pitch, void *dest_buffer, unsigned dest_pitch, int dx, int dy)
@@ -598,6 +603,54 @@ static void blit_bgrx8888(void *src_buffer, unsigned src_pitch, void *dest_buffe
 	}
 }
 
+static void blit_if_necessary(struct vdu_device *vdu, struct drm_plane *plane, struct drm_plane_state *old_state)
+{
+	struct drm_gem_cma_object *gem;
+	struct drm_rect rect;
+	void *src_buffer;
+	void *dest_buffer;
+	unsigned src_pitch;
+	unsigned dest_pitch;
+	int dx;
+	int dy;
+	unsigned bpp;
+
+	if (vdu->osd_primary_plane_format == DRM_FORMAT_RGB565)
+		return;
+	
+	if (!drm_atomic_helper_damage_merged(old_state, plane->state, &rect))
+		return;
+
+	bpp = plane->state->fb->format->char_per_block[0];
+	gem = drm_fb_cma_get_gem_obj(plane->state->fb, 0);
+
+	src_pitch = plane->state->fb->pitches[0];
+	src_buffer = gem->vaddr + plane->state->fb->offsets[0]
+		+ rect.y1 * src_pitch
+		+ rect.x1 * bpp;
+
+	dest_pitch = SHADOW_PITCH * bpp;
+	dest_buffer = vdu->dma_data->screen_buffer
+		+ rect.y1 * dest_pitch
+		+ rect.x1 * bpp;
+
+	dx = rect.x2 - rect.x1;
+	dy = rect.y2 - rect.y1;
+
+	switch (vdu->osd_primary_plane_format)
+	{
+	case DRM_FORMAT_RGB565 | DRM_FORMAT_BIG_ENDIAN:
+		blit_rgb565_be(src_buffer, src_pitch, dest_buffer, dest_pitch, dx, dy);
+		break;
+	case DRM_FORMAT_XRGB8888:
+		blit_xrgb8888(src_buffer, src_pitch, dest_buffer, dest_pitch, dx, dy);
+		break;
+	case DRM_FORMAT_BGRX8888:
+		blit_bgrx8888(src_buffer, src_pitch, dest_buffer, dest_pitch, dx, dy);
+		break;
+	}
+}
+
 static struct drm_framebuffer *fb_create(
 	struct drm_device *dev, struct drm_file *file, const struct drm_mode_fb_cmd2 *mode_cmd)
 {
@@ -638,49 +691,17 @@ static int plane_atomic_check(struct drm_plane *plane, struct drm_plane_state *p
 static void plane_atomic_update(struct drm_plane *plane, struct drm_plane_state *old_state)
 {
 	struct vdu_device *vdu = drm_dev_to_vdu(plane->dev);
-	struct drm_gem_cma_object *gem;
-	struct drm_rect rect;
-	void *src_buffer;
-	void *dest_buffer;
-	unsigned src_pitch;
-	unsigned dest_pitch;
-	int dx;
-	int dy;
-	unsigned bpp;
+	struct drm_plane_state *state = plane->state;
+	u32 format;
+	u32 fb_phys_addr;
 
-	if (plane->state->fb == NULL)
+	if (state->fb != NULL) {
+		format = state->fb->format->format;
+		fb_phys_addr = drm_fb_cma_get_gem_addr(state->fb, state, 0);
+		osd_rendering_on(vdu, format, fb_phys_addr);
+		blit_if_necessary(vdu, plane, old_state);
+	} else
 		osd_rendering_off(vdu);
-	else {
-		osd_rendering_on(vdu, plane->state->fb->format->format);
-		if ((vdu->osd_primary_plane_format != DRM_FORMAT_RGB565) &&
-			drm_atomic_helper_damage_merged(old_state, plane->state, &rect))
-		{
-			bpp = plane->state->fb->format->char_per_block[0];
-			gem = drm_fb_cma_get_gem_obj(plane->state->fb, 0);
-			src_pitch = plane->state->fb->pitches[0];
-			src_buffer = gem->vaddr + plane->state->fb->offsets[0]
-				+ rect.y1 * src_pitch
-				+ rect.x1 * bpp;
-			dest_pitch = SHADOW_PITCH * bpp;
-			dest_buffer = vdu->dma_data->screen_buffer
-				+ rect.y1 * dest_pitch
-				+ rect.x1 * bpp;
-			dx = rect.x2 - rect.x1;
-			dy = rect.y2 - rect.y1;
-			switch (vdu->osd_primary_plane_format)
-			{
-			case DRM_FORMAT_RGB565 | DRM_FORMAT_BIG_ENDIAN:
-				blit_rgb565_be(src_buffer, src_pitch, dest_buffer, dest_pitch, dx, dy);
-				break;
-			case DRM_FORMAT_XRGB8888:
-				blit_xrgb8888(src_buffer, src_pitch, dest_buffer, dest_pitch, dx, dy);
-				break;
-			case DRM_FORMAT_BGRX8888:
-				blit_bgrx8888(src_buffer, src_pitch, dest_buffer, dest_pitch, dx, dy);
-				break;
-			}
-		}
-	}
 }
 
 static int crtc_enable_vblank(struct drm_crtc *crtc)
