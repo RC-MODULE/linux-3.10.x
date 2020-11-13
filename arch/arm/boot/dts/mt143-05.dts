@@ -358,6 +358,7 @@
             reg = <0x01045000 0x1000>;
             interrupt-parent = <&gic0>;
             interrupts = <0 45 4>;
+            using-dma;
         };
 
         timer01@01048000 {
@@ -456,7 +457,7 @@
             phys = <&pcie_phy0>;
             phy-names = "pcie-phy";
 */
-            status = "okay";
+            status = "disabled";
         };
 
         msi: gic-msi@0 {
