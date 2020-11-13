@@ -359,6 +359,8 @@
             interrupt-parent = <&gic0>;
             interrupts = <0 45 4>;
             using-dma;
+            loopback;
+            debug;
         };
 
         timer01@01048000 {
