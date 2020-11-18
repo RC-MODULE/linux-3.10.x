@@ -102,6 +102,23 @@ struct vdu_device {
 
 	struct drm_pending_vblank_event *pending_vblank_event;
 	struct completion vdu_off_done;
+
+	spinlock_t mvl_setting_lock;
+	bool mvl_setting_present;
+	u32 mvl_setting_ctrl;
+	u32 mvl_setting_y_base;
+	u32 mvl_setting_cb_base;
+	u32 mvl_setting_cr_base;
+	u32 mvl_setting_y_size;
+	u32 mvl_setting_c_size;
+	u32 mvl_setting_full_size;
+	u32 mvl_setting_start;
+	u32 mvl_setting_scaler_size_y;
+	u32 mvl_setting_scaler_size_c;
+	u32 mvl_setting_scaler_size_cut;
+	u32 mvl_setting_scaler_clr_y;
+	u32 mvl_setting_scaler_clr_cb;
+	u32 mvl_setting_scaler_clr_cr;
 };
 
 struct y_cb_cr_color
@@ -750,9 +767,6 @@ static void overlay_plane_atomic_update(struct drm_plane *plane, struct drm_plan
 {
 	struct vdu_device *vdu = drm_dev_to_vdu(plane->dev);
 	struct drm_plane_state *state = plane->state;
-	u32 fb_phys_addr_y;
-	u32 fb_phys_addr_cb;
-	u32 fb_phys_addr_cr;
 	u32 fb_y_pitch_in_px;
 	u32 fb_cbcr_pitch_in_px;
 	u32 mvl_width;
@@ -763,13 +777,10 @@ static void overlay_plane_atomic_update(struct drm_plane *plane, struct drm_plan
 	u32 val;
 
 	if (state->fb != NULL) {
-		fb_phys_addr_y = drm_fb_cma_get_gem_addr(state->fb, state, 0);
-		fb_phys_addr_cb = drm_fb_cma_get_gem_addr(state->fb, state, 1);
-		fb_phys_addr_cr = drm_fb_cma_get_gem_addr(state->fb, state, 2);
-		fb_y_pitch_in_px = state->fb->pitches[0] / state->fb->format->char_per_block[0];
-		fb_cbcr_pitch_in_px = state->fb->pitches[1] / state->fb->format->char_per_block[1];
 		mvl_width = state->dst.x2 - state->dst.x1;
 		mvl_height = state->dst.y2 - state->dst.y1;
+		fb_y_pitch_in_px = state->fb->pitches[0] / state->fb->format->char_per_block[0];
+		fb_cbcr_pitch_in_px = state->fb->pitches[1] / state->fb->format->char_per_block[1];
 		mvl_clr_y_y = 0x0;
 		mvl_clr_y_cb = 0x0;
 		mvl_clr_y_cr = 0x0;
@@ -780,63 +791,57 @@ static void overlay_plane_atomic_update(struct drm_plane *plane, struct drm_plan
 		mvl_clr_cr_cb = 0x0;
 		mvl_clr_cr_cr = 0x100;
 
-		// ???
-		write_vdu_reg(vdu, VDU_REG_MI_CTRL, VDU_REG_MI_CTRL_PLANE_NUM_MASK);
-		write_vdu_reg(vdu, VDU_REG_MI_MVL_Y_BASE0, fb_phys_addr_y);
-		write_vdu_reg(vdu, VDU_REG_MI_MVL_CB_BASE0, fb_phys_addr_cb);
-		write_vdu_reg(vdu, VDU_REG_MI_MVL_CR_BASE0, fb_phys_addr_cr);
-		write_vdu_reg(vdu, VDU_REG_MI_MVL_Y_BASE1, fb_phys_addr_y);
-		write_vdu_reg(vdu, VDU_REG_MI_MVL_CB_BASE1, fb_phys_addr_cb);
-		write_vdu_reg(vdu, VDU_REG_MI_MVL_CR_BASE1, fb_phys_addr_cr);
-		val = ((mvl_width - 1) << VDU_REG_MI_MVL_Y_SIZE_H_SHIFT)
+		spin_lock_irq(&vdu->mvl_setting_lock);
+
+		spin_lock(&vdu->reg_lock); // not spin_lock_irq
+		val = read_vdu_reg(vdu, VDU_REG_CTRL_ENA);
+		val &= ~VDU_REG_CTRL_ENA_MVL_BASE_SW_ENA_MASK;
+		write_vdu_reg(vdu, VDU_REG_CTRL_ENA, val);
+		spin_unlock(&vdu->reg_lock); // not spin_unlock_irq
+
+		vdu->mvl_setting_ctrl = VDU_REG_MI_CTRL_PLANE_NUM_MASK;
+		vdu->mvl_setting_y_base= drm_fb_cma_get_gem_addr(state->fb, state, 0);
+		vdu->mvl_setting_cb_base = drm_fb_cma_get_gem_addr(state->fb, state, 1);
+		vdu->mvl_setting_cr_base = drm_fb_cma_get_gem_addr(state->fb, state, 2);
+		vdu->mvl_setting_y_size = ((mvl_width - 1) << VDU_REG_MI_MVL_Y_SIZE_H_SHIFT)
 			| ((mvl_height - 1) << VDU_REG_MI_MVL_Y_SIZE_V_SHIFT);
-		write_vdu_reg(vdu, VDU_REG_MI_MVL_Y_SIZE, val);
-		val = ((mvl_width / 2 - 1) << VDU_REG_MI_MVL_C_SIZE_H_SHIFT)
+		vdu->mvl_setting_c_size = ((mvl_width / 2 - 1) << VDU_REG_MI_MVL_C_SIZE_H_SHIFT)
 			| ((mvl_height / 2 - 1) << VDU_REG_MI_MVL_C_SIZE_V_SHIFT);
-		write_vdu_reg(vdu, VDU_REG_MI_MVL_C_SIZE, val);
-		val = (fb_y_pitch_in_px << VDU_REG_MI_MVL_FULL_SIZE_Y_SHIFT)
+		vdu->mvl_setting_full_size = (fb_y_pitch_in_px << VDU_REG_MI_MVL_FULL_SIZE_Y_SHIFT)
 			| (fb_cbcr_pitch_in_px << VDU_REG_MI_MVL_FULL_SIZE_C_SHIFT);
-		write_vdu_reg(vdu, VDU_REG_MI_MVL_FULL_SIZE, val);
-		// ???
-		val = (state->dst.x1 << VDU_REG_DIF_MVL_START_H_SHIFT)
+		vdu->mvl_setting_start = (state->dst.x1 << VDU_REG_DIF_MVL_START_H_SHIFT)
 			| (state->dst.y1 << VDU_REG_DIF_MVL_START_V_SHIFT);
-		write_vdu_reg(vdu, VDU_REG_DIF_MVL_START, val);
-		// ???
-		val = ((mvl_width - 1) << VDU_REG_SCALER_SIZE_Y_H_SHIFT)
+		vdu->mvl_setting_scaler_size_y = ((mvl_width - 1) << VDU_REG_SCALER_SIZE_Y_H_SHIFT)
 			| ((mvl_height - 1) << VDU_REG_SCALER_SIZE_Y_V_SHIFT);
-		write_vdu_reg(vdu, VDU_REG_SCALER_SIZE_Y, val);
-		val = ((mvl_width / 2 - 1) << VDU_REG_SCALER_SIZE_C_H_SHIFT)
+		vdu->mvl_setting_scaler_size_c = ((mvl_width / 2 - 1) << VDU_REG_SCALER_SIZE_C_H_SHIFT)
 			| ((mvl_height / 2 - 1) << VDU_REG_SCALER_SIZE_C_V_SHIFT);
-		write_vdu_reg(vdu, VDU_REG_SCALER_SIZE_C, val);
-		val = ((mvl_width - 1) << VDU_REG_SCALER_SIZE_CUT_H_SHIFT)
+		vdu->mvl_setting_scaler_size_cut = ((mvl_width - 1) << VDU_REG_SCALER_SIZE_CUT_H_SHIFT)
 			| ((mvl_height - 1) << VDU_REG_SCALER_SIZE_CUT_V_SHIFT);
-		write_vdu_reg(vdu, VDU_REG_SCALER_SIZE_CUT, val);
-		write_vdu_reg(vdu, VDU_REG_SCALER_PHS_CUT_H, 0);
-		val = (mvl_clr_y_y << VDU_REG_SCALER_MVL_CLR_Y_Y_SHIFT)
+		vdu->mvl_setting_scaler_clr_y = (mvl_clr_y_y << VDU_REG_SCALER_MVL_CLR_Y_Y_SHIFT)
 			| (mvl_clr_y_cb << VDU_REG_SCALER_MVL_CLR_Y_CB_SHIFT)
 			| (mvl_clr_y_cr << VDU_REG_SCALER_MVL_CLR_Y_CR_SHIFT);
-		write_vdu_reg(vdu, VDU_REG_SCALER_MVL_CLR_Y, val);
-		val = (mvl_clr_cb_y << VDU_REG_SCALER_MVL_CLR_CB_Y_SHIFT)
+		vdu->mvl_setting_scaler_clr_cb = (mvl_clr_cb_y << VDU_REG_SCALER_MVL_CLR_CB_Y_SHIFT)
 			| (mvl_clr_cb_cb << VDU_REG_SCALER_MVL_CLR_CB_CB_SHIFT)
 			| (mvl_clr_cb_cr << VDU_REG_SCALER_MVL_CLR_CB_CR_SHIFT);
-		write_vdu_reg(vdu, VDU_REG_SCALER_MVL_CLR_CB, val);
-		val = (mvl_clr_cr_y << VDU_REG_SCALER_MVL_CLR_CR_Y_SHIFT)
+		vdu->mvl_setting_scaler_clr_cr = (mvl_clr_cr_y << VDU_REG_SCALER_MVL_CLR_CR_Y_SHIFT)
 			| (mvl_clr_cr_cb << VDU_REG_SCALER_MVL_CLR_CR_CB_SHIFT)
 			| (mvl_clr_cr_cr << VDU_REG_SCALER_MVL_CLR_CR_CR_SHIFT);
-		write_vdu_reg(vdu, VDU_REG_SCALER_MVL_CLR_CR, val);
-		// ???
 
-		spin_lock_irq(&vdu->reg_lock);
-		val = read_vdu_reg(vdu, VDU_REG_CTRL_ENA);
-		val |= VDU_REG_CTRL_ENA_MVL_ENA_MASK | VDU_REG_CTRL_ENA_MVL_BASE_SW_ENA_MASK;
-		write_vdu_reg(vdu, VDU_REG_CTRL_ENA, val);
-		spin_unlock_irq(&vdu->reg_lock);
+		vdu->mvl_setting_present = true;
+
+		spin_unlock_irq(&vdu->mvl_setting_lock);
 	} else {
-		spin_lock_irq(&vdu->reg_lock);
+		spin_lock_irq(&vdu->mvl_setting_lock);
+
+		spin_lock(&vdu->reg_lock); // not spin_lock_irq
 		val = read_vdu_reg(vdu, VDU_REG_CTRL_ENA);
 		val &= ~(VDU_REG_CTRL_ENA_MVL_ENA_MASK | VDU_REG_CTRL_ENA_MVL_BASE_SW_ENA_MASK);
 		write_vdu_reg(vdu, VDU_REG_CTRL_ENA, val);
-		spin_unlock_irq(&vdu->reg_lock);
+		spin_unlock(&vdu->reg_lock); // not spin_unlock_irq
+
+		vdu->mvl_setting_present = false;
+
+		spin_unlock_irq(&vdu->mvl_setting_lock);
 	}
 }
 
@@ -1006,6 +1011,7 @@ static irqreturn_t irq_handler(int irq, void *arg)
 	struct drm_device *drm_dev = arg;
 	struct vdu_device *vdu = drm_dev_to_vdu(drm_dev);
 	u32 irq_status;
+	u32 val;
 
 	spin_lock(&vdu->reg_lock);
 	irq_status = read_vdu_reg(vdu, VDU_REG_INT_STAT);
@@ -1014,6 +1020,35 @@ static irqreturn_t irq_handler(int irq, void *arg)
 	spin_unlock(&vdu->reg_lock);
 
 	if ((irq_status & VDU_REG_INT_VDU_STAT_SA_MASK) != 0) {
+		spin_lock(&vdu->mvl_setting_lock);
+		if (vdu->mvl_setting_present) {
+			write_vdu_reg(vdu, VDU_REG_MI_CTRL, vdu->mvl_setting_ctrl);
+			write_vdu_reg(vdu, VDU_REG_MI_MVL_Y_BASE0, vdu->mvl_setting_y_base);
+			write_vdu_reg(vdu, VDU_REG_MI_MVL_CB_BASE0, vdu->mvl_setting_cb_base);
+			write_vdu_reg(vdu, VDU_REG_MI_MVL_CR_BASE0, vdu->mvl_setting_cr_base);
+			write_vdu_reg(vdu, VDU_REG_MI_MVL_Y_BASE1, vdu->mvl_setting_y_base);
+			write_vdu_reg(vdu, VDU_REG_MI_MVL_CB_BASE1, vdu->mvl_setting_cb_base);
+			write_vdu_reg(vdu, VDU_REG_MI_MVL_CR_BASE1, vdu->mvl_setting_cr_base);
+			write_vdu_reg(vdu, VDU_REG_MI_MVL_Y_SIZE, vdu->mvl_setting_y_size);
+			write_vdu_reg(vdu, VDU_REG_MI_MVL_C_SIZE, vdu->mvl_setting_c_size);
+			write_vdu_reg(vdu, VDU_REG_MI_MVL_FULL_SIZE, vdu->mvl_setting_full_size);
+			write_vdu_reg(vdu, VDU_REG_DIF_MVL_START, vdu->mvl_setting_start);
+			write_vdu_reg(vdu, VDU_REG_SCALER_SIZE_Y, vdu->mvl_setting_scaler_size_y);
+			write_vdu_reg(vdu, VDU_REG_SCALER_SIZE_C, vdu->mvl_setting_scaler_size_c);
+			write_vdu_reg(vdu, VDU_REG_SCALER_SIZE_CUT, vdu->mvl_setting_scaler_size_cut);
+			write_vdu_reg(vdu, VDU_REG_SCALER_PHS_CUT_H, 0);
+			write_vdu_reg(vdu, VDU_REG_SCALER_MVL_CLR_Y, vdu->mvl_setting_scaler_clr_y);
+			write_vdu_reg(vdu, VDU_REG_SCALER_MVL_CLR_CB, vdu->mvl_setting_scaler_clr_cb);
+			write_vdu_reg(vdu, VDU_REG_SCALER_MVL_CLR_CR, vdu->mvl_setting_scaler_clr_cr);
+			spin_lock(&vdu->reg_lock);
+			val = read_vdu_reg(vdu, VDU_REG_CTRL_ENA);
+			val |= VDU_REG_CTRL_ENA_MVL_ENA_MASK | VDU_REG_CTRL_ENA_MVL_BASE_SW_ENA_MASK;
+			write_vdu_reg(vdu, VDU_REG_CTRL_ENA, val);
+			spin_unlock(&vdu->reg_lock);
+			vdu->mvl_setting_present = false;
+		}
+		spin_unlock(&vdu->mvl_setting_lock);
+
 		drm_crtc_handle_vblank(&vdu->crtc);
 
 		if (vdu->pending_vblank_event) {
@@ -1168,6 +1203,7 @@ static int probe_internal(struct platform_device *pdev)
 	platform_set_drvdata(pdev, vdu);
 
 	spin_lock_init(&vdu->reg_lock);
+	spin_lock_init(&vdu->mvl_setting_lock);
 	init_completion(&vdu->vdu_off_done);
 
 	vdu->regs = devm_ioremap_resource(&pdev->dev, pdev->resource);
