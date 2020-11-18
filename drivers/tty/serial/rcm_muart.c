@@ -199,7 +199,7 @@ struct muart_regs {
 
 #define MUART_MDMA_DESC_BUF_SIZE (1<<14)
 
-#define MUART_MDMA_RX_TIMEOUT 5000 // в битовых интервалах
+#define MUART_MDMA_RX_TIMEOUT				5000	// в битовых интервалах
 #define MUART_MDMA_TXRX_SETTINGS ((MAURT_DESC_GAP << 16) | (1<<4) | 2)
 
 // MUART_GEN_STATUS
@@ -235,9 +235,17 @@ struct muart_regs {
 	PRINT_BIT(FL, MDMA_MUART_FLAG_FER) \
 	printk("Length=%u\n", FL&(MUART_MDMA_DESC_BUF_SIZE-1))
 
-#define PRINT_BUF(BUF) printk("Buffer=%02x,%02x,%02x,%02x,%02x,%02x,%02x,%02x\n", \
+#define PRINT_BUF(BUF,LEN) printk("Length=%u;Buffer=%02x,%02x,%02x,%02x..%02x,%02x,%02x,%02x\n", \
+	LEN, \
 	((unsigned char*)BUF)[0], ((unsigned char*)BUF)[1], ((unsigned char*)BUF)[2], ((unsigned char*)BUF)[3], \
-	((unsigned char*)BUF)[4], ((unsigned char*)BUF)[5], ((unsigned char*)BUF)[6], ((unsigned char*)BUF)[7]);
+	((unsigned char*)BUF)[LEN-4], ((unsigned char*)BUF)[LEN-3], ((unsigned char*)BUF)[LEN-2], ((unsigned char*)BUF)[LEN-1]);
+
+#define PRINT_TERMIOS(TRM) \
+	printk("c_iflag: %08x\n", TRM->c_iflag); \
+	printk("c_iflag: %08x\n", TRM->c_oflag); \
+	printk("c_iflag: %08x\n", TRM->c_cflag); \
+	printk("c_iflag: %08x\n", TRM->c_lflag); \
+	printk("c_line: %08x\n", TRM->c_line);
 
 struct muart_port;
 
@@ -253,6 +261,9 @@ struct muart_async_descriptor {
 	unsigned int off;
 	struct mdma_desc_long_ll* hw_desc;
 	dma_addr_t phys;
+	struct list_head free;
+	struct list_head pending;
+	struct list_head completed;
 };
 
 struct muart_dmarx_data {
@@ -260,11 +271,13 @@ struct muart_dmarx_data {
 	struct completion rx_suspend;
 	struct completion rx_cancel;
 	struct tasklet_struct rx_tasklet;
-	int ready;
-	int curr;
 	struct mdma_desc_long_ll* hw_descr_pool;
 	dma_addr_t hw_descr_pool_phys;
 	struct muart_async_descriptor rx_descr[MUART_RX_DESC_CNT];
+	struct muart_async_descriptor* working_descr;
+	struct list_head free_list;
+	struct list_head pending_list;
+	struct list_head completed_list;
 };
 
 struct muart_dmatx_data {
@@ -272,12 +285,13 @@ struct muart_dmatx_data {
 	struct completion tx_suspend;
 	struct completion tx_cancel;
 	struct tasklet_struct tx_tasklet;
-	int free;
-	int sent;
-	int ready;
 	struct mdma_desc_long_ll* hw_descr_pool;
 	dma_addr_t hw_descr_pool_phys;
 	struct muart_async_descriptor tx_descr[MUART_TX_DESC_CNT];
+	struct muart_async_descriptor* working_descr;
+	struct list_head free_list;
+	struct list_head pending_list;
+	struct list_head completed_list;
 };
 
 struct muart_port {
@@ -453,7 +467,6 @@ static bool muart_tx_char(struct uart_port *port, unsigned char ch,
 static bool muart_tx_chars(struct uart_port *port, bool from_irq)
 {
 	struct circ_buf *xmit = &port->state->xmit;
-	struct muart_port* uap = to_muart_port(port);
 
 	if (unlikely(port->x_char)) {
 		if (!muart_tx_char(port, port->x_char, from_irq))
@@ -465,9 +478,6 @@ static bool muart_tx_chars(struct uart_port *port, bool from_irq)
 		muart_stop_tx(port);
 		return false;
 	}
-
-	if (uap->using_dma)
-		return muart_dma_tx_start(uap);
 
 	do {
 		if (!muart_tx_char(port, xmit->buf[xmit->tail], from_irq))
@@ -492,8 +502,13 @@ static bool muart_tx_chars(struct uart_port *port, bool from_irq)
  */
 static void muart_start_tx(struct uart_port *port)
 {
-//	struct muart_port *muap =
-//	    container_of(port, struct muart_port, port);
+	struct muart_port *uap = container_of(port, struct muart_port, port);
+	
+	if (uap->using_dma) {
+		muart_dma_tx_start(uap);
+		return;
+	}
+
 	if (muart_tx_chars(port, false))
 		muart_enable_interrupts(port, MUART_IRQ_TX);
 }
@@ -503,24 +518,25 @@ static irqreturn_t muart_isr(int irq, void *dev_id)
 	struct uart_port *port = dev_id;
 	struct muart_regs *regs = (struct muart_regs *)port->membase;
 	unsigned int status = readl(&regs->status);
-
-    unsigned int gen_status = readl(&regs->gen_status);
+	unsigned int gen_status = readl(&regs->gen_status);
 	struct muart_port* uap = to_muart_port(port);
 
-	if (gen_status & MDMA_RD_IRQ) {
-		spin_lock(&port->lock);
-		dev_dbg_(port->dev, "MDMA_RD_IRQ interrupt\n");
-		muart_dma_tx_irq(uap);
-		spin_unlock(&port->lock);
+	if (uap->using_dma) {
+		if (gen_status & MDMA_RD_IRQ) {
+			spin_lock(&port->lock);
+			dev_dbg_(port->dev, "MDMA_RD_IRQ interrupt\n");
+			muart_dma_tx_irq(uap);
+			spin_unlock(&port->lock);
+		}
+		if (gen_status & MDMA_WR_IRQ) {
+			spin_lock(&port->lock);
+			dev_dbg_(port->dev, "MDMA_WR_IRQ interrupt\n");
+			muart_dma_rx_irq(uap);
+			spin_unlock(&port->lock);
+		}
 		return IRQ_HANDLED;
 	}
-	if (gen_status & MDMA_WR_IRQ) {
-		spin_lock(&port->lock);
-		dev_dbg_(port->dev, "MDMA_WR_IRQ interrupt\n");
-		muart_dma_rx_irq(uap);
-		spin_unlock(&port->lock);
-		return IRQ_HANDLED;
-	}
+
 	if (status & MUART_IRQ_RX) {
 		spin_lock(&port->lock);
 		muart_rx_chars(port);
@@ -681,6 +697,12 @@ static void muart_set_termios(struct uart_port *port, struct ktermios *termios,
 	unsigned long flags;
 	struct muart_port* muap = to_muart_port(port);
 
+	dev_dbg_(muap->port.dev, __func__);
+
+	if (old) {
+		PRINT_TERMIOS(old)
+	}
+	PRINT_TERMIOS(termios)
 
 	baud = uart_get_baud_rate(port, termios, old, 0, port->uartclk / 8);
 
@@ -1301,15 +1323,22 @@ static inline int muart_dma_startup(struct muart_port *uap)
 	writel(MUART_MDMA_TXRX_SETTINGS, &regs->tx_settings_r);
 	writel(MUART_MDMA_RX_TIMEOUT, &regs->rxtimeout);
 
+	INIT_LIST_HEAD(&uap->dmatx.free_list);
+	INIT_LIST_HEAD(&uap->dmatx.pending_list);
+	INIT_LIST_HEAD(&uap->dmatx.completed_list);
+
 	for (i=0; i<MUART_TX_DESC_CNT; i++) {
 		descr = &uap->dmatx.tx_descr[i];
 		descr->hw_desc = &uap->dmatx.hw_descr_pool[i];
 		descr->hw_desc->flags_length |= (MDMA_BD_INT | MDMA_BD_STOP | MDMA_BD_OWN);
 		descr->phys = uap->dmatx.hw_descr_pool_phys + i*sizeof(struct mdma_desc_long_ll);
+		list_add_tail(&descr->free, &uap->dmatx.free_list);
 	}
-	uap->dmatx.sent = -1;
-	uap->dmatx.free = 0;
-	uap->dmatx.ready = -1;
+	uap->dmatx.working_descr = NULL;
+
+	INIT_LIST_HEAD(&uap->dmarx.free_list);
+	INIT_LIST_HEAD(&uap->dmarx.pending_list);
+	INIT_LIST_HEAD(&uap->dmarx.completed_list);
 
 	for (i=0; i<MUART_RX_DESC_CNT; i++) {
 		descr = &uap->dmarx.rx_descr[i];
@@ -1326,12 +1355,12 @@ static inline int muart_dma_startup(struct muart_port *uap)
 			dev_err(dev, "%s: dma_mapping_error\n", __func__);
 			goto error_startup;
 		}
+		if (i)
+			list_add_tail(&descr->free, &uap->dmarx.free_list);
 	}
-	uap->dmarx.curr = 0;
-	uap->dmarx.ready = -1;
-	uap->dmarx.running = true;
-	descr = &uap->dmarx.rx_descr[0];
-	muart_dma_rx_start_cmd(regs, descr);
+	uap->dmarx.working_descr = &uap->dmarx.rx_descr[0];
+	muart_dma_rx_start_cmd(regs, uap->dmarx.working_descr);
+
 	return 0;
 
 error_startup:
@@ -1426,7 +1455,6 @@ static inline void muart_dma_tx_start_cmd(struct muart_regs* regs, struct muart_
 
 static inline void muart_dma_tx_irq(struct muart_port *uap)
 {
-	unsigned int next;
 	unsigned int status;
 	struct muart_regs* regs = (struct muart_regs*)uap->port.membase;
 	struct muart_async_descriptor* tx_descr;
@@ -1438,29 +1466,26 @@ static inline void muart_dma_tx_irq(struct muart_port *uap)
 
 	if (status & MUART_IRQ_ST_MSK_STOP_DESC) {
 
-		dev_dbg_(uap->port.dev, "%s entry: free %d, sent %d, descr %08x\n",  __func__, uap->dmatx.free, uap->dmatx.sent, readl(&regs->tx_cur_desc_addr_r));
+		BUG_ON(!uap->dmatx.working_descr);
 
-		BUG_ON(uap->dmatx.sent == -1);
-
-		BUG_ON(uap->dmatx.ready != -1);
+		tx_descr = uap->dmatx.working_descr;
 	
-		BUG_ON(!(uap->dmatx.tx_descr[uap->dmatx.sent].hw_desc->flags_length & MDMA_BD_OWN));	// дескриптор должен быть освобожден
+		BUG_ON(!(tx_descr->hw_desc->flags_length & MDMA_BD_OWN));	// дескриптор должен быть освобожден
 
-		PRINT_ASYNC_DESCR((&uap->dmatx.tx_descr[uap->dmatx.sent]))
+		PRINT_ASYNC_DESCR(tx_descr)
 
-		uap->dmatx.ready = uap->dmatx.sent;
-		next = ( uap->dmatx.sent+1) % MUART_TX_DESC_CNT;
+		list_add_tail(&tx_descr->completed, &uap->dmatx.completed_list);
 
-		tx_descr = &uap->dmatx.tx_descr[next];
-
-		if ((tx_descr->hw_desc->flags_length & MDMA_BD_OWN) == 0) { // todo: сделать аппаратно
+		if (!list_empty(&uap->dmatx.pending_list)) {
+			tx_descr = list_entry(uap->dmatx.pending_list.next, struct muart_async_descriptor, pending);
+			list_del(&tx_descr->pending);
+			uap->dmatx.working_descr = tx_descr;
 			muart_dma_tx_start_cmd(regs, tx_descr);
-			uap->dmatx.sent = next;
 		}
-		else
-			uap->dmatx.sent = -1;
-
-		dev_dbg_(uap->port.dev, "%s return: free %d, sent %d\n",  __func__, uap->dmatx.free, uap->dmatx.sent);
+		else {
+			uap->dmatx.working_descr = NULL;
+			writel(MUART_IRQ_ST_MSK_SUSPEND_DONE | MUART_IRQ_ST_MSK_CANCEL_DONE, &regs->tx_irq_mask_r);
+		}
 
 		tasklet_schedule(&uap->dmatx.tx_tasklet);
 	}
@@ -1486,79 +1511,101 @@ static void muart_dma_tx_tasklet(unsigned long data)
 
 	dev_dbg_(muap->port.dev,  __func__);
 
-	BUG_ON(uap->dmatx.ready == -1);
+	//BUG_ON(uap->dmatx.ready == -1);
 
 	spin_lock_irqsave(&port->lock, flags);
-	descr = &uap->dmatx.tx_descr[uap->dmatx.ready];
-	uap->dmatx.ready = -1;
+	//descr = &uap->dmatx.tx_descr[uap->dmatx.ready];
+	//uap->dmatx.ready = -1;
+
+	descr = list_entry(uap->dmatx.completed_list.next, struct muart_async_descriptor, completed);
+	BUG_ON(!descr);
+
 	length = descr->hw_desc->flags_length & (MUART_MDMA_DESC_BUF_SIZE-1);
-//	xmit->tail += length;
-//	xmit->tail &= UART_XMIT_SIZE-1;
-//	if (uart_circ_chars_pending(xmit) < WAKEUP_CHARS)
-//		uart_write_wakeup(port);
+	//xmit->tail += length;
+	//xmit->tail &= UART_XMIT_SIZE-1;
+	//if (uart_circ_chars_pending(xmit) < WAKEUP_CHARS)
+	//	uart_write_wakeup(port);
 	dma_unmap_single(dev, descr->hw_desc->memptr, length, DMA_TO_DEVICE);
+
+	list_del(&descr->completed);
+	list_add_tail(&descr->free, &uap->dmatx.free_list);
+
 	spin_unlock_irqrestore(&port->lock, flags);
 }
-////////////////////////////////// rework!!!
+
 static inline bool muart_dma_tx_start(struct muart_port *uap)
 {
-	unsigned long flags;
+	//unsigned long flags;
 	struct circ_buf *xmit;
-	unsigned int len;
+	struct {
+		unsigned int len;
+		void* buf;
+	} tx_chunks[2];
+	unsigned int tx_chunks_num;
 	struct uart_port* port = &uap->port;
 	struct muart_async_descriptor* tx_descr;
+	unsigned int i;
 
 	dev_dbg_(uap->port.dev,  __func__);
 
-	dev_dbg_(uap->port.dev, "%s entry: free %d, sent %d\n",  __func__, uap->dmatx.free, uap->dmatx.sent);
-
-	spin_lock_irqsave(&port->lock, flags);
+	//spin_lock_irqsave(&port->lock, flags);
 
 	xmit = &uap->port.state->xmit;
 
-	len = CIRC_CNT_TO_END(xmit->head, xmit->tail, UART_XMIT_SIZE);
+	printk("Xmit: head=%u, tail=%u\n", xmit->head, xmit->tail);
 
-	if (len > MUART_MDMA_DESC_BUF_SIZE-1) {
-		dev_err(uap->port.dev, "%s: Too big write buffer " "(%d bytes).\n", __func__, len);
-		spin_unlock_irqrestore(&port->lock, flags);
-		return false; // todo-multiple descriptors
+	if (xmit->head > xmit->tail) {
+		tx_chunks[0].len = xmit->head - xmit->tail;
+		tx_chunks[0].buf = xmit->buf + xmit->tail;
+		tx_chunks[1].len = 0;
+		tx_chunks[1].buf = NULL;
+		tx_chunks_num = 1;
+	}
+	else {
+		tx_chunks[0].len = UART_XMIT_SIZE - xmit->tail;
+		tx_chunks[0].buf = xmit->buf + xmit->tail;
+		tx_chunks[1].len = xmit->head;
+		tx_chunks[1].buf = xmit->buf;
+		tx_chunks_num = 2;
 	}
 
-	if (uap->dmatx.free == uap->dmatx.sent) {
-		dev_err(uap->port.dev, "%s: Not free descriptors.\n", __func__);
-		spin_unlock_irqrestore(&port->lock, flags);
-		return false;
+	for (i=0; i<tx_chunks_num; i++)
+	{
+		if (list_empty(&uap->dmatx.free_list)) {
+			dev_err(uap->port.dev, "%s: Not free descriptors.\n", __func__);
+			//spin_unlock_irqrestore(&port->lock, flags);
+			return false;
+		}
+
+		tx_descr = list_entry(uap->dmatx.free_list.next, struct muart_async_descriptor, free);
+		tx_descr->buf = tx_chunks[i].buf;
+		tx_descr->hw_desc->memptr = dma_map_single(uap->port.dev, tx_descr->buf, tx_chunks[i].len, DMA_TO_DEVICE);
+		tx_descr->hw_desc->flags_length = tx_chunks[i].len;
+		tx_descr->hw_desc->flags_length |= (MDMA_BD_INT | MDMA_BD_STOP);
+		tx_descr->hw_desc->flags_length &= ~MDMA_BD_OWN;
+
+		PRINT_ASYNC_DESCR(tx_descr)
+
+		PRINT_BUF(tx_chunks[i].buf, tx_chunks[i].len)
+
+		if (!uap->dmatx.working_descr) {
+			uap->dmatx.working_descr = tx_descr;
+			muart_dma_tx_start_cmd((struct muart_regs *)uap->port.membase, tx_descr);
+		}
+		else {
+			list_add_tail(&tx_descr->pending, &uap->dmatx.pending_list);
+		}
+		list_del(&tx_descr->free);
+
+		xmit->tail += tx_chunks[i].len;
 	}
 
-	tx_descr = &uap->dmatx.tx_descr[uap->dmatx.free];
-	tx_descr->buf = xmit->buf + xmit->tail;
-
-	dev_dbg_(uap->port.dev,
-			"xmit len %u (%02x,%02x,%02x,%02x..%02x,%02x,%02x,%02x)\n",
-			len,
-			((char*)(tx_descr->buf))[0], ((char*)(tx_descr->buf))[1], ((char*)(tx_descr->buf))[2], ((char*)(tx_descr->buf))[3],
-			((char*)(tx_descr->buf))[len-4], ((char*)(tx_descr->buf))[len-3], ((char*)(tx_descr->buf))[len-2], ((char*)(tx_descr->buf))[len-1]);
-
-	tx_descr->hw_desc->memptr = dma_map_single(uap->port.dev, tx_descr->buf, len, DMA_TO_DEVICE);
-	tx_descr->hw_desc->flags_length = len;											// длина и флаги
-	tx_descr->hw_desc->flags_length |= (MDMA_BD_INT | MDMA_BD_STOP);				// | MDMA_BD_INC);
-	tx_descr->hw_desc->flags_length &= ~MDMA_BD_OWN;
-
-	if (uap->dmatx.sent == -1) {
-		uap->dmatx.sent = uap->dmatx.free;
-		muart_dma_tx_start_cmd((struct muart_regs *)uap->port.membase, tx_descr);
-	}
-
-	xmit->tail += len;
 	xmit->tail &= UART_XMIT_SIZE-1;
+
 	if (uart_circ_chars_pending(xmit) < WAKEUP_CHARS)
 		uart_write_wakeup(port);
 
-	uap->dmatx.free = (uap->dmatx.free+1) % MUART_TX_DESC_CNT;
-
-	spin_unlock_irqrestore(&port->lock, flags);
-
-	dev_dbg_(uap->port.dev, "%s return: free %d, sent %d\n",  __func__, uap->dmatx.free, uap->dmatx.sent);
+	//spin_unlock_irqrestore(&port->lock, flags);
 
 	return true;
 }
@@ -1567,8 +1614,7 @@ static inline void muart_dma_rx_irq(struct muart_port *uap)
 {
 	unsigned int status;
 	struct muart_regs* regs = (struct muart_regs*)uap->port.membase;
-	struct muart_async_descriptor* ready_descr;
-	struct muart_async_descriptor* next_descr;
+	struct muart_async_descriptor* rx_descr;
 	unsigned int flags_length;
 
 	dev_dbg_(muap->port.dev,  __func__);
@@ -1577,22 +1623,28 @@ static inline void muart_dma_rx_irq(struct muart_port *uap)
 	PRINT_DMA_STAT(status);
 
 	if (status & MUART_IRQ_ST_MSK_STOP_DESC) {
-		ready_descr = &uap->dmarx.rx_descr[uap->dmarx.curr];
-		flags_length = ready_descr->hw_desc->flags_length;
+		BUG_ON(!uap->dmarx.working_descr);
+
+		rx_descr = uap->dmarx.working_descr;
+		flags_length = rx_descr->hw_desc->flags_length;
 // remove after!!!
 		PRINT_CUSTOM_FLAGS(flags_length);
-		PRINT_ASYNC_DESCR(ready_descr)
-		PRINT_BUF(ready_descr->buf)
-		PRINT_BUF((char*)ready_descr->buf+(flags_length & (MUART_MDMA_DESC_BUF_SIZE-1))-8);
+		PRINT_ASYNC_DESCR(rx_descr)
+		PRINT_BUF(rx_descr->buf, (flags_length & (MUART_MDMA_DESC_BUF_SIZE-1)))
 
-		if (flags_length & (MUART_MDMA_DESC_BUF_SIZE-1)) {
-			uap->dmarx.ready = uap->dmarx.curr;
-			tasklet_schedule(&uap->dmarx.rx_tasklet);
+		list_add_tail(&rx_descr->pending, &uap->dmarx.pending_list);
+		tasklet_schedule(&uap->dmarx.rx_tasklet);
+
+		if (list_empty(&uap->dmarx.free_list)) {
+			dev_err(uap->port.dev, "%s: Not free descriptors.\n", __func__);
+			return;
 		}
 
-		uap->dmarx.curr = (uap->dmarx.curr+1) % MUART_RX_DESC_CNT;
-		next_descr = &uap->dmarx.rx_descr[uap->dmarx.curr];
-		muart_dma_rx_start_cmd(regs, next_descr);
+		rx_descr = list_entry(uap->dmarx.free_list.next, struct muart_async_descriptor, free);
+		list_del(&rx_descr->free);
+	
+		uap->dmarx.working_descr = rx_descr;
+		muart_dma_rx_start_cmd(regs, rx_descr);
 	}
 
 	if (status &  MUART_IRQ_ST_MSK_SUSPEND_DONE) {
@@ -1610,38 +1662,47 @@ static void muart_dma_rx_tasklet(unsigned long data)
 	struct muart_port* uap = (struct muart_port*)data;
 	struct uart_port* port = &uap->port;
 	struct device* dev = port->dev;
-	//struct circ_buf* xmit = &port->state->xmit;
 	struct tty_port* tty_port = &port->state->port;
-	struct muart_async_descriptor* descr;
+	struct muart_async_descriptor* rx_descr;
 	unsigned int length;
-	int room;
+	int copied;
+	unsigned char* dst;
 
 	dev_dbg_(dev,  __func__);
 
-	BUG_ON(uap->dmarx.ready == -1);
-
-	descr = &uap->dmarx.rx_descr[uap->dmarx.ready];
-	length = descr->hw_desc->flags_length & (MUART_MDMA_DESC_BUF_SIZE-1);
-	uap->dmarx.ready = -1;
-
-	PRINT_BUF(descr->buf)
-	PRINT_BUF((char*)descr->buf+length-8);
-
-	room = tty_buffer_request_room(tty_port, length);
-	dev_dbg_(dev, "Room %u, length %u\n", room, length);
-	if (room < length)
-		dev_dbg_(dev, "Rx overrun: dropping %u bytes\n",
-			 length - room);
-	if (!room)
-		return;
-
-	tty_insert_flip_string(tty_port, descr->buf, length);
-
-	PRINT_BUF(descr->buf)
-	PRINT_BUF((char*)descr->buf+length-8);
-
 	spin_lock_irqsave(&port->lock, flags);
+
+	rx_descr = list_entry(uap->dmarx.pending_list.next, struct muart_async_descriptor, pending);
+	BUG_ON(!rx_descr);
+	
+	length = rx_descr->hw_desc->flags_length & (MUART_MDMA_DESC_BUF_SIZE-1);
+
+	dma_sync_single_for_cpu(dev, rx_descr->hw_desc->memptr, MUART_MDMA_DESC_BUF_SIZE, DMA_FROM_DEVICE);
+
+	PRINT_BUF(rx_descr->buf, length)
+/*
+	copied = tty_insert_flip_string(tty_port, rx_descr->buf, length);
+	if ((unsigned)copied != length) {
+		dev_err(dev, "%s: tty_insert_flip_string failed (%d-%u)\n", __func__, copied, length);
+	}
+*/
+	if (tty_prepare_flip_string(tty_port, &dst, length)) {
+		memcpy(dst, rx_descr->buf, length);
+	}
+	else
+	{
+		dev_err(dev, "%s: tty_prepare_flip_string failed\n", __func__);
+	}
+
+	dma_sync_single_for_device(dev, rx_descr->hw_desc->memptr, MUART_MDMA_DESC_BUF_SIZE, DMA_FROM_DEVICE);
+
+	DBGP
 	tty_flip_buffer_push(tty_port);
+	DBGP
+
+	list_del(&rx_descr->pending);
+	list_add_tail(&rx_descr->free, &uap->dmarx.free_list);
+
 	spin_unlock_irqrestore(&port->lock, flags);
 }
 
