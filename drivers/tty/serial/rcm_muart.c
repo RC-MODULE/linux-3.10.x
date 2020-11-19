@@ -148,10 +148,11 @@
 	PRINT_BIT(FL, MDMA_MUART_FLAG_FER) \
 	printk("Length=%u\n", FL&(MUART_MDMA_DESC_BUF_SIZE-1))
 
-#define PRINT_BUF(BUF,LEN) printk("Length=%u;Buffer=%02x,%02x,%02x,%02x,%02x,%02x,%02x,%02x..%02x,%02x,%02x,%02x,%02x,%02x,%02x,%02x\n", \
+#define PRINT_BUF(BUF,LEN) printk("Length=%u;Buffer=%02x,%02x,%02x,%02x,%02x,%02x,%02x,%02x..%02x..%02x,%02x,%02x,%02x,%02x,%02x,%02x,%02x\n", \
 	LEN, \
 	((char*)BUF)[0], ((char*)BUF)[1], ((char*)BUF)[2], ((unsigned char*)BUF)[3], \
 	((char*)BUF)[4], ((char*)BUF)[5], ((char*)BUF)[6], ((unsigned char*)BUF)[7], \
+	((char*)BUF)[1088], \
 	((char*)BUF)[LEN-8], ((char*)BUF)[LEN-7], ((char*)BUF)[LEN-6], ((char*)BUF)[LEN-5], \
 	((char*)BUF)[LEN-4], ((char*)BUF)[LEN-3], ((char*)BUF)[LEN-2], ((char*)BUF)[LEN-1]);
 
@@ -274,6 +275,7 @@ struct muart_async_descriptor {
 
 struct muart_dma_data {
 	bool running;
+	struct completion ready;
 	struct completion suspend;
 	struct completion cancel;
 	struct tasklet_struct tasklet;
@@ -1192,6 +1194,7 @@ static inline int muart_dma_probe(struct muart_port *uap)
 
 	init_completion(&uap->dmarx.suspend);
 	init_completion(&uap->dmarx.cancel);
+	init_completion(&uap->dmatx.ready);
 	init_completion(&uap->dmatx.suspend);
 	init_completion(&uap->dmatx.cancel);
 
@@ -1424,6 +1427,14 @@ static inline void muart_dma_tx_irq(struct muart_port *uap)
 	}
 }
 
+static void muart_dma_tx_complete(struct circ_buf* xmit, struct uart_port* port, unsigned int length)
+{
+	xmit->tail += length;
+	xmit->tail &= UART_XMIT_SIZE-1;
+	if (uart_circ_chars_pending(xmit) < WAKEUP_CHARS)
+	uart_write_wakeup(port);
+}
+
 static void muart_dma_tx_tasklet(unsigned long data)
 {
 	unsigned long flags;
@@ -1443,8 +1454,6 @@ static void muart_dma_tx_tasklet(unsigned long data)
 
 	list_del(&tx_descr->completed);
 	list_add_tail(&tx_descr->free, &uap->dmatx.free_list);
-
-	spin_unlock_irqrestore(&uap->dmatx.lock, flags);
 }
 
 static inline bool muart_dma_tx_start(struct muart_port *uap)
@@ -1455,12 +1464,12 @@ static inline bool muart_dma_tx_start(struct muart_port *uap)
 		unsigned int len;
 		void* buf;
 	} tx_chunks[2];
-	unsigned int tx_chunks_num;
+	unsigned int tx_chunks_num = 1;
 	struct uart_port* port = &uap->port;
 	struct muart_regs* regs = (struct muart_regs*)uap->port.membase;
 	struct muart_async_descriptor* tx_descr;
 	struct device* dev = uap->port.dev;
-	unsigned int i;
+	unsigned int length = 0, i;
 
 	dev_dbg_(dev,  __func__);
 
@@ -1473,14 +1482,14 @@ static inline bool muart_dma_tx_start(struct muart_port *uap)
 		tx_chunks[0].buf = xmit->buf + xmit->tail;
 		tx_chunks[1].len = 0;
 		tx_chunks[1].buf = NULL;
-		tx_chunks_num = 1;
 	}
 	else {
 		tx_chunks[0].len = UART_XMIT_SIZE - xmit->tail;
 		tx_chunks[0].buf = xmit->buf + xmit->tail;
 		tx_chunks[1].len = xmit->head;
 		tx_chunks[1].buf = xmit->buf;
-		tx_chunks_num = 2;
+		if (tx_chunks[1].len)
+			tx_chunks_num = 2;
 	}
 
 	spin_lock_irqsave(&uap->dmatx.lock, flags);
@@ -1520,14 +1529,12 @@ static inline bool muart_dma_tx_start(struct muart_port *uap)
 
 		list_del(&tx_descr->free);
 
-		xmit->tail += tx_chunks[i].len;
+		length += tx_chunks[i].len;
 	}
 
 	spin_unlock_irqrestore(&uap->dmatx.lock, flags);
 
-	xmit->tail &= UART_XMIT_SIZE-1;
-	if (uart_circ_chars_pending(xmit) < WAKEUP_CHARS)
-		uart_write_wakeup(port);
+	muart_dma_tx_complete(xmit, port, length);
 
 	return true;
 }
