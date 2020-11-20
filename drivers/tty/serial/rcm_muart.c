@@ -101,8 +101,6 @@
 #define MUART_IRQ_ST_MSK_IGNORE_EVENT (1<<9) // The event triggering MDMA occurred while MDMA was active
 #define MUART_IRQ_ST_MSK_FULL ((1<<10)-1) // All interrupt types enabled
 
-#define MUART_TX_DESC_CNT 128
-#define MUART_RX_DESC_CNT 4
 #define MAURT_DESC_GAP (sizeof(struct mdma_desc_long_ll))
 
 #define MUART_TX_DESC_POOL_SIZE (MUART_TX_DESC_CNT*sizeof(struct mdma_desc_long_ll))
@@ -113,6 +111,14 @@
 //#define MUART_MDMA_TX_MEMALLOC
 #define MUART_MDMA_RX_TIMEOUT 5000	// in bit intervals
 #define MUART_MDMA_TXRX_SETTINGS ((MAURT_DESC_GAP << 16) | (1<<4) | 2)
+
+#ifdef MUART_MDMA_TX_MEMALLOC
+	#define MUART_TX_DESC_CNT 128
+	#define MUART_RX_DESC_CNT 4
+#else
+	#define MUART_TX_DESC_CNT 2
+	#define MUART_RX_DESC_CNT 2
+#endif
 
 // MUART_GEN_STATUS
 #define MUART_IRQ 0x01 // MUART interrupt
@@ -289,7 +295,6 @@ struct muart_port {
 	unsigned long baud;
 	/* DMA stuff */
 	bool using_dma;
-	bool loopback;
 	struct muart_async_descriptor rx_descr[MUART_RX_DESC_CNT];
 	struct muart_async_descriptor tx_descr[MUART_TX_DESC_CNT];
 	struct muart_dma_data dmarx;
@@ -509,14 +514,10 @@ static irqreturn_t muart_isr(int irq, void *dev_id)
 
 	if (uap->using_dma) {
 		if (gen_status & MDMA_RD_IRQ) {
-			//spin_lock(&port->lock);
 			muart_dma_tx_irq(uap);
-			//spin_unlock(&port->lock);
 		}
 		if (gen_status & MDMA_WR_IRQ) {
-			//spin_lock(&port->lock);
 			muart_dma_rx_irq(uap);
-			//spin_unlock(&port->lock);
 		}
 		return IRQ_HANDLED;
 	}
@@ -552,14 +553,9 @@ static unsigned int muart_get_mctrl(struct uart_port *port)
 
 static void muart_set_mctrl(struct uart_port *port, unsigned int mctrl)
 {
-	struct muart_port *uart = to_muart_port(port);
 	struct muart_regs *regs = (struct muart_regs *)port->membase;
 
-	printk("%s: %u\n", __func__, mctrl);
-
-	if (uart->loopback)
-		return;
-	/* able to setup only LOOPBACK, but if only loopback not enabled in dts */
+	/* able to setup only LOOPBACK */
 	if (mctrl & TIOCM_LOOP) {
 		writel(readl(&regs->ctrl) | (1 << MUART_CTRL_LBE_i),
 			&regs->ctrl);
@@ -686,16 +682,12 @@ static void muart_set_termios(struct uart_port *port, struct ktermios *termios,
 
 	divisor = port->uartclk / ((N ? 10 : 8) * baud);
 
-	// todo DMA
 	ctrl_value = (1 << MUART_CTRL_MEN_i) |	(1 << MUART_CTRL_RTS_POL); // Note: UART is assumed to be RTS active high.
+
 	if (!muap->using_dma)
 		ctrl_value |= (1 << MUART_CTRL_APB_MD_i); // APB mode,
 	else
 		ctrl_value |= (1 << MUART_CTRL_DUM_i); // data only
-	if (muap->loopback) {
-		ctrl_value |= (1 << MUART_CTRL_LBE_i);
-		ctrl_value |= (1 << MUART_CTRL_CTSen_i) | (1 << MUART_CTRL_RTSen_i);
-	}
 
 	switch (termios->c_cflag & CSIZE) {
 	case CS5:
@@ -1093,17 +1085,13 @@ int muart_probe(struct platform_device *pdev)
 	dev_set_drvdata(&pdev->dev, uart);
 
 	uart->using_dma = of_property_read_bool(np, "using-dma");
-	uart->loopback = of_property_read_bool(np, "loopback");
 
 	ctrl_value = ((0 << MUART_CTRL_EPS_i) | (0 << MUART_CTRL_STP2_i) | (3 << MUART_CTRL_WLEN_i) | (1 << MUART_CTRL_MEN_i)); // n prity,1 stop bit,8 data bit,enable
 	if (!uart->using_dma)
 		ctrl_value |= (1 << MUART_CTRL_APB_MD_i); // APB mode,
 	else
 		ctrl_value |= (1 << MUART_CTRL_DUM_i); // data only
-	if (uart->loopback) {
-		ctrl_value |= (1 << MUART_CTRL_LBE_i);
-		ctrl_value |= (1 << MUART_CTRL_CTSen_i) | (1 << MUART_CTRL_RTSen_i);
-	}
+
 	writel(ctrl_value, &regs->ctrl);
 
 	port->irq = irq_of_parse_and_map(np, 0);
@@ -1539,7 +1527,7 @@ static inline bool muart_dma_tx_start(struct muart_port *uap)
 
 #ifndef MUART_MDMA_TX_MEMALLOC
 	if (wait_for_completion_timeout(&uap->dmatx.ready,
-									usecs_to_jiffies(500000)) == 0) {
+									usecs_to_jiffies(5000000)) == 0) {
 		dev_err(dev, "%s: Tx ready timeout\n", __func__);
 		return false;
 	}
