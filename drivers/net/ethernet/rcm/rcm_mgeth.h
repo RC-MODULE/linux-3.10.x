@@ -7,6 +7,12 @@
 #include <linux/phy.h>
 #include <linux/of_device.h>
 
+#ifdef CONFIG_BASIS_PLATFORM
+#	include "../../../misc/rcm/basis/basis-device.h"
+#	include "../../../misc/rcm/basis/basis-controller.h"
+#	include "../../../misc/rcm/basis/basis-cfs.h"
+#endif
+
 #define RCM_MGETH_MAX_DMA_CHANNELS 4
 
 #define RCM_MGETH_MIN_FRAME_SIZE 60
@@ -33,6 +39,22 @@ struct rcm_mgeth_data {
 
 	struct rcm_mgeth_dma_chan *tx[RCM_MGETH_MAX_DMA_CHANNELS];
 	struct rcm_mgeth_dma_chan *rx[RCM_MGETH_MAX_DMA_CHANNELS];
+
+#ifdef CONFIG_BASIS_PLATFORM
+	struct basis_device    *device;
+	u32                     regs;
+	u32                     regs_size;
+	u32                     reg_rx_mask[RCM_MGETH_MAX_DMA_CHANNELS];
+	u32                     reg_rx_mask_size;
+	u32                     reg_rx_chan[RCM_MGETH_MAX_DMA_CHANNELS];
+	u32                     reg_rx_chan_size;
+	u32                     reg_tx_chan[RCM_MGETH_MAX_DMA_CHANNELS];
+	u32                     reg_tx_chan_size;
+	u32                     hwirq;
+	char                    phy[64];
+	char                    phy_dev[64];
+	char                    phy_mode[64];
+#endif
 };
 
 typedef void (*rcm_mgeth_dma_tx_callback)(struct rcm_mgeth_dma_chan*, int,   u32);

@@ -12,6 +12,13 @@
 #include <linux/of_device.h>
 #include <linux/of_mdio.h>
 #include <linux/regmap.h>
+#include <linux/io.h>
+
+#ifdef CONFIG_BASIS_PLATFORM
+#	include "../../../misc/rcm/basis/basis-device.h"
+#	include "../../../misc/rcm/basis/basis-controller.h"
+#	include "../../../misc/rcm/basis/basis-cfs.h"
+#endif
 
 #define PHY_ID_MASK  0x1F
 #define PHY_REG_MASK 0x1F
@@ -34,6 +41,13 @@ struct rcm_mdio_data {
 	struct regmap  *reg;
 	struct device  *dev;
 	struct mii_bus *bus;
+#ifdef CONFIG_BASIS_PLATFORM
+	struct basis_device    *device;
+	u32                     regs;
+	u32                     regs_size;
+	u32                     sctl;
+	u32                     sctl_size;
+#endif
 };
 
 static int rcm_mdio_reset(struct mii_bus *bus)
@@ -137,6 +151,149 @@ static const struct regmap_config rcm_mdio_regmap_config = {
 	.max_register = RCM_MDIO_EN,
 	.fast_io = true,
 };
+
+#ifdef CONFIG_BASIS_PLATFORM
+
+static int rcm_mdio_bind(struct basis_device *device)
+{
+	struct device *dev = &device->dev;
+	struct rcm_mdio_data *data = basis_device_get_drvdata(device);
+	void __iomem *base;
+	struct phy_device *phy;
+	int ret;
+	int addr;
+	u32 id;
+	u32 ver;
+
+	dev_info(dev, "%s: controller: \"%s\"\n",
+	         __func__, dev_name(&device->controller->dev));
+
+	data->bus = devm_mdiobus_alloc(dev);
+	if (!data->bus) {
+		dev_err(dev, "failed to alloc mii bus\n");
+		return -ENOMEM;
+	}
+
+	snprintf(data->bus->id, MII_BUS_ID_SIZE, "%s", dev_name(dev));
+
+	data->bus->name		= device->name;
+	data->bus->read		= rcm_mdio_read,
+	data->bus->write	= rcm_mdio_write,
+	data->bus->reset	= rcm_mdio_reset,
+	data->bus->parent	= dev;
+	data->bus->priv		= data;
+
+	dev_set_drvdata(dev, data);
+	data->dev = dev;
+
+	base = devm_ioremap(dev, data->regs + device->controller->ep_base_phys,
+	                    data->regs_size);
+	if (IS_ERR(base)) {
+		dev_err(dev, "missing \"reg\"\n");
+		return PTR_ERR(base);
+	}
+
+	data->reg = devm_regmap_init(dev, &basis_regmap_bus, base,
+	                             &rcm_mdio_regmap_config);
+	if (IS_ERR(data->reg)) {
+		dev_err(dev, "failed to init regmap\n");
+		return PTR_ERR(data->reg);
+	}
+
+	regmap_read(data->reg, RCM_MDIO_ID,      &id);
+	regmap_read(data->reg, RCM_MDIO_VERSION, &ver);
+
+	dev_info(dev, "ID: 0x%08X, conf: %u, vers: %u, freq: %u.\n", 
+	         id, ver & 0xFF, (ver & 0xFF00) >> 8, (ver & 0x0FFF0000) >> 16);
+
+	regmap_write(data->reg, RCM_MDIO_IRQ_MASK, 0);
+
+	ret = mdiobus_register(data->bus);
+	if (ret) {
+		dev_err(dev, "failed to register mdio-bus.\n");
+		return ret;
+	}
+
+	/* scan and dump the bus */
+	for (addr = 0; addr < PHY_MAX_ADDR; addr++) {
+		phy = mdiobus_get_phy(data->bus, addr);
+		if (phy) {
+			device->priv = phy;
+			dev_info(dev, "phy[%d]: device %s, driver %s\n",
+			         phy->mdio.addr, phydev_name(phy),
+			         phy->drv ? phy->drv->name : "unknown");
+		}
+	}
+
+	dev_info(dev, "initialized\n");
+
+	return 0;
+}
+
+static void rcm_mdio_unbind(struct basis_device *device)
+{
+	struct rcm_mdio_data *data = basis_device_get_drvdata(device);
+
+	device->priv = NULL;
+
+	if (data->bus)
+		mdiobus_unregister(data->bus);
+}
+
+static int rcm_mdio_probe(struct basis_device *device)
+{
+	struct rcm_mdio_data *data;
+	struct device *dev = &device->dev;
+
+	data = devm_kzalloc(dev, sizeof(*data), GFP_KERNEL);
+	if (!data)
+		return -ENOMEM;
+
+	data->device = device;
+
+	basis_device_set_drvdata(device, data);
+
+	return 0;
+}
+
+static const struct basis_device_id rcm_mdio_ids[] = {
+	{
+		.name = "rcm-mdio",
+	},
+	{},
+};
+
+static struct basis_device_ops rcm_mdio_ops = {
+	.unbind = rcm_mdio_unbind,
+	.bind   = rcm_mdio_bind,
+};
+
+BASIS_DEV_ATTR_U32_SHOW(rcm_mdio_,  regs,        struct rcm_mdio_data);
+BASIS_DEV_ATTR_U32_STORE(rcm_mdio_, regs,        struct rcm_mdio_data);
+
+BASIS_DEV_ATTR_U32_SHOW(rcm_mdio_,  regs_size,   struct rcm_mdio_data);
+BASIS_DEV_ATTR_U32_STORE(rcm_mdio_, regs_size,   struct rcm_mdio_data);
+
+CONFIGFS_ATTR(rcm_mdio_, regs);
+CONFIGFS_ATTR(rcm_mdio_, regs_size);
+
+static struct configfs_attribute *rcm_mdio_attrs[] = {
+	&rcm_mdio_attr_regs,
+	&rcm_mdio_attr_regs_size,
+	NULL,
+};
+
+static struct basis_device_driver rcm_mdio_driver = {
+	.driver.name    = "rcm_mdio",
+	.probe          = rcm_mdio_probe,
+	.id_table       = rcm_mdio_ids,
+	.ops            = &rcm_mdio_ops,
+	.owner          = THIS_MODULE,
+	.attrs          = rcm_mdio_attrs,
+};
+module_basis_driver(rcm_mdio_driver);
+
+#else /* CONFIG_BASIS_PLATFORM */
 
 static const struct of_device_id rcm_mdio_of_mtable[];
 
@@ -248,6 +405,8 @@ static struct platform_driver rcm_mdio_driver = {
 };
 
 module_platform_driver(rcm_mdio_driver);
+
+#endif /* CONFIG_BASIS_PLATFORM */
 
 MODULE_LICENSE("GPL");
 MODULE_DESCRIPTION("RCM MDIO driver");

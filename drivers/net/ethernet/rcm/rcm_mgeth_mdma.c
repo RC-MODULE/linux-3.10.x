@@ -31,6 +31,9 @@ struct rcm_mgeth_dma_buff
 {
 	dma_addr_t                dma_addr;
 	void                     *buff;
+#ifdef CONFIG_BASIS_PLATFORM
+	u32                       ep_addr;
+#endif
 };
 
 struct rcm_mgeth_mdma_req {
@@ -38,6 +41,9 @@ struct rcm_mgeth_mdma_req {
 	struct sk_buff           *skb;
 	void                     *buff;
 	dma_addr_t                dma_addr;
+#ifdef CONFIG_BASIS_PLATFORM
+	u32                       ep_addr;
+#endif
 	u32                       size;
 	rcm_mgeth_dma_tx_callback callback;
 	bool                      completed;
@@ -62,6 +68,8 @@ struct rcm_mgeth_dma_chan {
 	unsigned                     first_buff;
 	unsigned                     cnt_buffs;
 	unsigned                     rest_buffs;
+
+	bool                         single_alloc;
 
 	struct
 	{
@@ -123,8 +131,13 @@ static void rcm_mgeth_dma_start_tx(struct rcm_mgeth_dma_chan *chan)
 	list_for_each_entry(req, &chan->tx.pending_list, node) {
 		bool last = list_is_last(&req->node, &chan->tx.pending_list);
 
+#ifdef CONFIG_BASIS_PLATFORM
+		pos += mdma_desc_pool_fill(&chan->desc_pool, pos, req->ep_addr,
+		                           req->size, last, last);
+#else
 		pos += mdma_desc_pool_fill(&chan->desc_pool, pos, req->dma_addr,
 		                           req->size, last, last);
+#endif
 	}
 
 	list_splice_tail_init(&chan->tx.pending_list, &chan->tx.active_list);
@@ -200,9 +213,17 @@ static void rcm_mgeth_dma_tx_tasklet(unsigned long data)
 		spin_lock_irqsave(&chan->lock, irqflags);
 
 		if (req->skb) {
+#ifdef CONFIG_BASIS_PLATFORM
+			basis_device_dma_unmap_single(chan->netdev->dev.parent,
+			                              req->dma_addr,
+			                              req->ep_addr,
+			                              req->skb->len,
+			                              DMA_TO_DEVICE);
+#else
 			dma_unmap_single(chan->netdev->dev.parent,
 			                 req->dma_addr, req->skb->len,
 			                 DMA_TO_DEVICE);
+#endif
 			dev_kfree_skb(req->skb);
 			req->skb = NULL;
 		} else {
@@ -242,6 +263,10 @@ bool rcm_mgeth_dma_submit_tx(struct rcm_mgeth_dma_chan *chan,
 	                (skb->len + offset_in_page(skb->data) > PAGE_SIZE) ||
 	                (skb->len < RCM_MGETH_MIN_FRAME_SIZE);
 
+#ifdef CONFIG_BASIS_PLATFORM
+	copy_skb = true;
+#endif
+
 	if (chan->dir == DMA_FROM_DEVICE) {
 		netdev_err(chan->netdev,
 		           "[%s] Attemp to submit packet to RX-channel.\n",
@@ -277,6 +302,9 @@ bool rcm_mgeth_dma_submit_tx(struct rcm_mgeth_dma_chan *chan,
 		req->skb = NULL;
 		req->buff = buff->buff;
 		req->dma_addr = buff->dma_addr;
+#ifdef CONFIG_BASIS_PLATFORM
+		req->ep_addr = buff->ep_addr;
+#endif
 		req->size = skb->len;
 		skb_copy_bits(skb, 0, req->buff, skb->len);
 		if (skb->len < RCM_MGETH_MIN_FRAME_SIZE) {
@@ -289,8 +317,24 @@ bool rcm_mgeth_dma_submit_tx(struct rcm_mgeth_dma_chan *chan,
 		req->skb = skb;
 		req->buff = skb->data;
 		req->dma_addr = 
+#ifdef CONFIG_BASIS_PLATFORM
+			basis_device_dma_map_single(chan->netdev->dev.parent,
+			                            skb->data, skb->len,
+			                            DMA_TO_DEVICE,
+			                            &req->ep_addr);
+#else
 			dma_map_single(chan->netdev->dev.parent, skb->data,
 			               skb->len, DMA_TO_DEVICE);
+#endif
+
+		if (req->dma_addr == DMA_MAPPING_ERROR) {
+			netdev_err(chan->netdev,
+			           "[%s] Failed to map packet for DMA.\n",
+			           chan->name);
+			spin_unlock_irqrestore(&chan->lock, irqflags);
+			return false;
+		}
+
 		req->size = skb->len;
 	}
 
@@ -399,7 +443,11 @@ int rcm_mgeth_dma_rx_poll(struct rcm_mgeth_dma_chan *chan, int budget)
 		spin_lock_irqsave(&chan->lock, irqflags);
 
 		mdma_desc_pool_fill(&chan->desc_pool, chan->rx.pos,
+#ifdef CONFIG_BASIS_PLATFORM
+		                    chan->buffs[chan->rx.num_buff].ep_addr,
+#else
 		                    chan->buffs[chan->rx.num_buff].dma_addr,
+#endif
 		                    RCM_MGETH_MAX_FRAME_SIZE,
 		                    false, true);
 		chan->rx.pos = (chan->rx.pos + 1) % chan->desc_pool.size;
@@ -485,12 +533,48 @@ struct rcm_mgeth_dma_chan *rcm_mgeth_dma_chan_create(struct net_device *netdev,
 		return NULL;
 	}
 
+	chan->buffs[0].buff = 
+#ifdef CONFIG_BASIS_PLATFORM
+		basis_device_dma_alloc_coherent(
+			netdev->dev.parent,
+			RCM_MGETH_DMA_BUFF_SIZE * chan->cnt_buffs,
+			&chan->buffs[0].dma_addr,
+			&chan->buffs[0].ep_addr,
+			GFP_KERNEL);
+#else
+		dma_alloc_coherent(netdev->dev.parent,
+		                   RCM_MGETH_DMA_BUFF_SIZE * chan->cnt_buffs,
+		                   &chan->buffs[i].dma_addr,
+		                   GFP_KERNEL);
+#endif
+	chan->single_alloc = (chan->buffs[0].buff != NULL);
+
 	for (i = 0; i < chan->cnt_buffs; ++i) {
+		if (chan->single_alloc) {
+			chan->buffs[i].buff     = chan->buffs[0].buff + 
+			                          RCM_MGETH_DMA_BUFF_SIZE * i;
+			chan->buffs[i].dma_addr = chan->buffs[0].dma_addr + 
+			                          RCM_MGETH_DMA_BUFF_SIZE * i;
+#ifdef CONFIG_BASIS_PLATFORM
+			chan->buffs[i].ep_addr  = chan->buffs[0].ep_addr + 
+			                          RCM_MGETH_DMA_BUFF_SIZE * i;
+#endif
+			continue;
+		}
+
 		chan->buffs[i].buff = 
+#ifdef CONFIG_BASIS_PLATFORM
+			basis_device_dma_alloc_coherent(netdev->dev.parent,
+			                                RCM_MGETH_DMA_BUFF_SIZE,
+			                                &chan->buffs[i].dma_addr,
+			                                &chan->buffs[i].ep_addr,
+			                                GFP_KERNEL);
+#else
 			dma_alloc_coherent(netdev->dev.parent,
 			                   RCM_MGETH_DMA_BUFF_SIZE,
 			                   &chan->buffs[i].dma_addr,
 			                   GFP_KERNEL);
+#endif
 
 		if (!chan->buffs[i].buff) {
 			netdev_err(netdev,
@@ -530,7 +614,11 @@ struct rcm_mgeth_dma_chan *rcm_mgeth_dma_chan_create(struct net_device *netdev,
 
 		for (i = 0; i < chan->cnt_buffs; ++i) {
 			pos += mdma_desc_pool_fill(&chan->desc_pool, pos,
+#ifdef CONFIG_BASIS_PLATFORM
+			                           chan->buffs[i].ep_addr,
+#else
 			                           chan->buffs[i].dma_addr,
+#endif
 			                           RCM_MGETH_MAX_FRAME_SIZE,
 			                           false, true);
 		}
@@ -549,12 +637,41 @@ void rcm_mgeth_dma_chan_remove(struct rcm_mgeth_dma_chan *chan)
 	if (chan->tx.requests)
 		kfree(chan->tx.requests);
 	if (chan->buffs) {
-		for (i = 0; i < chan->cnt_buffs; ++i) {
-			if (chan->buffs[i].buff) {
-				dma_free_coherent(chan->netdev->dev.parent, 
-				                  RCM_MGETH_DMA_BUFF_SIZE, 
-				                  chan->buffs[i].buff,
-				                  chan->buffs[i].dma_addr);
+		if (chan->single_alloc) {
+			if (chan->buffs[0].buff) {
+#ifdef CONFIG_BASIS_PLATFORM
+				basis_device_dma_free_coherent(
+					chan->netdev->dev.parent,
+					RCM_MGETH_DMA_BUFF_SIZE * chan->cnt_buffs,
+					chan->buffs[0].buff,
+					chan->buffs[0].dma_addr,
+					chan->buffs[0].ep_addr);
+#else
+				dma_free_coherent(
+					chan->netdev->dev.parent, 
+					RCM_MGETH_DMA_BUFF_SIZE * chan->cnt_buffs, 
+					chan->buffs[0].buff,
+					chan->buffs[0].dma_addr);
+#endif
+			}
+		} else {
+			for (i = 0; i < chan->cnt_buffs; ++i) {
+				if (chan->buffs[i].buff) {
+#ifdef CONFIG_BASIS_PLATFORM
+					basis_device_dma_free_coherent(
+						chan->netdev->dev.parent,
+						RCM_MGETH_DMA_BUFF_SIZE,
+						chan->buffs[i].buff,
+						chan->buffs[i].dma_addr,
+						chan->buffs[i].ep_addr);
+#else
+					dma_free_coherent(
+						chan->netdev->dev.parent, 
+						RCM_MGETH_DMA_BUFF_SIZE, 
+						chan->buffs[i].buff,
+						chan->buffs[i].dma_addr);
+#endif
+				}
 			}
 		}
 
