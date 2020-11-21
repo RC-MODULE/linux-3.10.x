@@ -350,7 +350,7 @@
             reg = <0x01044000 0x1000>;
             interrupt-parent = <&gic0>;
             interrupts = <0 44 4>;
-            using-dma;
+            //using-dma;
         };
 
         uart1: uart1@01045000 {

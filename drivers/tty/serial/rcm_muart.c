@@ -4,6 +4,8 @@
  *  by the Free Software Foundation.
  *
  *  Copyright (C) 2020 Alexey Spirkov <dev@alsp.net>
+ *  2020 Vladimir Shalyt <Vladimir.Shalyt@mir.dev>
+ *  - DMA support
  */
 
 #include <linux/module.h>
@@ -108,7 +110,7 @@
 
 #define MUART_MDMA_DESC_BUF_SIZE (1<<14)
 
-#define MUART_MDMA_TX_MEMALLOC
+#define MUART_MDMA_TX_MEMALLOC // Allocate buffers for transmitted data,if defined,otherwise pending send
 #define MUART_MDMA_RX_TIMEOUT 5000	// in bit intervals
 #define MUART_MDMA_TXRX_SETTINGS ((MAURT_DESC_GAP << 16) | (1<<4) | 2)
 
@@ -126,9 +128,9 @@
 #define MDMA_WR_IRQ 0x04 // MDMA write channel interrupt
 
 // For debug purpose
-#define RCM_MUART_DEBUG
+//#define RCM_MUART_DEBUG
 
-#ifdef RCM_MUART_DEBUG
+//#ifdef RCM_MUART_DEBUG
 #define PRINT_ASYNC_DESCR(DESCR) printk("%s,%u(%s),Desc:hw_desc=%08x,memptr=%08x,fllen=%08x,buf=%08x,phys=%08x\n", \
 										__FILE__, __LINE__,  __func__, \
 										(unsigned int)DESCR->hw_desc, DESCR->hw_desc->memptr, DESCR->hw_desc->flags_length, \
@@ -154,11 +156,10 @@
 	PRINT_BIT(FL, MDMA_MUART_FLAG_PER) \
 	PRINT_BIT(FL, MDMA_MUART_FLAG_FER) \
 	printk("Length=%u\n", FL&(MUART_MDMA_DESC_BUF_SIZE-1))
-#define PRINT_BUF(BUF,LEN) printk("Length=%u;Buffer=%02x,%02x,%02x,%02x,%02x,%02x,%02x,%02x..%02x..%02x,%02x,%02x,%02x,%02x,%02x,%02x,%02x\n", \
+#define PRINT_BUF(BUF,LEN) printk("Length=%u;Buffer=%02x,%02x,%02x,%02x,%02x,%02x,%02x,%02x..%02x,%02x,%02x,%02x,%02x,%02x,%02x,%02x\n", \
 	LEN, \
 	((char*)BUF)[0], ((char*)BUF)[1], ((char*)BUF)[2], ((unsigned char*)BUF)[3], \
 	((char*)BUF)[4], ((char*)BUF)[5], ((char*)BUF)[6], ((unsigned char*)BUF)[7], \
-	((char*)BUF)[1088], \
 	((char*)BUF)[LEN-8], ((char*)BUF)[LEN-7], ((char*)BUF)[LEN-6], ((char*)BUF)[LEN-5], \
 	((char*)BUF)[LEN-4], ((char*)BUF)[LEN-3], ((char*)BUF)[LEN-2], ((char*)BUF)[LEN-1]);
 #else
@@ -370,7 +371,6 @@ static void muart_stop_tx(struct uart_port *port)
 	struct muart_regs *regs = (struct muart_regs *)port->membase;
 
 	if (muap->using_dma) {
-		printk("%s\n", __func__);
 		muart_dma_tx_stop(muap);
 		return;
 	}
@@ -882,7 +882,6 @@ static const struct uart_ops muart_serial_pops = {
 #ifdef CONFIG_SERIAL_MUART_CONSOLE
 static int muart_serial_console_setup(struct console *co, char *options)
 {
-
 	struct uart_port *port;
 	int ret;
 	int baud = 6250000;
@@ -918,16 +917,12 @@ static int muart_serial_console_setup(struct console *co, char *options)
 	 * Serial core will call port->ops->set_termios( )
 	 * which will set the baud reg
 	 */
-	ret = uart_set_options(port, co, baud, parity, bits, flow);
-
-	return ret;
+	return uart_set_options(port, co, baud, parity, bits, flow);
 }
 
 static void muart_serial_console_putchar(struct uart_port *port, int ch)
 {
 	struct muart_regs *regs = (struct muart_regs *)port->membase;
-
-	//printk("%s\n", __func__);
 
 	while (((readl(&regs->fifo_state) >> MUART_TXFS_i) & MUART_FIFO_MASK) >
 	       1023)
@@ -970,8 +965,6 @@ static int __init muart_console_match(struct console *co, char *name, int idx,
 	resource_size_t addr;
 	int i;
 
-	printk("muart_console_match\n");
-
 	if (strcmp(name, "muart") != 0)
 		return -ENODEV;
 
@@ -995,7 +988,6 @@ static int __init muart_console_match(struct console *co, char *name, int idx,
 
 		co->index = i;
 		port->cons = co;
-		printk("!!!!!!!!!!!!!!!!!%s(%u)\n",__FILE__,__LINE__);
 		return muart_serial_console_setup(co, options);
 	}
 	return -ENODEV;
@@ -1053,8 +1045,6 @@ int muart_probe(struct platform_device *pdev)
 	unsigned int i;
 	unsigned int ctrl_value;
 
-	printk("muart_probe %s\n", pdev->name);
-
 	/* no device tree device */
 	if (!np)
 		return -ENODEV;
@@ -1099,6 +1089,8 @@ int muart_probe(struct platform_device *pdev)
 	dev_set_drvdata(&pdev->dev, uart);
 
 	uart->using_dma = of_property_read_bool(np, "using-dma");
+	if (uart->using_dma)
+		dev_info(&pdev->dev, "DMA support enabled\n");
 
 	ctrl_value = ((0 << MUART_CTRL_EPS_i) | (0 << MUART_CTRL_STP2_i) | (3 << MUART_CTRL_WLEN_i) | (1 << MUART_CTRL_MEN_i)); // n prity,1 stop bit,8 data bit,enable
 	if (!uart->using_dma)
@@ -1509,8 +1501,6 @@ static inline bool muart_dma_tx_start(struct muart_port *uap)
 
 	xmit = &uap->port.state->xmit;
 
-	printk("!!!!!!!!!!!Xmit: head=%u, tail=%u\n", xmit->head, xmit->tail);
-
 	if (uart_circ_empty(xmit) || uart_tx_stopped(port))
 		return true;
 
@@ -1532,8 +1522,7 @@ static inline bool muart_dma_tx_start(struct muart_port *uap)
 	spin_lock_irqsave(&uap->dmatx.lock, flags);
 
 	for (i=0; i<tx_chunks_num; i++)
-	{
-		
+	{	
 		if (!muart_dma_do_tx(uap, tx_chunks[i].buf, tx_chunks[i].len)) {
 			spin_unlock_irqrestore(&uap->dmatx.lock, flags);
 			return false;
