@@ -43,10 +43,13 @@
 
 #define BACKGROUND_RGB 0x000000 // 0xFFFF00 (yellow) for testing
 
-#define MIN_WIDTH 320
-#define MIN_HEIGHT 200
 #define MAX_WIDTH 1920
 #define MAX_HEIGHT 1080
+
+#define MIN_CURSOR_WIDTH 8
+#define MIN_CURSOR_HEIGHT 8
+#define MAX_CURSOR_WIDTH 256
+#define MAX_CURSOR_HEIGHT 256
 
 #define HARDWARE_PITCH_BITS 13
 #define SHADOW_PITCH MAX_WIDTH // in pixels
@@ -72,7 +75,8 @@ struct osd_area_desc {
 };
 
 struct dma_data {
-	struct osd_area_desc osd_area_descs[2];
+	struct osd_area_desc primary_osd_descs[2];
+	struct osd_area_desc secondary_osd_descs[2];
 	u8 screen_buffer[MAX_WIDTH * MAX_HEIGHT * 4]; // 4 for ARGB
 };
 
@@ -95,12 +99,15 @@ struct vdu_device {
 
 	struct drm_crtc crtc;
 	struct drm_plane primary_plane;
+	struct drm_plane cursor_plane;
 	struct drm_plane overlay_plane;
 	struct drm_encoder encoder;
 
-	unsigned osd_area_desc_free_index;
-	u32 osd_primary_plane_format; // 0 if primary plane osd rendering is off
-	u32 osd_primary_plane_fb_phys_addr; // 0 if primary plane osd rendering is off
+	unsigned primary_osd_free_index;
+	u32 primary_osd_format; // 0 if primary plane osd rendering is off
+	u32 primary_osd_fb_phys_addr; // 0 if primary plane osd rendering is off
+
+	unsigned secondary_osd_free_index;
 
 	struct drm_pending_vblank_event *pending_vblank_event;
 	struct completion vdu_off_done;
@@ -168,6 +175,15 @@ static const uint64_t primary_plane_format_modifiers[] = {
 	DRM_FORMAT_MOD_INVALID
 };
 
+static const uint32_t cursor_plane_formats[] = {
+	DRM_FORMAT_ARGB8888 // native
+};
+
+static const uint64_t cursor_plane_format_modifiers[] = {
+	DRM_FORMAT_MOD_LINEAR,
+	DRM_FORMAT_MOD_INVALID
+};
+
 static const uint32_t overlay_plane_formats[] = {
 	DRM_FORMAT_YUV420 // native
 };
@@ -192,6 +208,14 @@ static void primary_plane_atomic_update(struct drm_plane *plane, struct drm_plan
 static const struct drm_plane_helper_funcs primary_plane_helper_funcs = {
 	.atomic_check = primary_plane_atomic_check,
 	.atomic_update = primary_plane_atomic_update
+};
+
+static int cursor_plane_atomic_check(struct drm_plane *plane, struct drm_plane_state *plane_state);
+static void cursor_plane_atomic_update(struct drm_plane *plane, struct drm_plane_state *old_state);
+
+static const struct drm_plane_helper_funcs cursor_plane_helper_funcs = {
+	.atomic_check = cursor_plane_atomic_check,
+	.atomic_update = cursor_plane_atomic_update
 };
 
 static int overlay_plane_atomic_check(struct drm_plane *plane, struct drm_plane_state *plane_state);
@@ -430,6 +454,7 @@ static int reset_vdu(struct vdu_device *vdu)
 	// setup AXI bus parameters
 	write_vdu_reg(vdu, VDU_REG_MI_AXI_MVL_PARAM, 0x0F310000);
 	write_vdu_reg(vdu, VDU_REG_MI_AXI_OSD_PARAM, 0x0F310000);
+	write_vdu_reg(vdu, VDU_REG_SECOND_CORE_BASE + VDU_REG_MI_AXI_OSD_PARAM, 0x0F310000);
 
 	return 0;
 }
@@ -482,8 +507,8 @@ static void set_crtc_mode(struct vdu_device *vdu, struct drm_display_mode *mode)
 	val = (0 << VDU_REG_SCALER_FLT_C_C_H_SHIFT)
 		| (0 << VDU_REG_SCALER_FLT_C_C_V_SHIFT);
 	write_vdu_reg(vdu, VDU_REG_SCALER_FLT_C_C4, val);
-	write_vdu_reg(vdu, VDU_REG_SCALER_PHS_CUT_H, 0);
 	write_vdu_reg(vdu, VDU_REG_SCALER_PHS_CUT_V, 0);
+	write_vdu_reg(vdu, VDU_REG_SCALER_PHS_CUT_H, 0);
 	val = (0x0 << VDU_REG_SCALER_MVL_CLR_Y_Y_SHIFT)
 		| (0x0 << VDU_REG_SCALER_MVL_CLR_Y_CB_SHIFT)
 		| (0x0 << VDU_REG_SCALER_MVL_CLR_Y_CR_SHIFT);
@@ -542,19 +567,22 @@ static void set_crtc_mode(struct vdu_device *vdu, struct drm_display_mode *mode)
 		| (0x9D << VDU_REG_OSD_COLOR_Y_G_SHIFT)
 		| (0x10 << VDU_REG_OSD_COLOR_Y_B_SHIFT);
 	write_vdu_reg(vdu, VDU_REG_OSD_COLOR_Y, val);
+	write_vdu_reg(vdu, VDU_REG_SECOND_CORE_BASE + VDU_REG_OSD_COLOR_Y, val);
 
 	val = (0x11A << VDU_REG_OSD_COLOR_CB_R_SHIFT)
 		| (0x157 << VDU_REG_OSD_COLOR_CB_G_SHIFT)
 		| (0x70 << VDU_REG_OSD_COLOR_CB_B_SHIFT);
 	write_vdu_reg(vdu, VDU_REG_OSD_COLOR_CB, val);
+	write_vdu_reg(vdu, VDU_REG_SECOND_CORE_BASE + VDU_REG_OSD_COLOR_CB, val);
 
 	val = (0x70 << VDU_REG_OSD_COLOR_CR_R_SHIFT)
 		| (0x166 << VDU_REG_OSD_COLOR_CR_G_SHIFT)
 		| (0x10a << VDU_REG_OSD_COLOR_CR_B_SHIFT);
 	write_vdu_reg(vdu, VDU_REG_OSD_COLOR_CR, val);
+	write_vdu_reg(vdu, VDU_REG_SECOND_CORE_BASE + VDU_REG_OSD_COLOR_CR, val);
 }
 
-static void fill_osd_descriptor(struct vdu_device *vdu, struct osd_area_desc *desc, u32 format, u32 fb_phys_addr)
+static void fill_primary_osd_descriptor(struct vdu_device *vdu, struct osd_area_desc *desc, u32 format, u32 fb_phys_addr)
 {
 	struct drm_plane_state *state = vdu->primary_plane.state;
 
@@ -594,21 +622,21 @@ static void fill_osd_descriptor(struct vdu_device *vdu, struct osd_area_desc *de
 	desc->alpha = 0xFF;
 }
 
-static void osd_rendering_on(struct vdu_device *vdu, u32 format, u32 fb_phys_addr)
+static void primary_osd_rendering_on(struct vdu_device *vdu, u32 format, u32 fb_phys_addr)
 {
 	dma_addr_t osd_desc_phys_addr;
 	u32 val;
 
-	if ((format == vdu->osd_primary_plane_format)
-		&& ((format != DRM_FORMAT_RGB565) || (fb_phys_addr == vdu->osd_primary_plane_fb_phys_addr)))
+	if ((format == vdu->primary_osd_format)
+		&& ((format != DRM_FORMAT_RGB565) || (fb_phys_addr == vdu->primary_osd_fb_phys_addr)))
 	{
 		return;
 	}
 
-	fill_osd_descriptor(vdu, &vdu->dma_data->osd_area_descs[vdu->osd_area_desc_free_index], format, fb_phys_addr);
-	osd_desc_phys_addr = vdu->dma_data_phys_addr + offsetof(struct dma_data, osd_area_descs)
-		+ vdu->osd_area_desc_free_index * sizeof(struct osd_area_desc);
-	vdu->osd_area_desc_free_index ^= 1; // flip next index
+	fill_primary_osd_descriptor(vdu, &vdu->dma_data->primary_osd_descs[vdu->primary_osd_free_index], format, fb_phys_addr);
+	osd_desc_phys_addr = vdu->dma_data_phys_addr + offsetof(struct dma_data, primary_osd_descs)
+		+ vdu->primary_osd_free_index * sizeof(struct osd_area_desc);
+	vdu->primary_osd_free_index ^= 1; // flip next index
 
 	// [***] actually we mustnot do it, but we do
 	val = read_vdu_reg(vdu, VDU_REG_OSD_CTRL);
@@ -623,11 +651,11 @@ static void osd_rendering_on(struct vdu_device *vdu, u32 format, u32 fb_phys_add
 	write_vdu_reg(vdu, VDU_REG_CTRL_ENA, val);
 	spin_unlock_irq(&vdu->reg_lock);
 
-	vdu->osd_primary_plane_format = format;
-	vdu->osd_primary_plane_fb_phys_addr = fb_phys_addr;
+	vdu->primary_osd_format = format;
+	vdu->primary_osd_fb_phys_addr = fb_phys_addr;
 }
 
-static void osd_rendering_off(struct vdu_device *vdu)
+static void primary_osd_rendering_off(struct vdu_device *vdu)
 {
 	u32 val;
 
@@ -637,8 +665,62 @@ static void osd_rendering_off(struct vdu_device *vdu)
 	write_vdu_reg(vdu, VDU_REG_CTRL_ENA, val);
 	spin_unlock_irq(&vdu->reg_lock);
 
-	vdu->osd_primary_plane_format = 0;
-	vdu->osd_primary_plane_fb_phys_addr = 0;
+	vdu->primary_osd_format = 0;
+	vdu->primary_osd_fb_phys_addr = 0;
+}
+
+static void fill_secondary_osd_descriptor(struct vdu_device *vdu, struct osd_area_desc *desc)
+{
+	struct drm_plane_state *state = vdu->cursor_plane.state;
+	struct drm_gem_cma_object *gem = drm_fb_cma_get_gem_obj(state->fb, 0);
+
+	u32 fb_phys_addr = gem->paddr
+		+ state->fb->offsets[0]
+		+ (state->src.y1 >> 16) * state->fb->pitches[0]
+		+ (state->src.x1 >> 16) * state->fb->format->char_per_block[0];
+
+	desc->next = 0;
+	desc->width = cpu_to_le16(state->dst.x2 - state->dst.x1 - 1);
+	desc->height = cpu_to_le16(state->dst.y2 - state->dst.y1 - 1);
+	desc->x = cpu_to_le16(state->dst.x1);
+	desc->y = cpu_to_le16(state->dst.y1);
+	desc->image_base = cpu_to_le32(fb_phys_addr);
+	desc->pitch = cpu_to_le16(state->fb->pitches[0] / state->fb->format->char_per_block[0]);
+	desc->flags = 0;
+	desc->alpha = 0xFF;
+}
+
+static void secondary_osd_rendering_on(struct vdu_device *vdu)
+{
+	dma_addr_t osd_desc_phys_addr;
+	u32 val;
+
+	fill_secondary_osd_descriptor(vdu, &vdu->dma_data->secondary_osd_descs[vdu->secondary_osd_free_index]);
+	osd_desc_phys_addr = vdu->dma_data_phys_addr + offsetof(struct dma_data, secondary_osd_descs)
+		+ vdu->secondary_osd_free_index * sizeof(struct osd_area_desc);
+	vdu->secondary_osd_free_index ^= 1; // flip next index
+
+	// [***] actually we mustnot do it, but we do
+	val = read_vdu_reg(vdu, VDU_REG_SECOND_CORE_BASE + VDU_REG_OSD_CTRL);
+	val |= VDU_REG_OSD_CTRL_ARGB_RGBA_MASK;
+	write_vdu_reg(vdu, VDU_REG_SECOND_CORE_BASE + VDU_REG_OSD_CTRL, val);
+	write_vdu_reg(vdu, VDU_REG_SECOND_CORE_BASE + VDU_REG_OSD_BASE0, osd_desc_phys_addr);
+	write_vdu_reg(vdu, VDU_REG_SECOND_CORE_BASE + VDU_REG_OSD_BASE1, osd_desc_phys_addr);
+
+	// no lock is needed
+	val = read_vdu_reg(vdu, VDU_REG_SECOND_CORE_BASE + VDU_REG_CTRL_ENA);
+	val |= VDU_REG_CTRL_ENA_OSD_ENA_MASK | VDU_REG_CTRL_ENA_OSD_BASE_SW_ENA_MASK;
+	write_vdu_reg(vdu, VDU_REG_SECOND_CORE_BASE + VDU_REG_CTRL_ENA, val);
+}
+
+static void secondary_osd_rendering_off(struct vdu_device *vdu)
+{
+	u32 val;
+
+	// no lock is needed
+	val = read_vdu_reg(vdu, VDU_REG_SECOND_CORE_BASE + VDU_REG_CTRL_ENA);
+	val &= ~(VDU_REG_CTRL_ENA_OSD_ENA_MASK | VDU_REG_CTRL_ENA_OSD_BASE_SW_ENA_MASK);
+	write_vdu_reg(vdu, VDU_REG_SECOND_CORE_BASE + VDU_REG_CTRL_ENA, val);
 }
 
 static void blit_rgb565_be(void *src_buffer, unsigned src_pitch, void *dest_buffer, unsigned dest_pitch, int dx, int dy)
@@ -704,7 +786,7 @@ static void blit_if_necessary(struct vdu_device *vdu, struct drm_plane *plane, s
 	int dy;
 	unsigned bpp;
 
-	if (vdu->osd_primary_plane_format == DRM_FORMAT_RGB565)
+	if (vdu->primary_osd_format == DRM_FORMAT_RGB565)
 		return;
 	
 	if (!drm_atomic_helper_damage_merged(old_state, plane->state, &rect))
@@ -726,7 +808,7 @@ static void blit_if_necessary(struct vdu_device *vdu, struct drm_plane *plane, s
 	dx = rect.x2 - rect.x1;
 	dy = rect.y2 - rect.y1;
 
-	switch (vdu->osd_primary_plane_format)
+	switch (vdu->primary_osd_format)
 	{
 	case DRM_FORMAT_RGB565 | DRM_FORMAT_BIG_ENDIAN:
 		blit_rgb565_be(src_buffer, src_pitch, dest_buffer, dest_pitch, dx, dy);
@@ -754,6 +836,14 @@ static struct drm_framebuffer *fb_create(
 		if (primary_plane_formats[i] == mode_cmd->pixel_format) {
 			pixel_format_found = true;
 			break;
+		}
+	}
+	if (!pixel_format_found) {
+		for (i = 0; i < ARRAY_SIZE(cursor_plane_formats); ++i) {
+			if (cursor_plane_formats[i] == mode_cmd->pixel_format) {
+				pixel_format_found = true;
+				break;
+			}
 		}
 	}
 	if (!pixel_format_found) {
@@ -797,13 +887,48 @@ static void primary_plane_atomic_update(struct drm_plane *plane, struct drm_plan
 	u32 format;
 	u32 fb_phys_addr;
 
-	if (state->fb != NULL) {
+	if (state->visible) {
 		format = state->fb->format->format;
 		fb_phys_addr = drm_fb_cma_get_gem_addr(state->fb, state, 0);
-		osd_rendering_on(vdu, format, fb_phys_addr);
+		primary_osd_rendering_on(vdu, format, fb_phys_addr);
 		blit_if_necessary(vdu, plane, old_state);
 	} else
-		osd_rendering_off(vdu);
+		primary_osd_rendering_off(vdu);
+}
+
+static int cursor_plane_atomic_check(struct drm_plane *plane, struct drm_plane_state *plane_state)
+{
+	struct vdu_device *vdu = drm_dev_to_vdu(plane->dev);
+	struct drm_crtc_state *crtc_state;
+	int ret;
+
+	crtc_state = drm_atomic_get_new_crtc_state(plane_state->state, &vdu->crtc);
+
+	ret = drm_atomic_helper_check_plane_state(plane_state, crtc_state,
+		DRM_PLANE_HELPER_NO_SCALING, DRM_PLANE_HELPER_NO_SCALING, true, true);
+	if (ret != 0)
+		return ret;
+
+	if ((plane_state->visible)
+		&& ((plane_state->crtc_w < MIN_CURSOR_WIDTH)
+			|| (plane_state->crtc_w > MAX_CURSOR_WIDTH)
+			|| (plane_state->crtc_h < MIN_CURSOR_HEIGHT)
+			|| (plane_state->crtc_h > MAX_CURSOR_HEIGHT)))
+	{
+		return -EINVAL;
+	}
+
+	return 0;
+}
+
+static void cursor_plane_atomic_update(struct drm_plane *plane, struct drm_plane_state *old_state)
+{
+	struct vdu_device *vdu = drm_dev_to_vdu(plane->dev);
+
+	if (plane->state->visible)
+		secondary_osd_rendering_on(vdu);
+	else
+		secondary_osd_rendering_off(vdu);
 }
 
 static int overlay_plane_atomic_check(struct drm_plane *plane, struct drm_plane_state *plane_state)
@@ -825,19 +950,28 @@ static int overlay_plane_atomic_check(struct drm_plane *plane, struct drm_plane_
 	if (ret != 0)
 		return ret;
 
-	if (plane_state->fb != 0) {
-		if (((plane_state->src.x1 & 0xFFFFF) != 0)
-			|| ((plane_state->src.y1 & 0xFFFFF) != 0)
-			|| ((plane_state->src.x2 & 0xFFFFF) != 0)
-			|| ((plane_state->src.y2 & 0xFFFFF) != 0))
+	if (plane_state->visible) {
+		// test non-clipping coordinates
+		if (((plane_state->src_x & 0xFFFF) != 0)
+			|| ((plane_state->src_y & 0xFFFF) != 0)
+			|| ((plane_state->src_w & 0xFFFF) != 0)
+			|| ((plane_state->src_h & 0xFFFF) != 0))
 		{
 			return -ERANGE;
 		}
-		src_width = (plane_state->src.x2 - plane_state->src.x1) >> 16;
-		src_height = (plane_state->src.y2 - plane_state->src.y1) >> 16;
-		dst_width = plane_state->dst.x2 - plane_state->dst.x1;
-		dst_height = plane_state->dst.y2 - plane_state->dst.y1;
-		if ((src_width < 4) || (src_height < 4) || (dst_width < 4) || (dst_height < 4))
+		// cannot cross the screen edge
+		if ((plane_state->crtc_x < 0)
+			|| (plane_state->crtc_y < 0)
+			|| (plane_state->crtc_x  + plane_state->crtc_w > crtc_state->mode.hdisplay)
+			|| (plane_state->crtc_y  + plane_state->crtc_h > crtc_state->mode.vdisplay))
+		{
+			return -ERANGE;
+		}
+		src_width = plane_state->src_w >> 16;
+		src_height = plane_state->src_h >> 16;
+		dst_width = plane_state->crtc_w;
+		dst_height = plane_state->crtc_h;
+		if ((src_width < 2) || (src_height < 2) || (dst_width < 2) || (dst_height < 2))
 			return -EINVAL;
 		hfactor = ((src_width - 1) << 16) / (dst_width - 1);
 		vfactor = ((src_height - 1) << 16) / (dst_height - 1);
@@ -860,11 +994,11 @@ static void overlay_plane_atomic_update(struct drm_plane *plane, struct drm_plan
 	u32 dst_height;
 	u32 val;
 
-	if (state->fb != NULL) {
-		src_width = (state->src.x2 - state->src.x1) >> 16;
-		src_height = (state->src.y2 - state->src.y1) >> 16;
-		dst_width = state->dst.x2 - state->dst.x1;
-		dst_height = state->dst.y2 - state->dst.y1;
+	if (state->visible) {
+		src_width = state->src_w >> 16;
+		src_height = state->src_h >> 16;
+		dst_width = state->crtc_w;
+		dst_height = state->crtc_h;
 		fb_y_pitch_in_px = state->fb->pitches[0] / state->fb->format->char_per_block[0];
 		fb_cbcr_pitch_in_px = state->fb->pitches[1] / state->fb->format->char_per_block[1];
 
@@ -892,13 +1026,13 @@ static void overlay_plane_atomic_update(struct drm_plane *plane, struct drm_plan
 
 		vdu->mvl_setting_scaler_ctrl = 0;
 		if (dst_width != src_width)
-			vdu->mvl_setting_scaler_ctrl |= VDU_REG_SCALER_H_SCALER_ENA_MASK;
+			vdu->mvl_setting_scaler_ctrl |= VDU_REG_SCALER_CTRL_H_SCALER_ENA_MASK;
 		if (dst_width < src_width)
-			vdu->mvl_setting_scaler_ctrl |= VDU_REG_SCALER_H_FLT_ENA_MASK;
+			vdu->mvl_setting_scaler_ctrl |= VDU_REG_SCALER_CTRL_H_FLT_ENA_MASK;
 		if (dst_height != src_height)
-			vdu->mvl_setting_scaler_ctrl |= VDU_REG_SCALER_V_SCALER_ENA_MASK;
+			vdu->mvl_setting_scaler_ctrl |= VDU_REG_SCALER_CTRL_V_SCALER_ENA_MASK;
 		if (dst_height < src_height)
-			vdu->mvl_setting_scaler_ctrl |= VDU_REG_SCALER_V_FLT_ENA_MASK;
+			vdu->mvl_setting_scaler_ctrl |= VDU_REG_SCALER_CTRL_V_FLT_ENA_MASK;
 		vdu->mvl_setting_scaler_sch_y = ((src_width - 1) << 16) / (dst_width - 1);
 		vdu->mvl_setting_scaler_scv_y = ((src_height - 1) << 16) / (dst_height - 1);
 		vdu->mvl_setting_scaler_sch_c = ((src_width / 2 - 1) << 16) / (dst_width / 2 - 1);
@@ -1059,8 +1193,13 @@ static void crtc_atomic_disable(struct drm_crtc *crtc, struct drm_crtc_state *ol
 	write_vdu_reg(vdu, VDU_REG_INT_ENA, val);
 
 	// switch VDU off
+	val = read_vdu_reg(vdu, VDU_REG_SECOND_CORE_BASE + VDU_REG_CTRL_ENA);
+	val &= ~(VDU_REG_CTRL_ENA_OSD_ENA_MASK | VDU_REG_CTRL_ENA_OSD_BASE_SW_ENA_MASK);
+	write_vdu_reg(vdu, VDU_REG_SECOND_CORE_BASE + VDU_REG_CTRL_ENA, val);
 	val = read_vdu_reg(vdu, VDU_REG_CTRL_ENA);
-	val &= ~(VDU_REG_CTRL_ENA_VDU_ENA_MASK | VDU_REG_CTRL_ENA_OSD_ENA_MASK | VDU_REG_CTRL_ENA_OSD_BASE_SW_ENA_MASK);
+	val &= ~(VDU_REG_CTRL_ENA_VDU_ENA_MASK
+		| VDU_REG_CTRL_ENA_OSD_ENA_MASK | VDU_REG_CTRL_ENA_OSD_BASE_SW_ENA_MASK
+		| VDU_REG_CTRL_ENA_MVL_ENA_MASK | VDU_REG_CTRL_ENA_MVL_BASE_SW_ENA_MASK);
 	write_vdu_reg(vdu, VDU_REG_CTRL_ENA, val);
 
 	spin_unlock_irq(&vdu->reg_lock);
@@ -1150,13 +1289,15 @@ static void mode_config_init(struct vdu_device *vdu)
 	struct drm_device *dev = &vdu->drm_dev;
 
 	drm_mode_config_init(dev);
-	dev->mode_config.min_width = MIN_WIDTH;
-	dev->mode_config.min_height = MIN_HEIGHT;
+	dev->mode_config.min_width = 0;
+	dev->mode_config.min_height = 0;
 	dev->mode_config.max_width = vdu->max_width;
 	dev->mode_config.max_height = vdu->max_height;
 	dev->mode_config.preferred_depth = 16;
 	dev->mode_config.prefer_shadow = 0;
 	dev->mode_config.funcs = &mode_config_funcs;
+	dev->mode_config.cursor_width = MAX_CURSOR_WIDTH;
+	dev->mode_config.cursor_height = MAX_CURSOR_HEIGHT;
 
 	// it is needed for correct working DRM_IOCTL_MODE_ADDFB2
 	dev->mode_config.quirk_addfb_prefer_host_byte_order = true;
@@ -1182,6 +1323,20 @@ static int crtc_init(struct vdu_device *vdu)
 
 	ret = drm_universal_plane_init(
 		&vdu->drm_dev,
+		&vdu->cursor_plane,
+		0,
+		&plane_funcs,
+		cursor_plane_formats,
+		ARRAY_SIZE(cursor_plane_formats),
+		cursor_plane_format_modifiers,
+		DRM_PLANE_TYPE_CURSOR,
+		NULL);
+	if (ret != 0)
+		return ret;
+	drm_plane_helper_add(&vdu->cursor_plane, &cursor_plane_helper_funcs);
+
+	ret = drm_universal_plane_init(
+		&vdu->drm_dev,
 		&vdu->overlay_plane,
 		0,
 		&plane_funcs,
@@ -1198,7 +1353,7 @@ static int crtc_init(struct vdu_device *vdu)
 		&vdu->drm_dev,
 		&vdu->crtc,
 		&vdu->primary_plane,
-		NULL, // cursor plane
+		&vdu->cursor_plane,
 		&crtc_funcs,
 		NULL); // name
 	if (ret != 0)
@@ -1207,6 +1362,7 @@ static int crtc_init(struct vdu_device *vdu)
 
 	// allow connection the planes with CRTC
 	vdu->primary_plane.possible_crtcs = drm_crtc_mask(&vdu->crtc);
+	vdu->cursor_plane.possible_crtcs = drm_crtc_mask(&vdu->crtc);
 	vdu->overlay_plane.possible_crtcs = drm_crtc_mask(&vdu->crtc);
 
 	return 0;
@@ -1332,7 +1488,7 @@ static int probe_internal(struct platform_device *pdev)
 		dev_err(&pdev->dev, "missing required parameter 'max-width'\n");
 		return -ENODEV;
 	}
-	if ((vdu->max_width < MIN_WIDTH) || (vdu->max_width > MAX_WIDTH)) {
+	if (vdu->max_width > MAX_WIDTH) {
 		dev_err(&pdev->dev, "parameter 'max-width' out of range\n");
 		return -ENODEV;
 	}
@@ -1342,7 +1498,7 @@ static int probe_internal(struct platform_device *pdev)
 		dev_err(&pdev->dev, "missing required parameter 'max-height'\n");
 		return -ENODEV;
 	}
-	if ((vdu->max_height < MIN_HEIGHT) || (vdu->max_height > MAX_HEIGHT)) {
+	if (vdu->max_height > MAX_HEIGHT) {
 		dev_err(&pdev->dev, "parameter 'max-height' out of range\n");
 		return -ENODEV;
 	}
