@@ -718,7 +718,7 @@ static void rcm_pci_map_remove(struct pci_dev *pdev)
 }
 
 static const struct pci_device_id rcm_pci_map_tbl[] = {
-	{ PCI_DEVICE(PCI_VENDOR_ID_TI, 0xB5FF) },
+	{ PCI_DEVICE(PCI_VENDOR_ID_CDNS, 0x01FF) },
 	{ }
 };
 MODULE_DEVICE_TABLE(pci, rcm_pci_map_tbl);
