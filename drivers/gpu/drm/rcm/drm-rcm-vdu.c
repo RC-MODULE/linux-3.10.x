@@ -87,13 +87,15 @@ struct vdu_device {
 	u32 vdu_index; // for PLL setup
 	struct regmap *pll_control;
 	enum color_space output_color_space;
+	u32 max_width;
+	u32 max_height;
 
 	struct dma_data *dma_data;
 	dma_addr_t dma_data_phys_addr;
 
 	struct drm_crtc crtc;
 	struct drm_plane primary_plane;
-	bool primary_plane_initialized;
+	struct drm_plane overlay_plane;
 	struct drm_encoder encoder;
 
 	unsigned osd_area_desc_free_index;
@@ -102,6 +104,25 @@ struct vdu_device {
 
 	struct drm_pending_vblank_event *pending_vblank_event;
 	struct completion vdu_off_done;
+
+	spinlock_t mvl_setting_lock;
+	bool mvl_setting_present;
+	u32 mvl_setting_mvl_ctrl;
+	u32 mvl_setting_mvl_y_base;
+	u32 mvl_setting_mvl_cb_base;
+	u32 mvl_setting_mvl_cr_base;
+	u32 mvl_setting_mvl_y_size;
+	u32 mvl_setting_mvl_c_size;
+	u32 mvl_setting_mvl_full_size;
+	u32 mvl_setting_dif_mvl_start;
+	u32 mvl_setting_scaler_ctrl;
+	u32 mvl_setting_scaler_sch_y;
+	u32 mvl_setting_scaler_scv_y;
+	u32 mvl_setting_scaler_sch_c;
+	u32 mvl_setting_scaler_scv_c;
+	u32 mvl_setting_scaler_size_y;
+	u32 mvl_setting_scaler_size_c;
+	u32 mvl_setting_scaler_size_cut;
 };
 
 struct y_cb_cr_color
@@ -135,14 +156,23 @@ static const struct drm_mode_config_funcs mode_config_funcs = {
 	.atomic_commit = drm_atomic_helper_commit,
 };
 
-static const uint32_t plane_formats[] = {
+static const uint32_t primary_plane_formats[] = {
 	DRM_FORMAT_RGB565, // native
 	DRM_FORMAT_RGB565 | DRM_FORMAT_BIG_ENDIAN, // shadow
 	DRM_FORMAT_XRGB8888, // shadow
 	DRM_FORMAT_BGRX8888 // shadow
 };
 
-static const uint64_t plane_format_modifiers[] = {
+static const uint64_t primary_plane_format_modifiers[] = {
+	DRM_FORMAT_MOD_LINEAR,
+	DRM_FORMAT_MOD_INVALID
+};
+
+static const uint32_t overlay_plane_formats[] = {
+	DRM_FORMAT_YUV420 // native
+};
+
+static const uint64_t overlay_plane_format_modifiers[] = {
 	DRM_FORMAT_MOD_LINEAR,
 	DRM_FORMAT_MOD_INVALID
 };
@@ -156,12 +186,20 @@ static const struct drm_plane_funcs plane_funcs = {
 	.atomic_destroy_state = drm_atomic_helper_plane_destroy_state
 };
 
-static int plane_atomic_check(struct drm_plane *plane, struct drm_plane_state *plane_state);
-static void plane_atomic_update(struct drm_plane *plane, struct drm_plane_state *old_state);
+static int primary_plane_atomic_check(struct drm_plane *plane, struct drm_plane_state *plane_state);
+static void primary_plane_atomic_update(struct drm_plane *plane, struct drm_plane_state *old_state);
 
-static const struct drm_plane_helper_funcs plane_helper_funcs = {
-	.atomic_check = plane_atomic_check,
-	.atomic_update = plane_atomic_update
+static const struct drm_plane_helper_funcs primary_plane_helper_funcs = {
+	.atomic_check = primary_plane_atomic_check,
+	.atomic_update = primary_plane_atomic_update
+};
+
+static int overlay_plane_atomic_check(struct drm_plane *plane, struct drm_plane_state *plane_state);
+static void overlay_plane_atomic_update(struct drm_plane *plane, struct drm_plane_state *old_state);
+
+static const struct drm_plane_helper_funcs overlay_plane_helper_funcs = {
+	.atomic_check = overlay_plane_atomic_check,
+	.atomic_update = overlay_plane_atomic_update
 };
 
 int (*enable_vblank)(struct drm_crtc *crtc);
@@ -215,7 +253,7 @@ static void write_vdu_reg(struct vdu_device *vdu, u32 offset, u32 data)
 // 0-7 - B
 // 8-15 - G
 // 16-23 - R
-struct y_cb_cr_color rgb_to_y_cb_cr(u32 rgb)
+static struct y_cb_cr_color rgb_to_y_cb_cr(u32 rgb)
 {
 	struct y_cb_cr_color res;
 
@@ -409,12 +447,63 @@ static void set_crtc_mode(struct vdu_device *vdu, struct drm_display_mode *mode)
 	if (ret != 0)
 		dev_err(&vdu->pdev->dev, "PLL setup error (%i)\n", ret);
 
+	val = (0x1 << VDU_REG_SCALER_FLT_Y_C_H_SHIFT)
+		| (0x1 << VDU_REG_SCALER_FLT_Y_C_V_SHIFT);
+	write_vdu_reg(vdu, VDU_REG_SCALER_FLT_Y_C0, val);
+	val = (0xFE << VDU_REG_SCALER_FLT_Y_C_H_SHIFT)
+		| (0xFE << VDU_REG_SCALER_FLT_Y_C_V_SHIFT);
+	write_vdu_reg(vdu, VDU_REG_SCALER_FLT_Y_C1, val);
+	val = (0x1 << VDU_REG_SCALER_FLT_Y_C_H_SHIFT)
+		| (0x1 << VDU_REG_SCALER_FLT_Y_C_V_SHIFT);
+	write_vdu_reg(vdu, VDU_REG_SCALER_FLT_Y_C2, val);
+	val = (0x0 << VDU_REG_SCALER_FLT_Y_C_H_SHIFT)
+		| (0x0 << VDU_REG_SCALER_FLT_Y_C_V_SHIFT);
+	write_vdu_reg(vdu, VDU_REG_SCALER_FLT_Y_C3, val);
+	val = (0 << VDU_REG_SCALER_FLT_Y_C_H_SHIFT)
+		| (0 << VDU_REG_SCALER_FLT_Y_C_V_SHIFT);
+	write_vdu_reg(vdu, VDU_REG_SCALER_FLT_Y_C4, val);
+	val = (0xFF << VDU_REG_SCALER_FLT_NORM_HFLT_Y_N_SHIFT)
+		| (0xFF << VDU_REG_SCALER_FLT_NORM_VFLT_Y_N_SHIFT)
+		| (0xFF << VDU_REG_SCALER_FLT_NORM_HFLT_C_N_SHIFT)
+		| (0xFF << VDU_REG_SCALER_FLT_NORM_VFLT_C_N_SHIFT);
+	write_vdu_reg(vdu, VDU_REG_SCALER_FLT_NORM, val);
+	val = (0x1 << VDU_REG_SCALER_FLT_C_C_H_SHIFT)
+		| (0x1 << VDU_REG_SCALER_FLT_C_C_V_SHIFT);
+	write_vdu_reg(vdu, VDU_REG_SCALER_FLT_C_C0, val);
+	val = (0xFE << VDU_REG_SCALER_FLT_C_C_H_SHIFT)
+		| (0xFE << VDU_REG_SCALER_FLT_C_C_V_SHIFT);
+	write_vdu_reg(vdu, VDU_REG_SCALER_FLT_C_C1, val);
+	val = (0x1 << VDU_REG_SCALER_FLT_C_C_H_SHIFT)
+		| (0x1 << VDU_REG_SCALER_FLT_C_C_V_SHIFT);
+	write_vdu_reg(vdu, VDU_REG_SCALER_FLT_C_C2, val);
+	val = (0x0 << VDU_REG_SCALER_FLT_C_C_H_SHIFT)
+		| (0x0 << VDU_REG_SCALER_FLT_C_C_V_SHIFT);
+	write_vdu_reg(vdu, VDU_REG_SCALER_FLT_C_C3, val);
+	val = (0 << VDU_REG_SCALER_FLT_C_C_H_SHIFT)
+		| (0 << VDU_REG_SCALER_FLT_C_C_V_SHIFT);
+	write_vdu_reg(vdu, VDU_REG_SCALER_FLT_C_C4, val);
+	write_vdu_reg(vdu, VDU_REG_SCALER_PHS_CUT_H, 0);
+	write_vdu_reg(vdu, VDU_REG_SCALER_PHS_CUT_V, 0);
+	val = (0x0 << VDU_REG_SCALER_MVL_CLR_Y_Y_SHIFT)
+		| (0x0 << VDU_REG_SCALER_MVL_CLR_Y_CB_SHIFT)
+		| (0x0 << VDU_REG_SCALER_MVL_CLR_Y_CR_SHIFT);
+	write_vdu_reg(vdu, VDU_REG_SCALER_MVL_CLR_Y, val);
+	val = (0x0 << VDU_REG_SCALER_MVL_CLR_CB_Y_SHIFT)
+		| (0x100 << VDU_REG_SCALER_MVL_CLR_CB_CB_SHIFT)
+		| (0x0 << VDU_REG_SCALER_MVL_CLR_CB_CR_SHIFT);
+	write_vdu_reg(vdu, VDU_REG_SCALER_MVL_CLR_CB, val);
+	val = (0x0 << VDU_REG_SCALER_MVL_CLR_CR_Y_SHIFT)
+		| (0x0 << VDU_REG_SCALER_MVL_CLR_CR_CB_SHIFT)
+		| (0x100 << VDU_REG_SCALER_MVL_CLR_CR_CR_SHIFT);
+	write_vdu_reg(vdu, VDU_REG_SCALER_MVL_CLR_CR, val);
+
 	val = VDU_REG_DIF_CTRL_HDTV_MASK
 		| VDU_REG_DIF_CTRL_EXT_SYNC_EN_MASK
 		| VDU_REG_DIF_CTRL_HSYNC_P_MASK
-		| VDU_REG_DIF_CTRL_VSYNC_P_MASK;
+		| VDU_REG_DIF_CTRL_VSYNC_P_MASK
+		| VDU_REG_DIF_CTRL_CH_SEL;
 	if (vdu->output_color_space == COLOR_SPACE_YUV444)
-		val |= VDU_REG_DIF_CTRL_SDTV_FORM_MASK | VDU_REG_DIF_CTRL_DIF_444_MODE_MASK;
+		val |= VDU_REG_DIF_CTRL_SDTV_FORM_MASK | VDU_REG_DIF_CTRL_444_MODE_MASK;
 	if (drm_mode_vrefresh(mode) == 50)
 		val |= VDU_REG_DIF_CTRL_VREFRESH_50_HZ_MASK;
 	if ((mode->flags & DRM_MODE_FLAG_INTERLACE) == 0)
@@ -656,28 +745,41 @@ static struct drm_framebuffer *fb_create(
 {
 	bool pixel_format_found;
 	const struct drm_format_info *format;
+	unsigned plane_index;
 	int i;
 
 	// check format
 	pixel_format_found = false;
-	for (i = 0; i < ARRAY_SIZE(plane_formats); ++i) {
-		if (plane_formats[i] == mode_cmd->pixel_format) {
+	for (i = 0; i < ARRAY_SIZE(primary_plane_formats); ++i) {
+		if (primary_plane_formats[i] == mode_cmd->pixel_format) {
 			pixel_format_found = true;
 			break;
+		}
+	}
+	if (!pixel_format_found) {
+		for (i = 0; i < ARRAY_SIZE(overlay_plane_formats); ++i) {
+			if (overlay_plane_formats[i] == mode_cmd->pixel_format) {
+				pixel_format_found = true;
+				break;
+			}
 		}
 	}
 	if (!pixel_format_found)
 		return ERR_PTR(-EINVAL);
 
-	// check pitch (in case for native mode)
+	// check pitch for each plane (in case for native mode)
 	format = drm_format_info(mode_cmd->pixel_format);
-	if (mode_cmd->pitches[0] / format->char_per_block[0] > MAX_BIT_VALUE(HARDWARE_PITCH_BITS))
+	for (plane_index = 0; plane_index < format->num_planes; ++plane_index)
+		if (mode_cmd->pitches[plane_index] / format->char_per_block[plane_index] > MAX_BIT_VALUE(HARDWARE_PITCH_BITS))
+			return ERR_PTR(-EINVAL);
+	// Cb/Cr plane pitches must be the same
+	if ((format->num_planes == 3) && (mode_cmd->pitches[1] != mode_cmd->pitches[2]))
 		return ERR_PTR(-EINVAL);
 
 	return drm_gem_fb_create_with_dirty(dev, file, mode_cmd);
 }
 
-static int plane_atomic_check(struct drm_plane *plane, struct drm_plane_state *plane_state)
+static int primary_plane_atomic_check(struct drm_plane *plane, struct drm_plane_state *plane_state)
 {
 	struct vdu_device *vdu = drm_dev_to_vdu(plane->dev);
 	struct drm_crtc_state *crtc_state;
@@ -688,7 +790,7 @@ static int plane_atomic_check(struct drm_plane *plane, struct drm_plane_state *p
 		DRM_PLANE_HELPER_NO_SCALING, DRM_PLANE_HELPER_NO_SCALING, false, true);
 }
 
-static void plane_atomic_update(struct drm_plane *plane, struct drm_plane_state *old_state)
+static void primary_plane_atomic_update(struct drm_plane *plane, struct drm_plane_state *old_state)
 {
 	struct vdu_device *vdu = drm_dev_to_vdu(plane->dev);
 	struct drm_plane_state *state = plane->state;
@@ -702,6 +804,128 @@ static void plane_atomic_update(struct drm_plane *plane, struct drm_plane_state 
 		blit_if_necessary(vdu, plane, old_state);
 	} else
 		osd_rendering_off(vdu);
+}
+
+static int overlay_plane_atomic_check(struct drm_plane *plane, struct drm_plane_state *plane_state)
+{
+	struct vdu_device *vdu = drm_dev_to_vdu(plane->dev);
+	struct drm_crtc_state *crtc_state;
+	int ret;
+	unsigned src_width;
+	unsigned src_height;
+	unsigned dst_width;
+	unsigned dst_height;
+	unsigned hfactor;
+	unsigned vfactor;
+
+	crtc_state = drm_atomic_get_new_crtc_state(plane_state->state, &vdu->crtc);
+
+	ret = drm_atomic_helper_check_plane_state(plane_state, crtc_state,
+		1, 256 << 16, true, true);
+	if (ret != 0)
+		return ret;
+
+	if (plane_state->fb != 0) {
+		if (((plane_state->src.x1 & 0xFFFFF) != 0)
+			|| ((plane_state->src.y1 & 0xFFFFF) != 0)
+			|| ((plane_state->src.x2 & 0xFFFFF) != 0)
+			|| ((plane_state->src.y2 & 0xFFFFF) != 0))
+		{
+			return -ERANGE;
+		}
+		src_width = (plane_state->src.x2 - plane_state->src.x1) >> 16;
+		src_height = (plane_state->src.y2 - plane_state->src.y1) >> 16;
+		dst_width = plane_state->dst.x2 - plane_state->dst.x1;
+		dst_height = plane_state->dst.y2 - plane_state->dst.y1;
+		if ((src_width < 4) || (src_height < 4) || (dst_width < 4) || (dst_height < 4))
+			return -EINVAL;
+		hfactor = ((src_width - 1) << 16) / (dst_width - 1);
+		vfactor = ((src_height - 1) << 16) / (dst_height - 1);
+		if ((hfactor > VDU_REG_SCALER_SCH_Y_MASK) || (vfactor > VDU_REG_SCALER_SCV_Y_MASK))
+			return -ERANGE;
+	}
+
+	return 0;
+}
+
+static void overlay_plane_atomic_update(struct drm_plane *plane, struct drm_plane_state *old_state)
+{
+	struct vdu_device *vdu = drm_dev_to_vdu(plane->dev);
+	struct drm_plane_state *state = plane->state;
+	u32 fb_y_pitch_in_px;
+	u32 fb_cbcr_pitch_in_px;
+	u32 src_width;
+	u32 src_height;
+	u32 dst_width;
+	u32 dst_height;
+	u32 val;
+
+	if (state->fb != NULL) {
+		src_width = (state->src.x2 - state->src.x1) >> 16;
+		src_height = (state->src.y2 - state->src.y1) >> 16;
+		dst_width = state->dst.x2 - state->dst.x1;
+		dst_height = state->dst.y2 - state->dst.y1;
+		fb_y_pitch_in_px = state->fb->pitches[0] / state->fb->format->char_per_block[0];
+		fb_cbcr_pitch_in_px = state->fb->pitches[1] / state->fb->format->char_per_block[1];
+
+		spin_lock_irq(&vdu->mvl_setting_lock);
+
+		spin_lock(&vdu->reg_lock); // not spin_lock_irq
+		val = read_vdu_reg(vdu, VDU_REG_CTRL_ENA);
+		val &= ~VDU_REG_CTRL_ENA_MVL_BASE_SW_ENA_MASK;
+		write_vdu_reg(vdu, VDU_REG_CTRL_ENA, val);
+		spin_unlock(&vdu->reg_lock); // not spin_unlock_irq
+
+		vdu->mvl_setting_mvl_ctrl = VDU_REG_MI_CTRL_PLANE_NUM_MASK;
+		vdu->mvl_setting_mvl_y_base= drm_fb_cma_get_gem_addr(state->fb, state, 0);
+		vdu->mvl_setting_mvl_cb_base = drm_fb_cma_get_gem_addr(state->fb, state, 1);
+		vdu->mvl_setting_mvl_cr_base = drm_fb_cma_get_gem_addr(state->fb, state, 2);
+		vdu->mvl_setting_mvl_y_size = ((src_width - 1) << VDU_REG_MI_MVL_Y_SIZE_H_SHIFT)
+			| ((src_height - 1) << VDU_REG_MI_MVL_Y_SIZE_V_SHIFT);
+		vdu->mvl_setting_mvl_c_size = ((src_width / 2 - 1) << VDU_REG_MI_MVL_C_SIZE_H_SHIFT)
+			| ((src_height / 2 - 1) << VDU_REG_MI_MVL_C_SIZE_V_SHIFT);
+		vdu->mvl_setting_mvl_full_size = (fb_y_pitch_in_px << VDU_REG_MI_MVL_FULL_SIZE_Y_SHIFT)
+			| (fb_cbcr_pitch_in_px << VDU_REG_MI_MVL_FULL_SIZE_C_SHIFT);
+
+		vdu->mvl_setting_dif_mvl_start = (state->dst.x1 << VDU_REG_DIF_MVL_START_H_SHIFT)
+			| (state->dst.y1 << VDU_REG_DIF_MVL_START_V_SHIFT);
+
+		vdu->mvl_setting_scaler_ctrl = 0;
+		if (dst_width != src_width)
+			vdu->mvl_setting_scaler_ctrl |= VDU_REG_SCALER_H_SCALER_ENA_MASK;
+		if (dst_width < src_width)
+			vdu->mvl_setting_scaler_ctrl |= VDU_REG_SCALER_H_FLT_ENA_MASK;
+		if (dst_height != src_height)
+			vdu->mvl_setting_scaler_ctrl |= VDU_REG_SCALER_V_SCALER_ENA_MASK;
+		if (dst_height < src_height)
+			vdu->mvl_setting_scaler_ctrl |= VDU_REG_SCALER_V_FLT_ENA_MASK;
+		vdu->mvl_setting_scaler_sch_y = ((src_width - 1) << 16) / (dst_width - 1);
+		vdu->mvl_setting_scaler_scv_y = ((src_height - 1) << 16) / (dst_height - 1);
+		vdu->mvl_setting_scaler_sch_c = ((src_width / 2 - 1) << 16) / (dst_width / 2 - 1);
+		vdu->mvl_setting_scaler_scv_c = ((src_height / 2 - 1) << 16) / (dst_height / 2 - 1);
+		vdu->mvl_setting_scaler_size_y = ((dst_width - 1) << VDU_REG_SCALER_SIZE_Y_H_SHIFT)
+			| ((dst_height - 1) << VDU_REG_SCALER_SIZE_Y_V_SHIFT);
+		vdu->mvl_setting_scaler_size_c = ((dst_width / 2 - 1) << VDU_REG_SCALER_SIZE_C_H_SHIFT)
+			| ((dst_height / 2 - 1) << VDU_REG_SCALER_SIZE_C_V_SHIFT);
+		vdu->mvl_setting_scaler_size_cut = ((dst_width - 1) << VDU_REG_SCALER_SIZE_CUT_H_SHIFT)
+			| ((dst_height - 1) << VDU_REG_SCALER_SIZE_CUT_V_SHIFT);
+
+		vdu->mvl_setting_present = true;
+
+		spin_unlock_irq(&vdu->mvl_setting_lock);
+	} else {
+		spin_lock_irq(&vdu->mvl_setting_lock);
+
+		spin_lock(&vdu->reg_lock); // not spin_lock_irq
+		val = read_vdu_reg(vdu, VDU_REG_CTRL_ENA);
+		val &= ~(VDU_REG_CTRL_ENA_MVL_ENA_MASK | VDU_REG_CTRL_ENA_MVL_BASE_SW_ENA_MASK);
+		write_vdu_reg(vdu, VDU_REG_CTRL_ENA, val);
+		spin_unlock(&vdu->reg_lock); // not spin_unlock_irq
+
+		vdu->mvl_setting_present = false;
+
+		spin_unlock_irq(&vdu->mvl_setting_lock);
+	}
 }
 
 static int crtc_enable_vblank(struct drm_crtc *crtc)
@@ -866,6 +1090,7 @@ static irqreturn_t irq_handler(int irq, void *arg)
 	struct drm_device *drm_dev = arg;
 	struct vdu_device *vdu = drm_dev_to_vdu(drm_dev);
 	u32 irq_status;
+	u32 val;
 
 	spin_lock(&vdu->reg_lock);
 	irq_status = read_vdu_reg(vdu, VDU_REG_INT_STAT);
@@ -874,6 +1099,36 @@ static irqreturn_t irq_handler(int irq, void *arg)
 	spin_unlock(&vdu->reg_lock);
 
 	if ((irq_status & VDU_REG_INT_VDU_STAT_SA_MASK) != 0) {
+		spin_lock(&vdu->mvl_setting_lock);
+		if (vdu->mvl_setting_present) {
+			write_vdu_reg(vdu, VDU_REG_MI_CTRL, vdu->mvl_setting_mvl_ctrl);
+			write_vdu_reg(vdu, VDU_REG_MI_MVL_Y_BASE0, vdu->mvl_setting_mvl_y_base);
+			write_vdu_reg(vdu, VDU_REG_MI_MVL_CB_BASE0, vdu->mvl_setting_mvl_cb_base);
+			write_vdu_reg(vdu, VDU_REG_MI_MVL_CR_BASE0, vdu->mvl_setting_mvl_cr_base);
+			write_vdu_reg(vdu, VDU_REG_MI_MVL_Y_BASE1, vdu->mvl_setting_mvl_y_base);
+			write_vdu_reg(vdu, VDU_REG_MI_MVL_CB_BASE1, vdu->mvl_setting_mvl_cb_base);
+			write_vdu_reg(vdu, VDU_REG_MI_MVL_CR_BASE1, vdu->mvl_setting_mvl_cr_base);
+			write_vdu_reg(vdu, VDU_REG_MI_MVL_Y_SIZE, vdu->mvl_setting_mvl_y_size);
+			write_vdu_reg(vdu, VDU_REG_MI_MVL_C_SIZE, vdu->mvl_setting_mvl_c_size);
+			write_vdu_reg(vdu, VDU_REG_MI_MVL_FULL_SIZE, vdu->mvl_setting_mvl_full_size);
+			write_vdu_reg(vdu, VDU_REG_DIF_MVL_START, vdu->mvl_setting_dif_mvl_start);
+			write_vdu_reg(vdu, VDU_REG_SCALER_CTRL, vdu->mvl_setting_scaler_ctrl);
+			write_vdu_reg(vdu, VDU_REG_SCALER_SCH_Y, vdu->mvl_setting_scaler_sch_y);
+			write_vdu_reg(vdu, VDU_REG_SCALER_SCV_Y, vdu->mvl_setting_scaler_scv_y);
+			write_vdu_reg(vdu, VDU_REG_SCALER_SCH_C, vdu->mvl_setting_scaler_sch_c);
+			write_vdu_reg(vdu, VDU_REG_SCALER_SCV_C, vdu->mvl_setting_scaler_scv_c);
+			write_vdu_reg(vdu, VDU_REG_SCALER_SIZE_Y, vdu->mvl_setting_scaler_size_y);
+			write_vdu_reg(vdu, VDU_REG_SCALER_SIZE_C, vdu->mvl_setting_scaler_size_c);
+			write_vdu_reg(vdu, VDU_REG_SCALER_SIZE_CUT, vdu->mvl_setting_scaler_size_cut);
+			spin_lock(&vdu->reg_lock);
+			val = read_vdu_reg(vdu, VDU_REG_CTRL_ENA);
+			val |= VDU_REG_CTRL_ENA_MVL_ENA_MASK | VDU_REG_CTRL_ENA_MVL_BASE_SW_ENA_MASK;
+			write_vdu_reg(vdu, VDU_REG_CTRL_ENA, val);
+			spin_unlock(&vdu->reg_lock);
+			vdu->mvl_setting_present = false;
+		}
+		spin_unlock(&vdu->mvl_setting_lock);
+
 		drm_crtc_handle_vblank(&vdu->crtc);
 
 		if (vdu->pending_vblank_event) {
@@ -897,8 +1152,8 @@ static void mode_config_init(struct vdu_device *vdu)
 	drm_mode_config_init(dev);
 	dev->mode_config.min_width = MIN_WIDTH;
 	dev->mode_config.min_height = MIN_HEIGHT;
-	dev->mode_config.max_width = MAX_WIDTH;
-	dev->mode_config.max_height = MAX_HEIGHT;
+	dev->mode_config.max_width = vdu->max_width;
+	dev->mode_config.max_height = vdu->max_height;
 	dev->mode_config.preferred_depth = 16;
 	dev->mode_config.prefer_shadow = 0;
 	dev->mode_config.funcs = &mode_config_funcs;
@@ -916,14 +1171,28 @@ static int crtc_init(struct vdu_device *vdu)
 		&vdu->primary_plane,
 		0,
 		&plane_funcs,
-		plane_formats,
-		ARRAY_SIZE(plane_formats),
-		plane_format_modifiers,
+		primary_plane_formats,
+		ARRAY_SIZE(primary_plane_formats),
+		primary_plane_format_modifiers,
 		DRM_PLANE_TYPE_PRIMARY,
 		NULL);
 	if (ret != 0)
 		return ret;
-	drm_plane_helper_add(&vdu->primary_plane, &plane_helper_funcs);
+	drm_plane_helper_add(&vdu->primary_plane, &primary_plane_helper_funcs);
+
+	ret = drm_universal_plane_init(
+		&vdu->drm_dev,
+		&vdu->overlay_plane,
+		0,
+		&plane_funcs,
+		overlay_plane_formats,
+		ARRAY_SIZE(overlay_plane_formats),
+		overlay_plane_format_modifiers,
+		DRM_PLANE_TYPE_OVERLAY,
+		NULL);
+	if (ret != 0)
+		return ret;
+	drm_plane_helper_add(&vdu->overlay_plane, &overlay_plane_helper_funcs);
 
 	ret = drm_crtc_init_with_planes(
 		&vdu->drm_dev,
@@ -936,8 +1205,9 @@ static int crtc_init(struct vdu_device *vdu)
 		return ret;
 	drm_crtc_helper_add(&vdu->crtc, &crtc_helper_funcs);
 
-	// allow connection the primary plane with CRTC
+	// allow connection the planes with CRTC
 	vdu->primary_plane.possible_crtcs = drm_crtc_mask(&vdu->crtc);
+	vdu->overlay_plane.possible_crtcs = drm_crtc_mask(&vdu->crtc);
 
 	return 0;
 }
@@ -1013,6 +1283,7 @@ static int probe_internal(struct platform_device *pdev)
 	platform_set_drvdata(pdev, vdu);
 
 	spin_lock_init(&vdu->reg_lock);
+	spin_lock_init(&vdu->mvl_setting_lock);
 	init_completion(&vdu->vdu_off_done);
 
 	vdu->regs = devm_ioremap_resource(&pdev->dev, pdev->resource);
@@ -1053,6 +1324,26 @@ static int probe_internal(struct platform_device *pdev)
 		vdu->output_color_space = COLOR_SPACE_YUV422;
 	else {
 		dev_err(&pdev->dev, "parameter 'output-color-space' must be yuv444 or yuv422\n");
+		return -ENODEV;
+	}
+
+	ret = of_property_read_u32(pdev->dev.of_node, "max-width", &vdu->max_width);
+	if (ret != 0) {
+		dev_err(&pdev->dev, "missing required parameter 'max-width'\n");
+		return -ENODEV;
+	}
+	if ((vdu->max_width < MIN_WIDTH) || (vdu->max_width > MAX_WIDTH)) {
+		dev_err(&pdev->dev, "parameter 'max-width' out of range\n");
+		return -ENODEV;
+	}
+
+	ret = of_property_read_u32(pdev->dev.of_node, "max-height", &vdu->max_height);
+	if (ret != 0) {
+		dev_err(&pdev->dev, "missing required parameter 'max-height'\n");
+		return -ENODEV;
+	}
+	if ((vdu->max_height < MIN_HEIGHT) || (vdu->max_height > MAX_HEIGHT)) {
+		dev_err(&pdev->dev, "parameter 'max-height' out of range\n");
 		return -ENODEV;
 	}
 

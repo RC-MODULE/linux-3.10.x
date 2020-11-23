@@ -1167,6 +1167,8 @@
 				vdu-index = <1>;
 				crg-control = <&crg_vdu>;
 				output-color-space = "yuv444";
+				max-width = <1280>;
+				max-height = <720>;
 				ports {
 					port@0 {
 						vdu_out_rgb0: endpoint@0 {
@@ -1186,6 +1188,8 @@
 				vdu-index = <0>;
 				crg-control = <&crg_vdu>;
 				output-color-space = "yuv444";
+				max-width = <1280>;
+				max-height = <720>;
 				ports {
 					port@0 {
 						vdu_out_rgb1: endpoint@0 {
