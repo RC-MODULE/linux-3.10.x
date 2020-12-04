@@ -1596,7 +1596,7 @@ static const struct of_device_id rcm_vdu_dt_ids[] = {
 	{ .compatible = "rcm,vdu-drm" },
 	{ } // sentinel
 };
-MODULE_DEVICE_TABLE(of, coda_dt_ids);
+MODULE_DEVICE_TABLE(of, rcm_vdu_dt_ids);
 #endif
 
 static struct platform_driver rcm_vdu_driver = {
