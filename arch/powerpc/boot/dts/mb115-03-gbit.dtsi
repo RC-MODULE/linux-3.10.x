@@ -31,11 +31,33 @@
 			greth_gbit0: greth_gbit0@0x3C033000 {
 				status = "ok";
 				mac-address = [ EC 17 66 77 05 03 ];
+				mdio {
+					#address-cells = <1>;
+					#size-cells = <0>;
+					ethernet-phy@0 {
+						reg = <0>;
+						compatible = "ethernet-phy-id0007.c0e0"; // LAN8810
+						// reset-gpios = <&gpio1 6 1>;
+						// reset-assert-us = <100000>;
+						// reset-deassert-us = <100000>;
+					};
+				};
 			};
 
 			greth_gbit1: greth_gbit1@0x3C034000 {
 				status = "ok";
 				mac-address = [ EC 17 66 77 05 04 ];
+				mdio {
+					#address-cells = <1>;
+					#size-cells = <0>;
+					ethernet-phy@0 {
+						reg = <0>;
+						compatible = "ethernet-phy-id0007.c0e0"; // LAN8810
+						// reset-gpios = <&gpio1 7 1>;
+						// reset-assert-us = <100000>;
+						// reset-deassert-us = <100000>;
+					};
+				};
 			};
 
 			nand: nand@0x3C032000 {
