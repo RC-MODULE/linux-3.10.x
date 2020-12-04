@@ -18,8 +18,6 @@
  *               Marko Isomaki
  */
 
-#define DEBUG
-
 #include <linux/dma-mapping.h>
 #include <linux/module.h>
 #include <linux/uaccess.h>
