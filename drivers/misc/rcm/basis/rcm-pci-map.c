@@ -24,6 +24,10 @@
 
 #include <linux/configfs.h>
 
+#ifndef PCI_STD_NUM_BARS
+#	define PCI_STD_NUM_BARS 6
+#endif
+
 #include "basis-controller.h"
 
 #include "basis_addresses.h"

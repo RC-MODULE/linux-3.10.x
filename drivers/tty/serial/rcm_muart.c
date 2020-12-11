@@ -30,6 +30,10 @@
 #	include "../../misc/rcm/basis/basis-cfs.h"
 #endif
 
+#ifndef PORT_RCM
+#	define PORT_RCM 123
+#endif
+
 #define MUART_ID 0x55415254
 #define MUART_VERSION 0x10190
 
