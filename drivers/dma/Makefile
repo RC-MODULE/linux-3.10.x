@@ -65,6 +65,7 @@ obj-$(CONFIG_RCM_AUDIO_DMA) += rcm-audio-dma.o
 obj-$(CONFIG_RCM_MDMA) += rcm-mdma.o rcm-mdma-gp.o
 obj-$(CONFIG_RCM_MDMA_DESC_POOL) += rcm-mdma-desc-pool.o
 obj-$(CONFIG_RCM_CDNS_DMA) += rcm-cdns-dma.o
+obj-$(CONFIG_RCM_RMACE_DMA) += rcm-rmace-dma.o
 obj-$(CONFIG_RENESAS_DMA) += sh/
 obj-$(CONFIG_SF_PDMA) += sf-pdma/
 obj-$(CONFIG_SIRF_DMA) += sirf-dma.o

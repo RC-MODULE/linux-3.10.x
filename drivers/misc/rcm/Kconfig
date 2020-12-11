@@ -40,4 +40,8 @@ config RCM_1879_MSVDHD
 	help
 	  Video decoder driver for minicomputer
 
+config RCM_RMACE
+	bool
+	select MFD_SYSCON
+
 endmenu

@@ -525,6 +525,15 @@ config RCM_MDMA
 config RCM_MDMA_DESC_POOL
 	bool
 
+config RCM_RMACE_DMA
+	bool "RCM SoCs RMACE DMA interface"
+	depends on PPC || COMPILE_TEST
+	depends on HAS_IOMEM
+	select RCM_RMACE
+	select DMA_ENGINE
+	help
+	  DMA interface for RCM SoCs RMACE crypto block.
+
 config SIRF_DMA
 	tristate "CSR SiRFprimaII/SiRFmarco DMA support"
 	depends on ARCH_SIRF
