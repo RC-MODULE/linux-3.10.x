@@ -552,8 +552,8 @@ static int rcm_pci_map_probe(struct pci_dev *pdev,
 			data->bar_phys[bar] = pci_resource_start(pdev, bar);
 			data->bar_size[bar] = pci_resource_len(pdev, bar);
 
-			dev_dbg(dev, "BAR[%d] 0x%X:0x%X\n", 
-			        bar, data->bar_phys[bar], data->bar_size[bar]);
+			dev_dbg(dev, "BAR[%d] 0x%llX:0x%llX\n", 
+			        bar, (u64)data->bar_phys[bar], (u64)data->bar_size[bar]);
 		}
 	}
 
