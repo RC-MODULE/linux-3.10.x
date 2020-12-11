@@ -95,28 +95,28 @@
  */
 
 struct muart_regs {
-	unsigned long id; // 0x000
-	unsigned long version; // 0x004
-	unsigned long sw_rst; // 0x008
-	unsigned long reserve_1; // 0x00C
-	unsigned long gen_status; // 0x010
-	unsigned long fifo_state; // 0x014
-	unsigned long status; // 0x018
-	unsigned long reserve_2; // 0x01C
-	unsigned long dtrans; // 0x020
-	unsigned long reserve_3; // 0x024
-	unsigned long drec; // 0x028
-	unsigned long reserve_4; // 0x02C
-	unsigned long bdiv; // 0x030
-	unsigned long reserve_5; // 0x034
-	unsigned long reserve_6; // 0x038
-	unsigned long reserve_7; // 0x03C
-	unsigned long fifowm; // 0x040
-	unsigned long ctrl; // 0x044
-	unsigned long mask; // 0x048
-	unsigned long rxtimeout; // 0x04C
-	unsigned long reserve_8; // 0x050
-	unsigned long txtimeout; // 0x054
+	u32 id; // 0x000
+	u32 version; // 0x004
+	u32 sw_rst; // 0x008
+	u32 reserve_1; // 0x00C
+	u32 gen_status; // 0x010
+	u32 fifo_state; // 0x014
+	u32 status; // 0x018
+	u32 reserve_2; // 0x01C
+	u32 dtrans; // 0x020
+	u32 reserve_3; // 0x024
+	u32 drec; // 0x028
+	u32 reserve_4; // 0x02C
+	u32 bdiv; // 0x030
+	u32 reserve_5; // 0x034
+	u32 reserve_6; // 0x038
+	u32 reserve_7; // 0x03C
+	u32 fifowm; // 0x040
+	u32 ctrl; // 0x044
+	u32 mask; // 0x048
+	u32 rxtimeout; // 0x04C
+	u32 reserve_8; // 0x050
+	u32 txtimeout; // 0x054
 	// dma control registers - not needed for a while
 };
 
