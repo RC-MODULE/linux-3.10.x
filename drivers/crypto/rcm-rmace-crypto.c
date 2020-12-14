@@ -21,6 +21,12 @@
 #include <crypto/if_alg.h>
 #include <crypto/internal/skcipher.h>
 
+// ??? RCM_RMACE
+#define RCM_RMACE_MAX_KEY_SIZE_8 4 // in 8-byte words
+#define RCM_RMACE_MAX_IV_SIZE_8 2 // in 8-byte words
+#define AES_KEY_PREFIX_SIZE_8 2 // in 8-byte words
+#define DUMMY_DATA_BLOCK_SIZE_8 2 // in 8-byte words
+
 #define ALG_MODE_DECRYPT_MASK BIT(0)
 #define ALG_MODE_DES_MASK BIT(1)
 #define ALG_MODE_DES3_MASK BIT(2)
@@ -32,6 +38,11 @@
 struct dma_data
 {
 	u64 control_block[1 /* header */ + RCM_RMACE_MAX_KEY_SIZE_8 + RCM_RMACE_MAX_IV_SIZE_8]; // LE
+
+	// for AES RCM RMACE key optimization issue workaround
+	u64 dummy_control_block[1 /* header */ + RCM_RMACE_MAX_KEY_SIZE_8 + RCM_RMACE_MAX_IV_SIZE_8]; // LE
+	u64 dummy_data_block_src[DUMMY_DATA_BLOCK_SIZE_8];
+	u64 dummy_data_block_dst[DUMMY_DATA_BLOCK_SIZE_8];
 };
 
 struct rcm_rmace_icrypto
@@ -46,6 +57,9 @@ struct rcm_rmace_icrypto
 	struct rcm_rmace_ctx rmace_ctx;
 	struct rcm_rmace_desc_info src_desc_infos[RCM_RMACE_CRYPTO_DESC_COUNT];
 	struct rcm_rmace_desc_info dst_desc_infos[RCM_RMACE_CRYPTO_DESC_COUNT];
+
+	// for AES RCM RMACE key optimization issue workaround
+	u64 last_aes_key_perfix[AES_KEY_PREFIX_SIZE_8];
 };
 
 struct rmace_crypto_ctx
@@ -66,12 +80,48 @@ struct rmace_crypto_reqctx
 	u64 key[RCM_RMACE_MAX_KEY_SIZE_8];
 };
 
-static void config_src_key_iv(
-	struct rcm_rmace_icrypto *icrypto,
-	struct skcipher_request *req,
-	struct rcm_rmace_ctx *rmace_ctx)
+static void aes_rmace_issue_workaround(struct rcm_rmace_icrypto *icrypto, struct rmace_crypto_reqctx *req_ctx)
 {
-	struct rmace_crypto_reqctx *req_ctx = skcipher_request_ctx(req);
+	struct rcm_rmace_ctx *rmace_ctx = &icrypto->rmace_ctx;
+	struct rcm_rmace_desc_info *info;
+	u64 *p;
+
+	info = &rmace_ctx->src_desc_infos[rmace_ctx->src_desc_count++];
+	p = icrypto->dma_data->dummy_control_block;
+	icrypto->last_aes_key_perfix[0] = req_ctx->key[0] + 1; // change the key
+	icrypto->last_aes_key_perfix[1] = req_ctx->key[1];
+	*(p++) = cpu_to_le64(6ULL << RCM_RMACE_HEADER_TYPE_SHIFT); // EAS-128 ECB
+	*(p++) = cpu_to_le64(icrypto->last_aes_key_perfix[0]);
+	*(p++) = cpu_to_le64(icrypto->last_aes_key_perfix[1]);
+	p += 2; // IV does't matter
+
+	// ??? clear_desc_info(&info);
+	memset(info, 0, sizeof *info); // ??? no if masks
+	info->address =	icrypto->dma_data_phys_addr + offsetof(struct dma_data, dummy_control_block);
+	info->length = (p - icrypto->dma_data->dummy_control_block) * 8;
+	info->valid = true;
+	info->act2 = true;
+
+	info = &rmace_ctx->src_desc_infos[rmace_ctx->src_desc_count++];
+	// ??? clear_desc_info(&info);
+	memset(info, 0, sizeof *info); // ??? no if masks
+	info->address =	icrypto->dma_data_phys_addr + offsetof(struct dma_data, dummy_data_block_src);
+	info->length = DUMMY_DATA_BLOCK_SIZE_8 * 8;
+	info->act0 = true;
+	info->act2 = true;
+
+	info = &rmace_ctx->dst_desc_infos[rmace_ctx->dst_desc_count++];
+	// ??? clear_desc_info(&info);
+	memset(info, 0, sizeof *info); // ??? no if masks
+	info->address =	icrypto->dma_data_phys_addr + offsetof(struct dma_data, dummy_data_block_dst);
+	info->length = DUMMY_DATA_BLOCK_SIZE_8 * 8;
+	info->act0 = true;
+	info->act2 = true;
+}
+
+static void config_src_key_iv(struct rcm_rmace_icrypto *icrypto, struct rmace_crypto_reqctx *req_ctx)
+{
+	struct rcm_rmace_ctx *rmace_ctx = &icrypto->rmace_ctx;
 	struct rcm_rmace_desc_info *info = &rmace_ctx->src_desc_infos[rmace_ctx->src_desc_count++];
 	u64 *p = icrypto->dma_data->control_block;
 	u64 *s;
@@ -99,7 +149,7 @@ static void config_src_key_iv(
 		default:
 			panic("Unexpecting key size");
 		}
-		rmace_ctx->flags |= RCM_RMACE_CTX_FLAGS_RESET; // [***] <-- work only with this line (terrible)
+		// ??? rmace_ctx->flags |= RCM_RMACE_CTX_FLAGS_RESET; // [***] <-- work only with this line (terrible)
 	}
 	if (req_ctx->alg_mode & ALG_MODE_CBC_MASK)
 		data |= (1ULL << RCM_RMACE_HEADER_MODE_SHIFT); // cbc
@@ -127,12 +177,9 @@ static void config_src_key_iv(
 	info->act2 = true;
 }
 
-static void config_dst_key_iv(
-	struct rcm_rmace_icrypto *icrypto,
-	struct skcipher_request *req,
-	struct rcm_rmace_ctx *rmace_ctx)
+static void config_dst_key_iv(struct rcm_rmace_icrypto *icrypto, struct rmace_crypto_reqctx *req_ctx)
 {
-	struct rmace_crypto_reqctx *req_ctx = skcipher_request_ctx(req);
+	struct rcm_rmace_ctx *rmace_ctx = &icrypto->rmace_ctx;
 	struct rcm_rmace_desc_info *info = &rmace_ctx->dst_desc_infos[rmace_ctx->dst_desc_count++];
 
 	// ??? clear_desc_info(&info);
@@ -143,11 +190,9 @@ static void config_dst_key_iv(
 	info->act2 = true;
 }
 
-static int config_src_data(
-	struct scatterlist *sglist,
-	int nents,
-	struct rcm_rmace_ctx *rmace_ctx)
+static int config_src_data(struct rcm_rmace_icrypto *icrypto, struct scatterlist *sglist, int nents)
 {
+	struct rcm_rmace_ctx *rmace_ctx = &icrypto->rmace_ctx;
 	struct scatterlist *sg;
 	struct rcm_rmace_desc_info *info;
 	int i;
@@ -166,11 +211,9 @@ static int config_src_data(
 	return 0;
 }
 
-static int config_dst_data(
-	struct scatterlist *sglist,
-	int nents,
-	struct rcm_rmace_ctx *rmace_ctx)
+static int config_dst_data(struct rcm_rmace_icrypto *icrypto, struct scatterlist *sglist, int nents)
 {
+	struct rcm_rmace_ctx *rmace_ctx = &icrypto->rmace_ctx;
 	struct scatterlist *sg;
 	struct rcm_rmace_desc_info *info;
 	int i;
@@ -217,6 +260,7 @@ static int rmace_cipher_one_req(
 	void *areq)
 {	
 	struct skcipher_request *req = container_of(areq, struct skcipher_request, base);
+	struct rmace_crypto_reqctx *req_ctx = skcipher_request_ctx(req);
 	struct rmace_crypto_ctx *crypto_ctx = crypto_skcipher_ctx(crypto_skcipher_reqtfm(req));
 	struct rcm_rmace_icrypto *icrypto = crypto_ctx->icrypto;
 	struct rcm_rmace_ctx *rmace_ctx = &icrypto->rmace_ctx;
@@ -250,20 +294,29 @@ static int rmace_cipher_one_req(
 		goto unmap_src;
 	dst_mapped_nents = ret;
 
-	rmace_ctx->flags = 0;
-
 	// no descriptors yet
 	rmace_ctx->src_desc_count = 0;
 	rmace_ctx->dst_desc_count = 0;
 
-	config_src_key_iv(icrypto, req, rmace_ctx);
-	ret = config_src_data(req->src, src_mapped_nents, rmace_ctx);
+	// AES RCM RMACE key otimization issue workaround
+	if (req_ctx->alg_mode & ALG_MODE_AES_MASK) {
+		if ((req_ctx->key[0] == icrypto->last_aes_key_perfix[0])
+			&& (req_ctx->key[1] == icrypto->last_aes_key_perfix[1]))
+		{
+			aes_rmace_issue_workaround(icrypto, req_ctx);
+		}
+		icrypto->last_aes_key_perfix[0] = req_ctx->key[0];
+		icrypto->last_aes_key_perfix[1] = req_ctx->key[1];
+	}
+
+	config_src_key_iv(icrypto, req_ctx);
+	ret = config_src_data(icrypto, req->src, src_mapped_nents);
 	if (ret != 0)
 		goto unmap_dst;
-	ret = config_dst_data(req->dst, dst_mapped_nents, rmace_ctx);
+	ret = config_dst_data(icrypto, req->dst, dst_mapped_nents);
 	if (ret != 0)
 		goto unmap_dst;
-	config_dst_key_iv(icrypto, req, rmace_ctx);
+	config_dst_key_iv(icrypto, req_ctx);
 
 	rcm_rmace_ctx_schelude(rmace_ctx);
 

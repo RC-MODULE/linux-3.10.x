@@ -154,9 +154,6 @@ static void schedule_next_ctx(struct rcm_rmace_dev *rmace)
 		make_hw_desc(&ctx->dst_desc_infos[i], &rmace->dma_data->dst_hw_descs[i]);
 	rmace->dma_data->dst_hw_descs[ctx->dst_desc_count].data = 0; // stop descriptor
 
-	if ((ctx->flags & RCM_RMACE_CTX_FLAGS_RESET) != 0)
-		reset_rmace(rmace);
-
 	// program the source DMA channel
 	phys_addr = rmace->dma_data_phys_addr + offsetof(struct rcm_rmace_dma_data, src_hw_descs);
 	rmace_write_reg(rmace, RMACE_REG_RDMA_SYS_ADDR, phys_addr);

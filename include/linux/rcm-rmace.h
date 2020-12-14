@@ -14,17 +14,11 @@
 #include <linux/list.h>
 #include <linux/spinlock.h>
 
-#define RCM_RMACE_MAX_KEY_SIZE_8 4 // in 8-byte words
-#define RCM_RMACE_MAX_IV_SIZE_8 2 // in 8-byte words
-
 #define RCM_RMACE_HW_DESC_COUNT 1024
 #define RCM_RMACE_CRYPTO_DESC_COUNT (RCM_RMACE_HW_DESC_COUNT - 1)
 #define RCM_RMACE_ASYNC_TX_DESC_COUNT (RCM_RMACE_HW_DESC_COUNT - 1)
 #define RCM_RMACE_MAX_DATA_TRANSFER (64 * 1024 * 1024 - 1)
 #define RCM_RMACE_HARDWARE_ALIGN_MASK 0x7
-
-// ??? delete
-#define RCM_RMACE_CTX_FLAGS_RESET BIT(0) // reset is needed before the operation
 
 #define RCM_RMACE_CTX_STATUS_SCHEDULED BIT(0) // !EXECUTING && !FINISHED
 #define RCM_RMACE_CTX_STATUS_EXECUTING BIT(1) // !SCHEDULED && !FINISHED
@@ -63,7 +57,6 @@ struct rcm_rmace_dev;
 struct rcm_rmace_ctx
 {
 	struct rcm_rmace_dev *rmace;
-	unsigned flags; // RCM_RMACE_CTX_FLAGSS*
 	unsigned status; // RCM_RMACE_CTX_STATUS*
 
 	unsigned src_desc_count;
