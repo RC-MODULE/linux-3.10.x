@@ -39,16 +39,33 @@
 #define ALG_MODE_CBC BIT(5)
 #define ALG_MODE_OFB BIT(6)
 
-struct rcm_rmace_crypto_ctx {
-	struct crypto_engine_ctx enginectx;
+struct rcm_rmace_icrypto
+{
 	struct rcm_rmace_dev *rmace;
+	struct crypto_engine *engine;
+	struct skcipher_request *crypto_cur_req; // ??? or curr
+	int crypto_cur_req_src_nents; // ??? name
+	int crypto_cur_req_dst_nents; // ??? name
+	struct rcm_rmace_ctx crypto_ctx; // ??? name
+	struct rcm_rmace_desc_info crypto_src_desc_infos[RCM_RMACE_CRYPTO_DESC_COUNT]; // ??? name
+	struct rcm_rmace_desc_info crypto_dst_desc_infos[RCM_RMACE_CRYPTO_DESC_COUNT]; // ??? name
+};
+
+// ??? name
+struct rcm_rmace_crypto_ctx
+{
+	struct crypto_engine_ctx enginectx;
+	// ??? struct rcm_rmace_dev *rmace;
+	struct rcm_rmace_icrypto *icrypto;
 	unsigned alg_mode; // ALG_MODE*
 	unsigned key_size_8; // (in 8-byte words) always defined
 	unsigned iv_size_8; // (in 8-byte words) can be 0
 	u64 key[RCM_RMACE_MAX_KEY_SIZE_8];
 };
 
-struct rcm_rmace_crypto_reqctx {
+// ??? name
+struct rcm_rmace_crypto_reqctx
+{
 	unsigned alg_mode; // ALG_MODE*
 	unsigned key_size_8; // (in 8-byte words) always defined
 	unsigned iv_size_8; // (in 8-byte words) can be 0
@@ -56,13 +73,15 @@ struct rcm_rmace_crypto_reqctx {
 };
 
 static void config_src_key_iv(
-	struct rcm_rmace_dev *rmace,
+	// ??? struct rcm_rmace_dev *rmace,
+	struct rcm_rmace_icrypto *icrypto,
 	struct skcipher_request *req,
 	struct rcm_rmace_ctx *hw_ctx)
 {
 	struct rcm_rmace_crypto_reqctx *req_ctx = skcipher_request_ctx(req);
 	struct rcm_rmace_desc_info *info = &hw_ctx->src_desc_infos[hw_ctx->src_desc_count++];
-	u64 *p = rmace->dma_data->control_block;
+	// ??? u64 *p = rmace->dma_data->control_block;
+	u64 *p = icrypto->rmace->dma_data->control_block; // ???
 	u64 *s;
 	u64 data = 0; 
 	unsigned i;
@@ -103,21 +122,25 @@ static void config_src_key_iv(
 		*(p++) = __cpu_to_le64(*(s++));
 	}
 
-	s = (u64*)rmace->crypto_cur_req->iv;
+	// ??? s = (u64*)rmace->crypto_cur_req->iv;
+	s = (u64*)icrypto->crypto_cur_req->iv;
 	for (i = 0; i < req_ctx->iv_size_8; ++i) {
 		*(p++) = __cpu_to_le64(*(s++));
 	}
 
 	// ??? clear_desc_info(&info);
 	memset(info, 0, sizeof *info); // ??? no if masks
-	info->address =	rmace->dma_data_phys_addr + offsetof(struct rcm_rmace_dma_data, control_block);
-	info->length = (p - rmace->dma_data->control_block) * 8;
+	// ??? info->address =	rmace->dma_data_phys_addr + offsetof(struct rcm_rmace_dma_data, control_block);
+	info->address =	icrypto->rmace->dma_data_phys_addr + offsetof(struct rcm_rmace_dma_data, control_block); // ???
+	// ??? info->length = (p - rmace->dma_data->control_block) * 8;
+	info->length = (p - icrypto->rmace->dma_data->control_block) * 8; // ???
 	info->valid = true;
 	info->act2 = true;
 }
 
 static void config_dst_key_iv(
-	struct rcm_rmace_dev *rmace,
+	// ??? struct rcm_rmace_dev *rmace,
+	struct rcm_rmace_icrypto *icrypto, // ???
 	struct skcipher_request *req,
 	struct rcm_rmace_ctx *hw_ctx)
 {
@@ -126,14 +149,16 @@ static void config_dst_key_iv(
 
 	// ??? clear_desc_info(&info);
 	memset(info, 0, sizeof *info); // ??? no if masks
-	info->address =	rmace->dma_data_phys_addr + offsetof(struct rcm_rmace_dma_data, control_block);
+	// ??? info->address = rmace->dma_data_phys_addr + offsetof(struct rcm_rmace_dma_data, control_block);
+	info->address = icrypto->rmace->dma_data_phys_addr + offsetof(struct rcm_rmace_dma_data, control_block); // ???
 	info->length = (1 + req_ctx->key_size_8 + req_ctx->iv_size_8) * 8;
 	info->valid = true;
 	info->act2 = true;
 }
 
 static int config_src_data(
-	struct rcm_rmace_dev *rmace,
+	// ??? struct rcm_rmace_dev *rmace,
+	struct rcm_rmace_icrypto *icrypto, // ??? need
 	struct scatterlist *sglist,
 	int nents,
 	struct rcm_rmace_ctx *hw_ctx)
@@ -159,7 +184,8 @@ static int config_src_data(
 }
 
 static int config_dst_data( // ???? like src
-	struct rcm_rmace_dev *rmace,
+	// ??? struct rcm_rmace_dev *rmace,
+	struct rcm_rmace_icrypto *icrypto, // ??? need
 	struct scatterlist *sglist,
 	int nents,
 	struct rcm_rmace_ctx *hw_ctx)
@@ -186,8 +212,11 @@ static int config_dst_data( // ???? like src
 
 static void rcm_rmace_finished_callback(struct rcm_rmace_ctx *ctx, void *arg)
 {
-	struct rcm_rmace_dev *rmace = ctx->rmace;
-	struct rcm_rmace_crypto_reqctx *req_ctx = skcipher_request_ctx(rmace->crypto_cur_req);
+	// ??? struct rcm_rmace_dev *rmace = ctx->rmace;
+	// ??? struct rcm_rmace_icrypto *icrypto = ctx->i
+	struct rcm_rmace_icrypto *icrypto = container_of(ctx, struct rcm_rmace_icrypto, crypto_ctx); // ??? func ??? or no
+	// ??? struct rcm_rmace_crypto_reqctx *req_ctx = skcipher_request_ctx(rmace->crypto_cur_req);
+	struct rcm_rmace_crypto_reqctx *req_ctx = skcipher_request_ctx(icrypto->crypto_cur_req);
 	u64 *p, *d;
 	unsigned i;
 
@@ -195,17 +224,23 @@ static void rcm_rmace_finished_callback(struct rcm_rmace_ctx *ctx, void *arg)
 
 	if ((ctx->status & RCM_RMACE_CTX_STATUS_SUCCESS) != 0) {
 		// save configuration
-		p = rmace->dma_data->control_block + 1 /* header */ + req_ctx->key_size_8;
-		d = (u64*)rmace->crypto_cur_req->iv;
+		// ??? p = rmace->dma_data->control_block + 1 /* header */ + req_ctx->key_size_8;
+		p = icrypto->rmace->dma_data->control_block + 1 /* header */ + req_ctx->key_size_8; // ???
+		// ??? d = (u64*)rmace->crypto_cur_req->iv;
+		d = (u64*)icrypto->crypto_cur_req->iv; // ???
 		for (i = 0; i < req_ctx->iv_size_8; ++i)
 			*(d++) = __le64_to_cpu(*(p++));
 	}
 
-	dma_unmap_sg(&rmace->pdev->dev, rmace->crypto_cur_req->src, rmace->crypto_cur_req_src_nents, DMA_TO_DEVICE);
-	dma_unmap_sg(&rmace->pdev->dev, rmace->crypto_cur_req->dst, rmace->crypto_cur_req_dst_nents, DMA_FROM_DEVICE);
+	// ??? dma_unmap_sg(&rmace->pdev->dev, rmace->crypto_cur_req->src, rmace->crypto_cur_req_src_nents, DMA_TO_DEVICE);
+	dma_unmap_sg(&icrypto->rmace->pdev->dev, icrypto->crypto_cur_req->src, icrypto->crypto_cur_req_src_nents, DMA_TO_DEVICE); // ???
+	// ??? dma_unmap_sg(&rmace->pdev->dev, rmace->crypto_cur_req->dst, rmace->crypto_cur_req_dst_nents, DMA_FROM_DEVICE);
+	dma_unmap_sg(&icrypto->rmace->pdev->dev, icrypto->crypto_cur_req->dst, icrypto->crypto_cur_req_dst_nents, DMA_FROM_DEVICE); // ???
 
-	crypto_finalize_skcipher_request(rmace->engine, rmace->crypto_cur_req,
-		(ctx->status & RCM_RMACE_CTX_STATUS_SUCCESS) != 0 ? 0 : -EFAULT); // cur_req -> arg ????
+	// ??? crypto_finalize_skcipher_request(rmace->engine, rmace->crypto_cur_req,
+	// ???	(ctx->status & RCM_RMACE_CTX_STATUS_SUCCESS) != 0 ? 0 : -EFAULT); // cur_req -> arg ????
+	crypto_finalize_skcipher_request(icrypto->engine, icrypto->crypto_cur_req, // ???
+		(ctx->status & RCM_RMACE_CTX_STATUS_SUCCESS) != 0 ? 0 : -EFAULT); // cur_req -> arg ???? or no args
 	// ??? ctx->rmace->crypto_cur_req = NULL; // ??? need ???
 }
 
@@ -218,34 +253,45 @@ static int rcm_rmace_cipher_one_req(
 {	
 	struct skcipher_request *req = container_of(areq, struct skcipher_request, base);
 	struct rcm_rmace_crypto_ctx *crypto_ctx = crypto_skcipher_ctx(crypto_skcipher_reqtfm(req));
-	struct rcm_rmace_dev *rmace = crypto_ctx->rmace;
-	struct rcm_rmace_ctx *hw_ctx = &rmace->crypto_ctx;
+	// ??? struct rcm_rmace_dev *rmace = crypto_ctx->rmace;
+	struct rcm_rmace_icrypto *icrypto = crypto_ctx->icrypto; // ???
+	// ??? struct rcm_rmace_ctx *hw_ctx = &rmace->crypto_ctx;
+	struct rcm_rmace_ctx *hw_ctx = &icrypto->crypto_ctx;
 	int src_mapped_nents;
 	int dst_mapped_nents;
 	int ret;
 
-	rmace->crypto_cur_req = req; // ??? optimize req
+	// ??? rmace->crypto_cur_req = req; // ??? optimize req
+	icrypto->crypto_cur_req = req; // ??? optimize req
 
 	// check max length
 	if (req->cryptlen > ALG_MAX_PAGES * PAGE_SIZE)
 		return -EINVAL;
 
 	// calculate source/destincation length in nents
-	rmace->crypto_cur_req_src_nents = sg_nents_for_len(req->src, req->cryptlen);
-	if (rmace->crypto_cur_req_src_nents < 0)
-		return rmace->crypto_cur_req_src_nents;
-	rmace->crypto_cur_req_dst_nents = sg_nents_for_len(req->dst, req->cryptlen);
-	if (rmace->crypto_cur_req_dst_nents < 0)
-		return rmace->crypto_cur_req_dst_nents;
+	// ??? rmace->crypto_cur_req_src_nents = sg_nents_for_len(req->src, req->cryptlen);
+	icrypto->crypto_cur_req_src_nents = sg_nents_for_len(req->src, req->cryptlen); // ???
+	// /?? if (rmace->crypto_cur_req_src_nents < 0)
+	if (icrypto->crypto_cur_req_src_nents < 0) // ???
+		// ??? return rmace->crypto_cur_req_src_nents;
+		return icrypto->crypto_cur_req_src_nents; // ???
+	// ??? rmace->crypto_cur_req_dst_nents = sg_nents_for_len(req->dst, req->cryptlen);
+	icrypto->crypto_cur_req_dst_nents = sg_nents_for_len(req->dst, req->cryptlen); // ???
+	// ??? if (rmace->crypto_cur_req_dst_nents < 0)
+	if (icrypto->crypto_cur_req_dst_nents < 0) // ???
+		// ??? return rmace->crypto_cur_req_dst_nents;
+		return icrypto->crypto_cur_req_dst_nents; // ???
 
 	// map source buffers
-	ret = dma_map_sg(&rmace->pdev->dev, req->src, rmace->crypto_cur_req_src_nents, DMA_TO_DEVICE);
+	// ??? ret = dma_map_sg(&rmace->pdev->dev, req->src, rmace->crypto_cur_req_src_nents, DMA_TO_DEVICE);
+	ret = dma_map_sg(&icrypto->rmace->pdev->dev, req->src, icrypto->crypto_cur_req_src_nents, DMA_TO_DEVICE); // ????
 	if (ret < 0)
 		return ret;
 	src_mapped_nents = ret;
 
 	// map destination buffers
-	ret = dma_map_sg(&rmace->pdev->dev, req->dst, rmace->crypto_cur_req_dst_nents, DMA_TO_DEVICE);
+	// ??? ret = dma_map_sg(&rmace->pdev->dev, req->dst, rmace->crypto_cur_req_dst_nents, DMA_TO_DEVICE);
+	ret = dma_map_sg(&icrypto->rmace->pdev->dev, req->dst, icrypto->crypto_cur_req_dst_nents, DMA_TO_DEVICE); // ???
 	if (ret < 0)
 		goto unmap_src;
 	dst_mapped_nents = ret;
@@ -256,25 +302,31 @@ static int rcm_rmace_cipher_one_req(
 	hw_ctx->src_desc_count = 0;
 	hw_ctx->dst_desc_count = 0;
 
-	config_src_key_iv(rmace, req, hw_ctx);
-	ret = config_src_data(rmace, req->src, src_mapped_nents, hw_ctx);
+	// ??? config_src_key_iv(rmace, req, hw_ctx);
+	config_src_key_iv(icrypto, req, hw_ctx); // ????
+	// ??? ret = config_src_data(rmace, req->src, src_mapped_nents, hw_ctx);
+	ret = config_src_data(icrypto, req->src, src_mapped_nents, hw_ctx); // ???
 	if (ret != 0)
 		goto unmap_dst;
 
-	ret = config_dst_data(rmace, req->dst, dst_mapped_nents, hw_ctx);
+	// ??? ret = config_dst_data(rmace, req->dst, dst_mapped_nents, hw_ctx);
+	ret = config_dst_data(icrypto, req->dst, dst_mapped_nents, hw_ctx); // ???
 	if (ret != 0)
 		goto unmap_dst;
-	config_dst_key_iv(rmace, req, hw_ctx);
+	// ??? config_dst_key_iv(rmace, req, hw_ctx);
+	config_dst_key_iv(icrypto, req, hw_ctx); // ???
 
 	rcm_rmace_ctx_schelude(hw_ctx);
 
 	return 0;
 
 unmap_dst:
-	dma_unmap_sg(&rmace->pdev->dev, req->dst, rmace->crypto_cur_req_dst_nents, DMA_FROM_DEVICE);
+	// ??? dma_unmap_sg(&rmace->pdev->dev, req->dst, rmace->crypto_cur_req_dst_nents, DMA_FROM_DEVICE);
+	dma_unmap_sg(&icrypto->rmace->pdev->dev, req->dst, icrypto->crypto_cur_req_dst_nents, DMA_FROM_DEVICE); // ???
 
 unmap_src:
-	dma_unmap_sg(&rmace->pdev->dev, req->src, rmace->crypto_cur_req_src_nents, DMA_TO_DEVICE);
+	// ??? dma_unmap_sg(&rmace->pdev->dev, req->src, rmace->crypto_cur_req_src_nents, DMA_TO_DEVICE);
+	dma_unmap_sg(&icrypto->rmace->pdev->dev, req->src, icrypto->crypto_cur_req_src_nents, DMA_TO_DEVICE); // ???
 
 	return ret;
 }
@@ -306,7 +358,8 @@ static int rcm_rmace_crypt(struct skcipher_request *req, bool decrypt)
 	memcpy(req_ctx->key, ctx->key, ctx->key_size_8 * 8);
 
 	return crypto_transfer_skcipher_request_to_engine(
-		ctx->rmace->engine, req);
+		// ???? ctx->rmace->engine, req);
+		ctx->icrypto->engine, req); // ???
 }
 
 static int rcm_rmace_crypto_ctx_init(
@@ -316,11 +369,12 @@ static int rcm_rmace_crypto_ctx_init(
 	unsigned default_iv_size)
 {
 	struct rcm_rmace_crypto_ctx *ctx = crypto_skcipher_ctx(tfm);
+	// ??? struct rcm_rmace_icrypto *icrypto;
 
-	ctx->rmace =  rcm_rmace_dev_single_ptr;
-	if (ctx->rmace == NULL)
-		return -ENODEV;
+	if (rcm_rmace_dev_single_ptr == NULL) // ???
+		return -ENODEV; // ???
 
+	ctx->icrypto = rcm_rmace_dev_single_ptr->icrypto; // ???
 	ctx->alg_mode = alg_mode;
 	ctx->key_size_8 = default_key_size / 8;
 	ctx->iv_size_8 = default_iv_size / 8;
@@ -591,20 +645,29 @@ static struct skcipher_alg crypto_algs[] = {
 
 int rcm_rmace_crypto_register(struct rcm_rmace_dev *rmace)
 {
+	struct rcm_rmace_icrypto *icrypto;
 	int ret;
 
-	rcm_rmace_ctx_init(rmace, &rmace->crypto_ctx);
-	rmace->crypto_ctx.src_desc_infos = rmace->crypto_src_desc_infos;
-	rmace->crypto_ctx.dst_desc_infos = rmace->crypto_dst_desc_infos;
-	rmace->crypto_ctx.finished_callback = rcm_rmace_finished_callback; // ??? name
+	icrypto = devm_kzalloc(&rmace->pdev->dev, sizeof *icrypto, GFP_KERNEL);
+	if (icrypto == NULL) {
+		pr_err("insufficient memory\n");
+		return -ENOMEM;
+	}
+	icrypto->rmace = rmace;
+	rmace->icrypto = icrypto;
 
-	rmace->engine = crypto_engine_alloc_init(&rmace->pdev->dev, true);
-	if (!rmace->engine) {
+	rcm_rmace_ctx_init(rmace, &icrypto->crypto_ctx);
+	icrypto->crypto_ctx.src_desc_infos = icrypto->crypto_src_desc_infos;
+	icrypto->crypto_ctx.dst_desc_infos = icrypto->crypto_dst_desc_infos;
+	icrypto->crypto_ctx.finished_callback = rcm_rmace_finished_callback; // ??? name
+
+	icrypto->engine = crypto_engine_alloc_init(&rmace->pdev->dev, true);
+	if (!icrypto->engine) {
 		pr_err("could not init crypto engine\n");
 		return -ENOMEM;
 	}
 
-	ret = crypto_engine_start(rmace->engine);
+	ret = crypto_engine_start(icrypto->engine);
 	if (ret) {
 		pr_err("could not start crypto engine\n");
 		goto free_engine;
@@ -621,7 +684,8 @@ int rcm_rmace_crypto_register(struct rcm_rmace_dev *rmace)
 	return 0;
 
 free_engine:
-	crypto_engine_exit(rmace->engine);
+	// ??? crypto_engine_exit(rmace->engine);
+	crypto_engine_exit(icrypto->engine); // /???
 
 	return ret;
 }
@@ -630,22 +694,11 @@ EXPORT_SYMBOL(rcm_rmace_crypto_register);
 void rcm_rmace_crypto_unregister(struct rcm_rmace_dev *rmace)
 {
 	crypto_unregister_skciphers(crypto_algs, ARRAY_SIZE(crypto_algs));
-	crypto_engine_exit(rmace->engine);
+	// ??? crypto_engine_exit(rmace->engine);
+	crypto_engine_exit(rmace->icrypto->engine); // ???
 }
 EXPORT_SYMBOL(rcm_rmace_crypto_unregister);
 
-static int __init rcm_rmace_crypto_init(void)
-{
-	return 0;
-}
-
-static void __exit rcm_rmace_crypto_exit(void)
-{
-}
-
-module_init(rcm_rmace_crypto_init);
-module_exit(rcm_rmace_crypto_exit);
-
-MODULE_DESCRIPTION("RCM SoCs RMACE crypto interface");
-MODULE_AUTHOR("Mikhail Petrov <Mikhail.Petrov@mir.dev>");
 MODULE_LICENSE("GPL v2");
+MODULE_AUTHOR("Mikhail Petrov <Mikhail.Petrov@mir.dev>");
+MODULE_DESCRIPTION("RCM SoCs RMACE crypto interface");

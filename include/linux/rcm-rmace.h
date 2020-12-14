@@ -13,7 +13,6 @@
 #include <linux/regmap.h>
 #include <linux/list.h>
 #include <linux/spinlock.h>
-#include <linux/dmaengine.h>
 
 #define RCM_RMACE_MAX_KEY_SIZE_8 4 // in 8-byte words
 #define RCM_RMACE_MAX_IV_SIZE_8 2 // in 8-byte words
@@ -33,12 +32,15 @@
 #define RCM_RMACE_CTX_STATUS_ERROR      BIT(5) // FINISHED && !SUCCESS && !TERMINATED
 
 #ifdef CONFIG_CRYPTO_RCM_RMACE
-// ??? struct rcm_rmace_crypto;
+// implemented in driver/crypto/rcm-rmace-crypto.c
+struct rcm_rmace_icrypto;
 #endif
 
 #ifdef CONFIG_RCM_RMACE_DMA
-// ??? struct rcm_rmace_dma_dev;
+// implemented in driver/dma/rcm-rmace-dma.c
+struct rcm_rmace_idma;
 #endif
+
 
 // ??? make flags instead bool
 struct rcm_rmace_desc_info {
@@ -66,7 +68,6 @@ struct rcm_rmace_ctx
 	struct rcm_rmace_desc_info *dst_desc_infos;
 
 	// executed in a threaded interrupt context
-	// ??? void (*started_callback)(struct rcm_rmace_ctx *ctx, void *arg);
 	void (*finished_callback)(struct rcm_rmace_ctx *ctx, void *arg); // ??? name
 	void *callbacks_arg; // ??? need ??? name without s
 
@@ -82,34 +83,11 @@ struct rcm_rmace_dma_data {
 	struct rcm_rmace_hw_desc src_hw_descs[RCM_RMACE_HW_DESC_COUNT];
 	struct rcm_rmace_hw_desc dst_hw_descs[RCM_RMACE_HW_DESC_COUNT];
 #ifdef CONFIG_CRYPTO_RCM_RMACE
-	u64 control_block[1 /* header */ + RCM_RMACE_MAX_KEY_SIZE_8 + RCM_RMACE_MAX_IV_SIZE_8]; // LE  ??? name
+	u64 control_block[1 /* header */ + RCM_RMACE_MAX_KEY_SIZE_8 + RCM_RMACE_MAX_IV_SIZE_8]; // LE  ??? name, ??? not here
 #endif
 #ifdef CONFIG_RCM_RMACE_DMA
-	u64 memcpy_control_block;
+	u64 memcpy_control_block; // ???? not here
 #endif
-};
-
-struct rcm_rmace_dma_async_tx_desc
-{
-	struct dma_async_tx_descriptor async_tx;
-	struct rcm_rmace_ctx ctx;
-	struct rcm_rmace_desc_info src_desc_infos[2]; // config, source buffer
-	struct rcm_rmace_desc_info dst_desc_info; // destination buffer
-	struct list_head list; // free list, pending list, active list
-};
-
-// ???
-struct rcm_rmace_dma_chan
-{
-	struct dma_chan dma_chan;
-	struct rcm_rmace_dma_async_tx_desc async_tx_descs[RCM_RMACE_ASYNC_TX_DESC_COUNT];
-	spinlock_t list_lock;
-	struct list_head free_list; // protected by list_lock ??? need
-	struct list_head pending_list; // protected by list_lock ??? need
-	struct list_head active_list; // protected by list_lock ??? need
-	struct list_head complete_list; // protected by list_lock ??? need
-	// ??? dma_cookie_t last_cookie; // protected by list_lock ???
-	// ??? dma_cookie_t used_cookie; // protected by list_lock ???
 };
 
 struct rcm_rmace_dev
@@ -127,19 +105,20 @@ struct rcm_rmace_dev
 	struct rcm_rmace_ctx *current_ctx; // protected by scheduled_lock // ??? cur or curr
 
 #ifdef CONFIG_CRYPTO_RCM_RMACE
+	struct rcm_rmace_icrypto *icrypto;
+	/* ???
 	struct crypto_engine *engine;
 	struct skcipher_request *crypto_cur_req; // ??? or curr
-	int crypto_cur_req_src_nents;
-	int crypto_cur_req_dst_nents;
-	struct rcm_rmace_ctx crypto_ctx;
-	struct rcm_rmace_desc_info crypto_src_desc_infos[RCM_RMACE_CRYPTO_DESC_COUNT];
-	struct rcm_rmace_desc_info crypto_dst_desc_infos[RCM_RMACE_CRYPTO_DESC_COUNT];
+	int crypto_cur_req_src_nents; // ??? name
+	int crypto_cur_req_dst_nents; // ??? name
+	struct rcm_rmace_ctx crypto_ctx; // ??? name
+	struct rcm_rmace_desc_info crypto_src_desc_infos[RCM_RMACE_CRYPTO_DESC_COUNT]; // ??? name
+	struct rcm_rmace_desc_info crypto_dst_desc_infos[RCM_RMACE_CRYPTO_DESC_COUNT]; // ??? name
+	*/
 #endif
 
 #ifdef CONFIG_RCM_RMACE_DMA
-	struct dma_device dma_dev;
-	unsigned dma_channel_count;
-	struct rcm_rmace_dma_chan *dma_channels;
+	struct rcm_rmace_idma *idma;
 #endif
 };
 

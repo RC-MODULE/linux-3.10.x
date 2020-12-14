@@ -1033,7 +1033,7 @@
 				reg = <0x3C023000 0x1000>;
 			};
 
-			rmace@0x3C024000 {
+			rmace: rmace@0x3C024000 {
 				status = "disabled";
 				compatible = "rcm,rmace";
 				reg = <0x3C024000 0x1000>;
@@ -1041,7 +1041,6 @@
 				interrupt-parent = <&MPIC>;
 				interrupts = <78 2>; // active high level-sensitive
 				#dma-cells = <1>;
-				dma-channel-count = <2>;
 			};
 		};
 
