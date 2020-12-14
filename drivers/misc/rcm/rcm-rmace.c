@@ -233,15 +233,15 @@ static irqreturn_t rmace_irq_thread(int irq, void *arg)
 			wdma_status);
 		reset_rmace(rmace);
 		reset_dma(rmace);
-		ctx->status = RCM_RMACE_CTX_STATUS_FINISHED | RCM_RMACE_CTX_STATUS_ERROR;
+		ctx->status = RCM_RMACE_CTX_STATUS_FINISHED;
 	}
 	else if ((wdma_status & BIT(DMA_STATUS_BAD_DESC)) != 0)
 		ctx->status = RCM_RMACE_CTX_STATUS_FINISHED | RCM_RMACE_CTX_STATUS_SUCCESS;
 	else
 		panic("unknow interrupt");
 
-	if (ctx->finished_callback != NULL)
-		ctx->finished_callback(ctx, ctx->callbacks_arg);
+	if (ctx->callback != NULL)
+		ctx->callback(ctx, ctx->callback_arg);
 
 	schedule_next_ctx(rmace);
 
@@ -274,14 +274,6 @@ void rcm_rmace_ctx_schelude(struct rcm_rmace_ctx *ctx)
 	schedule_next_ctx(ctx->rmace);
 }
 EXPORT_SYMBOL(rcm_rmace_ctx_schelude);
-
-void rcm_rmace_ctx_terminate(struct rcm_rmace_ctx *ctx)
-{
-	//
-	// ???
-	//
-}
-EXPORT_SYMBOL(rcm_rmace_ctx_terminate);
 
 static int rcm_rmace_probe(struct platform_device *pdev)
 {

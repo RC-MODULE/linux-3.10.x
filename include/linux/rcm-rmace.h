@@ -21,15 +21,20 @@
 #define RCM_RMACE_CRYPTO_DESC_COUNT (RCM_RMACE_HW_DESC_COUNT - 1)
 #define RCM_RMACE_ASYNC_TX_DESC_COUNT (RCM_RMACE_HW_DESC_COUNT - 1)
 #define RCM_RMACE_MAX_DATA_TRANSFER (64 * 1024 * 1024 - 1)
+#define RCM_RMACE_HARDWARE_ALIGN_MASK 0x7
 
+// ??? delete
 #define RCM_RMACE_CTX_FLAGS_RESET BIT(0) // reset is needed before the operation
 
-#define RCM_RMACE_CTX_STATUS_SCHEDULED  BIT(0) // !EXECUTING && !FINISHED
-#define RCM_RMACE_CTX_STATUS_EXECUTING  BIT(1) // !SCHEDULED && !FINISHED
-#define RCM_RMACE_CTX_STATUS_FINISHED   BIT(2) // !SCHEDULED && !EXECUTING
-#define RCM_RMACE_CTX_STATUS_SUCCESS    BIT(3) // FINISHED && !TERMINATED && !ERROR
-#define RCM_RMACE_CTX_STATUS_TERMINATED BIT(4) // FINISHED && !SUCCESS && !ERROR
-#define RCM_RMACE_CTX_STATUS_ERROR      BIT(5) // FINISHED && !SUCCESS && !TERMINATED
+#define RCM_RMACE_CTX_STATUS_SCHEDULED BIT(0) // !EXECUTING && !FINISHED
+#define RCM_RMACE_CTX_STATUS_EXECUTING BIT(1) // !SCHEDULED && !FINISHED
+#define RCM_RMACE_CTX_STATUS_FINISHED BIT(2) // !SCHEDULED && !EXECUTING
+#define RCM_RMACE_CTX_STATUS_SUCCESS BIT(3) // FINISHED
+
+#define RCM_RMACE_HEADER_ENC_DEC_SHIFT 32
+#define RCM_RMACE_HEADER_MODE_SHIFT 40
+#define RCM_RMACE_HEADER_FEATURES_SHIFT 48
+#define RCM_RMACE_HEADER_TYPE_SHIFT 56
 
 #ifdef CONFIG_CRYPTO_RCM_RMACE
 // implemented in driver/crypto/rcm-rmace-crypto.c
@@ -68,8 +73,8 @@ struct rcm_rmace_ctx
 	struct rcm_rmace_desc_info *dst_desc_infos;
 
 	// executed in a threaded interrupt context
-	void (*finished_callback)(struct rcm_rmace_ctx *ctx, void *arg); // ??? name
-	void *callbacks_arg; // ??? need ??? name without s
+	void (*callback)(struct rcm_rmace_ctx *ctx, void *arg);
+	void *callback_arg;
 
 	struct list_head scheduled_list;
 };
@@ -82,12 +87,6 @@ struct rcm_rmace_hw_desc {
 struct rcm_rmace_dma_data {
 	struct rcm_rmace_hw_desc src_hw_descs[RCM_RMACE_HW_DESC_COUNT];
 	struct rcm_rmace_hw_desc dst_hw_descs[RCM_RMACE_HW_DESC_COUNT];
-#ifdef CONFIG_CRYPTO_RCM_RMACE
-	u64 control_block[1 /* header */ + RCM_RMACE_MAX_KEY_SIZE_8 + RCM_RMACE_MAX_IV_SIZE_8]; // LE  ??? name, ??? not here
-#endif
-#ifdef CONFIG_RCM_RMACE_DMA
-	u64 memcpy_control_block; // ???? not here
-#endif
 };
 
 struct rcm_rmace_dev
@@ -106,15 +105,6 @@ struct rcm_rmace_dev
 
 #ifdef CONFIG_CRYPTO_RCM_RMACE
 	struct rcm_rmace_icrypto *icrypto;
-	/* ???
-	struct crypto_engine *engine;
-	struct skcipher_request *crypto_cur_req; // ??? or curr
-	int crypto_cur_req_src_nents; // ??? name
-	int crypto_cur_req_dst_nents; // ??? name
-	struct rcm_rmace_ctx crypto_ctx; // ??? name
-	struct rcm_rmace_desc_info crypto_src_desc_infos[RCM_RMACE_CRYPTO_DESC_COUNT]; // ??? name
-	struct rcm_rmace_desc_info crypto_dst_desc_infos[RCM_RMACE_CRYPTO_DESC_COUNT]; // ??? name
-	*/
 #endif
 
 #ifdef CONFIG_RCM_RMACE_DMA
@@ -131,14 +121,6 @@ void rcm_rmace_ctx_init(struct rcm_rmace_dev *rmace, struct rcm_rmace_ctx *ctx);
 
 // The function can be called from an interrupt context.
 void rcm_rmace_ctx_schelude(struct rcm_rmace_ctx *ctx);
-
-// The function can be called from an interrupt context.
-// The function does not wait for the end of the termination.
-// The function does nothing if the operation already done (the callback
-// function is called with SUCCESS status).
-// Then the termnitation is ready the callback function is called
-// with TERMINATED status.
-void rcm_rmace_ctx_terminate(struct rcm_rmace_ctx *ctx);
 
 #ifdef CONFIG_CRYPTO_RCM_RMACE
 // implemented in driver/crypto/rcm-rmace-crypto.c

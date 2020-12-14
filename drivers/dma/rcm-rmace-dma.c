@@ -11,17 +11,17 @@
 #include <linux/module.h>
 #include <linux/of.h>
 #include <linux/dmaengine.h>
-#include <linux/rcm-rmace.h>
+#include <linux/dma-mapping.h>
 #include <linux/of_dma.h>
+#include <linux/rcm-rmace.h>
 #include "dmaengine.h"
 
 #define MAX_CHANNEL_COUNT 32
-#define HARDWARE_ALIGN_MASK 0x7
 
 struct rmace_async_tx_desc
 {
 	struct dma_async_tx_descriptor async_tx;
-	struct rcm_rmace_ctx ctx;
+	struct rcm_rmace_ctx rmace_ctx;
 	struct rcm_rmace_desc_info src_desc_infos[2]; // config, source buffer
 	struct rcm_rmace_desc_info dst_desc_info; // destination buffer
 	struct list_head list; // free list, pending list, active list
@@ -39,12 +39,19 @@ struct rmace_dma_chan
 	struct list_head completed_list; // protected by list_lock
 };
 
+struct dma_data
+{
+	u64 control_block;
+};
+
 struct rcm_rmace_idma
 {
 	struct rcm_rmace_dev *rmace;
 	struct dma_device dma_dev;
 	unsigned channel_count;
 	struct rmace_dma_chan *channels;
+	struct dma_data *dma_data;
+	dma_addr_t dma_data_phys_addr;
 };
 
 static inline struct rmace_dma_chan *rmace_chan_from_dma_chan(struct dma_chan *chan)
@@ -57,9 +64,9 @@ static inline struct rmace_async_tx_desc *rmace_tx_desc_from_async_tx_desc(struc
 	return container_of(tx, struct rmace_async_tx_desc, async_tx);
 }
 
-static inline struct rmace_async_tx_desc *rmace_tx_desc_from_ctx(struct rcm_rmace_ctx *ctx)
+static inline struct rmace_async_tx_desc *rmace_tx_desc_from_ctx(struct rcm_rmace_ctx *rmace_ctx)
 {
-	return container_of(ctx, struct rmace_async_tx_desc, ctx);
+	return container_of(rmace_ctx, struct rmace_async_tx_desc, rmace_ctx);
 }
 
 static dma_cookie_t tx_submit(struct dma_async_tx_descriptor *tx)
@@ -77,7 +84,7 @@ static dma_cookie_t tx_submit(struct dma_async_tx_descriptor *tx)
 	return cookie;
 }
 
-static void finished_callback(struct rcm_rmace_ctx *ctx, void *arg)
+static void rmace_callback(struct rcm_rmace_ctx *ctx, void *arg)
 {
 	struct rmace_async_tx_desc *desc = rmace_tx_desc_from_ctx(ctx);
 	struct rmace_dma_chan *rmace_chan = rmace_chan_from_dma_chan(desc->async_tx.chan);
@@ -92,10 +99,8 @@ static void finished_callback(struct rcm_rmace_ctx *ctx, void *arg)
 
 	result.result = DMA_TRANS_NOERROR;
 	result.residue = 0;
-	if ((ctx->status & RCM_RMACE_CTX_STATUS_ERROR) != 0)
+	if ((ctx->status & RCM_RMACE_CTX_STATUS_SUCCESS) == 0)
 		result.result = DMA_TRANS_READ_FAILED;
-	else if ((ctx->status & RCM_RMACE_CTX_STATUS_ERROR) != 0)
-		result.result = DMA_TRANS_ABORTED;
 	dmaengine_desc_get_callback_invoke(&desc->async_tx, &result);
 
 	spin_lock_irqsave(&rmace_chan->list_lock, irq_flags);
@@ -117,9 +122,9 @@ static struct dma_async_tx_descriptor *prep_dma_memcpy(
 	struct rmace_async_tx_desc *desc;
 	unsigned long irq_flags;
 
-	if (((dst & HARDWARE_ALIGN_MASK) != 0)
-		|| ((src & HARDWARE_ALIGN_MASK) != 0)
-		|| ((len & HARDWARE_ALIGN_MASK) != 0))
+	if (((dst & RCM_RMACE_HARDWARE_ALIGN_MASK) != 0)
+		|| ((src & RCM_RMACE_HARDWARE_ALIGN_MASK) != 0)
+		|| ((len & RCM_RMACE_HARDWARE_ALIGN_MASK) != 0))
 	{
 		pr_warn("aligment error\n");
 		return NULL;
@@ -171,7 +176,7 @@ static enum dma_status tx_status(
 		spin_lock_irqsave(&rmace_chan->list_lock, irq_flags);
 		list_for_each_entry(desc, &rmace_chan->completed_list, list) {
 			if (desc->async_tx.cookie == cookie) {
-				if ((desc->ctx.status & RCM_RMACE_CTX_STATUS_ERROR) != 0)
+				if ((desc->rmace_ctx.status & RCM_RMACE_CTX_STATUS_SUCCESS) == 0)
 					status = DMA_ERROR;
 				break;
 			}
@@ -190,7 +195,7 @@ static void issue_pending(struct dma_chan *chan)
 
 	spin_lock_irqsave(&rmace_chan->list_lock, irq_flags);
 	list_for_each_entry(desc, &rmace_chan->pending_list, list)
-		rcm_rmace_ctx_schelude(&desc->ctx);
+		rcm_rmace_ctx_schelude(&desc->rmace_ctx);
 	list_splice_tail_init(&rmace_chan->pending_list, &rmace_chan->active_list);
 	spin_unlock_irqrestore(&rmace_chan->list_lock, irq_flags);
 }
@@ -249,6 +254,16 @@ int rcm_rmace_dma_register(struct rcm_rmace_dev *rmace)
 		return -ENOMEM;
 	}
 
+	idma->dma_data = dmam_alloc_coherent(
+		&rmace->pdev->dev,
+		sizeof *idma->dma_data,
+		&idma->dma_data_phys_addr,
+		GFP_KERNEL);
+	if (idma->dma_data == NULL) {
+		pr_err("cannot allocate DMA buffers");
+		return -ENODEV;
+	}
+
 	dma_dev = &idma->dma_dev;
 	dma_dev->dev = &rmace->pdev->dev;
 	dma_dev->src_addr_widths = BIT(DMA_SLAVE_BUSWIDTH_4_BYTES);
@@ -277,26 +292,26 @@ int rcm_rmace_dma_register(struct rcm_rmace_dev *rmace)
 			desc = &channel->async_tx_descs[j];
 			dma_async_tx_descriptor_init(&desc->async_tx, &channel->dma_chan);
 			desc->async_tx.tx_submit = tx_submit;
-			rcm_rmace_ctx_init(rmace, &desc->ctx);
-			desc->ctx.src_desc_count = 2;
-			desc->ctx.src_desc_infos = desc->src_desc_infos;
-			desc->src_desc_infos[0].address = rmace->dma_data_phys_addr + offsetof(struct rcm_rmace_dma_data, memcpy_control_block);
-			desc->src_desc_infos[0].length = 8; // ???
+			rcm_rmace_ctx_init(rmace, &desc->rmace_ctx);
+			desc->rmace_ctx.src_desc_count = 2;
+			desc->rmace_ctx.src_desc_infos = desc->src_desc_infos;
+			desc->src_desc_infos[0].address = idma->dma_data_phys_addr + offsetof(struct dma_data, control_block);
+			desc->src_desc_infos[0].length = sizeof idma->dma_data->control_block;
 			desc->src_desc_infos[0].valid = true;
 			desc->src_desc_infos[0].act2 = true;
 			desc->src_desc_infos[1].act0 = true;
 			desc->src_desc_infos[1].act2 = true;
-			desc->ctx.dst_desc_count = 1;
-			desc->ctx.dst_desc_infos = &desc->dst_desc_info;
+			desc->rmace_ctx.dst_desc_count = 1;
+			desc->rmace_ctx.dst_desc_infos = &desc->dst_desc_info;
 			desc->dst_desc_info.act0 = true;
 			desc->dst_desc_info.act2 = true;
-			desc->ctx.finished_callback = finished_callback;
+			desc->rmace_ctx.callback = rmace_callback;
 			INIT_LIST_HEAD(&desc->list);
 			list_add_tail(&desc->list, &channel->free_list);
 		}
 	}
 
-	rmace->dma_data->memcpy_control_block = cpu_to_le64(1ULL << 56); // ??? const
+	idma->dma_data->control_block = cpu_to_le64(1ULL << RCM_RMACE_HEADER_TYPE_SHIFT);
 
 	ret = dma_async_device_register(dma_dev);
 	if (ret != 0) {
