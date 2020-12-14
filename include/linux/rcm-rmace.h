@@ -25,6 +25,14 @@
 #define RCM_RMACE_CTX_STATUS_FINISHED BIT(2) // !SCHEDULED && !EXECUTING
 #define RCM_RMACE_CTX_STATUS_SUCCESS BIT(3) // FINISHED
 
+#define RCM_RMACE_DESC_VALID_MASK BIT(0)
+#define RCM_RMACE_DESC_ERR_MASK BIT(1)
+#define RCM_RMACE_DESC_INT_MASK BIT(2)
+#define RCM_RMACE_DESC_ACT0_MASK BIT(3)
+#define RCM_RMACE_DESC_ACT1_MASK BIT(4)
+#define RCM_RMACE_DESC_ACT2_MASK BIT(5)
+#define RCM_RMACE_DESC_LEN_SHIFT 6
+
 #define RCM_RMACE_HEADER_ENC_DEC_SHIFT 32
 #define RCM_RMACE_HEADER_MODE_SHIFT 40
 #define RCM_RMACE_HEADER_FEATURES_SHIFT 48
@@ -40,17 +48,10 @@ struct rcm_rmace_icrypto;
 struct rcm_rmace_idma;
 #endif
 
-
-// ??? make flags instead bool
-struct rcm_rmace_desc_info {
-	dma_addr_t address;
-	int length;
-	bool valid;
-	bool int_on;
-	bool act0;
-	bool act1;
-	bool act2;
-};
+struct rcm_rmace_hw_desc {
+	u32 data; // LE, RCM_RMACE_DESC*
+	u32 address; // LE
+} __attribute__((packed, aligned(8)));
 
 struct rcm_rmace_dev;
 
@@ -60,10 +61,10 @@ struct rcm_rmace_ctx
 	unsigned status; // RCM_RMACE_CTX_STATUS*
 
 	unsigned src_desc_count;
-	struct rcm_rmace_desc_info *src_desc_infos;
+	struct rcm_rmace_hw_desc *src_descs;
 
 	unsigned dst_desc_count;
-	struct rcm_rmace_desc_info *dst_desc_infos;
+	struct rcm_rmace_hw_desc *dst_descs;
 
 	// executed in a threaded interrupt context
 	void (*callback)(struct rcm_rmace_ctx *ctx, void *arg);
@@ -71,11 +72,6 @@ struct rcm_rmace_ctx
 
 	struct list_head scheduled_list;
 };
-
-struct rcm_rmace_hw_desc {
-	u32 data; // LE
-	u32 address; // LE
-} __attribute__((packed, aligned(8)));
 
 struct rcm_rmace_dma_data {
 	struct rcm_rmace_hw_desc src_hw_descs[RCM_RMACE_HW_DESC_COUNT];
@@ -94,7 +90,7 @@ struct rcm_rmace_dev
 
 	spinlock_t scheduled_lock;
 	struct list_head scheduled_ctx_list; // protected by scheduled_lock
-	struct rcm_rmace_ctx *current_ctx; // protected by scheduled_lock // ??? cur or curr
+	struct rcm_rmace_ctx *cur_ctx; // protected by scheduled_lock
 
 #ifdef CONFIG_CRYPTO_RCM_RMACE
 	struct rcm_rmace_icrypto *icrypto;

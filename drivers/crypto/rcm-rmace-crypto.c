@@ -21,9 +21,8 @@
 #include <crypto/if_alg.h>
 #include <crypto/internal/skcipher.h>
 
-// ??? RCM_RMACE
-#define RCM_RMACE_MAX_KEY_SIZE_8 4 // in 8-byte words
-#define RCM_RMACE_MAX_IV_SIZE_8 2 // in 8-byte words
+#define MAX_KEY_SIZE_8 4 // in 8-byte words
+#define MAX_IV_SIZE_8 2 // in 8-byte words
 #define AES_KEY_PREFIX_SIZE_8 2 // in 8-byte words
 #define DUMMY_DATA_BLOCK_SIZE_8 2 // in 8-byte words
 
@@ -37,10 +36,10 @@
 
 struct dma_data
 {
-	u64 control_block[1 /* header */ + RCM_RMACE_MAX_KEY_SIZE_8 + RCM_RMACE_MAX_IV_SIZE_8]; // LE
+	u64 control_block[1 /* header */ + MAX_KEY_SIZE_8 + MAX_IV_SIZE_8]; // LE
 
 	// for AES RCM RMACE key optimization issue workaround
-	u64 dummy_control_block[1 /* header */ + RCM_RMACE_MAX_KEY_SIZE_8 + RCM_RMACE_MAX_IV_SIZE_8]; // LE
+	u64 dummy_control_block[1 /* header */ + MAX_KEY_SIZE_8 + MAX_IV_SIZE_8]; // LE
 	u64 dummy_data_block_src[DUMMY_DATA_BLOCK_SIZE_8];
 	u64 dummy_data_block_dst[DUMMY_DATA_BLOCK_SIZE_8];
 };
@@ -55,8 +54,8 @@ struct rcm_rmace_icrypto
 	int cur_req_src_nents;
 	int cur_req_dst_nents;
 	struct rcm_rmace_ctx rmace_ctx;
-	struct rcm_rmace_desc_info src_desc_infos[RCM_RMACE_CRYPTO_DESC_COUNT];
-	struct rcm_rmace_desc_info dst_desc_infos[RCM_RMACE_CRYPTO_DESC_COUNT];
+	struct rcm_rmace_hw_desc src_descs[RCM_RMACE_CRYPTO_DESC_COUNT];
+	struct rcm_rmace_hw_desc dst_descs[RCM_RMACE_CRYPTO_DESC_COUNT];
 
 	// for AES RCM RMACE key optimization issue workaround
 	u64 last_aes_key_perfix[AES_KEY_PREFIX_SIZE_8];
@@ -69,7 +68,7 @@ struct rmace_crypto_ctx
 	unsigned alg_mode; // ALG_MODE*
 	unsigned key_size_8; // (in 8-byte words) always defined
 	unsigned iv_size_8; // (in 8-byte words) can be 0
-	u64 key[RCM_RMACE_MAX_KEY_SIZE_8];
+	u64 key[MAX_KEY_SIZE_8];
 };
 
 struct rmace_crypto_reqctx
@@ -77,16 +76,15 @@ struct rmace_crypto_reqctx
 	unsigned alg_mode; // ALG_MODE*
 	unsigned key_size_8; // (in 8-byte words) always defined
 	unsigned iv_size_8; // (in 8-byte words) can be 0
-	u64 key[RCM_RMACE_MAX_KEY_SIZE_8];
+	u64 key[MAX_KEY_SIZE_8];
 };
 
 static void aes_rmace_issue_workaround(struct rcm_rmace_icrypto *icrypto, struct rmace_crypto_reqctx *req_ctx)
 {
 	struct rcm_rmace_ctx *rmace_ctx = &icrypto->rmace_ctx;
-	struct rcm_rmace_desc_info *info;
+	struct rcm_rmace_hw_desc *desc;
 	u64 *p;
 
-	info = &rmace_ctx->src_desc_infos[rmace_ctx->src_desc_count++];
 	p = icrypto->dma_data->dummy_control_block;
 	icrypto->last_aes_key_perfix[0] = req_ctx->key[0] + 1; // change the key
 	icrypto->last_aes_key_perfix[1] = req_ctx->key[1];
@@ -95,34 +93,32 @@ static void aes_rmace_issue_workaround(struct rcm_rmace_icrypto *icrypto, struct
 	*(p++) = cpu_to_le64(icrypto->last_aes_key_perfix[1]);
 	p += 2; // IV does't matter
 
-	// ??? clear_desc_info(&info);
-	memset(info, 0, sizeof *info); // ??? no if masks
-	info->address =	icrypto->dma_data_phys_addr + offsetof(struct dma_data, dummy_control_block);
-	info->length = (p - icrypto->dma_data->dummy_control_block) * 8;
-	info->valid = true;
-	info->act2 = true;
+	desc = &rmace_ctx->src_descs[rmace_ctx->src_desc_count++];
+	desc->address = cpu_to_le32(icrypto->dma_data_phys_addr + offsetof(struct dma_data, dummy_control_block));
+	desc->data = cpu_to_le32(
+		RCM_RMACE_DESC_VALID_MASK
+		| RCM_RMACE_DESC_ACT2_MASK
+		| (((p - icrypto->dma_data->dummy_control_block) * 8) << RCM_RMACE_DESC_LEN_SHIFT));
 
-	info = &rmace_ctx->src_desc_infos[rmace_ctx->src_desc_count++];
-	// ??? clear_desc_info(&info);
-	memset(info, 0, sizeof *info); // ??? no if masks
-	info->address =	icrypto->dma_data_phys_addr + offsetof(struct dma_data, dummy_data_block_src);
-	info->length = DUMMY_DATA_BLOCK_SIZE_8 * 8;
-	info->act0 = true;
-	info->act2 = true;
+	desc = &rmace_ctx->src_descs[rmace_ctx->src_desc_count++];
+	desc->address = cpu_to_le32(icrypto->dma_data_phys_addr + offsetof(struct dma_data, dummy_data_block_src));
+	desc->data = cpu_to_le32(
+		RCM_RMACE_DESC_ACT0_MASK
+		| RCM_RMACE_DESC_ACT2_MASK
+		| ((DUMMY_DATA_BLOCK_SIZE_8 * 8) << RCM_RMACE_DESC_LEN_SHIFT));
 
-	info = &rmace_ctx->dst_desc_infos[rmace_ctx->dst_desc_count++];
-	// ??? clear_desc_info(&info);
-	memset(info, 0, sizeof *info); // ??? no if masks
-	info->address =	icrypto->dma_data_phys_addr + offsetof(struct dma_data, dummy_data_block_dst);
-	info->length = DUMMY_DATA_BLOCK_SIZE_8 * 8;
-	info->act0 = true;
-	info->act2 = true;
+	desc = &rmace_ctx->dst_descs[rmace_ctx->dst_desc_count++];
+	desc->address = cpu_to_le32(icrypto->dma_data_phys_addr + offsetof(struct dma_data, dummy_data_block_dst));
+	desc->data = cpu_to_le32(
+		RCM_RMACE_DESC_ACT0_MASK
+		| RCM_RMACE_DESC_ACT2_MASK
+		| ((DUMMY_DATA_BLOCK_SIZE_8 * 8) << RCM_RMACE_DESC_LEN_SHIFT));
 }
 
 static void config_src_key_iv(struct rcm_rmace_icrypto *icrypto, struct rmace_crypto_reqctx *req_ctx)
 {
 	struct rcm_rmace_ctx *rmace_ctx = &icrypto->rmace_ctx;
-	struct rcm_rmace_desc_info *info = &rmace_ctx->src_desc_infos[rmace_ctx->src_desc_count++];
+	struct rcm_rmace_hw_desc *desc;
 	u64 *p = icrypto->dma_data->control_block;
 	u64 *s;
 	u64 data = 0; 
@@ -147,9 +143,8 @@ static void config_src_key_iv(struct rcm_rmace_icrypto *icrypto, struct rmace_cr
 			data |= (8ULL << RCM_RMACE_HEADER_TYPE_SHIFT);
 			break;
 		default:
-			panic("Unexpecting key size");
+			panic("unexpecting key size");
 		}
-		// ??? rmace_ctx->flags |= RCM_RMACE_CTX_FLAGS_RESET; // [***] <-- work only with this line (terrible)
 	}
 	if (req_ctx->alg_mode & ALG_MODE_CBC_MASK)
 		data |= (1ULL << RCM_RMACE_HEADER_MODE_SHIFT); // cbc
@@ -169,43 +164,48 @@ static void config_src_key_iv(struct rcm_rmace_icrypto *icrypto, struct rmace_cr
 		*(p++) = __cpu_to_le64(*(s++));
 	}
 
-	// ??? clear_desc_info(&info);
-	memset(info, 0, sizeof *info); // ??? no if masks
-	info->address =	icrypto->dma_data_phys_addr + offsetof(struct dma_data, control_block);
-	info->length = (p - icrypto->dma_data->control_block) * 8;
-	info->valid = true;
-	info->act2 = true;
+	desc = &rmace_ctx->src_descs[rmace_ctx->src_desc_count++];
+	desc->address = cpu_to_le32(icrypto->dma_data_phys_addr + offsetof(struct dma_data, control_block));
+	desc->data = cpu_to_le32(
+		RCM_RMACE_DESC_VALID_MASK
+		| RCM_RMACE_DESC_ACT2_MASK
+		| (((p - icrypto->dma_data->control_block) * 8) << RCM_RMACE_DESC_LEN_SHIFT));
 }
 
 static void config_dst_key_iv(struct rcm_rmace_icrypto *icrypto, struct rmace_crypto_reqctx *req_ctx)
 {
 	struct rcm_rmace_ctx *rmace_ctx = &icrypto->rmace_ctx;
-	struct rcm_rmace_desc_info *info = &rmace_ctx->dst_desc_infos[rmace_ctx->dst_desc_count++];
+	struct rcm_rmace_hw_desc *desc = &rmace_ctx->dst_descs[rmace_ctx->dst_desc_count++];
 
-	// ??? clear_desc_info(&info);
-	memset(info, 0, sizeof *info); // ??? no if masks
-	info->address = icrypto->dma_data_phys_addr + offsetof(struct dma_data, control_block);
-	info->length = (1 + req_ctx->key_size_8 + req_ctx->iv_size_8) * 8;
-	info->valid = true;
-	info->act2 = true;
+	desc->address = cpu_to_le32(icrypto->dma_data_phys_addr + offsetof(struct dma_data, control_block));
+	desc->data = cpu_to_le32(
+		RCM_RMACE_DESC_VALID_MASK
+		| RCM_RMACE_DESC_ACT2_MASK
+		| (((1 + req_ctx->key_size_8 + req_ctx->iv_size_8) * 8) << RCM_RMACE_DESC_LEN_SHIFT));
 }
 
 static int config_src_data(struct rcm_rmace_icrypto *icrypto, struct scatterlist *sglist, int nents)
 {
 	struct rcm_rmace_ctx *rmace_ctx = &icrypto->rmace_ctx;
 	struct scatterlist *sg;
-	struct rcm_rmace_desc_info *info;
+	struct rcm_rmace_hw_desc *desc;
+	dma_addr_t addr;
+	unsigned len;
 	int i;
 
 	for_each_sg(sglist, sg, nents, i) {
-		info = &rmace_ctx->src_desc_infos[rmace_ctx->src_desc_count++];
-		memset(info, 0, sizeof *info); // ??? no if masks
-		info->address =	sg_dma_address(sg);
-		if ((info->address & 7) != 0) // check for alignment
+		addr = sg_dma_address(sg);
+		len = sg_dma_len(sg);
+		// check for alignment
+		if (((addr & RCM_RMACE_HARDWARE_ALIGN_MASK) != 0)
+			|| ((len & RCM_RMACE_HARDWARE_ALIGN_MASK) != 0))
 			return -EINVAL;
-		info->length = sg_dma_len(sg);
-		info->act0 = (i + 1 == nents); // [***] !!!
-		info->act2 = true;
+		desc = &rmace_ctx->src_descs[rmace_ctx->src_desc_count++];
+		desc->address = cpu_to_le32(addr);
+		desc->data = cpu_to_le32(
+			(i + 1 == nents ? RCM_RMACE_DESC_ACT0_MASK : 0)
+			| RCM_RMACE_DESC_ACT2_MASK
+			| (len << RCM_RMACE_DESC_LEN_SHIFT));
 	}
 
 	return 0;
@@ -215,18 +215,24 @@ static int config_dst_data(struct rcm_rmace_icrypto *icrypto, struct scatterlist
 {
 	struct rcm_rmace_ctx *rmace_ctx = &icrypto->rmace_ctx;
 	struct scatterlist *sg;
-	struct rcm_rmace_desc_info *info;
+	struct rcm_rmace_hw_desc *desc;
+	dma_addr_t addr;
+	unsigned len;
 	int i;
 
 	for_each_sg(sglist, sg, nents, i) {
-		info = &rmace_ctx->dst_desc_infos[rmace_ctx->dst_desc_count++];
-		memset(info, 0, sizeof *info); // ??? no if masks
-		info->address =	sg_dma_address(sg);
-		if ((info->address & 7) != 0) // check for alignment
+		addr = sg_dma_address(sg);
+		len = sg_dma_len(sg);
+		// check for alignment
+		if (((addr & RCM_RMACE_HARDWARE_ALIGN_MASK) != 0)
+			|| ((len & RCM_RMACE_HARDWARE_ALIGN_MASK) != 0))
 			return -EINVAL;
-		info->length = sg_dma_len(sg);
-		info->act0 = (i + 1 == nents); // [***] !!!
-		info->act2 = true;
+		desc = &rmace_ctx->dst_descs[rmace_ctx->dst_desc_count++];
+		desc->address = cpu_to_le32(addr);
+		desc->data = cpu_to_le32(
+			(i + 1 == nents ? RCM_RMACE_DESC_ACT0_MASK : 0)
+			| RCM_RMACE_DESC_ACT2_MASK
+			| (len << RCM_RMACE_DESC_LEN_SHIFT));
 	}
 
 	return 0;
@@ -692,8 +698,8 @@ int rcm_rmace_crypto_register(struct rcm_rmace_dev *rmace)
 	}
 
 	rcm_rmace_ctx_init(rmace, &icrypto->rmace_ctx);
-	icrypto->rmace_ctx.src_desc_infos = icrypto->src_desc_infos;
-	icrypto->rmace_ctx.dst_desc_infos = icrypto->dst_desc_infos;
+	icrypto->rmace_ctx.src_descs = icrypto->src_descs;
+	icrypto->rmace_ctx.dst_descs = icrypto->dst_descs;
 	icrypto->rmace_ctx.callback = rmace_callback;
 
 	icrypto->engine = crypto_engine_alloc_init(&rmace->pdev->dev, true);

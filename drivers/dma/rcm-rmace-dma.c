@@ -22,8 +22,8 @@ struct rmace_async_tx_desc
 {
 	struct dma_async_tx_descriptor async_tx;
 	struct rcm_rmace_ctx rmace_ctx;
-	struct rcm_rmace_desc_info src_desc_infos[2]; // config, source buffer
-	struct rcm_rmace_desc_info dst_desc_info; // destination buffer
+	struct rcm_rmace_hw_desc src_descs[2]; // config, source buffer
+	struct rcm_rmace_hw_desc dst_descs; // destination buffer
 	struct list_head list; // free list, pending list, active list
 };
 
@@ -153,10 +153,16 @@ static struct dma_async_tx_descriptor *prep_dma_memcpy(
 
 	// all other parameters have been already filled during the initialization
 	desc->async_tx.flags = flags;
-	desc->src_desc_infos[1].address = src;
-	desc->src_desc_infos[1].length = len;
-	desc->dst_desc_info.address = dst;
-	desc->dst_desc_info.length = len;
+	desc->src_descs[1].address = cpu_to_le32(src);
+	desc->src_descs[1].data = cpu_to_le32(
+		RCM_RMACE_DESC_ACT0_MASK
+		| RCM_RMACE_DESC_ACT2_MASK
+		| (len << RCM_RMACE_DESC_LEN_SHIFT));
+	desc->dst_descs.address = cpu_to_le32(dst);
+	desc->dst_descs.data = cpu_to_le32(
+		RCM_RMACE_DESC_ACT0_MASK
+		| RCM_RMACE_DESC_ACT2_MASK
+		| (len << RCM_RMACE_DESC_LEN_SHIFT));
 
 	return &desc->async_tx;
 }
@@ -294,17 +300,14 @@ int rcm_rmace_dma_register(struct rcm_rmace_dev *rmace)
 			desc->async_tx.tx_submit = tx_submit;
 			rcm_rmace_ctx_init(rmace, &desc->rmace_ctx);
 			desc->rmace_ctx.src_desc_count = 2;
-			desc->rmace_ctx.src_desc_infos = desc->src_desc_infos;
-			desc->src_desc_infos[0].address = idma->dma_data_phys_addr + offsetof(struct dma_data, control_block);
-			desc->src_desc_infos[0].length = sizeof idma->dma_data->control_block;
-			desc->src_desc_infos[0].valid = true;
-			desc->src_desc_infos[0].act2 = true;
-			desc->src_desc_infos[1].act0 = true;
-			desc->src_desc_infos[1].act2 = true;
+			desc->rmace_ctx.src_descs = desc->src_descs;
+			desc->src_descs[0].address = cpu_to_le32(idma->dma_data_phys_addr + offsetof(struct dma_data, control_block));
+			desc->src_descs[0].data = cpu_to_le32(
+				RCM_RMACE_DESC_VALID_MASK
+				| RCM_RMACE_DESC_ACT2_MASK
+				| (sizeof idma->dma_data->control_block << RCM_RMACE_DESC_LEN_SHIFT));
 			desc->rmace_ctx.dst_desc_count = 1;
-			desc->rmace_ctx.dst_desc_infos = &desc->dst_desc_info;
-			desc->dst_desc_info.act0 = true;
-			desc->dst_desc_info.act2 = true;
+			desc->rmace_ctx.dst_descs = &desc->dst_descs;
 			desc->rmace_ctx.callback = rmace_callback;
 			INIT_LIST_HEAD(&desc->list);
 			list_add_tail(&desc->list, &channel->free_list);

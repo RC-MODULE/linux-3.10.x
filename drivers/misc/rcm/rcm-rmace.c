@@ -6,8 +6,6 @@
  *  Copyright (C) 2020 Mikhail Petrov <Mikhail.Petrov@mir.dev>
  */
 
-// ??? #define DEBUG // ???
-
 #define pr_fmt(fmt) "rcm-rmace: " fmt
 
 #include <linux/module.h>
@@ -45,23 +43,14 @@
 #define DMA_CH_STATUS_RDMA_IRQ_MASK BIT(0)
 #define DMA_CH_STATUS_WDMA_IRQ_MASK BIT(16)
 
-#define DMA_SETTINGS_BAD_DESC_MASK        BIT(2)
-#define DMA_SETTINGS_AXI_ERROR_MASK       BIT(5)
-#define DMA_SETTINGS_EN_DMA_MASK          BIT(28)
+#define DMA_SETTINGS_BAD_DESC_MASK BIT(2)
+#define DMA_SETTINGS_AXI_ERROR_MASK BIT(5)
+#define DMA_SETTINGS_EN_DMA_MASK BIT(28)
 #define DMA_SETTINGS_EN_DMA_DESC_TBL_MASK BIT(29)
-#define DMA_SETTINGS_DMA_LONG_LEN_MASK    BIT(30)
+#define DMA_SETTINGS_DMA_LONG_LEN_MASK BIT(30)
 
-// ??? mask
-#define DMA_STATUS_BAD_DESC 2
-#define DMA_STATUS_AXI_ERROR 5
-
-#define DESC_VALID_MASK BIT(0)
-#define DESC_ERR_MASK   BIT(1)
-#define DESC_INT_MASK   BIT(2)
-#define DESC_ACT0_MASK  BIT(3)
-#define DESC_ACT1_MASK  BIT(4)
-#define DESC_ACT2_MASK  BIT(5)
-#define DESC_LEN_SHIFT  6
+#define DMA_STATUS_BAD_DESC_MASK BIT(2)
+#define DMA_STATUS_AXI_ERROR_MASK BIT(5)
 
 struct rcm_rmace_dev *rcm_rmace_dev_single_ptr;
 
@@ -73,36 +62,6 @@ static inline u32 rmace_read_reg(struct rcm_rmace_dev *rmace, unsigned reg)
 static inline void rmace_write_reg(struct rcm_rmace_dev *rmace, unsigned reg, u32 val)
 {
 	iowrite32(val, rmace->base + reg);
-}
-
-static void make_hw_desc(
-	const struct rcm_rmace_desc_info *desc_info,
-	struct rcm_rmace_hw_desc *hw_desc)
-{
-	u32 data = 0;
-	data |= (desc_info->length << DESC_LEN_SHIFT);
-	if (desc_info->valid)
-		data |= DESC_VALID_MASK;
-	if (desc_info->int_on)
-		data |= DESC_INT_MASK;
-	if (desc_info->act0)
-		data |= DESC_ACT0_MASK;
-	if (desc_info->act1)
-		data |= DESC_ACT1_MASK;
-	if (desc_info->act2)
-		data |= DESC_ACT2_MASK;
-	hw_desc->data = __cpu_to_le32(data);
-
-	hw_desc->address = __cpu_to_le32((u32)desc_info->address);
-
-	// ???
-	pr_debug("desc info ptr=0x%08X: address=0x%08X\n", (unsigned)desc_info, (unsigned)desc_info->address);
-	pr_debug("desc info ptr=0x%08X: length=0x%08X\n", (unsigned)desc_info, (unsigned)desc_info->length);
-	pr_debug("desc info ptr=0x%08X: int_on=%u\n", (unsigned)desc_info, (unsigned)desc_info->int_on);
-	pr_debug("desc info ptr=0x%08X: valid=%u\n", (unsigned)desc_info, (unsigned)desc_info->valid);
-	pr_debug("desc info ptr=0x%08X: act0=%u\n", (unsigned)desc_info, (unsigned)desc_info->act0);
-	pr_debug("desc info ptr=0x%08X: act1=%u\n", (unsigned)desc_info, (unsigned)desc_info->act1);
-	pr_debug("desc info ptr=0x%08X: act2=%u\n", (unsigned)desc_info, (unsigned)desc_info->act2);
 }
 
 static void reset_rmace(struct rcm_rmace_dev *rmace)
@@ -129,29 +88,29 @@ static void schedule_next_ctx(struct rcm_rmace_dev *rmace)
 	unsigned i;
 
 	spin_lock_irqsave(&rmace->scheduled_lock, irq_flags);
-	if (rmace->current_ctx != NULL) {
+	if (rmace->cur_ctx != NULL) {
 		spin_unlock_irqrestore(&rmace->scheduled_lock, irq_flags);
 		return;
 	}
 
-	rmace->current_ctx = list_first_entry_or_null(&rmace->scheduled_ctx_list, // optimize ctx ???
+	rmace->cur_ctx = list_first_entry_or_null(&rmace->scheduled_ctx_list,
 		struct rcm_rmace_ctx, scheduled_list);
-	if (rmace->current_ctx != NULL)
-		list_del(&rmace->current_ctx->scheduled_list);
+	if (rmace->cur_ctx != NULL)
+		list_del(&rmace->cur_ctx->scheduled_list);
 	spin_unlock_irqrestore(&rmace->scheduled_lock, irq_flags);
 
-	if (rmace->current_ctx == NULL)
+	if (rmace->cur_ctx == NULL)
 		return;
 
-	ctx = rmace->current_ctx;
+	ctx = rmace->cur_ctx;
 	ctx->status = RCM_RMACE_CTX_STATUS_EXECUTING;
 
 	for (i = 0; i < ctx->src_desc_count; ++i)
-		make_hw_desc(&ctx->src_desc_infos[i], &rmace->dma_data->src_hw_descs[i]);
+		rmace->dma_data->src_hw_descs[i] = ctx->src_descs[i];
 	rmace->dma_data->src_hw_descs[ctx->src_desc_count].data = 0; // stop descriptor
 
 	for (i = 0; i < ctx->dst_desc_count; ++i)
-		make_hw_desc(&ctx->dst_desc_infos[i], &rmace->dma_data->dst_hw_descs[i]);
+		rmace->dma_data->dst_hw_descs[i] = ctx->dst_descs[i];
 	rmace->dma_data->dst_hw_descs[ctx->dst_desc_count].data = 0; // stop descriptor
 
 	// program the source DMA channel
@@ -167,11 +126,6 @@ static void schedule_next_ctx(struct rcm_rmace_dev *rmace)
 	rmace_write_reg(rmace, RMACE_REG_WDMA_TBL_SIZE, sizeof(struct rcm_rmace_hw_desc) * RCM_RMACE_HW_DESC_COUNT);
 	rmace_write_reg(rmace, RMACE_REG_WDMA_DESC_ADDR, phys_addr);
 	rmace_read_reg(rmace, RMACE_REG_WDMA_STATUS); // clear status register
-
-	pr_debug("context execution starting\n"); // ???
-
-	// ??? if (ctx->started_callback != NULL)
-	// ???	ctx->started_callback(ctx, ctx->callbacks_arg);
 
 	// start the channels
 	spin_lock_irqsave(&rmace->reg_lock, irq_flags);
@@ -194,8 +148,6 @@ static irqreturn_t rmace_irq(int irq, void *arg)
 	struct rcm_rmace_dev *rmace = arg;
 	u32 irq_ch_status = rmace_read_reg(rmace, RMACE_REG_ADMA_CH_STATUS);
 
-	pr_debug("rmace_irq: irq_ch_status=0x%08X\n", irq_ch_status);
-
 	if ((irq_ch_status & (DMA_CH_STATUS_RDMA_IRQ_MASK | DMA_CH_STATUS_WDMA_IRQ_MASK)) != 0)
 		return IRQ_WAKE_THREAD;
 
@@ -210,19 +162,16 @@ static irqreturn_t rmace_irq_thread(int irq, void *arg)
 	unsigned long irq_flags;
 
 	spin_lock_irqsave(&rmace->scheduled_lock, irq_flags);
-	ctx = rmace->current_ctx;
-	rmace->current_ctx = NULL;
+	ctx = rmace->cur_ctx;
+	rmace->cur_ctx = NULL;
 	spin_unlock_irqrestore(&rmace->scheduled_lock, irq_flags);
 	BUG_ON(ctx == NULL);
 
 	rdma_status = rmace_read_reg(rmace, RMACE_REG_RDMA_STATUS);
 	wdma_status = rmace_read_reg(rmace, RMACE_REG_WDMA_STATUS);
 
-	pr_debug("rmace_irq_thread: ctx=0x%08X, rdma_status=0x%08X, wdma_status=0x%08X\n",
-		(unsigned)ctx, rdma_status, wdma_status);
-
-	if (((rdma_status & BIT(DMA_STATUS_AXI_ERROR)) != 0)
-		|| ((wdma_status & BIT(DMA_STATUS_AXI_ERROR)) != 0))
+	if (((rdma_status & DMA_STATUS_AXI_ERROR_MASK) != 0)
+		|| ((wdma_status & DMA_STATUS_AXI_ERROR_MASK) != 0))
 	{
 		dev_err(&rmace->pdev->dev,
 			"AXI error: rdma_status = 0x%08X, wdma_status = 0x%08X\n",
@@ -232,7 +181,7 @@ static irqreturn_t rmace_irq_thread(int irq, void *arg)
 		reset_dma(rmace);
 		ctx->status = RCM_RMACE_CTX_STATUS_FINISHED;
 	}
-	else if ((wdma_status & BIT(DMA_STATUS_BAD_DESC)) != 0)
+	else if ((wdma_status & DMA_STATUS_BAD_DESC_MASK) != 0)
 		ctx->status = RCM_RMACE_CTX_STATUS_FINISHED | RCM_RMACE_CTX_STATUS_SUCCESS;
 	else
 		panic("unknow interrupt");
@@ -257,8 +206,6 @@ void rcm_rmace_ctx_schelude(struct rcm_rmace_ctx *ctx)
 {
 	unsigned long irq_flags;
 
-	pr_debug("rcm_rmace_ctx_schelude: ctx=0x%08X\n", (unsigned)ctx);
-
 	BUG_ON((ctx->status & (RCM_RMACE_CTX_STATUS_SCHEDULED | RCM_RMACE_CTX_STATUS_EXECUTING)) != 0);
 	BUG_ON(ctx->src_desc_count > RCM_RMACE_HW_DESC_COUNT - 1);
 	BUG_ON(ctx->src_desc_count > RCM_RMACE_HW_DESC_COUNT - 1);
@@ -281,9 +228,9 @@ static int rcm_rmace_probe(struct platform_device *pdev)
 	int irq;
 	int ret;
 
-	// ???
+#ifdef CONFIG_1888TX018
 	pdev->dev.archdata.dma_offset = - (pdev->dev.dma_pfn_offset << PAGE_SHIFT);
-	pr_info("*** rmace dma offset = 0x%08X\n", (unsigned)pdev->dev.archdata.dma_offset); // ???
+#endif
 
 	if (rcm_rmace_dev_single_ptr != NULL) {
 		dev_err(&pdev->dev, "only one device is supported\n");
@@ -326,13 +273,11 @@ static int rcm_rmace_probe(struct platform_device *pdev)
 	}
 
 	// [***]
-	// ??? ret = regmap_write(rmace->control, HSIF_REG_RMACE_RADDR_EXTEND, 0x1);
 	ret = regmap_write(rmace->control, HSIF_REG_RMACE_RADDR_EXTEND, 0x0);
 	if (ret) {
 		dev_err(&pdev->dev, "HSIF RDMA setup error\n");
 		return -ENODEV;
 	}
-	// ??? ret = regmap_write(rmace->control, HSIF_REG_RMACE_WADDR_EXTEND, 0x1);
 	ret = regmap_write(rmace->control, HSIF_REG_RMACE_WADDR_EXTEND, 0x0);
 	if (ret) {
 		dev_err(&pdev->dev, "HSIF WDMA setup error\n");
