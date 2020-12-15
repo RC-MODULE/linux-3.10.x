@@ -39,6 +39,7 @@
 struct dma_data
 {
 	u64 control_block[1 /* header */ + MAX_KEY_SIZE_8 + MAX_IV_SIZE_8]; // LE
+	u8 dst_bounce_buf[ALG_MAX_PAGES * PAGE_SIZE];
 
 	// for AES RCM RMACE key optimization issue workaround
 	u64 dummy_control_block[1 /* header */ + MAX_KEY_SIZE_8 + MAX_IV_SIZE_8]; // LE
@@ -55,6 +56,7 @@ struct rcm_rmace_icrypto
 	struct skcipher_request *cur_req;
 	int cur_req_src_nents;
 	int cur_req_dst_nents;
+	bool use_dst_bounce_buf;
 	struct rcm_rmace_ctx rmace_ctx;
 	struct rcm_rmace_hw_desc src_descs[CRYPTO_DESC_COUNT];
 	struct rcm_rmace_hw_desc dst_descs[CRYPTO_DESC_COUNT];
@@ -254,6 +256,30 @@ static int config_dst_data(struct rcm_rmace_icrypto *icrypto, struct scatterlist
 	return 0;
 }
 
+static int config_dst_bounce_buffer(struct rcm_rmace_icrypto *icrypto)
+{
+	struct rcm_rmace_ctx *rmace_ctx = &icrypto->rmace_ctx;
+	struct rcm_rmace_hw_desc *desc;
+
+	sg_pcopy_to_buffer(
+		icrypto->cur_req->dst,
+		icrypto->cur_req_dst_nents,
+		icrypto->dma_data->dst_bounce_buf,
+		icrypto->cur_req->cryptlen,
+		0);
+
+	if (rmace_ctx->dst_desc_count == CRYPTO_DESC_COUNT)
+		return -EINVAL;
+	desc = &rmace_ctx->dst_descs[rmace_ctx->dst_desc_count++];
+	desc->address = cpu_to_le32(icrypto->dma_data_phys_addr + offsetof(struct dma_data, dst_bounce_buf));
+	desc->data = cpu_to_le32(
+		RCM_RMACE_DESC_ACT0_MASK
+		| RCM_RMACE_DESC_ACT2_MASK
+		| (icrypto->cur_req->cryptlen << RCM_RMACE_DESC_LEN_SHIFT));
+
+	return 0;
+}
+
 static void rmace_callback(struct rcm_rmace_ctx *rmace_ctx, void *arg)
 {
 	struct rcm_rmace_icrypto *icrypto = container_of(rmace_ctx, struct rcm_rmace_icrypto, rmace_ctx);
@@ -270,12 +296,20 @@ static void rmace_callback(struct rcm_rmace_ctx *rmace_ctx, void *arg)
 	}
 
 	dma_unmap_sg(&icrypto->rmace->pdev->dev, icrypto->cur_req->src, icrypto->cur_req_src_nents, DMA_TO_DEVICE);
-	dma_unmap_sg(&icrypto->rmace->pdev->dev, icrypto->cur_req->dst, icrypto->cur_req_dst_nents, DMA_FROM_DEVICE);
+
+	if (icrypto->use_dst_bounce_buf)
+		sg_pcopy_from_buffer(
+			icrypto->cur_req->dst,
+			icrypto->cur_req_dst_nents,
+			icrypto->dma_data->dst_bounce_buf,
+			icrypto->cur_req->cryptlen,
+			0);
+	else
+		dma_unmap_sg(&icrypto->rmace->pdev->dev, icrypto->cur_req->dst, icrypto->cur_req_dst_nents, DMA_FROM_DEVICE);
 
 	crypto_finalize_skcipher_request(icrypto->engine, icrypto->cur_req,
 		(rmace_ctx->status & RCM_RMACE_CTX_STATUS_SUCCESS) != 0 ? 0 : -EFAULT);
 }
-
 
 static int rmace_cipher_one_req(
 	struct crypto_engine *engine,
@@ -286,6 +320,7 @@ static int rmace_cipher_one_req(
 	struct rmace_crypto_ctx *crypto_ctx = crypto_skcipher_ctx(crypto_skcipher_reqtfm(req));
 	struct rcm_rmace_icrypto *icrypto = crypto_ctx->icrypto;
 	struct rcm_rmace_ctx *rmace_ctx = &icrypto->rmace_ctx;
+	unsigned save_dst_desc_count;
 	int src_mapped_nents;
 	int dst_mapped_nents;
 	int ret;
@@ -303,6 +338,8 @@ static int rmace_cipher_one_req(
 	icrypto->cur_req_dst_nents = sg_nents_for_len(req->dst, req->cryptlen);
 	if (icrypto->cur_req_dst_nents < 0)
 		return icrypto->cur_req_dst_nents;
+
+	icrypto->use_dst_bounce_buf = false;
 
 	// map source buffers
 	ret = dma_map_sg(&icrypto->rmace->pdev->dev, req->src, icrypto->cur_req_src_nents, DMA_TO_DEVICE);
@@ -337,9 +374,17 @@ static int rmace_cipher_one_req(
 	ret = config_src_data(icrypto, req->src, src_mapped_nents);
 	if (ret != 0)
 		goto unmap_dst;
+	save_dst_desc_count = rmace_ctx->dst_desc_count;
 	ret = config_dst_data(icrypto, req->dst, dst_mapped_nents);
-	if (ret != 0)
-		goto unmap_dst;
+	if (ret != 0) {
+		// destination bounce buffer workaround
+		dma_unmap_sg(&icrypto->rmace->pdev->dev, req->src, icrypto->cur_req_src_nents, DMA_TO_DEVICE);
+		icrypto->use_dst_bounce_buf = true;
+		rmace_ctx->dst_desc_count = save_dst_desc_count;
+		ret = config_dst_bounce_buffer(icrypto);
+		if (ret != 0)
+			goto unmap_dst;
+	}
 	ret = config_dst_key_iv(icrypto, req_ctx);
 	if (ret != 0)
 		goto unmap_dst;
@@ -349,7 +394,8 @@ static int rmace_cipher_one_req(
 	return 0;
 
 unmap_dst:
-	dma_unmap_sg(&icrypto->rmace->pdev->dev, req->dst, icrypto->cur_req_dst_nents, DMA_FROM_DEVICE);
+	if (!icrypto->use_dst_bounce_buf)
+		dma_unmap_sg(&icrypto->rmace->pdev->dev, req->dst, icrypto->cur_req_dst_nents, DMA_FROM_DEVICE);
 
 unmap_src:
 	dma_unmap_sg(&icrypto->rmace->pdev->dev, req->src, icrypto->cur_req_src_nents, DMA_TO_DEVICE);
