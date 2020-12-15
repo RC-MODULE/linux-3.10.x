@@ -21,6 +21,8 @@
 #include <crypto/if_alg.h>
 #include <crypto/internal/skcipher.h>
 
+#define CRYPTO_DESC_COUNT (RCM_RMACE_HW_DESC_COUNT - 1)
+
 #define MAX_KEY_SIZE_8 4 // in 8-byte words
 #define MAX_IV_SIZE_8 2 // in 8-byte words
 #define AES_KEY_PREFIX_SIZE_8 2 // in 8-byte words
@@ -54,8 +56,8 @@ struct rcm_rmace_icrypto
 	int cur_req_src_nents;
 	int cur_req_dst_nents;
 	struct rcm_rmace_ctx rmace_ctx;
-	struct rcm_rmace_hw_desc src_descs[RCM_RMACE_CRYPTO_DESC_COUNT];
-	struct rcm_rmace_hw_desc dst_descs[RCM_RMACE_CRYPTO_DESC_COUNT];
+	struct rcm_rmace_hw_desc src_descs[CRYPTO_DESC_COUNT];
+	struct rcm_rmace_hw_desc dst_descs[CRYPTO_DESC_COUNT];
 
 	// for AES RCM RMACE key optimization issue workaround
 	u64 last_aes_key_perfix[AES_KEY_PREFIX_SIZE_8];
@@ -115,7 +117,7 @@ static void aes_rmace_issue_workaround(struct rcm_rmace_icrypto *icrypto, struct
 		| ((DUMMY_DATA_BLOCK_SIZE_8 * 8) << RCM_RMACE_DESC_LEN_SHIFT));
 }
 
-static void config_src_key_iv(struct rcm_rmace_icrypto *icrypto, struct rmace_crypto_reqctx *req_ctx)
+static int config_src_key_iv(struct rcm_rmace_icrypto *icrypto, struct rmace_crypto_reqctx *req_ctx)
 {
 	struct rcm_rmace_ctx *rmace_ctx = &icrypto->rmace_ctx;
 	struct rcm_rmace_hw_desc *desc;
@@ -164,24 +166,34 @@ static void config_src_key_iv(struct rcm_rmace_icrypto *icrypto, struct rmace_cr
 		*(p++) = __cpu_to_le64(*(s++));
 	}
 
+	if (rmace_ctx->src_desc_count == CRYPTO_DESC_COUNT)
+		return -EINVAL;
 	desc = &rmace_ctx->src_descs[rmace_ctx->src_desc_count++];
 	desc->address = cpu_to_le32(icrypto->dma_data_phys_addr + offsetof(struct dma_data, control_block));
 	desc->data = cpu_to_le32(
 		RCM_RMACE_DESC_VALID_MASK
 		| RCM_RMACE_DESC_ACT2_MASK
 		| (((p - icrypto->dma_data->control_block) * 8) << RCM_RMACE_DESC_LEN_SHIFT));
+
+	return 0;
 }
 
-static void config_dst_key_iv(struct rcm_rmace_icrypto *icrypto, struct rmace_crypto_reqctx *req_ctx)
+static int config_dst_key_iv(struct rcm_rmace_icrypto *icrypto, struct rmace_crypto_reqctx *req_ctx)
 {
 	struct rcm_rmace_ctx *rmace_ctx = &icrypto->rmace_ctx;
-	struct rcm_rmace_hw_desc *desc = &rmace_ctx->dst_descs[rmace_ctx->dst_desc_count++];
+	struct rcm_rmace_hw_desc *desc;
+
+	if (rmace_ctx->dst_desc_count == CRYPTO_DESC_COUNT)
+		return -EINVAL;
+	desc = &rmace_ctx->dst_descs[rmace_ctx->dst_desc_count++];
 
 	desc->address = cpu_to_le32(icrypto->dma_data_phys_addr + offsetof(struct dma_data, control_block));
 	desc->data = cpu_to_le32(
 		RCM_RMACE_DESC_VALID_MASK
 		| RCM_RMACE_DESC_ACT2_MASK
 		| (((1 + req_ctx->key_size_8 + req_ctx->iv_size_8) * 8) << RCM_RMACE_DESC_LEN_SHIFT));
+
+	return 0;
 }
 
 static int config_src_data(struct rcm_rmace_icrypto *icrypto, struct scatterlist *sglist, int nents)
@@ -199,6 +211,8 @@ static int config_src_data(struct rcm_rmace_icrypto *icrypto, struct scatterlist
 		// check for alignment
 		if (((addr & RCM_RMACE_HARDWARE_ALIGN_MASK) != 0)
 			|| ((len & RCM_RMACE_HARDWARE_ALIGN_MASK) != 0))
+			return -EINVAL;
+		if (rmace_ctx->src_desc_count == CRYPTO_DESC_COUNT)
 			return -EINVAL;
 		desc = &rmace_ctx->src_descs[rmace_ctx->src_desc_count++];
 		desc->address = cpu_to_le32(addr);
@@ -226,6 +240,8 @@ static int config_dst_data(struct rcm_rmace_icrypto *icrypto, struct scatterlist
 		// check for alignment
 		if (((addr & RCM_RMACE_HARDWARE_ALIGN_MASK) != 0)
 			|| ((len & RCM_RMACE_HARDWARE_ALIGN_MASK) != 0))
+			return -EINVAL;
+		if (rmace_ctx->dst_desc_count == CRYPTO_DESC_COUNT)
 			return -EINVAL;
 		desc = &rmace_ctx->dst_descs[rmace_ctx->dst_desc_count++];
 		desc->address = cpu_to_le32(addr);
@@ -315,14 +331,18 @@ static int rmace_cipher_one_req(
 		icrypto->last_aes_key_perfix[1] = req_ctx->key[1];
 	}
 
-	config_src_key_iv(icrypto, req_ctx);
+	ret = config_src_key_iv(icrypto, req_ctx);
+	if (ret != 0)
+		goto unmap_dst;
 	ret = config_src_data(icrypto, req->src, src_mapped_nents);
 	if (ret != 0)
 		goto unmap_dst;
 	ret = config_dst_data(icrypto, req->dst, dst_mapped_nents);
 	if (ret != 0)
 		goto unmap_dst;
-	config_dst_key_iv(icrypto, req_ctx);
+	ret = config_dst_key_iv(icrypto, req_ctx);
+	if (ret != 0)
+		goto unmap_dst;
 
 	rcm_rmace_ctx_schelude(rmace_ctx);
 

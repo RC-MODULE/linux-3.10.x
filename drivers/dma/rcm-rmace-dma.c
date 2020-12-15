@@ -17,20 +17,26 @@
 #include "dmaengine.h"
 
 #define MAX_CHANNEL_COUNT 32
+#define ASYNC_TX_DESC_COUNT 16 // per channel
+#define DMA_DESC_COUNT (RCM_RMACE_HW_DESC_COUNT - 1)
+#define COPY_TRANSFER_SIZE (64 * 1024 * 1024 - 8)
+#define XOR_TRANSFER_SIZE (4 * 1024)
+#define XOR_MAX_SOURCES_COUNT 255
 
 struct rmace_async_tx_desc
 {
 	struct dma_async_tx_descriptor async_tx;
 	struct rcm_rmace_ctx rmace_ctx;
-	struct rcm_rmace_hw_desc src_descs[2]; // config, source buffer
-	struct rcm_rmace_hw_desc dst_descs; // destination buffer
+	struct rcm_rmace_hw_desc src_descs[DMA_DESC_COUNT];
+	struct rcm_rmace_hw_desc dst_descs[DMA_DESC_COUNT];
 	struct list_head list; // free list, pending list, active list
 };
 
 struct rmace_dma_chan
 {
+	struct rcm_rmace_idma *idma;
 	struct dma_chan dma_chan;
-	struct rmace_async_tx_desc async_tx_descs[RCM_RMACE_ASYNC_TX_DESC_COUNT];
+	struct rmace_async_tx_desc tx_descs[ASYNC_TX_DESC_COUNT];
 	spinlock_t list_lock;
 	struct list_head free_list; // protected by list_lock
 	struct list_head created_list; // protected by list_lock
@@ -41,7 +47,7 @@ struct rmace_dma_chan
 
 struct dma_data
 {
-	u64 control_block;
+	u64 control_blocks[ASYNC_TX_DESC_COUNT];
 };
 
 struct rcm_rmace_idma
@@ -72,13 +78,13 @@ static inline struct rmace_async_tx_desc *rmace_tx_desc_from_ctx(struct rcm_rmac
 static dma_cookie_t tx_submit(struct dma_async_tx_descriptor *tx)
 {
 	struct rmace_dma_chan *rmace_chan = rmace_chan_from_dma_chan(tx->chan);
-	struct rmace_async_tx_desc *desc = rmace_tx_desc_from_async_tx_desc(tx);
+	struct rmace_async_tx_desc *tx_desc = rmace_tx_desc_from_async_tx_desc(tx);
 	unsigned long irq_flags;
 	dma_cookie_t cookie;
 
 	spin_lock_irqsave(&rmace_chan->list_lock, irq_flags);
 	cookie = dma_cookie_assign(tx);
-	list_move_tail(&desc->list, &rmace_chan->pending_list); // from created_list or completed_list
+	list_move_tail(&tx_desc->list, &rmace_chan->pending_list); // from created_list or completed_list
 	spin_unlock_irqrestore(&rmace_chan->list_lock, irq_flags);
 
 	return cookie;
@@ -86,27 +92,27 @@ static dma_cookie_t tx_submit(struct dma_async_tx_descriptor *tx)
 
 static void rmace_callback(struct rcm_rmace_ctx *ctx, void *arg)
 {
-	struct rmace_async_tx_desc *desc = rmace_tx_desc_from_ctx(ctx);
-	struct rmace_dma_chan *rmace_chan = rmace_chan_from_dma_chan(desc->async_tx.chan);
-	struct rmace_async_tx_desc *temp;
+	struct rmace_async_tx_desc *tx_desc = rmace_tx_desc_from_ctx(ctx);
+	struct rmace_dma_chan *rmace_chan = rmace_chan_from_dma_chan(tx_desc->async_tx.chan);
+	struct rmace_async_tx_desc *tx_temp;
 	struct dmaengine_result result;
 	unsigned long irq_flags;
 
 	spin_lock_irqsave(&rmace_chan->list_lock, irq_flags);
-	dma_cookie_complete(&desc->async_tx);
-	list_move_tail(&desc->list, &rmace_chan->completed_list); // from active_list
+	dma_cookie_complete(&tx_desc->async_tx);
+	list_move_tail(&tx_desc->list, &rmace_chan->completed_list); // from active_list
 	spin_unlock_irqrestore(&rmace_chan->list_lock, irq_flags);
 
 	result.result = DMA_TRANS_NOERROR;
 	result.residue = 0;
 	if ((ctx->status & RCM_RMACE_CTX_STATUS_SUCCESS) == 0)
 		result.result = DMA_TRANS_READ_FAILED;
-	dmaengine_desc_get_callback_invoke(&desc->async_tx, &result);
+	dmaengine_desc_get_callback_invoke(&tx_desc->async_tx, &result);
 
 	spin_lock_irqsave(&rmace_chan->list_lock, irq_flags);
-	list_for_each_entry_safe(desc, temp, &rmace_chan->completed_list, list) {
-		if (async_tx_test_ack(&desc->async_tx))
-			list_move_tail(&desc->list, &rmace_chan->free_list); // from completed_list
+	list_for_each_entry_safe(tx_desc, tx_temp, &rmace_chan->completed_list, list) {
+		if (async_tx_test_ack(&tx_desc->async_tx))
+			list_move_tail(&tx_desc->list, &rmace_chan->free_list); // from completed_list
 	}
 	spin_unlock_irqrestore(&rmace_chan->list_lock, irq_flags);
 }
@@ -119,8 +125,13 @@ static struct dma_async_tx_descriptor *prep_dma_memcpy(
 	unsigned long flags)
 {
 	struct rmace_dma_chan *rmace_chan = rmace_chan_from_dma_chan(chan);
-	struct rmace_async_tx_desc *desc;
+	struct rmace_async_tx_desc *tx_desc;
+	struct rcm_rmace_hw_desc *src_hw_desc;
+	struct rcm_rmace_hw_desc *dst_hw_desc;
 	unsigned long irq_flags;
+	unsigned tx_desc_index;
+	unsigned offset;
+	unsigned size;
 
 	if (((dst & RCM_RMACE_HARDWARE_ALIGN_MASK) != 0)
 		|| ((src & RCM_RMACE_HARDWARE_ALIGN_MASK) != 0)
@@ -130,7 +141,7 @@ static struct dma_async_tx_descriptor *prep_dma_memcpy(
 		return NULL;
 	}
 
-	if (len > RCM_RMACE_MAX_DATA_TRANSFER) {
+	if (len > (size_t)COPY_TRANSFER_SIZE * (DMA_DESC_COUNT - 1)) {
 		pr_warn("transfer size error\n");
 		return NULL;
 	}
@@ -141,30 +152,139 @@ static struct dma_async_tx_descriptor *prep_dma_memcpy(
 	}
 
 	spin_lock_irqsave(&rmace_chan->list_lock, irq_flags);
-	desc = list_first_entry_or_null(&rmace_chan->free_list, struct rmace_async_tx_desc, list);
-	if (desc != NULL)
-		list_move_tail(&desc->list, &rmace_chan->created_list); // from free_list
+	tx_desc = list_first_entry_or_null(&rmace_chan->free_list, struct rmace_async_tx_desc, list);
+	if (tx_desc != NULL)
+		list_move_tail(&tx_desc->list, &rmace_chan->created_list); // from free_list
 	spin_unlock_irqrestore(&rmace_chan->list_lock, irq_flags);
 
-	if (desc == NULL) {
+	if (tx_desc == NULL) {
 		pr_warn("no free descriptors\n");
 		return NULL;
 	}
 
-	// all other parameters have been already filled during the initialization
-	desc->async_tx.flags = flags;
-	desc->src_descs[1].address = cpu_to_le32(src);
-	desc->src_descs[1].data = cpu_to_le32(
-		RCM_RMACE_DESC_ACT0_MASK
-		| RCM_RMACE_DESC_ACT2_MASK
-		| (len << RCM_RMACE_DESC_LEN_SHIFT));
-	desc->dst_descs.address = cpu_to_le32(dst);
-	desc->dst_descs.data = cpu_to_le32(
-		RCM_RMACE_DESC_ACT0_MASK
-		| RCM_RMACE_DESC_ACT2_MASK
-		| (len << RCM_RMACE_DESC_LEN_SHIFT));
+	// some parameters have been already filled during the initialization
+	tx_desc->async_tx.flags = flags;
+	tx_desc_index = tx_desc - rmace_chan->tx_descs;
+	rmace_chan->idma->dma_data->control_blocks[tx_desc_index] = cpu_to_le64(1ULL << RCM_RMACE_HEADER_TYPE_SHIFT);
+	src_hw_desc = &tx_desc->src_descs[1]; // control block has already configured
+	dst_hw_desc = tx_desc->dst_descs;
+	offset = 0;
+	while (len) {
+		size = len;
+		if (size > COPY_TRANSFER_SIZE)
+			size = COPY_TRANSFER_SIZE;
+		len -= size;
+		src_hw_desc->address = cpu_to_le32(src + offset);
+		src_hw_desc->data = cpu_to_le32(
+			(len == 0 ? RCM_RMACE_DESC_ACT0_MASK : 0)
+			| RCM_RMACE_DESC_ACT2_MASK
+			| (size << RCM_RMACE_DESC_LEN_SHIFT));
+		++src_hw_desc;
+		dst_hw_desc->address = cpu_to_le32(dst + offset);
+		dst_hw_desc->data = cpu_to_le32(
+			(len == 0 ? RCM_RMACE_DESC_ACT0_MASK : 0)
+			| RCM_RMACE_DESC_ACT2_MASK
+			| (size << RCM_RMACE_DESC_LEN_SHIFT));
+		++dst_hw_desc;
+		offset += size;
+	}
+	tx_desc->rmace_ctx.src_desc_count = src_hw_desc - tx_desc->src_descs;
+	tx_desc->rmace_ctx.dst_desc_count = dst_hw_desc - tx_desc->dst_descs;
 
-	return &desc->async_tx;
+	return &tx_desc->async_tx;
+}
+
+struct dma_async_tx_descriptor *prep_dma_xor(
+	struct dma_chan *chan,
+	dma_addr_t dst,
+	dma_addr_t *src,
+	unsigned int src_cnt,
+	size_t len,
+	unsigned long flags)
+{
+	struct rmace_dma_chan *rmace_chan = rmace_chan_from_dma_chan(chan);
+	struct rmace_async_tx_desc *tx_desc;
+	struct rcm_rmace_hw_desc *src_hw_desc;
+	struct rcm_rmace_hw_desc *dst_hw_desc;
+	unsigned long irq_flags;
+	unsigned tx_desc_index;
+	unsigned offset;
+	unsigned size;
+	unsigned i;
+
+	if ((src_cnt < 2) || (src_cnt > XOR_MAX_SOURCES_COUNT)) {
+		pr_warn("xor source count error\n");
+		return NULL;
+	}
+
+	if (((dst & RCM_RMACE_HARDWARE_ALIGN_MASK) != 0)
+		|| ((len & RCM_RMACE_HARDWARE_ALIGN_MASK) != 0))
+	{
+		pr_warn("aligment error\n");
+		return NULL;
+	}
+
+	for (i = 0; i < src_cnt; ++i)
+		if ((src[i] & RCM_RMACE_HARDWARE_ALIGN_MASK) != 0) {
+			pr_warn("source aligment error\n");
+			return NULL;
+		}
+
+	if (len > (size_t)XOR_TRANSFER_SIZE * ((DMA_DESC_COUNT - 1) / src_cnt)) {
+		pr_warn("transfer size error\n");
+		return NULL;
+	}
+
+	if ((flags & ~(DMA_PREP_INTERRUPT | DMA_CTRL_ACK)) != 0) {
+		pr_warn("flags 0x%08lX error\n", flags);
+		return NULL;
+	}
+
+	spin_lock_irqsave(&rmace_chan->list_lock, irq_flags);
+	tx_desc = list_first_entry_or_null(&rmace_chan->free_list, struct rmace_async_tx_desc, list);
+	if (tx_desc != NULL)
+		list_move_tail(&tx_desc->list, &rmace_chan->created_list); // from free_list
+	spin_unlock_irqrestore(&rmace_chan->list_lock, irq_flags);
+
+	if (tx_desc == NULL) {
+		pr_warn("no free descriptors\n");
+		return NULL;
+	}
+
+	// some parameters have been already filled during the initialization
+	tx_desc->async_tx.flags = flags;
+	tx_desc_index = tx_desc - rmace_chan->tx_descs;
+	rmace_chan->idma->dma_data->control_blocks[tx_desc_index] = cpu_to_le64(
+		((u64)src_cnt << RCM_RMACE_HEADER_FEATURES_SHIFT)
+		| (2ULL << RCM_RMACE_HEADER_TYPE_SHIFT));
+	src_hw_desc = &tx_desc->src_descs[1]; // control block has already configured
+	dst_hw_desc = tx_desc->dst_descs;
+	offset = 0;
+	while (len) {
+		size = len;
+		if (size > COPY_TRANSFER_SIZE)
+			size = COPY_TRANSFER_SIZE;
+		len -= size;
+		for (i = 0; i < src_cnt; ++i) {
+			src_hw_desc->address = cpu_to_le32(src[i] + offset);
+			src_hw_desc->data = cpu_to_le32(
+				RCM_RMACE_DESC_ACT0_MASK
+				| RCM_RMACE_DESC_ACT2_MASK
+				| (size << RCM_RMACE_DESC_LEN_SHIFT));
+			++src_hw_desc;
+		}
+		dst_hw_desc->address = cpu_to_le32(dst + offset);
+		dst_hw_desc->data = cpu_to_le32(
+			(len == 0 ? RCM_RMACE_DESC_ACT0_MASK : 0)
+			| RCM_RMACE_DESC_ACT2_MASK
+			| (size << RCM_RMACE_DESC_LEN_SHIFT));
+		++dst_hw_desc;
+		offset += size;
+	}
+	tx_desc->rmace_ctx.src_desc_count = src_hw_desc - tx_desc->src_descs;
+	tx_desc->rmace_ctx.dst_desc_count = dst_hw_desc - tx_desc->dst_descs;
+
+	return &tx_desc->async_tx;
 }
 
 static enum dma_status tx_status(
@@ -173,16 +293,16 @@ static enum dma_status tx_status(
 	struct dma_tx_state *txstate)
 {
 	struct rmace_dma_chan *rmace_chan = rmace_chan_from_dma_chan(chan);
-	struct rmace_async_tx_desc *desc;
+	struct rmace_async_tx_desc *tx_desc;
 	enum dma_status status;
 	unsigned long irq_flags;
 
 	status = dma_cookie_status(chan, cookie, txstate);
 	if (status == DMA_COMPLETE) {
 		spin_lock_irqsave(&rmace_chan->list_lock, irq_flags);
-		list_for_each_entry(desc, &rmace_chan->completed_list, list) {
-			if (desc->async_tx.cookie == cookie) {
-				if ((desc->rmace_ctx.status & RCM_RMACE_CTX_STATUS_SUCCESS) == 0)
+		list_for_each_entry(tx_desc, &rmace_chan->completed_list, list) {
+			if (tx_desc->async_tx.cookie == cookie) {
+				if ((tx_desc->rmace_ctx.status & RCM_RMACE_CTX_STATUS_SUCCESS) == 0)
 					status = DMA_ERROR;
 				break;
 			}
@@ -196,12 +316,12 @@ static enum dma_status tx_status(
 static void issue_pending(struct dma_chan *chan)
 {
 	struct rmace_dma_chan *rmace_chan = rmace_chan_from_dma_chan(chan);
-	struct rmace_async_tx_desc *desc;
+	struct rmace_async_tx_desc *tx_desc;
 	unsigned long irq_flags;
 
 	spin_lock_irqsave(&rmace_chan->list_lock, irq_flags);
-	list_for_each_entry(desc, &rmace_chan->pending_list, list)
-		rcm_rmace_ctx_schelude(&desc->rmace_ctx);
+	list_for_each_entry(tx_desc, &rmace_chan->pending_list, list)
+		rcm_rmace_ctx_schelude(&tx_desc->rmace_ctx);
 	list_splice_tail_init(&rmace_chan->pending_list, &rmace_chan->active_list);
 	spin_unlock_irqrestore(&rmace_chan->list_lock, irq_flags);
 }
@@ -228,7 +348,7 @@ int rcm_rmace_dma_register(struct rcm_rmace_dev *rmace)
 {
 	struct rcm_rmace_idma *idma;
 	struct dma_device *dma_dev;
-	struct rmace_async_tx_desc *desc;
+	struct rmace_async_tx_desc *tx_desc;
 	struct rmace_dma_chan *channel;
 	unsigned i, j;
 	int ret;
@@ -277,14 +397,19 @@ int rcm_rmace_dma_register(struct rcm_rmace_dev *rmace)
 	dma_dev->directions = BIT(DMA_MEM_TO_MEM);
 	dma_dev->residue_granularity = DMA_RESIDUE_GRANULARITY_DESCRIPTOR;
 	dma_cap_set(DMA_MEMCPY, dma_dev->cap_mask);
+	dma_cap_set(DMA_XOR, dma_dev->cap_mask);
 	dma_dev->copy_align = DMAENGINE_ALIGN_8_BYTES;
+	dma_dev->xor_align = DMAENGINE_ALIGN_8_BYTES;
+	dma_dev->max_xor = XOR_MAX_SOURCES_COUNT;
 	INIT_LIST_HEAD(&dma_dev->channels);
 	dma_dev->device_prep_dma_memcpy = prep_dma_memcpy;
+	dma_dev->device_prep_dma_xor = prep_dma_xor;
 	dma_dev->device_tx_status = tx_status;
 	dma_dev->device_issue_pending = issue_pending;
 
 	for (i = 0; i < idma->channel_count; ++i) {
 		channel = &idma->channels[i];
+		channel->idma = idma;
 		channel->dma_chan.device = dma_dev;
 		dma_cookie_init(&channel->dma_chan);
 		list_add_tail(&channel->dma_chan.device_node, &dma_dev->channels);
@@ -294,27 +419,26 @@ int rcm_rmace_dma_register(struct rcm_rmace_dev *rmace)
 		INIT_LIST_HEAD(&channel->pending_list);
 		INIT_LIST_HEAD(&channel->active_list);
 		INIT_LIST_HEAD(&channel->completed_list);
-		for (j = 0; j < RCM_RMACE_ASYNC_TX_DESC_COUNT; ++j) {
-			desc = &channel->async_tx_descs[j];
-			dma_async_tx_descriptor_init(&desc->async_tx, &channel->dma_chan);
-			desc->async_tx.tx_submit = tx_submit;
-			rcm_rmace_ctx_init(rmace, &desc->rmace_ctx);
-			desc->rmace_ctx.src_desc_count = 2;
-			desc->rmace_ctx.src_descs = desc->src_descs;
-			desc->src_descs[0].address = cpu_to_le32(idma->dma_data_phys_addr + offsetof(struct dma_data, control_block));
-			desc->src_descs[0].data = cpu_to_le32(
+		for (j = 0; j < ASYNC_TX_DESC_COUNT; ++j) {
+			tx_desc = &channel->tx_descs[j];
+			dma_async_tx_descriptor_init(&tx_desc->async_tx, &channel->dma_chan);
+			tx_desc->async_tx.tx_submit = tx_submit;
+			rcm_rmace_ctx_init(rmace, &tx_desc->rmace_ctx);
+			tx_desc->rmace_ctx.src_descs = tx_desc->src_descs;
+			tx_desc->src_descs[0].address = cpu_to_le32(
+				idma->dma_data_phys_addr
+				+ offsetof(struct dma_data, control_blocks)
+				+ (sizeof idma->dma_data->control_blocks[0]) * j);
+			tx_desc->src_descs[0].data = cpu_to_le32(
 				RCM_RMACE_DESC_VALID_MASK
 				| RCM_RMACE_DESC_ACT2_MASK
-				| (sizeof idma->dma_data->control_block << RCM_RMACE_DESC_LEN_SHIFT));
-			desc->rmace_ctx.dst_desc_count = 1;
-			desc->rmace_ctx.dst_descs = &desc->dst_descs;
-			desc->rmace_ctx.callback = rmace_callback;
-			INIT_LIST_HEAD(&desc->list);
-			list_add_tail(&desc->list, &channel->free_list);
+				| ((sizeof idma->dma_data->control_blocks[0]) << RCM_RMACE_DESC_LEN_SHIFT));
+			tx_desc->rmace_ctx.dst_descs = tx_desc->dst_descs;
+			tx_desc->rmace_ctx.callback = rmace_callback;
+			INIT_LIST_HEAD(&tx_desc->list);
+			list_add_tail(&tx_desc->list, &channel->free_list);
 		}
 	}
-
-	idma->dma_data->control_block = cpu_to_le64(1ULL << RCM_RMACE_HEADER_TYPE_SHIFT);
 
 	ret = dma_async_device_register(dma_dev);
 	if (ret != 0) {
