@@ -1026,7 +1026,7 @@
 			#size-cells = <1>;
 
 			ranges = <0x3C023000 0x10 0x3C023000 0x00010000>;
-			dma-ranges = <0x40000000 0x00000000 0x00000000 0x40000000>; // ???
+			dma-ranges = <0x40000000 0x00000000 0x00000000 0x40000000>;
 
 			hsif_control: hsif_control@0x3C023000 {	
 				compatible = "syscon";

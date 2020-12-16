@@ -110,14 +110,7 @@
 		hsif {
 			rmace: rmace@0x3C024000 {
 				status = "ok";
-				dma-channel-count = <4>; // ????
-			};
-
-			// ????
-			dma_test@0 {
-				compatible = "rcm,dma-test";
-				dmas = <&rmace 0 &rmace 1>;
-				dma-names = "tx", "rx";
+				dma-channel-count = <1>;
 			};
 		};
 
