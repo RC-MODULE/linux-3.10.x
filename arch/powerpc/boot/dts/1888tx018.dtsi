@@ -1026,19 +1026,21 @@
 			#size-cells = <1>;
 
 			ranges = <0x3C023000 0x10 0x3C023000 0x00010000>;
+			dma-ranges = <0x40000000 0x00000000 0x00000000 0x40000000>;
 
 			hsif_control: hsif_control@0x3C023000 {	
 				compatible = "syscon";
 				reg = <0x3C023000 0x1000>;
 			};
 
-			rmace@0x3C024000 {
+			rmace: rmace@0x3C024000 {
 				status = "disabled";
 				compatible = "rcm,rmace";
 				reg = <0x3C024000 0x1000>;
 				control = <&hsif_control>;
 				interrupt-parent = <&MPIC>;
 				interrupts = <78 2>; // active high level-sensitive
+				#dma-cells = <1>;
 			};
 		};
 

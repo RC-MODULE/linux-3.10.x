@@ -49,6 +49,6 @@ obj-$(CONFIG_CRYPTO_DEV_SAFEXCEL) += inside-secure/
 obj-$(CONFIG_CRYPTO_DEV_ARTPEC6) += axis/
 obj-$(CONFIG_CRYPTO_DEV_MCRYPTO) += mcrypto.o
 obj-$(CONFIG_CRYPTO_DEV_MCRYPTO_AES) += mcrypto_aes.o
-obj-$(CONFIG_CRYPTO_RCM_RMACE) += rcm-rmace.o
+obj-$(CONFIG_CRYPTO_RCM_RMACE) += rcm-rmace-crypto.o
 obj-y += hisilicon/
 obj-$(CONFIG_CRYPTO_DEV_AMLOGIC_GXL) += amlogic/

@@ -800,13 +800,13 @@ config CRYPTO_DEV_CCREE
 	  If unsure say Y.
 
 config CRYPTO_RCM_RMACE
-	tristate "Support for RCM SoCs RMACE crypto block"
+	bool "RCM SoCs RMACE crypto interface"
 	depends on PPC || COMPILE_TEST
 	depends on HAS_IOMEM
-	select MFD_SYSCON
+	select RCM_RMACE
 	select CRYPTO_ENGINE
 	help
-	  RCM SoCs RMACE crypto block driver.
+	  Crypto interface for RCM SoCs RMACE crypto block.
 
 source "drivers/crypto/hisilicon/Kconfig"
 

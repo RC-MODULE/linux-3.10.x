@@ -108,8 +108,9 @@
 		};
 
 		hsif {
-			rmace@0x3C024000 {
+			rmace: rmace@0x3C024000 {
 				status = "ok";
+				dma-channel-count = <1>;
 			};
 		};
 
