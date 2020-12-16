@@ -113,6 +113,8 @@ static void schedule_next_ctx(struct rcm_rmace_dev *rmace)
 		rmace->dma_data->dst_hw_descs[i] = ctx->dst_descs[i];
 	rmace->dma_data->dst_hw_descs[ctx->dst_desc_count].data = 0; // stop descriptor
 
+	spin_lock_irqsave(&rmace->reg_lock, irq_flags);
+
 	// program the source DMA channel
 	phys_addr = rmace->dma_data_phys_addr + offsetof(struct rcm_rmace_dma_data, src_hw_descs);
 	rmace_write_reg(rmace, RMACE_REG_RDMA_SYS_ADDR, phys_addr);
@@ -128,7 +130,6 @@ static void schedule_next_ctx(struct rcm_rmace_dev *rmace)
 	rmace_read_reg(rmace, RMACE_REG_WDMA_STATUS); // clear status register
 
 	// start the channels
-	spin_lock_irqsave(&rmace->reg_lock, irq_flags);
 	rmace_write_reg(rmace, RMACE_REG_RDMA_SETTINGS,
 		DMA_SETTINGS_AXI_ERROR_MASK
 		| DMA_SETTINGS_EN_DMA_MASK
@@ -140,6 +141,7 @@ static void schedule_next_ctx(struct rcm_rmace_dev *rmace)
 		| DMA_SETTINGS_EN_DMA_MASK
 		| DMA_SETTINGS_EN_DMA_DESC_TBL_MASK
 		| DMA_SETTINGS_DMA_LONG_LEN_MASK);
+
 	spin_unlock_irqrestore(&rmace->reg_lock, irq_flags);
 }
 
@@ -167,6 +169,8 @@ static irqreturn_t rmace_irq_thread(int irq, void *arg)
 	spin_unlock_irqrestore(&rmace->scheduled_lock, irq_flags);
 	BUG_ON(ctx == NULL);
 
+	spin_lock_irqsave(&rmace->reg_lock, irq_flags);
+
 	rdma_status = rmace_read_reg(rmace, RMACE_REG_RDMA_STATUS);
 	wdma_status = rmace_read_reg(rmace, RMACE_REG_WDMA_STATUS);
 
@@ -185,6 +189,8 @@ static irqreturn_t rmace_irq_thread(int irq, void *arg)
 		ctx->status = RCM_RMACE_CTX_STATUS_FINISHED | RCM_RMACE_CTX_STATUS_SUCCESS;
 	else
 		panic("unknow interrupt");
+
+	spin_unlock_irqrestore(&rmace->reg_lock, irq_flags);
 
 	if (ctx->callback != NULL)
 		ctx->callback(ctx, ctx->callback_arg);

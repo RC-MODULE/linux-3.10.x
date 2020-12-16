@@ -30,6 +30,7 @@ struct rmace_async_tx_desc
 	struct rcm_rmace_hw_desc src_descs[DMA_DESC_COUNT];
 	struct rcm_rmace_hw_desc dst_descs[DMA_DESC_COUNT];
 	struct list_head list; // free list, pending list, active list
+	u64 *control_block; // LE
 };
 
 struct rmace_dma_chan
@@ -47,7 +48,7 @@ struct rmace_dma_chan
 
 struct dma_data
 {
-	u64 control_blocks[ASYNC_TX_DESC_COUNT];
+	u64 control_blocks[MAX_CHANNEL_COUNT][ASYNC_TX_DESC_COUNT]; // LE
 };
 
 struct rcm_rmace_idma
@@ -129,7 +130,6 @@ static struct dma_async_tx_descriptor *prep_dma_memcpy(
 	struct rcm_rmace_hw_desc *src_hw_desc;
 	struct rcm_rmace_hw_desc *dst_hw_desc;
 	unsigned long irq_flags;
-	unsigned tx_desc_index;
 	unsigned offset;
 	unsigned size;
 
@@ -164,8 +164,7 @@ static struct dma_async_tx_descriptor *prep_dma_memcpy(
 
 	// some parameters have been already filled during the initialization
 	tx_desc->async_tx.flags = flags;
-	tx_desc_index = tx_desc - rmace_chan->tx_descs;
-	rmace_chan->idma->dma_data->control_blocks[tx_desc_index] = cpu_to_le64(1ULL << RCM_RMACE_HEADER_TYPE_SHIFT);
+	*(tx_desc->control_block) = cpu_to_le64(1ULL << RCM_RMACE_HEADER_TYPE_SHIFT);
 	src_hw_desc = &tx_desc->src_descs[1]; // control block has already configured
 	dst_hw_desc = tx_desc->dst_descs;
 	offset = 0;
@@ -207,7 +206,6 @@ struct dma_async_tx_descriptor *prep_dma_xor(
 	struct rcm_rmace_hw_desc *src_hw_desc;
 	struct rcm_rmace_hw_desc *dst_hw_desc;
 	unsigned long irq_flags;
-	unsigned tx_desc_index;
 	unsigned offset;
 	unsigned size;
 	unsigned i;
@@ -253,8 +251,7 @@ struct dma_async_tx_descriptor *prep_dma_xor(
 
 	// some parameters have been already filled during the initialization
 	tx_desc->async_tx.flags = flags;
-	tx_desc_index = tx_desc - rmace_chan->tx_descs;
-	rmace_chan->idma->dma_data->control_blocks[tx_desc_index] = cpu_to_le64(
+	*(tx_desc->control_block) = cpu_to_le64(
 		((u64)src_cnt << RCM_RMACE_HEADER_FEATURES_SHIFT)
 		| (2ULL << RCM_RMACE_HEADER_TYPE_SHIFT));
 	src_hw_desc = &tx_desc->src_descs[1]; // control block has already configured
@@ -428,14 +425,16 @@ int rcm_rmace_dma_register(struct rcm_rmace_dev *rmace)
 			tx_desc->src_descs[0].address = cpu_to_le32(
 				idma->dma_data_phys_addr
 				+ offsetof(struct dma_data, control_blocks)
-				+ (sizeof idma->dma_data->control_blocks[0]) * j);
+				+ (sizeof idma->dma_data->control_blocks[0]) * i
+				+ (sizeof idma->dma_data->control_blocks[0][0]) * j);
 			tx_desc->src_descs[0].data = cpu_to_le32(
 				RCM_RMACE_DESC_VALID_MASK
 				| RCM_RMACE_DESC_ACT2_MASK
-				| ((sizeof idma->dma_data->control_blocks[0]) << RCM_RMACE_DESC_LEN_SHIFT));
+				| ((sizeof idma->dma_data->control_blocks[0][0]) << RCM_RMACE_DESC_LEN_SHIFT));
 			tx_desc->rmace_ctx.dst_descs = tx_desc->dst_descs;
 			tx_desc->rmace_ctx.callback = rmace_callback;
 			INIT_LIST_HEAD(&tx_desc->list);
+			tx_desc->control_block = &idma->dma_data->control_blocks[i][j];
 			list_add_tail(&tx_desc->list, &channel->free_list);
 		}
 	}
