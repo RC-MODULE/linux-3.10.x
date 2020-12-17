@@ -1262,7 +1262,13 @@ static void greth_link_change(struct net_device *dev)
 			greth->duplex = phydev->duplex;
 			status_change = 1;
 		}
+	} else {
+		// for 1Gb MAC we should enable GB mode for preventing an issue
+		// during switching from 10/100Mb mode to 1Gb mode
+		if (greth->gbit_mac)
+			GRETH_REGORIN(greth->regs->control, GRETH_CTRL_GB);
 	}
+
 
 	if (phydev->link != greth->link) {
 		if (!phydev->link) {
@@ -1478,6 +1484,11 @@ static int greth_of_probe(struct platform_device *ofdev)
 		else
 			GRETH_REGORIN(regs->control, GRETH_CTRL_ED);
 	}
+
+	// for 1Gb MAC we should enable GB mode for preventing an issue
+	// during 1Gb mode negotiation
+	if (greth->gbit_mac)
+		GRETH_REGORIN(regs->control, GRETH_CTRL_GB);
 
 	/* Check if MAC can handle MDIO interrupts */
 	greth->mdio_int_en = (tmp >> 26) & 1;

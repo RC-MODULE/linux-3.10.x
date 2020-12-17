@@ -1161,12 +1161,14 @@
 			vdu0_drm: vdu@38013000 {
 				status = "disabled";
 				compatible = "rcm,vdu-drm";
-				reg = <0x38013000 0x1000>;
+				reg = <0x38013000 0x2000>;
 				interrupt-parent = <&MPIC>;
 				interrupts = <120 2>; // active high level-sensitive
 				vdu-index = <1>;
 				crg-control = <&crg_vdu>;
 				output-color-space = "yuv444";
+				max-width = <1280>;
+				max-height = <720>;
 				ports {
 					port@0 {
 						vdu_out_rgb0: endpoint@0 {
@@ -1180,12 +1182,14 @@
 			vdu1_drm: vdu@38011000 {
 				status = "disabled";
 				compatible = "rcm,vdu-drm";
-				reg = <0x38011000 0x1000>;
+				reg = <0x38011000 0x2000>;
 				interrupt-parent = <&MPIC>;
 				interrupts = <117 2>; // active high level-sensitive
 				vdu-index = <0>;
 				crg-control = <&crg_vdu>;
 				output-color-space = "yuv444";
+				max-width = <1280>;
+				max-height = <720>;
 				ports {
 					port@0 {
 						vdu_out_rgb1: endpoint@0 {
