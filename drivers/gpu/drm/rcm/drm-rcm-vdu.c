@@ -35,6 +35,10 @@
 #include "drm-rcm-vdu-reg.h"
 #include "drm-rcm-vdu-pll-reg.h"
 
+#ifdef CONFIG_DRM_RCM_VDU_USE_RMACE
+#include <linux/rcm-rmace.h>
+#endif
+
 #define DRIVER_NAME "rcm-vdu-drm"
 #define DRIVER_DESC "rcm-vdu KMS driver"
 #define DRIVER_DATE "2020"
@@ -78,6 +82,9 @@ struct dma_data {
 	struct osd_area_desc primary_osd_descs[2];
 	struct osd_area_desc secondary_osd_descs[2];
 	u8 screen_buffer[MAX_WIDTH * MAX_HEIGHT * 4]; // 4 for ARGB
+#ifdef CONFIG_DRM_RCM_VDU_USE_RMACE
+	u64 rmace_control_block[6];
+#endif
 };
 
 struct vdu_device {
@@ -130,6 +137,13 @@ struct vdu_device {
 	u32 mvl_setting_scaler_size_y;
 	u32 mvl_setting_scaler_size_c;
 	u32 mvl_setting_scaler_size_cut;
+
+#ifdef CONFIG_DRM_RCM_VDU_USE_RMACE
+	struct rcm_rmace_ctx rmace_ctx;
+	struct rcm_rmace_hw_desc rmace_src_descs[MAX_HEIGHT + 1];
+	struct rcm_rmace_hw_desc rmace_dst_descs[MAX_HEIGHT];
+	struct completion rmace_completion;
+#endif
 };
 
 struct y_cb_cr_color
@@ -723,6 +737,37 @@ static void secondary_osd_rendering_off(struct vdu_device *vdu)
 	write_vdu_reg(vdu, VDU_REG_SECOND_CORE_BASE + VDU_REG_CTRL_ENA, val);
 }
 
+#ifdef CONFIG_DRM_RCM_VDU_USE_RMACE
+// src_buffer and dest_buffer are pointers to the physical memory
+static void blit_rgb565_be(struct vdu_device *vdu, void *src_buffer, unsigned src_pitch, void *dest_buffer, unsigned dest_pitch, int dx, int dy)
+{
+	int y;
+	u32 src_aligned = ((u32)src_buffer) & ~RCM_RMACE_HARDWARE_ALIGN_MASK;
+	u32 dest_aligned = ((u32)dest_buffer) & ~RCM_RMACE_HARDWARE_ALIGN_MASK;
+	u32 len_aligned = ((u32)src_buffer - src_aligned + dx * 2 + RCM_RMACE_HARDWARE_ALIGN_MASK) & ~RCM_RMACE_HARDWARE_ALIGN_MASK;
+
+	for (y = 0; y < dy; ++y) {
+		vdu->rmace_src_descs[y + 1].address = cpu_to_le32(src_aligned);
+		vdu->rmace_src_descs[y + 1].data = cpu_to_le32(
+			(y + 1 == dy ? RCM_RMACE_DESC_ACT0_MASK : 0)
+			| RCM_RMACE_DESC_ACT2_MASK
+			| (len_aligned << RCM_RMACE_DESC_LEN_SHIFT));
+		src_aligned += src_pitch;
+
+		vdu->rmace_dst_descs[y].address = cpu_to_le32(dest_aligned);
+		vdu->rmace_dst_descs[y].data = cpu_to_le32(
+			(y + 1 == dy ? RCM_RMACE_DESC_ACT0_MASK : 0)
+			| RCM_RMACE_DESC_ACT2_MASK
+			| (len_aligned << RCM_RMACE_DESC_LEN_SHIFT));
+		dest_aligned += dest_pitch;
+	}
+	vdu->rmace_ctx.src_desc_count = dy + 1;
+	vdu->rmace_ctx.dst_desc_count = dy;
+
+	reinit_completion(&vdu->rmace_completion);
+	rcm_rmace_ctx_schelude(&vdu->rmace_ctx);
+}
+#else // CONFIG_DRM_RCM_VDU_USE_RMACE
 static void blit_rgb565_be(void *src_buffer, unsigned src_pitch, void *dest_buffer, unsigned dest_pitch, int dx, int dy)
 {
 	int x;
@@ -739,6 +784,7 @@ static void blit_rgb565_be(void *src_buffer, unsigned src_pitch, void *dest_buff
 		dest_buffer += dest_pitch;
 	}
 }
+#endif // CONFIG_DRM_RCM_VDU_USE_RMACE
 
 static void blit_xrgb8888(void *src_buffer, unsigned src_pitch, void *dest_buffer, unsigned dest_pitch, int dx, int dy)
 {
@@ -811,7 +857,18 @@ static void blit_if_necessary(struct vdu_device *vdu, struct drm_plane *plane, s
 	switch (vdu->primary_osd_format)
 	{
 	case DRM_FORMAT_RGB565 | DRM_FORMAT_BIG_ENDIAN:
+#ifdef CONFIG_DRM_RCM_VDU_USE_RMACE
+		src_buffer = (void*)((u32)gem->paddr + plane->state->fb->offsets[0]
+			+ rect.y1 * src_pitch
+			+ rect.x1 * bpp);
+		dest_buffer = (void*)((u32)vdu->dma_data_phys_addr
+			+ offsetof(struct dma_data, screen_buffer)
+			+ rect.y1 * dest_pitch
+			+ rect.x1 * bpp);
+		blit_rgb565_be(vdu, src_buffer, src_pitch, dest_buffer, dest_pitch, dx, dy);
+#else
 		blit_rgb565_be(src_buffer, src_pitch, dest_buffer, dest_pitch, dx, dy);
+#endif
 		break;
 	case DRM_FORMAT_XRGB8888:
 		blit_xrgb8888(src_buffer, src_pitch, dest_buffer, dest_pitch, dx, dy);
@@ -886,6 +943,11 @@ static void primary_plane_atomic_update(struct drm_plane *plane, struct drm_plan
 	struct drm_plane_state *state = plane->state;
 	u32 format;
 	u32 fb_phys_addr;
+
+#ifdef CONFIG_DRM_RCM_VDU_USE_RMACE
+	// wait the transfer is finished
+	wait_for_completion(&vdu->rmace_completion);
+#endif
 
 	if (state->visible) {
 		format = state->fb->format->format;
@@ -1284,6 +1346,15 @@ static irqreturn_t irq_handler(int irq, void *arg)
 	return IRQ_HANDLED;
 }
 
+#ifdef CONFIG_DRM_RCM_VDU_USE_RMACE
+void rmace_callback(struct rcm_rmace_ctx *ctx, void *arg)
+{
+	struct vdu_device *vdu = container_of(ctx, struct vdu_device, rmace_ctx);
+	complete_all(&vdu->rmace_completion);
+}
+#endif
+
+
 static void mode_config_init(struct vdu_device *vdu)
 {
 	struct drm_device *dev = &vdu->drm_dev;
@@ -1406,6 +1477,11 @@ static void cleanup(struct platform_device *pdev)
 	if (vdu == NULL)
 		return;
 
+#ifdef CONFIG_DRM_RCM_VDU_USE_RMACE
+	// wait the transfer is finished
+	wait_for_completion(&vdu->rmace_completion);
+#endif
+
 	if (vdu->drm_dev.registered)
 		drm_dev_unregister(&vdu->drm_dev);
 
@@ -1428,6 +1504,11 @@ static int probe_internal(struct platform_device *pdev)
 	int irq;
 	int ret;
 
+#ifdef CONFIG_DRM_RCM_VDU_USE_RMACE
+	if (rcm_rmace_dev_single_ptr == NULL)
+		return -EPROBE_DEFER;
+#endif
+
 	// setup dma -offset for bus
 	pdev->dev.archdata.dma_offset = -(pdev->dev.dma_pfn_offset << PAGE_SHIFT);
 
@@ -1441,6 +1522,15 @@ static int probe_internal(struct platform_device *pdev)
 	spin_lock_init(&vdu->reg_lock);
 	spin_lock_init(&vdu->mvl_setting_lock);
 	init_completion(&vdu->vdu_off_done);
+
+#ifdef CONFIG_DRM_RCM_VDU_USE_RMACE
+	init_completion(&vdu->rmace_completion);
+	complete_all(&vdu->rmace_completion); // no transactions
+	rcm_rmace_ctx_init(rcm_rmace_dev_single_ptr, &vdu->rmace_ctx);
+	vdu->rmace_ctx.src_descs = vdu->rmace_src_descs;
+	vdu->rmace_ctx.dst_descs = vdu->rmace_dst_descs;
+	vdu->rmace_ctx.callback = rmace_callback;
+#endif
 
 	vdu->regs = devm_ioremap_resource(&pdev->dev, pdev->resource);
 	if (IS_ERR(vdu->regs)) {
@@ -1458,6 +1548,18 @@ static int probe_internal(struct platform_device *pdev)
 	vdu->dma_data = dmam_alloc_coherent(&pdev->dev, sizeof *(vdu->dma_data), &vdu->dma_data_phys_addr, GFP_KERNEL);
 	if (vdu->dma_data == NULL)
 		return -ENOMEM;
+
+#ifdef CONFIG_DRM_RCM_VDU_USE_RMACE
+	vdu->rmace_src_descs[0].address = cpu_to_le32(vdu->dma_data_phys_addr + offsetof(struct dma_data, rmace_control_block));
+	vdu->rmace_src_descs[0].data = cpu_to_le32(
+		RCM_RMACE_DESC_VALID_MASK
+		| RCM_RMACE_DESC_ACT2_MASK
+		| ((sizeof vdu->dma_data->rmace_control_block) << RCM_RMACE_DESC_LEN_SHIFT));
+	vdu->dma_data->rmace_control_block[0] = cpu_to_le64(
+		(3ULL << RCM_RMACE_HEADER_TYPE_SHIFT)
+		| (1ULL << RCM_RMACE_HEADER_MODE_SHIFT));
+	vdu->dma_data->rmace_control_block[1] = cpu_to_le64(0x6745230100000000ULL);
+#endif
 
 	ret = of_property_read_u32(pdev->dev.of_node, "vdu-index", &vdu->vdu_index);
 	if (ret != 0) {
