@@ -332,7 +332,7 @@ static int rcm_rmace_probe(struct platform_device *pdev)
 #ifdef CONFIG_CRYPTO_RCM_RMACE
 	ret = rcm_rmace_crypto_register(rmace);
 	if (ret != 0)
-		goto crypto_register_error;
+		return ret;
 #endif
 
 #ifdef CONFIG_RCM_RMACE_DMA
@@ -348,14 +348,13 @@ static int rcm_rmace_probe(struct platform_device *pdev)
 
 	return 0;
 
+#ifdef CONFIG_RCM_RMACE_DMA
 dma_register_error:
 #ifdef CONFIG_CRYPTO_RCM_RMACE
 	rcm_rmace_crypto_unregister(rmace);
 #endif
-
-crypto_register_error:
-
 	return ret;
+#endif
 }
 
 static int rcm_rmace_remove(struct platform_device *pdev)

@@ -1,7 +1,16 @@
-config DRM_RCM_VDU
+menuconfig DRM_RCM_VDU
 	tristate "RCM VDU KMS driver"
 	depends on DRM
 	select DRM_KMS_HELPER
 	select DRM_KMS_CMA_HELPER
 	help
 	 This is a KMS driver for RCM VDU display apater.
+
+config DRM_RCM_VDU_USE_RMACE
+	bool "Using RCM RMACE for blitting"
+	default y
+	depends on DRM_RCM_VDU
+	select RCM_RMACE
+	help
+	 This option activates using RCM RMACE as a DMA engine for bitting
+	 in RGB565 mode.

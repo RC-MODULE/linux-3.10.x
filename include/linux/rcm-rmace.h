@@ -14,7 +14,7 @@
 #include <linux/list.h>
 #include <linux/spinlock.h>
 
-#define RCM_RMACE_HW_DESC_COUNT 1024
+#define RCM_RMACE_HW_DESC_COUNT 2048
 #define RCM_RMACE_HARDWARE_ALIGN_MASK 0x7
 
 #define RCM_RMACE_CTX_STATUS_SCHEDULED BIT(0) // !EXECUTING && !FINISHED
