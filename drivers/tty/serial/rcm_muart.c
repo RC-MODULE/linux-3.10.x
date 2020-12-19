@@ -1077,6 +1077,7 @@ static int muart_bind(struct basis_device *device)
 	struct muart_regs *regs;
 	int dev_id = -1;
 	unsigned int i;
+	unsigned int ctrl_value;
 
 	dev_info(dev, "%s: controller: \"%s\"\n",
 	         __func__, dev_name(&device->controller->dev));
@@ -1112,13 +1113,17 @@ static int muart_bind(struct basis_device *device)
 		return -EINVAL;
 	}
 
-	// switch on muart with APB mode (no dma), 8n1
-	writel((1 << MUART_CTRL_MEN_i) | // enable
-		       (1 << MUART_CTRL_APB_MD_i) | // APB mode
-		       (0 << MUART_CTRL_EPS_i) | // n prity
-		       (0 << MUART_CTRL_STP2_i) | // 1 stop bit
-		       (3 << MUART_CTRL_WLEN_i), // 8 data bit
-	       &regs->ctrl);
+	if (uart->using_dma)
+		dev_info(dev, "DMA support enabled\n");
+
+	ctrl_value = ((0 << MUART_CTRL_EPS_i) | (0 << MUART_CTRL_STP2_i) | 
+	              (3 << MUART_CTRL_WLEN_i) | (1 << MUART_CTRL_MEN_i)); // n prity,1 stop bit,8 data bit,enable
+	if (!uart->using_dma)
+		ctrl_value |= (1 << MUART_CTRL_APB_MD_i); // APB mode,
+	else
+		ctrl_value |= (1 << MUART_CTRL_DUM_i); // data only
+
+	writel(ctrl_value, &regs->ctrl);
 
 	port->irq = irq_create_mapping(device->controller->domain,
 	                               uart->hwirq);
@@ -1854,16 +1859,42 @@ BASIS_DEV_ATTR_U32_STORE(muart_, hwirq,    struct muart_port);
 BASIS_DEV_ATTR_U32_SHOW(muart_,  uartclk,  struct muart_port);
 BASIS_DEV_ATTR_U32_STORE(muart_, uartclk,  struct muart_port);
 
+static ssize_t muart_using_dma_store(struct config_item *item,
+                                     const char *page, size_t len)
+{
+	struct basis_device *device = config_item_to_basis_device(item);
+	struct muart_port *uart = basis_device_get_drvdata(device);
+	int ret;
+	bool using_dma;
+
+	ret = kstrtobool(page, &using_dma);
+	if (ret)
+		return ret;
+
+	uart->using_dma = using_dma;
+
+	return len;
+}
+
+static ssize_t muart_using_dma_show(struct config_item *item, char *page)
+{
+	struct basis_device *device = config_item_to_basis_device(item);
+	struct muart_port *uart = basis_device_get_drvdata(device);
+	return sprintf(page, "%d\n", (int)uart->using_dma);
+}
+
 CONFIGFS_ATTR(muart_, reg);
 CONFIGFS_ATTR(muart_, reg_size);
 CONFIGFS_ATTR(muart_, hwirq);
 CONFIGFS_ATTR(muart_, uartclk);
+CONFIGFS_ATTR(muart_, using_dma);
 
 static struct configfs_attribute *muart_attrs[] = {
 	&muart_attr_reg,
 	&muart_attr_reg_size,
 	&muart_attr_hwirq,
 	&muart_attr_uartclk,
+	&muart_attr_using_dma,
 	NULL,
 };
 
