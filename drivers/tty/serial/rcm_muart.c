@@ -325,7 +325,7 @@ static void muart_chained_handler(struct irq_desc *desc)
 	struct irq_chip *chip = irq_desc_get_chip(desc);
 	unsigned irq = 0;
 
-	unsigned int status = readl(&regs->status);
+	unsigned int __maybe_unused status = readl(&regs->status);
 	unsigned int gen_status = readl(&regs->gen_status);
 
 	chained_irq_enter(chip, desc);
