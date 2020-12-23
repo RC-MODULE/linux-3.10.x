@@ -23,8 +23,12 @@
 
 #define CRYPTO_DESC_COUNT (RCM_RMACE_HW_DESC_COUNT - 1)
 
+#define GOST89_BLOCK_SIZE 8
+#define GOST89_KEY_SIZE 32
+
 #define MAX_KEY_SIZE_8 4 // in 8-byte words
 #define MAX_IV_SIZE_8 2 // in 8-byte words
+#define MAX_CUSTOM_SIZE_8 8 // in 8-byte words
 #define AES_KEY_PREFIX_SIZE_8 2 // in 8-byte words
 #define DUMMY_DATA_BLOCK_SIZE_8 2 // in 8-byte words
 
@@ -32,13 +36,16 @@
 #define ALG_MODE_DES_MASK BIT(1)
 #define ALG_MODE_DES3_MASK BIT(2)
 #define ALG_MODE_AES_MASK BIT(3)
-#define ALG_MODE_ECB_MASK BIT(4)
-#define ALG_MODE_CBC_MASK BIT(5)
-#define ALG_MODE_OFB_MASK BIT(6)
+#define ALG_MODE_GOST_MASK BIT(4)
+#define ALG_MODE_ECB_MASK BIT(5)
+#define ALG_MODE_CBC_MASK BIT(6)
+#define ALG_MODE_OFB_MASK BIT(7)
+#define ALG_MODE_GAMMA_MASK BIT(8)
+#define ALG_MODE_GAMMA_FB_MASK BIT(9)
 
 struct dma_data
 {
-	u64 control_block[1 /* header */ + MAX_KEY_SIZE_8 + MAX_IV_SIZE_8]; // LE
+	u64 control_block[1 /* header */ + MAX_KEY_SIZE_8 + MAX_IV_SIZE_8 + MAX_CUSTOM_SIZE_8]; // LE
 	u8 dst_bounce_buf[ALG_MAX_PAGES * PAGE_SIZE];
 
 	// for AES RCM RMACE key optimization issue workaround
@@ -83,6 +90,28 @@ struct rmace_crypto_reqctx
 	u64 key[MAX_KEY_SIZE_8];
 };
 
+static const u64 GOST98_PERMUTATION[8] = {
+	// Gost28147_TestParamSet
+	// 0xc8b6e3294a750df1ULL,
+	// 0xc2867ea095f314bdULL,
+	// 0xefc95863d1270ab4ULL,
+	// 0x2b30e9a48df517c6ULL,
+	// 0x352bc64ef9801ad7ULL,
+	// 0xb9067cfe243ad185ULL,
+	// 0x95701832afd6c4beULL,
+	// 0x35f7c1b6e08d29a4ULL
+
+	// Gost28147_TC26ParamSetZ
+	0x2BC96AF43850DE71ULL,
+	0x73AD0B4FC19652E8ULL,
+	0x0E34187BAC296FD5ULL,
+	0xC24BE390D618A5F7ULL,
+	0xB9E35A076F4D128CULL,
+	0x069C471EDAF2853BULL,
+	0xF0DB74E1C5A93286ULL,
+	0x1F307D8E9B5A264CULL
+};
+
 static void aes_rmace_issue_workaround(struct rcm_rmace_icrypto *icrypto, struct rmace_crypto_reqctx *req_ctx)
 {
 	struct rcm_rmace_ctx *rmace_ctx = &icrypto->rmace_ctx;
@@ -124,17 +153,16 @@ static int config_src_key_iv(struct rcm_rmace_icrypto *icrypto, struct rmace_cry
 	struct rcm_rmace_ctx *rmace_ctx = &icrypto->rmace_ctx;
 	struct rcm_rmace_hw_desc *desc;
 	u64 *p = icrypto->dma_data->control_block;
-	u64 *s;
+	u64 *sk, *sv;
 	u64 data = 0; 
 	unsigned i;
 
 	if (req_ctx->alg_mode & ALG_MODE_DES_MASK)
 		data |= (4ULL << RCM_RMACE_HEADER_TYPE_SHIFT); // des
-	if (req_ctx->alg_mode & ALG_MODE_DES3_MASK) {
+	else if (req_ctx->alg_mode & ALG_MODE_DES3_MASK) {
 		data |= (5ULL << RCM_RMACE_HEADER_TYPE_SHIFT); // des3
 		data |= (5ULL << RCM_RMACE_HEADER_FEATURES_SHIFT); // ede
-	}
-	if (req_ctx->alg_mode & ALG_MODE_AES_MASK) {
+	} else if (req_ctx->alg_mode & ALG_MODE_AES_MASK) {
 		switch (req_ctx->key_size_8)
 		{
 		case AES_KEYSIZE_128 / 8:
@@ -149,23 +177,44 @@ static int config_src_key_iv(struct rcm_rmace_icrypto *icrypto, struct rmace_cry
 		default:
 			panic("unexpecting key size");
 		}
+	} else if (req_ctx->alg_mode & ALG_MODE_GOST_MASK) {
+		data |= (9ULL << RCM_RMACE_HEADER_TYPE_SHIFT); // gost
+		data |= (0x80ULL << RCM_RMACE_HEADER_FEATURES_SHIFT); // ch_tbl
+		data |= (3ULL << RCM_RMACE_HEADER_ENDIAN_SHIFT); // change endianness for input/output
 	}
+
 	if (req_ctx->alg_mode & ALG_MODE_CBC_MASK)
 		data |= (1ULL << RCM_RMACE_HEADER_MODE_SHIFT); // cbc
-	if (req_ctx->alg_mode & ALG_MODE_OFB_MASK)
+	else if (req_ctx->alg_mode & ALG_MODE_OFB_MASK)
 		data |= (3ULL << RCM_RMACE_HEADER_MODE_SHIFT); // ofb
+	else if (req_ctx->alg_mode & ALG_MODE_GAMMA_MASK)
+		data |= (1ULL << RCM_RMACE_HEADER_MODE_SHIFT); // gamma
+	else if (req_ctx->alg_mode & ALG_MODE_GAMMA_FB_MASK)
+		data |= (2ULL << RCM_RMACE_HEADER_MODE_SHIFT); // gamma-fb
+
 	if (req_ctx->alg_mode & ALG_MODE_DECRYPT_MASK)
 		data |= (1ULL << RCM_RMACE_HEADER_ENC_DEC_SHIFT); // decrypt
-	*(p++) = __cpu_to_le64(data);
 
-	s = req_ctx->key;
-	for (i = 0; i < req_ctx->key_size_8; ++i) {
-		*(p++) = __cpu_to_le64(*(s++));
-	}
+	*(p++) = cpu_to_le64(data);
 
-	s = (u64*)icrypto->cur_req->iv;
-	for (i = 0; i < req_ctx->iv_size_8; ++i) {
-		*(p++) = __cpu_to_le64(*(s++));
+	sk = req_ctx->key;
+	sv = (u64*)icrypto->cur_req->iv;
+	if (req_ctx->alg_mode & ALG_MODE_GOST_MASK) {
+		*(p++) = sk[3];
+		*(p++) = sk[2];
+		*(p++) = sk[1];
+		*(p++) = sk[0];
+		if (req_ctx->iv_size_8 == 0)
+			*(p++) = 0; // fake IV
+		else
+			*(p++) = *sv; // real IV
+		for (i = 0; i < ARRAY_SIZE(GOST98_PERMUTATION); ++i)
+			*(p++) = cpu_to_le64(GOST98_PERMUTATION[i]);
+	} else {
+		for (i = 0; i < req_ctx->key_size_8; ++i)
+			*(p++) = swab64(*(sk++));
+		for (i = 0; i < req_ctx->iv_size_8; ++i)
+			*(p++) = swab64(*(sv++));
 	}
 
 	if (rmace_ctx->src_desc_count == CRYPTO_DESC_COUNT)
@@ -291,8 +340,11 @@ static void rmace_callback(struct rcm_rmace_ctx *rmace_ctx, void *arg)
 		// save configuration
 		p = icrypto->dma_data->control_block + 1 /* header */ + req_ctx->key_size_8;
 		d = (u64*)icrypto->cur_req->iv;
-		for (i = 0; i < req_ctx->iv_size_8; ++i)
-			*(d++) = __le64_to_cpu(*(p++));
+		if ((req_ctx->alg_mode & ALG_MODE_GOST_MASK) && (req_ctx->iv_size_8 != 0))
+			*d = *p;
+		else
+			for (i = 0; i < req_ctx->iv_size_8; ++i)
+				*(d++) = swab64(*(p++));
 	}
 
 	dma_unmap_sg(&icrypto->rmace->pdev->dev, icrypto->cur_req->src, icrypto->cur_req_src_nents, DMA_TO_DEVICE);
@@ -378,7 +430,7 @@ static int rmace_cipher_one_req(
 	ret = config_dst_data(icrypto, req->dst, dst_mapped_nents);
 	if (ret != 0) {
 		// destination bounce buffer workaround
-		dma_unmap_sg(&icrypto->rmace->pdev->dev, req->src, icrypto->cur_req_src_nents, DMA_TO_DEVICE);
+		dma_unmap_sg(&icrypto->rmace->pdev->dev, req->dst, icrypto->cur_req_dst_nents, DMA_FROM_DEVICE);
 		icrypto->use_dst_bounce_buf = true;
 		rmace_ctx->dst_desc_count = save_dst_desc_count;
 		ret = config_dst_bounce_buffer(icrypto);
@@ -470,7 +522,7 @@ static int rmace_decrypt(struct skcipher_request *req)
 
 static int rmace_des_ecb_ctx_init(struct crypto_skcipher *tfm)
 {
- 	return rmace_crypto_ctx_init(
+	return rmace_crypto_ctx_init(
 		tfm,
 		ALG_MODE_DES_MASK | ALG_MODE_ECB_MASK,
 		DES_KEY_SIZE,
@@ -549,6 +601,33 @@ static int rmace_aes_ofb_ctx_init(struct crypto_skcipher *tfm)
 		AES_BLOCK_SIZE);
 }
 
+static int rmace_gost89_ecb_ctx_init(struct crypto_skcipher *tfm)
+{
+	return rmace_crypto_ctx_init(
+		tfm,
+		ALG_MODE_GOST_MASK | ALG_MODE_ECB_MASK,
+		GOST89_KEY_SIZE,
+		0);
+}
+
+static int rmace_gost89_gamma_ctx_init(struct crypto_skcipher *tfm)
+{
+	return rmace_crypto_ctx_init(
+		tfm,
+		ALG_MODE_GOST_MASK | ALG_MODE_GAMMA_MASK,
+		GOST89_KEY_SIZE,
+		GOST89_BLOCK_SIZE);
+}
+
+static int rmace_gost89_gamma_fb_ctx_init(struct crypto_skcipher *tfm)
+{
+	return rmace_crypto_ctx_init(
+		tfm,
+		ALG_MODE_GOST_MASK | ALG_MODE_GAMMA_FB_MASK,
+		GOST89_KEY_SIZE,
+		GOST89_BLOCK_SIZE);
+}
+
 static int rmace_des_setkey(
 	struct crypto_skcipher *tfm,
 	const u8 *key,
@@ -579,6 +658,17 @@ static int rmace_aes_setkey(
 	if ((key_size != AES_KEYSIZE_128)
 		&& (key_size != AES_KEYSIZE_192)
 		&& (key_size != AES_KEYSIZE_256))
+		return -EINVAL;
+
+	return rmace_setkey(tfm, key, key_size);
+}
+
+static int rmace_gost89_setkey(
+	struct crypto_skcipher *tfm,
+	const u8 *key,
+	unsigned key_size)
+{
+	if (key_size != GOST89_KEY_SIZE)
 		return -EINVAL;
 
 	return rmace_setkey(tfm, key, key_size);
@@ -735,6 +825,57 @@ static struct skcipher_alg crypto_algs[] = {
 		.max_keysize = AES_KEYSIZE_256,
 		.ivsize = AES_BLOCK_SIZE,
 		.setkey = rmace_aes_setkey,
+		.encrypt = rmace_encrypt,
+		.decrypt = rmace_decrypt
+	},
+	{
+		.base.cra_name = "ecb(gost89)",
+		.base.cra_driver_name = "rmace-ecb-gost89",
+		.base.cra_priority = 200,
+		.base.cra_flags = CRYPTO_ALG_ASYNC,
+		.base.cra_blocksize = GOST89_BLOCK_SIZE,
+		.base.cra_alignmask = RCM_RMACE_HARDWARE_ALIGN_MASK,
+		.base.cra_ctxsize = sizeof(struct rmace_crypto_ctx),
+		.base.cra_module = THIS_MODULE,
+		.init = rmace_gost89_ecb_ctx_init,
+		.min_keysize = GOST89_KEY_SIZE,
+		.max_keysize = GOST89_KEY_SIZE,
+		.ivsize = 0,
+		.setkey = rmace_gost89_setkey,
+		.encrypt = rmace_encrypt,
+		.decrypt = rmace_decrypt
+	},
+	{
+		.base.cra_name = "gamma(gost89)",
+		.base.cra_driver_name = "rmace-gamma-gost89",
+		.base.cra_priority = 200,
+		.base.cra_flags = CRYPTO_ALG_ASYNC,
+		.base.cra_blocksize = GOST89_BLOCK_SIZE,
+		.base.cra_alignmask = RCM_RMACE_HARDWARE_ALIGN_MASK,
+		.base.cra_ctxsize = sizeof(struct rmace_crypto_ctx),
+		.base.cra_module = THIS_MODULE,
+		.init = rmace_gost89_gamma_ctx_init,
+		.min_keysize = GOST89_KEY_SIZE,
+		.max_keysize = GOST89_KEY_SIZE,
+		.ivsize = GOST89_BLOCK_SIZE,
+		.setkey = rmace_gost89_setkey,
+		.encrypt = rmace_encrypt,
+		.decrypt = rmace_decrypt
+	},
+	{
+		.base.cra_name = "gamma-fb(gost89)",
+		.base.cra_driver_name = "rmace-gamma-fb-gost89",
+		.base.cra_priority = 200,
+		.base.cra_flags = CRYPTO_ALG_ASYNC,
+		.base.cra_blocksize = GOST89_BLOCK_SIZE,
+		.base.cra_alignmask = RCM_RMACE_HARDWARE_ALIGN_MASK,
+		.base.cra_ctxsize = sizeof(struct rmace_crypto_ctx),
+		.base.cra_module = THIS_MODULE,
+		.init = rmace_gost89_gamma_fb_ctx_init,
+		.min_keysize = GOST89_KEY_SIZE,
+		.max_keysize = GOST89_KEY_SIZE,
+		.ivsize = GOST89_BLOCK_SIZE,
+		.setkey = rmace_gost89_setkey,
 		.encrypt = rmace_encrypt,
 		.decrypt = rmace_decrypt
 	},
