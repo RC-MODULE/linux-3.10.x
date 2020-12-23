@@ -648,7 +648,7 @@ static irqreturn_t mdma_irq_handler(int irq, void *data)
 
 	if (!chan->active_desc) {
 		dev_info(chan->dev, "[%s] Interrupt without active descriptor\n",
-		        chan->name);
+		         chan->name);
 	} else {
 //		dev_info(chan->dev, "[%s] Interrupt status = 0x%08X\n",
 //		        chan->name, status);
@@ -1037,6 +1037,29 @@ const struct mdma_of_data mdma_mgeth_of_data = {
 	.tasklet_func                = mdma_do_tasklet,
 };
 
+const struct mdma_of_data mdma_muart_of_data = {
+	.max_transaction             = 0x3FFC,
+	.len_mask                    = 0x3FFF,
+	.sw_desc_pool_size           = 16,
+	.hw_desc_pool_size           = 16,
+	.ch_settings                 = 
+		MDMA_CHAN_DESC_LONG | MDMA_CHAN_ADD_INFO | 
+		(sizeof(struct mdma_desc_long_ll) << MDMA_CHAN_DESC_GAP_SHIFT),
+
+	.device_alloc_chan_resources = mdma_alloc_chan_resources,
+	.device_free_chan_resources  = mdma_free_chan_resources,
+	.device_prep_slave_sg        = mdma_prep_slave_sg,
+	.device_config               = mdma_device_config,
+	.device_terminate_all        = mdma_device_terminate_all,
+	.device_tx_status            = mdma_device_tx_status,
+	.device_issue_pending        = mdma_issue_pending,
+
+	.tx_submit                   = mdma_tx_submit,
+
+	.irq_handler                 = mdma_irq_handler,
+	.tasklet_func                = mdma_do_tasklet,
+};
+
 static const struct of_device_id rcm_mdma_dt_ids[] = {
 	{
 		.compatible = "rcm,mdma-gp",
@@ -1045,6 +1068,10 @@ static const struct of_device_id rcm_mdma_dt_ids[] = {
 	{
 		.compatible = "rcm,mdma-mgeth",
 		.data = &mdma_mgeth_of_data,
+	},
+	{
+		.compatible = "rcm,mdma-muart",
+		.data = &mdma_muart_of_data,
 	},
 	{}
 };
