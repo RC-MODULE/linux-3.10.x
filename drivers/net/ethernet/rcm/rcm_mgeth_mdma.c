@@ -544,7 +544,7 @@ struct rcm_mgeth_dma_chan *rcm_mgeth_dma_chan_create(struct net_device *netdev,
 #else
 		dma_alloc_coherent(netdev->dev.parent,
 		                   RCM_MGETH_DMA_BUFF_SIZE * chan->cnt_buffs,
-		                   &chan->buffs[i].dma_addr,
+		                   &chan->buffs[0].dma_addr,
 		                   GFP_KERNEL);
 #endif
 	chan->single_alloc = (chan->buffs[0].buff != NULL);
