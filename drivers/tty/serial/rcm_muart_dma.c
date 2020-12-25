@@ -346,6 +346,24 @@ bool muart_dma_tx_start(struct muart_port *uart)
 	return true;
 }
 
+#ifdef CONFIG_BASIS_PLATFORM
+struct dma_chan *muart_find_by_chan_id(struct dma_device *dev, int chan_id)
+{
+	struct dma_chan *chan, *candidate = NULL;
+
+	list_for_each_entry(chan, &dev->channels, device_node)
+		if (chan->chan_id == chan_id) {
+			candidate = chan;
+			break;
+		}
+
+	if (!candidate)
+		return NULL;
+
+	return dma_get_slave_channel(candidate);
+}
+#endif
+
 static void muart_release_dma(struct muart_port *uart)
 {
 	int i;
@@ -364,14 +382,41 @@ static int muart_request_dma(struct muart_port *uart)
 {
 	int ret = 0;
 	int i;
+#ifdef CONFIG_BASIS_PLATFORM
+	struct dma_device *dma_dev;
+	struct basis_device *device;
+
+	device = basis_device_find(uart->dma_dev);
+	if (!device) {
+		dev_err(uart->port.dev, "Failed to found BASIS-device \"%s\"\n",
+		        uart->dma_dev);
+		return -ENODEV;
+	}
+
+	if (!device->priv) {
+		dev_err(uart->port.dev,
+		        "BASIS-device \"%s\" is not DMA-Device\n",
+		        uart->dma_dev);
+		return -ENODEV;
+	}
+
+	dma_dev = device->priv;
+#endif
 
 	for (i = 0; i < 2; ++i) {
+#ifdef CONFIG_BASIS_PLATFORM
+		u32 ch_num = (i == 0) ? uart->tx_ch_num : uart->rx_ch_num;
+#else
 		char *ch_name = (i == 0) ? "tx0" : "rx0";
+#endif
 		struct muart_dma* dma =  (i == 0) ? &uart->tx : &uart->rx;
 
+#ifdef CONFIG_BASIS_PLATFORM
+		dma->chan = muart_find_by_chan_id(dma_dev, ch_num);
+#else
 		dma->chan = dma_request_chan(uart->port.dev, ch_name);
-
-		if (IS_ERR(dma->chan)) {
+#endif
+		if ((!dma->chan) || (IS_ERR(dma->chan))) {
 			dev_err(uart->port.dev,
 			        "No DMA %s channel specified.\n",
 			        (i == 0) ? "TX" : "RX");
@@ -393,7 +438,6 @@ int muart_dma_startup(struct muart_port *uart)
 {
 	struct muart_regs *regs = (struct muart_regs *)uart->port.membase;
 	int err;
-	unsigned int ctrl;
 
 	err = muart_request_dma(uart);
 	if (err)
@@ -430,9 +474,18 @@ void muart_free_dma(struct muart_port *uart)
 		struct muart_dma* dma =  (i == 0) ? &uart->tx : &uart->rx;
 
 		if (dma->buff) {
+#ifdef CONFIG_BASIS_PLATFORM
+			basis_device_dma_free_coherent(
+				uart->port.dev->parent,
+				MUART_DMA_CNT_BUFFS_PER_CHAN * 
+				MUART_DMA_BUFF_SIZE, 
+				dma->buff, dma->dma_addr, dma->ep_addr);
+#else
 			dma_free_coherent(uart->port.dev, 
-			                  MUART_DMA_CNT_BUFFS_PER_CHAN * MUART_DMA_BUFF_SIZE, 
+			                  MUART_DMA_CNT_BUFFS_PER_CHAN * 
+			                  MUART_DMA_BUFF_SIZE, 
 			                  dma->buff, dma->dma_addr);
+#endif
 			dma->buff = NULL;
 		}
 	}
@@ -450,11 +503,18 @@ int muart_alloc_dma(struct muart_port *uart)
 		spin_lock_init(&dma->lock);
 
 		dma->buff = 
+#ifdef CONFIG_BASIS_PLATFORM
+			basis_device_dma_alloc_coherent(
+				uart->port.dev->parent,
+				MUART_DMA_CNT_BUFFS_PER_CHAN * 
+				MUART_DMA_BUFF_SIZE,
+				&dma->dma_addr, &dma->ep_addr, GFP_KERNEL);
+#else
 			dma_alloc_coherent(uart->port.dev,
 			                   MUART_DMA_CNT_BUFFS_PER_CHAN * 
 			                   MUART_DMA_BUFF_SIZE,
 			                   &dma->dma_addr, GFP_KERNEL);
-
+#endif
 		if (!dma->buff) {
 			dev_err(uart->port.dev,
 			        "Failed to allocate DMA-buffer.\n");

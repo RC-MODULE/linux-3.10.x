@@ -73,6 +73,9 @@ struct muart_dma {
 	int                   cnt_buffs;
 	spinlock_t            lock;
 	dma_addr_t            dma_addr;
+#ifdef CONFIG_BASIS_PLATFORM
+	u32                   ep_addr;
+#endif
 	void*                 buff;
 
 	struct task_struct*   thread;
@@ -93,6 +96,9 @@ struct muart_port {
 	u32                     reg_size;
 	u32                     hwirq;
 	u32                     uartclk;
+	char                    dma_dev[64];
+	u32                     tx_ch_num;
+	u32                     rx_ch_num;
 #endif
 };
 

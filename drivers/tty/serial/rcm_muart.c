@@ -20,6 +20,10 @@
 #include <linux/irqdesc.h>
 #include <linux/irqchip/chained_irq.h>
 
+#ifdef CONFIG_BASIS_PLATFORM
+#	undef CONFIG_SERIAL_MUART_CONSOLE
+#endif
+
 #include "rcm_muart.h"
 
 #ifndef PORT_RCM
@@ -839,11 +843,54 @@ OF_EARLYCON_DECLARE(muart_uart, "rcm,muart", muart_early_console_setup);
 
 #endif /* CONFIG_SERIAL_MUART_CONSOLE */
 
+static int muart_create_irq_domain(struct muart_port *uart, struct device *dev)
+{
+	int res;
+	struct irq_chip_generic *gc;
+
+	uart->domain = irq_domain_create_linear(dev->fwnode, 2,
+	                                        &irq_generic_chip_ops,
+	                                        NULL);
+	if (!uart->domain) {
+		dev_err(dev, "couldn't create irq domain.\n");
+		return -EINVAL;
+	}
+
+	res = irq_alloc_domain_generic_chips(
+		uart->domain, 2, 1, "rcm-muart",
+		handle_fasteoi_irq, IRQ_NOREQUEST | IRQ_NOPROBE,
+		0, 0);
+	if (res) {
+		dev_err(dev, "couldn't allocate irq chips.\n");
+		return res;
+	}
+
+	gc = irq_get_domain_generic_chip(uart->domain, 0);
+	gc->private = uart;
+
+	gc->chip_types[0].type              = IRQ_TYPE_SENSE_MASK;
+	gc->chip_types[0].chip.irq_eoi      = muart_irq_eoi;
+	gc->chip_types[0].chip.irq_set_type = muart_irq_set_type;
+	gc->chip_types[0].chip.name         = "rcm-muart";
+
+	gc->chip_types[0].chip.flags        = IRQCHIP_EOI_IF_HANDLED;
+
+	irq_set_chained_handler_and_data(uart->port.irq,
+	                                 muart_chained_handler, &uart->port);
+
+	return res;
+}
+
 #ifdef CONFIG_BASIS_PLATFORM
 
 static void muart_unbind(struct basis_device *device)
 {
 	struct muart_port *uart = basis_device_get_drvdata(device);
+
+	muart_free_dma(uart);
+
+	if (uart->domain)
+		irq_domain_remove(uart->domain);
 
 	if (uart->port.irq) {
 		irq_dispose_mapping(uart->port.irq);
@@ -860,6 +907,7 @@ static int muart_bind(struct basis_device *device)
 	int dev_id = -1;
 	unsigned int i;
 	unsigned int ctrl_value;
+	int err;
 
 	dev_info(dev, "%s: controller: \"%s\"\n",
 	         __func__, dev_name(&device->controller->dev));
@@ -914,6 +962,12 @@ static int muart_bind(struct basis_device *device)
 		dev_warn(dev, "Failed to map irq #%u.\n", uart->hwirq);
 	}
 
+	if (uart->using_dma) {
+		err = muart_create_irq_domain(uart, dev);
+		if (err)
+			return err;
+	}
+
 	port->dev = dev;
 	port->iotype = UPIO_MEM;
 	port->flags = UPF_BOOT_AUTOCONF;
@@ -930,6 +984,12 @@ static int muart_bind(struct basis_device *device)
 	port->ignore_status_mask = 0;
 
 	muart_ports[dev_id] = uart;
+
+	if (uart->using_dma) {
+		err = muart_alloc_dma(uart);
+		if (err != 0) 
+			return err;
+	}
 
 	return uart_add_one_port(&muart_driver, &muart_ports[dev_id]->port);
 }
@@ -965,7 +1025,6 @@ int muart_probe(struct platform_device *pdev)
 	unsigned int i;
 	unsigned int ctrl_value;
 	int err;
-	struct irq_chip_generic *gc;
 
 	/* no device tree device */
 	if (!np)
@@ -1026,35 +1085,9 @@ int muart_probe(struct platform_device *pdev)
 	port->irq = irq_of_parse_and_map(np, 0);
 
 	if (uart->using_dma) {
-		uart->domain = irq_domain_create_linear(pdev->dev.fwnode, 2,
-		                                        &irq_generic_chip_ops,
-		                                        NULL);
-		if (!uart->domain) {
-			dev_err(&pdev->dev, "couldn't create irq domain.\n");
-			return -EINVAL;
-		}
-
-		err = irq_alloc_domain_generic_chips(
-			uart->domain, 2, 1, "rcm-muart",
-			handle_fasteoi_irq, IRQ_NOREQUEST | IRQ_NOPROBE,
-			0, 0);
-		if (err) {
-			dev_err(&pdev->dev, "couldn't allocate irq chips.\n");
+		err = muart_create_irq_domain(uart, &pdev->dev);
+		if (err)
 			return err;
-		}
-
-		gc = irq_get_domain_generic_chip(uart->domain, 0);
-		gc->private = uart;
-
-		gc->chip_types[0].type              = IRQ_TYPE_SENSE_MASK;
-		gc->chip_types[0].chip.irq_eoi      = muart_irq_eoi;
-		gc->chip_types[0].chip.irq_set_type = muart_irq_set_type;
-		gc->chip_types[0].chip.name         = "rcm-muart";
-
-		gc->chip_types[0].chip.flags        = IRQCHIP_EOI_IF_HANDLED;
-
-		irq_set_chained_handler_and_data(port->irq,
-		                                 muart_chained_handler, port);
 	}
 
 	port->dev = &pdev->dev;
@@ -1109,17 +1142,26 @@ static struct basis_device_ops muart_ops = {
 	.bind   = muart_bind,
 };
 
-BASIS_DEV_ATTR_U32_SHOW(muart_,  reg,      struct muart_port);
-BASIS_DEV_ATTR_U32_STORE(muart_, reg,      struct muart_port);
+BASIS_DEV_ATTR_U32_SHOW(muart_,  reg,       struct muart_port);
+BASIS_DEV_ATTR_U32_STORE(muart_, reg,       struct muart_port);
 
-BASIS_DEV_ATTR_U32_SHOW(muart_,  reg_size, struct muart_port);
-BASIS_DEV_ATTR_U32_STORE(muart_, reg_size, struct muart_port);
+BASIS_DEV_ATTR_U32_SHOW(muart_,  reg_size,  struct muart_port);
+BASIS_DEV_ATTR_U32_STORE(muart_, reg_size,  struct muart_port);
 
-BASIS_DEV_ATTR_U32_SHOW(muart_,  hwirq,    struct muart_port);
-BASIS_DEV_ATTR_U32_STORE(muart_, hwirq,    struct muart_port);
+BASIS_DEV_ATTR_U32_SHOW(muart_,  hwirq,     struct muart_port);
+BASIS_DEV_ATTR_U32_STORE(muart_, hwirq,     struct muart_port);
 
-BASIS_DEV_ATTR_U32_SHOW(muart_,  uartclk,  struct muart_port);
-BASIS_DEV_ATTR_U32_STORE(muart_, uartclk,  struct muart_port);
+BASIS_DEV_ATTR_U32_SHOW(muart_,  uartclk,   struct muart_port);
+BASIS_DEV_ATTR_U32_STORE(muart_, uartclk,   struct muart_port);
+
+BASIS_DEV_ATTR_STR_SHOW(muart_,  dma_dev,   struct muart_port);
+BASIS_DEV_ATTR_STR_STORE(muart_, dma_dev,   struct muart_port);
+
+BASIS_DEV_ATTR_U32_SHOW(muart_,  tx_ch_num, struct muart_port);
+BASIS_DEV_ATTR_U32_STORE(muart_, tx_ch_num, struct muart_port);
+
+BASIS_DEV_ATTR_U32_SHOW(muart_,  rx_ch_num, struct muart_port);
+BASIS_DEV_ATTR_U32_STORE(muart_, rx_ch_num, struct muart_port);
 
 static ssize_t muart_using_dma_store(struct config_item *item,
                                      const char *page, size_t len)
@@ -1150,6 +1192,9 @@ CONFIGFS_ATTR(muart_, reg_size);
 CONFIGFS_ATTR(muart_, hwirq);
 CONFIGFS_ATTR(muart_, uartclk);
 CONFIGFS_ATTR(muart_, using_dma);
+CONFIGFS_ATTR(muart_, dma_dev);
+CONFIGFS_ATTR(muart_, tx_ch_num);
+CONFIGFS_ATTR(muart_, rx_ch_num);
 
 static struct configfs_attribute *muart_attrs[] = {
 	&muart_attr_reg,
@@ -1157,6 +1202,9 @@ static struct configfs_attribute *muart_attrs[] = {
 	&muart_attr_hwirq,
 	&muart_attr_uartclk,
 	&muart_attr_using_dma,
+	&muart_attr_dma_dev,
+	&muart_attr_tx_ch_num,
+	&muart_attr_rx_ch_num,
 	NULL,
 };
 
