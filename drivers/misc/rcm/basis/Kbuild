@@ -1,5 +1,6 @@
 ifeq ($(CONFIG_ARM),y)
 CFLAGS_../../../tty/serial/rcm_muart.o = -DCONFIG_BASIS_PLATFORM -DCONFIG_SERIAL_MUART_NR_PORTS=2
+CFLAGS_../../../tty/serial/rcm_muart_dma.o = -DCONFIG_BASIS_PLATFORM
 CFLAGS_../../../phy/rcm/phy-rcm-sgmii.o = -DCONFIG_BASIS_PLATFORM
 CFLAGS_../../../net/ethernet/rcm/rcm_mdio.o = -DCONFIG_BASIS_PLATFORM
 CFLAGS_../../../net/ethernet/rcm/rcm_mgeth.o = -DCONFIG_BASIS_PLATFORM
@@ -7,8 +8,10 @@ CFLAGS_../../../net/ethernet/rcm/rcm_mgeth_mdma.o = -DCONFIG_BASIS_PLATFORM
 CFLAGS_../../../dma/rcm-mdma-desc-pool.o = -DCONFIG_BASIS_PLATFORM
 CFLAGS_../../../mmc/host/rcm-sdio.o = -DCONFIG_BASIS_PLATFORM
 CFLAGS_../../../i2c/busses/i2c-rcm-basis.o = -DCONFIG_BASIS_PLATFORM
+CFLAGS_../../../dma/rcm-mdma.o = -DCONFIG_BASIS_PLATFORM
 else
 CFLAGS_rcm_muart.o = -DCONFIG_BASIS_PLATFORM -DCONFIG_SERIAL_MUART_NR_PORTS=2
+CFLAGS_rcm_muart_dma.o = -DCONFIG_BASIS_PLATFORM
 CFLAGS_phy-rcm-sgmii.o = -DCONFIG_BASIS_PLATFORM
 CFLAGS_rcm_mdio.o = -DCONFIG_BASIS_PLATFORM
 CFLAGS_rcm_mgeth.o = -DCONFIG_BASIS_PLATFORM
@@ -16,7 +19,10 @@ CFLAGS_rcm_mgeth_mdma.o = -DCONFIG_BASIS_PLATFORM
 CFLAGS_rcm-mdma-desc-pool.o = -DCONFIG_BASIS_PLATFORM
 CFLAGS_rcm-sdio.o = -DCONFIG_BASIS_PLATFORM
 CFLAGS_i2c-rcm-basis.o = -DCONFIG_BASIS_PLATFORM
+CFLAGS_rcm-mdma.o = -DCONFIG_BASIS_PLATFORM
 endif
-obj-m := basis-core.o rcm-pci-map.o device-test.o ../../../tty/serial/rcm_muart.o ../../../phy/rcm/phy-rcm-sgmii.o ../../../net/ethernet/rcm/rcm_mdio.o rcm-mgeth.o ../../../mmc/host/rcm-sdio.o ../../../i2c/busses/i2c-rcm-basis.o
+obj-m := basis-core.o rcm-pci-map.o device-test.o rcm-muart.o ../../../phy/rcm/phy-rcm-sgmii.o ../../../net/ethernet/rcm/rcm_mdio.o rcm-mgeth.o ../../../mmc/host/rcm-sdio.o ../../../i2c/busses/i2c-rcm-basis.o rcm-mdma.o
 basis-core-y := basis-init.o basis-cfs.o basis-controller.o basis-device.o
 rcm-mgeth-y := ../../../dma/rcm-mdma-desc-pool.o ../../../net/ethernet/rcm/rcm_mgeth.o ../../../net/ethernet/rcm/rcm_mgeth_mdma.o
+rcm-muart-y := ../../../tty/serial/rcm_muart.o ../../../tty/serial/rcm_muart_dma.o
+rcm-mdma-y := ../../../dma/rcm-mdma.o ../../../dma/rcm-mdma-gp.o ../../../dma/rcm-mdma-desc-pool.o
