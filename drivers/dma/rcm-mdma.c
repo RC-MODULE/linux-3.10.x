@@ -33,8 +33,8 @@ bool mdma_check_align(struct mdma_chan *chan, dma_addr_t dma_addr)
 
 	if (!res)
 		dev_err(chan->dev,
-		        "[%s] DMA unalligned access (addr: 0x%x)\n",
-		        chan->name, dma_addr);
+		        "[%s] DMA unalligned access (addr: 0x%llx)\n",
+		        chan->name, (u64)dma_addr);
 
 	return res;
 }
@@ -263,8 +263,8 @@ static size_t mdma_get_residue(struct mdma_chan *chan,
 
 	if (len > sw_desc->len) {
 		dev_warn(chan->dev, "[%s] Transferred length more than "
-		                    "requested (%u > %u).\n",
-		                    chan->name, len, sw_desc->len);
+		                    "requested (%llu > %llu).\n",
+		                    chan->name, (u64)len, (u64)sw_desc->len);
 		len = sw_desc->len;
 	}
 

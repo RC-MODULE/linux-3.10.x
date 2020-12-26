@@ -186,8 +186,8 @@ static int muart_rx_process(struct muart_dma* dma)
 			if (pushed < sg_dma_len(&buff->sg) - buff->residue)
 				dev_err(uart->port.dev,
 				        "Failed to push RX-data"
-				        "(received - %d, pushed - %u).\n",
-				        sg_dma_len(&buff->sg) - buff->residue,
+				        "(received - %lld, pushed - %u).\n",
+				        (u64)(sg_dma_len(&buff->sg) - buff->residue),
 				        pushed);
 		}
 
