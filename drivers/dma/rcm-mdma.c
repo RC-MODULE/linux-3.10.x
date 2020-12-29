@@ -1170,7 +1170,10 @@ static struct configfs_attribute *mdma_attrs[] = {
 };
 
 static struct basis_device_driver rcm_mdma_driver = {
-	.driver.name    = "rcm-mdma",
+	.driver = {
+		.name = "rcm-mdma",
+		.pm = &mdma_dev_pm_ops,
+	},
 	.probe          = mdma_probe,
 	.id_table       = mdma_ids,
 	.ops            = &mdma_ops,
