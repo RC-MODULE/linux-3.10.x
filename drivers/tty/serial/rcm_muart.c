@@ -879,6 +879,8 @@ static int muart_create_irq_domain(struct muart_port *uart, struct device *dev)
 	irq_set_chained_handler_and_data(uart->port.irq,
 	                                 muart_chained_handler, &uart->port);
 
+	uart->device->priv = uart->domain;
+
 	return res;
 }
 
