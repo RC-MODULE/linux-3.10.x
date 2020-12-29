@@ -83,7 +83,11 @@ static int muart_rx_start(struct muart_dma* dma)
 		buff = &dma->buffs[dma->next_buff];
 
 		sg_dma_address(&buff->sg) = 
+#ifdef CONFIG_BASIS_PLATFORM
+			dma->ep_addr + dma->next_buff * MUART_DMA_BUFF_SIZE;
+#else
 			dma->dma_addr + dma->next_buff * MUART_DMA_BUFF_SIZE;
+#endif
 		sg_dma_len(&buff->sg) = MUART_DMA_BUFF_SIZE;
 
 //		memset(dma->buff + dma->next_buff * MUART_DMA_BUFF_SIZE,
@@ -319,7 +323,11 @@ bool muart_dma_tx_start(struct muart_port *uart)
 	}
 
 	sg_dma_address(&buff->sg) = 
+#ifdef CONFIG_BASIS_PLATFORM
+		dma->ep_addr + dma->next_buff * MUART_DMA_BUFF_SIZE;
+#else
 		dma->dma_addr + dma->next_buff * MUART_DMA_BUFF_SIZE;
+#endif
 	sg_dma_len(&buff->sg) = count;
 
 	desc = dmaengine_prep_slave_sg(dma->chan, &buff->sg, 1, DMA_MEM_TO_DEV, 
