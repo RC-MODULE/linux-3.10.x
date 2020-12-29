@@ -107,5 +107,6 @@ struct muart_port {
 bool muart_dma_tx_start(struct muart_port *uart);
 int muart_dma_startup(struct muart_port *uart);
 void muart_dma_shutdown(struct muart_port *uart);
+void muart_dma_stop_rx(struct muart_port *uart);
 void muart_free_dma(struct muart_port *uart);
 int muart_alloc_dma(struct muart_port *uart);

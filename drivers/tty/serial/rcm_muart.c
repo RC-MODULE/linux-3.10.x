@@ -143,7 +143,7 @@ static void muart_stop_rx(struct uart_port *port)
 	struct muart_port *muap =
 		container_of(port, struct muart_port, port);
 	if (muap->using_dma) {
-		dmaengine_terminate_async(muap->tx.chan);
+		muart_dma_stop_rx(muap);
 		return;
 	}
 	// disable rx irq
@@ -157,7 +157,8 @@ static void muart_stop_tx(struct uart_port *port)
 	struct muart_regs *regs = (struct muart_regs *)port->membase;
 
 	if (muap->using_dma) {
-		dmaengine_terminate_async(muap->rx.chan);
+//		if (muap->rx.chan)
+//			dmaengine_terminate_async(muap->rx.chan);
 		return;
 	}
 	// wait for finish transfer

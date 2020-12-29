@@ -216,6 +216,14 @@ static int muart_dma_rx(void* context)
 	return 0;
 }
 
+void muart_dma_stop_rx(struct muart_port *uart)
+{
+	if (uart->rx.thread) {
+		kthread_stop(uart->rx.thread);
+		uart->rx.thread = NULL;
+	}
+}
+
 static void muart_tx_dma_callback(void *param)
 {
 	struct muart_dma_buff *buff = param;
@@ -459,10 +467,7 @@ int muart_dma_startup(struct muart_port *uart)
 
 void muart_dma_shutdown(struct muart_port *uart)
 {
-	if (uart->rx.thread) {
-		kthread_stop(uart->rx.thread);
-		uart->rx.thread = NULL;
-	}
+	muart_dma_stop_rx(uart);
 	muart_release_dma(uart);
 }
 
