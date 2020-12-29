@@ -739,8 +739,10 @@ static void mdma_chan_remove(struct mdma_chan *chan)
 {
 	if ((!chan) || (!chan->regs))
 		return;
-
-	list_del(&chan->slave.device_node);
+	if (chan->slave.device) {
+		list_del(&chan->slave.device_node);
+		chan->slave.device = NULL;
+	}
 }
 
 #ifdef CONFIG_BASIS_PLATFORM
@@ -780,16 +782,17 @@ static int mdma_chan_probe(struct mdma_chan *chan, int ch_num)
 
 	chan->bus_width = MDMA_BUS_WIDTH_128;
 
-	if (hwirq == NO_HWIRQ)
+	if (hwirq == NO_HWIRQ) {
 		dev_dbg(mdev->dev,
 		        "HWIRQ for \"%s\" channel is not set.\n",
 		        chan->name);
-
-	chan->irq = irq_create_mapping(domain, hwirq);
-	if (chan->irq < 0) {
-		dev_err(mdev->dev, "Failed to map irq #%u (%s).\n",
-		        mdev->hwirq, chan->name);
-		return -ENXIO;
+	} else {
+		chan->irq = irq_create_mapping(domain, hwirq);
+		if (chan->irq < 0) {
+			dev_err(mdev->dev, "Failed to map irq #%u (%s).\n",
+		        	mdev->hwirq, chan->name);
+			return -ENXIO;
+		}
 	}
 
 	spin_lock_init(&chan->lock);
@@ -831,6 +834,9 @@ static int mdma_init_channels(struct mdma_device *mdev)
 			reg = mdev->reg_tx[i / 2];
 			reg_size = mdev->reg_tx_size;
 		}
+
+		if ((reg == 0) || (reg_size == 0))
+			continue;
 
 		chan->regs = devm_ioremap(mdev->dev,
 		                          reg + controller->ep_base_phys,
