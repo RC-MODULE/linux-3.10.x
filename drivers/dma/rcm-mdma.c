@@ -475,6 +475,8 @@ int mdma_alloc_chan_resources(struct dma_chan *dchan)
 	chan->prepared_desc = NULL;
 	chan->desc_free_cnt = mdev->of_data->sw_desc_pool_size;
 
+	INIT_LIST_HEAD(&chan->free_list);
+
 	for (i = 0; i < mdev->of_data->sw_desc_pool_size; i++) {
 		desc = chan->sw_desc_pool + i;
 		dma_async_tx_descriptor_init(&desc->async_tx, &chan->slave);
