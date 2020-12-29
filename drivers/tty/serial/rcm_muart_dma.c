@@ -8,7 +8,7 @@
 
 #include "rcm_muart.h"
 
-#define MUART_MDMA_RX_TIMEOUT 5000	// in bit intervals
+#define MUART_MDMA_RX_TIMEOUT 16 // in bit intervals
 
 #define MUART_DMA_BUFF_SIZE UART_XMIT_SIZE
 
