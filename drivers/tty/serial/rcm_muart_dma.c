@@ -419,6 +419,10 @@ static int muart_request_dma(struct muart_port *uart)
 #endif
 		struct muart_dma* dma =  (i == 0) ? &uart->tx : &uart->rx;
 
+		dma->next_buff  = 0;
+		dma->first_buff = 0;
+		dma->cnt_buffs  = 0;
+
 #ifdef CONFIG_BASIS_PLATFORM
 		dma->chan = muart_find_by_chan_id(dma_dev, ch_num);
 #else
