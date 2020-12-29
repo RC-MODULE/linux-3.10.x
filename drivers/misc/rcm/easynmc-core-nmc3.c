@@ -51,8 +51,10 @@ struct nmc3_core {
 	struct regmap *control;
 	struct regmap *reset;
 	uint32_t reset_bit;
+#ifndef CONFIG_ARCH_RCM_K1879XB1
 	struct nmc_control_reg lp_status_reg;
 	struct nmc_control_reg hp_status_reg;
+#endif
 	struct nmc_control_reg lp_set_reg;
 	struct nmc_control_reg hp_set_reg;
 	struct nmc_control_reg nmi_set_reg;
@@ -117,6 +119,7 @@ void nmc3_clear_interrupt(struct nmc_core *self, enum nmc_irq n)
 	}
 }
 
+#ifndef CONFIG_ARCH_RCM_K1879XB1
 int nmc3_check_interrupts(struct nmc_core *self) 
 {
 	struct nmc3_core *core = (struct nmc3_core *) self;
@@ -141,6 +144,7 @@ int nmc3_check_interrupts(struct nmc_core *self)
 
 	return mask;
 }
+#endif
 
 static int easynmc_probe (struct platform_device *pdev)
 {
@@ -164,6 +168,11 @@ static int easynmc_probe (struct platform_device *pdev)
 	}
 	core->control = syscon_node_to_regmap(tmp);
 
+	if (IS_ERR(core->control)) {
+		printk(DRVNAME ": failed to get control regmap %d\n", (int)core->control);
+		goto errfreemem;
+	}
+
 	tmp = of_parse_phandle(np, "reset", 0);
 	if (!tmp) {
 		printk(DRVNAME ": failed to find reset register reference\n");
@@ -171,6 +180,10 @@ static int easynmc_probe (struct platform_device *pdev)
 	}
 	core->reset = syscon_node_to_regmap(tmp);
 
+	if (IS_ERR(core->reset)) {
+		printk(DRVNAME ": failed to get reset regmap %d\n", (int)core->reset);
+		goto errfreemem;
+	}
 
 
 
@@ -190,8 +203,10 @@ static int easynmc_probe (struct platform_device *pdev)
 		goto errfreemem; \
 	} 
 
+#ifndef CONFIG_ARCH_RCM_K1879XB1
 	GRAB_NMC_REG(lp_status_reg);
 	GRAB_NMC_REG(hp_status_reg);
+#endif
 	GRAB_NMC_REG(lp_set_reg);
 	GRAB_NMC_REG(hp_set_reg);
 	GRAB_NMC_REG(nmi_set_reg);
@@ -221,16 +236,21 @@ static int easynmc_probe (struct platform_device *pdev)
 		GRAB_IRQ_RESOURCE(lp, core->c.irqs[NMC_IRQ_LP]);
 	}
 
-	res = platform_get_resource_byname(pdev, IORESOURCE_MEM, "imem");	
+	res = platform_get_resource_byname(pdev, IORESOURCE_MEM, "imem");
+	if (!res) {
+		printk(DRVNAME ": failed to get imem resource");
+		goto errfreemem;
+	}
 	core->c.imem_size = res->end - res->start + 1;
 	core->c.imem_phys = res->start;
 	core->c.imem_virt = devm_ioremap_resource(&pdev->dev, res);
 
 	core->c.reset             = nmc3_reset; 
 	core->c.send_interrupt    = nmc3_send_interrupt; 
-	core->c.clear_interrupt   = nmc3_clear_interrupt; 
+	core->c.clear_interrupt   = nmc3_clear_interrupt;
+#ifndef CONFIG_ARCH_RCM_K1879XB1
 	core->c.check_interrupts  = nmc3_check_interrupts;
-	
+#endif
 	if (!core->c.imem_virt) {
 		printk(DRVNAME ": ioremap of internal nmc memory failed");
 		goto errfreemem;
@@ -261,6 +281,7 @@ static int easynmc_probe (struct platform_device *pdev)
 	dev_set_drvdata(&pdev->dev, core);
 	easynmc_register_core(&core->c);
 
+#ifndef CONFIG_ARCH_RCM_K1879XB1
 	{
 		uint32_t val;
 		
@@ -271,10 +292,11 @@ static int easynmc_probe (struct platform_device *pdev)
 		}
 		printk(DRVNAME ": IRQ status: %08X\n", val);
 	}
-	
+#endif
 	nmc3_clear_interrupt(&core->c, NMC_IRQ_HP);
 	nmc3_clear_interrupt(&core->c, NMC_IRQ_LP);
 
+#ifndef CONFIG_ARCH_RCM_K1879XB1
 	{
 		uint32_t val;
 		
@@ -285,7 +307,7 @@ static int easynmc_probe (struct platform_device *pdev)
 		}
 		printk(DRVNAME ": IRQ status after clear: %08X\n", val);
 	}
-
+#endif
 
 	return 0;
 errfreemem:
