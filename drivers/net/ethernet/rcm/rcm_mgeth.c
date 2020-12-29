@@ -282,9 +282,9 @@ static void rcm_mgeth_adjust_link(struct net_device *netdev)
 	int new_state = 0;
 
 	netdev_dbg(netdev,
-	           "Link state changed: link = %u, autoneg_complete = %u, "
+	           "Link state changed: link = %u "
 	           "speed = %d, duplex = %d\n",
-	           phydev->link, phydev->autoneg_complete, phydev->speed,
+	           phydev->link, phydev->speed,
 	           phydev->duplex);
 
 	if (phydev->link) {

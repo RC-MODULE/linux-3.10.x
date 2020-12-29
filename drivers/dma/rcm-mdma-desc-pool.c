@@ -4,6 +4,7 @@
  */
 
 #include <linux/dma-mapping.h>
+#include <linux/slab.h>
 
 #include "rcm-mdma.h"
 
@@ -45,7 +46,6 @@ int mdma_desc_pool_alloc(struct mdma_desc_pool* pool, unsigned cnt,
 {
 	int ret = 0;
 	unsigned i = 0;
-	unsigned cnt_chunks;
 	struct mdma_desc_long_ll link = {0};
 	const unsigned cnt_in_chunk = MDMA_POOL_CHUNK_SIZE / 
 	                              sizeof(struct mdma_desc_long_ll);
@@ -137,7 +137,7 @@ int mdma_desc_pool_alloc(struct mdma_desc_pool* pool, unsigned cnt,
 
 	dev_dbg(dev, "[%s] descriptor's pool allocated "
 	             "(%u descriptors in %u chunks)\n",
-	             name, cnt, cnt_chunks);
+	             name, cnt, pool->cnt_chunks);
 
 	return 0;
 

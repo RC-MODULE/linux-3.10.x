@@ -13,6 +13,10 @@
 #include <linux/regmap.h>
 #include <linux/dma-mapping.h>
 
+#ifndef DMA_MAPPING_ERROR
+#	define DMA_MAPPING_ERROR (~(dma_addr_t)0)
+#endif
+
 struct basis_device;
 
 struct basis_device_ops {

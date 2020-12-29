@@ -12,6 +12,12 @@
 #include "dmaengine.h"
 #include "rcm-mdma-desc-pool.h"
 
+#ifdef CONFIG_BASIS_PLATFORM
+#	include "../misc/rcm/basis/basis-device.h"
+#	include "../misc/rcm/basis/basis-controller.h"
+#	include "../misc/rcm/basis/basis-cfs.h"
+#endif
+
 // Max number of channels (in specific direction)
 #define MDMA_MAX_CHANNELS 4
 
@@ -200,9 +206,24 @@ struct mdma_device {
 	struct mdma_chan rx[MDMA_MAX_CHANNELS];
 	struct mdma_chan tx[MDMA_MAX_CHANNELS];
 	struct device* dev;
+#ifndef CONFIG_BASIS_PLATFORM
 	struct platform_device *pdev;
+#endif
 	struct clk *clk;
 	const struct mdma_of_data* of_data;
+#ifdef CONFIG_BASIS_PLATFORM
+	struct basis_device    *device;
+	u32                     hwirq;
+	u32                     reg_cfg;
+	u32                     reg_cfg_size;
+	u32                     reg_rx[MDMA_MAX_CHANNELS];
+	u32                     reg_rx_size;
+	u32                     reg_tx[MDMA_MAX_CHANNELS];
+	u32                     reg_tx_size;
+	char                    intc[64];
+	u32                     rx_hwirq[MDMA_MAX_CHANNELS];
+	u32                     tx_hwirq[MDMA_MAX_CHANNELS];
+#endif 
 };
 
 unsigned mdma_cnt_desc_needed(struct mdma_chan *chan, struct scatterlist *sgl,

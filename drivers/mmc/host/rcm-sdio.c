@@ -284,8 +284,8 @@ static inline void rmsdio_dma_xfer(struct rmsdio_host *host,
 
 	BUG_ON(((u64) addr >> 32) != 0);  // !!! We use only 32 bits here	
 	
-	dev_dbg(host->dev, "dma %d bytes: 0x%Lx %s buf%d\n", 
-	                   sz, (long long) addr, (dir == DMA_FROM_DEVICE) ? "<=" : "=>", buf );  
+	dev_dbg(host->dev, "dma %llu bytes: 0x%Lx %s buf%d\n", 
+	                   (u64)sz, (long long) addr, (dir == DMA_FROM_DEVICE) ? "<=" : "=>", buf );  
 	/* channel 0 can only do 'to-device', whilst ch1 can only 'from-device' */
 	BUG_ON(buf>1);
 	channel = (dir == DMA_TO_DEVICE) ? RMSDIO_DMA_CH0 : RMSDIO_DMA_CH1;
@@ -1078,9 +1078,9 @@ static int rmsdio_bind(struct basis_device *device)
 	host->base = devm_ioremap(&device->dev,
 	                          host->regs + device->controller->ep_base_phys,
 	                          host->regs_size);
-	printk(KERN_INFO "rmsdio start is 0x%Lx, base is 0x%x\n", 
+	printk(KERN_INFO "rmsdio start is 0x%Lx, base is 0x%llx\n", 
 	       (long long)(host->regs + device->controller->ep_base_phys),
-	       (uint) host->base);
+	       (u64) host->base);
 	if (!host->base) {
 		ret = -ENOMEM;
 		goto out;

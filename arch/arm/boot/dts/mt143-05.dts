@@ -347,19 +347,55 @@
         uart0: uart0@01044000 {
             compatible = "rcm,muart";
             clocks = <&clock_axi_fast>, <&clock_axi_slow>;
-            reg = <0x01044000 0x1000>;
+            reg = <0x01044000 0x100>;
             interrupt-parent = <&gic0>;
             interrupts = <0 44 4>;
+            interrupt-controller;
+            #interrupt-cells = <2>;
             using-dma;
+            dmas = <&mdma_uart0 0
+                    &mdma_uart0 1>;
+            dma-names = "tx0", "rx0";
+        };
+
+        mdma_uart0: dma@01044100 {
+            compatible = "rcm,mdma-muart";
+            reg = <0x01044100 0x100>,
+                  <0x01044200 0x100>;
+            reg-names = "rx0", "tx0";
+            #dma-cells = <1>;
+            interrupt-parent = <&uart0>;
+            interrupts = <0 4>, <1 4>;
+            interrupt-names = "rx0", "tx0";
+            clocks = <&clock_axi_fast>;
+            rcm,bus-width = <128>;
         };
 
         uart1: uart1@01045000 {
             compatible = "rcm,muart";
             clocks = <&clock_axi_fast>, <&clock_axi_slow>;
-            reg = <0x01045000 0x1000>;
+            reg = <0x01045000 0x100>;
             interrupt-parent = <&gic0>;
             interrupts = <0 45 4>;
+            interrupt-controller;
+            #interrupt-cells = <2>;
             using-dma;
+            dmas = <&mdma_uart1 0
+                    &mdma_uart1 1>;
+            dma-names = "tx0", "rx0";
+        };
+
+        mdma_uart1: dma@01045100 {
+            compatible = "rcm,mdma-muart";
+            reg = <0x01045100 0x100>,
+                  <0x01045200 0x100>;
+            reg-names = "rx0", "tx0";
+            #dma-cells = <1>;
+            interrupt-parent = <&uart1>;
+            interrupts = <0 4>, <1 4>;
+            interrupt-names = "rx0", "tx0";
+            clocks = <&clock_axi_fast>;
+            rcm,bus-width = <128>;
         };
 
         i2c0: i2c@0x01046000 {

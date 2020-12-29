@@ -97,4 +97,4 @@ obj-$(CONFIG_SERIAL_KGDB_NMI) += kgdb_nmi.o
 obj-$(CONFIG_KGDB_SERIAL_CONSOLE) += kgdboc.o
 
 obj-$(CONFIG_SERIAL_PSEUDO_SPI) += pseudo_spi_serial.o pseudo_spi_console.o
-obj-$(CONFIG_SERIAL_MUART) += rcm_muart.o
+obj-$(CONFIG_SERIAL_MUART) += rcm_muart.o rcm_muart_dma.o
