@@ -476,7 +476,7 @@ void muart_free_dma(struct muart_port *uart)
 		if (dma->buff) {
 #ifdef CONFIG_BASIS_PLATFORM
 			basis_device_dma_free_coherent(
-				uart->port.dev->parent,
+				uart->port.dev,
 				MUART_DMA_CNT_BUFFS_PER_CHAN * 
 				MUART_DMA_BUFF_SIZE, 
 				dma->buff, dma->dma_addr, dma->ep_addr);
@@ -505,7 +505,7 @@ int muart_alloc_dma(struct muart_port *uart)
 		dma->buff = 
 #ifdef CONFIG_BASIS_PLATFORM
 			basis_device_dma_alloc_coherent(
-				uart->port.dev->parent,
+				uart->port.dev,
 				MUART_DMA_CNT_BUFFS_PER_CHAN * 
 				MUART_DMA_BUFF_SIZE,
 				&dma->dma_addr, &dma->ep_addr, GFP_KERNEL);
