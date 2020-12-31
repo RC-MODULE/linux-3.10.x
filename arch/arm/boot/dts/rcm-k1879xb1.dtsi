@@ -322,12 +322,12 @@
 			ranges = <0 0x20030000 0x10000>;
 
 			sctl: sctl@0xc000
-			{	
+			{
 				compatible = "syscon";
 				reg = <0xc000 0x1000>;
 			};
 
-			crg_cpu: crg_cpu@0xc010
+			nmc_rst: nmc_rst@0xc010
 			{
 				compatible = "syscon";
 				reg = <0xc010 0x1000>;
@@ -606,36 +606,21 @@
 			device-id = <0>;
 			reg = <0x00140000 0x00080000>; /* IM1 + IM3 */
 			reg-names = "imem";
-				//<0x2003c010 0x4>,
-				//<0x2003c004 0x4>,
-				//<0x2003c034 0x4>,
-				//<0x2003c030 0x4>,
-				//<0x2003c038 0x4>,
-				//<0x2003c03c 0x4>;
 			bank-count = <2>;
 
 			memory-region = <&nmc_mem0>;
 
 			control = <&sctl>;
-			reset = <&crg_cpu>;
+			reset = <&nmc_rst>;
 
 			reset_bit =     <0>; // reset bit no
-			//lp_status_reg = <0x240>, <0>;
-			//hp_status_reg = <0x240>, <1>;
+			//lp_status_reg = <?>, <?>;
+			//hp_status_reg = <?>, <?>;
 			lp_set_reg = <0x3C>, <0>;
 			hp_set_reg = <0x38>, <0>;
 			nmi_set_reg = <0x04>, <0>;
 			hp_clr_reg = <0x34>, <0>;
 			lp_clr_reg = <0x30>, <0>;
-
-			//reg-names =
-				//"imem",
-				//"reset_reg",
-				//"nmi_reg",
-				//"hp_clr_reg",
-				//"lp_clr_reg",
-				//"hp_set_reg",
-				//"lp_set_reg";
 
 			interrupts = <14>, <15>;
 			interrupt-parent = <&vic0>;

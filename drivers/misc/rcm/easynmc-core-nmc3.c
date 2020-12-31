@@ -169,7 +169,7 @@ static int easynmc_probe (struct platform_device *pdev)
 	core->control = syscon_node_to_regmap(tmp);
 
 	if (IS_ERR(core->control)) {
-		printk(DRVNAME ": failed to get control regmap %d\n", (int)core->control);
+		printk(DRVNAME ": failed to get control regmap %ld\n",  PTR_ERR(core->control));
 		goto errfreemem;
 	}
 
@@ -181,7 +181,7 @@ static int easynmc_probe (struct platform_device *pdev)
 	core->reset = syscon_node_to_regmap(tmp);
 
 	if (IS_ERR(core->reset)) {
-		printk(DRVNAME ": failed to get reset regmap %d\n", (int)core->reset);
+		printk(DRVNAME ": failed to get reset regmap %ld\n",  PTR_ERR(core->reset));
 		goto errfreemem;
 	}
 
