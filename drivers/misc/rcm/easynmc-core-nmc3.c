@@ -68,6 +68,7 @@ void nmc3_reset(struct nmc_core *self)
 {
 	struct nmc3_core *core = (struct nmc3_core *) self;
 
+#ifndef CONFIG_ARCH_RCM_K1879XB1
 	// active reset low
 	regmap_write(core->reset, 0x00c, UNLOCK);   // allow changing other regs
 	regmap_update_bits(core->reset, 0x018, BIT(core->reset_bit), 0); // write 0 to reset
@@ -77,7 +78,9 @@ void nmc3_reset(struct nmc_core *self)
 	// clear all interrupts
 	regmap_write(core->control, core->hp_clr_reg.offset, BIT(core->hp_clr_reg.bit));
 	regmap_write(core->control, core->lp_clr_reg.offset, BIT(core->lp_clr_reg.bit));
-
+#else
+	regmap_write(core->reset, 0, 0xFF);
+#endif
 }
 
 void nmc3_send_interrupt(struct nmc_core *self, enum nmc_irq n) 
