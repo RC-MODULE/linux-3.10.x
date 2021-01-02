@@ -89,12 +89,17 @@ void nmc3_send_interrupt(struct nmc_core *self, enum nmc_irq n)
 	struct nmc3_core *core = (struct nmc3_core *) self;
 	switch (n) {
 	case NMC_IRQ_NMI:
+#ifndef CONFIG_ARCH_RCM_K1879XB1
 		// clear all interrupts
 		regmap_write(core->control, core->hp_clr_reg.offset, BIT(core->hp_clr_reg.bit));
 		regmap_write(core->control, core->lp_clr_reg.offset, BIT(core->lp_clr_reg.bit));
 
 		regmap_write(core->control, core->nmi_set_reg.offset, 0);
 		regmap_write(core->control, core->nmi_set_reg.offset, BIT(core->nmi_set_reg.bit));
+#else
+		regmap_write(core->control, core->nmi_set_reg.offset, 1);
+		regmap_write(core->control, core->nmi_set_reg.offset, 0);
+#endif
 		break;
 	case NMC_IRQ_HP:
 		regmap_write(core->control, core->hp_set_reg.offset, BIT(core->hp_set_reg.bit));
@@ -295,11 +300,9 @@ static int easynmc_probe (struct platform_device *pdev)
 		}
 		printk(DRVNAME ": IRQ status: %08X\n", val);
 	}
-#endif
 	nmc3_clear_interrupt(&core->c, NMC_IRQ_HP);
 	nmc3_clear_interrupt(&core->c, NMC_IRQ_LP);
 
-#ifndef CONFIG_ARCH_RCM_K1879XB1
 	{
 		uint32_t val;
 		

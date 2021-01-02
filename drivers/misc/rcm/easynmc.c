@@ -539,7 +539,7 @@ static long easynmc_ioctl(struct file *filp, unsigned int ioctl_num, unsigned lo
 			ret = put_user((uint32_t)(paddr), (uint32_t __user *) ioctl_param);
 		else
 			ret = put_user((uint32_t)(paddr >> 2), (uint32_t __user *) ioctl_param);
-#elif CONFIG_1888TX018
+#elif defined CONFIG_1888TX018
 		ret = put_user((uint32_t)((paddr >> 2) + 0x10000000), (uint32_t __user *) ioctl_param);
 #else
 		ret = put_user((uint32_t)(paddr >> 2), (uint32_t __user *) ioctl_param);		
