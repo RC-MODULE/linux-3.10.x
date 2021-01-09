@@ -37,6 +37,11 @@
 	    fb_reserved: framebuffer@45C00000 {
 		reg = <0x45C00000 0x2400000>;
 	    };
+
+		nmc_mem0: nmc_mem0 {
+			size = <0x1000000>;
+			alignment = <0x1000000>;
+		};
 	};
 
 	chosen {
