@@ -321,6 +321,18 @@
 			#size-cells = <1>;
 			ranges = <0 0x20030000 0x10000>;
 
+			sctl: sctl@0xc000
+			{
+				compatible = "syscon";
+				reg = <0xc000 0x1000>;
+			};
+
+			nmc_rst: nmc_rst@0xc010
+			{
+				compatible = "syscon";
+				reg = <0xc010 0x1000>;
+			};
+
 			ethernet: greth@4000 {
 				#address-cells = <1>;
 				#size-cells = <1>;
@@ -592,26 +604,27 @@
 			core-name = "K1879-nmc";
 			core-type = "nmc3";
 			device-id = <0>;
-			reg =
-				<0x00140000 0x00080000>, /* IM1 + IM3 */
-				<0x2003c010 0x4>,
-				<0x2003c004 0x4>,
-				<0x2003c034 0x4>,
-				<0x2003c030 0x4>,
-				<0x2003c038 0x4>,
-				<0x2003c03c 0x4>;
+			reg = <0x00140000 0x00080000>; /* IM1 + IM3 */
+			reg-names = "imem";
 			bank-count = <2>;
-			reg-names =
-				"imem",
-				"reset_reg",
-				"nmi_reg",
-				"hp_clr_reg",
-				"lp_clr_reg",
-				"hp_set_reg",
-				"lp_set_reg";
+
+			memory-region = <&nmc_mem0>;
+
+			control = <&sctl>;
+			reset = <&nmc_rst>;
+
+			reset_bit =     <0>; // reset bit no
+			//lp_status_reg = <?>, <?>;
+			//hp_status_reg = <?>, <?>;
+			lp_set_reg = <0x3C>, <0>;
+			hp_set_reg = <0x38>, <0>;
+			nmi_set_reg = <0x04>, <0>;
+			hp_clr_reg = <0x34>, <0>;
+			lp_clr_reg = <0x30>, <0>;
+
 			interrupts = <14>, <15>;
 			interrupt-parent = <&vic0>;
-			interrupt-names = "HP", "LP";
+			interrupt-names = "hp", "lp";
 			status = "okay";
 		};
 
