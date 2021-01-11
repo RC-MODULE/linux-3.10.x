@@ -318,7 +318,7 @@ static void issue_pending(struct dma_chan *chan)
 
 	spin_lock_irqsave(&rmace_chan->list_lock, irq_flags);
 	list_for_each_entry(tx_desc, &rmace_chan->pending_list, list)
-		rcm_rmace_ctx_schelude(&tx_desc->rmace_ctx);
+		rcm_rmace_ctx_schedule(&tx_desc->rmace_ctx);
 	list_splice_tail_init(&rmace_chan->pending_list, &rmace_chan->active_list);
 	spin_unlock_irqrestore(&rmace_chan->list_lock, irq_flags);
 }

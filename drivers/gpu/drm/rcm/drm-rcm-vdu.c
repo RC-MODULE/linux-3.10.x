@@ -765,7 +765,7 @@ static void blit_rgb565_be(struct vdu_device *vdu, void *src_buffer, unsigned sr
 	vdu->rmace_ctx.dst_desc_count = dy;
 
 	reinit_completion(&vdu->rmace_completion);
-	rcm_rmace_ctx_schelude(&vdu->rmace_ctx);
+	rcm_rmace_ctx_schedule(&vdu->rmace_ctx);
 }
 #else // CONFIG_DRM_RCM_VDU_USE_RMACE
 static void blit_rgb565_be(void *src_buffer, unsigned src_pitch, void *dest_buffer, unsigned dest_pitch, int dx, int dy)
