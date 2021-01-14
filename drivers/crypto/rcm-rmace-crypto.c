@@ -441,7 +441,7 @@ static int rmace_cipher_one_req(
 	if (ret != 0)
 		goto unmap_dst;
 
-	rcm_rmace_ctx_schelude(rmace_ctx);
+	rcm_rmace_ctx_schedule(rmace_ctx);
 
 	return 0;
 

@@ -107,7 +107,7 @@ extern struct rcm_rmace_dev *rcm_rmace_dev_single_ptr;
 void rcm_rmace_ctx_init(struct rcm_rmace_dev *rmace, struct rcm_rmace_ctx *ctx);
 
 // The function can be called from an interrupt context.
-void rcm_rmace_ctx_schelude(struct rcm_rmace_ctx *ctx);
+void rcm_rmace_ctx_schedule(struct rcm_rmace_ctx *ctx);
 
 #ifdef CONFIG_CRYPTO_RCM_RMACE
 // implemented in driver/crypto/rcm-rmace-crypto.c

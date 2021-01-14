@@ -208,7 +208,7 @@ void rcm_rmace_ctx_init(struct rcm_rmace_dev *rmace, struct rcm_rmace_ctx *ctx)
 }
 EXPORT_SYMBOL(rcm_rmace_ctx_init);
 
-void rcm_rmace_ctx_schelude(struct rcm_rmace_ctx *ctx)
+void rcm_rmace_ctx_schedule(struct rcm_rmace_ctx *ctx)
 {
 	unsigned long irq_flags;
 
@@ -223,7 +223,7 @@ void rcm_rmace_ctx_schelude(struct rcm_rmace_ctx *ctx)
 
 	schedule_next_ctx(ctx->rmace);
 }
-EXPORT_SYMBOL(rcm_rmace_ctx_schelude);
+EXPORT_SYMBOL(rcm_rmace_ctx_schedule);
 
 static int rcm_rmace_probe(struct platform_device *pdev)
 {
